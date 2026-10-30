@@ -17,5 +17,5 @@ Ideas found during migration. None are scheduled unless a step or the user asks 
 | E12 | Replace exception text in route error responses with generic messages | 20 handlers still return `{e}` to the client | Step 2 |
 | E13 | Add a health check for refresh token failures in Settings | A failed refresh only shows up in logs today | Step 2 |
 | E14 | Ask MMF for an OAuth client secret, then set `mmf_auth_flow` to `authorization_code` | Refresh tokens stop 6-hour expiry from halting long runs | Step 2 |
-| E15 | Resume queued downloads automatically after reconnecting when the breaker tripped on a 401 | Long runs recover with less manual work | Step 2 |
+| E15 | Pause workers before token expiry, prompt to reconnect, and resume queued downloads afterward | Stops a 6-hour expiry from tripping the breaker, and long runs recover with one click | Step 2 |
 | E6 | Accessibility and responsive layout review | Neither has been assessed | Archeology section 9 |

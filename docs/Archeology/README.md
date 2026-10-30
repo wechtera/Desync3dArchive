@@ -224,4 +224,5 @@ These are single-client timings on an idle app, so they say nothing about UI sta
 - Blanked SQLite values survive in free pages until `VACUUM`, so the dev copy uses `secure_delete` and `VACUUM`, and its raw bytes are checked for secrets.
 - `DEFAULT_STASH_EXPORT_PATH` falls back to `~/Downloads/DESYNC_Print_Queue`, a folder separate from the configured `DESYNC_Print_Queue2`. Both are in the local protected paths.
 - MMF's OAuth documentation is `oauth2-instructions.md` in `MyMiniFactory/api-documentation`.
+- MMF documents a refreshable implicit path at `/v1/oauth/mobile/login` and `/v1/oauth/mobile/refresh`, needing no client secret, but marks it "Only for mobile clients" with device details. This app is not a mobile client, so it is not used.
 - At last check, `downloaded_files` was all `nas` tier and `download_jobs` had no queued jobs, only 103 completed.
