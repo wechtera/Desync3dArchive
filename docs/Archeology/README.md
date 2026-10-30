@@ -29,7 +29,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 0C complete on branch `migration/00c-tooling`, stacked on `migration/00b-migrate`. Both wait for the production manifest check and approval to merge.
+- **Phase:** Step 0C complete on branch `migration/00c-tooling`, stacked on `migration/00b-migrate`. Both passed their exit checks and wait for approval to merge.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -49,7 +49,6 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 - [ ] Merge `migration/00b-migrate` and `migration/00c-tooling` after the manifest check and user approval
 - [ ] Run Step 1 from `MIGRATION_PROMPTS.md`
-- [ ] Grant Visual Studio Code Full Disk Access, then restart it, so manifests can cover the staging and stash folders
 
 ## Project decisions
 
@@ -67,6 +66,8 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
 
 ## Step 0C results
+
+**Exit check:** Passed. The directory manifest shows 244 differences, all "added" under `DESYNC_Print_Queue2` and none anywhere else. Full Disk Access took effect during the run, so those files were readable for the first time against a baseline that held nothing for that folder. The newest was modified at 10:29 on 2026-10-30, before this work began, so nothing changed there. `DESYNC_Vault_local` is empty. Baselines for both folders are now in `~/DESYNC_Data_dev/baseline/production_downloads.json`, so later steps can compare them. That file and `production_files.json` are compared separately from the main manifest, which reports these 244 entries as added until it is re-recorded.
 
 **`check.sh`:** runs pytest, the snapshot secret test, ruff, pyright, pip-audit and `npm audit --audit-level=moderate`. All pass. The contract still matches all 105 snapshots after the logging change.
 
