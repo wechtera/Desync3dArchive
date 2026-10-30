@@ -1,0 +1,16 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/api/tasks/clear"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "deleted_count": 13,
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

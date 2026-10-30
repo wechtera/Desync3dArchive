@@ -1,0 +1,19 @@
+{
+  "request": {
+    "body": {
+      "id": 585559,
+      "source_type": "file",
+      "view": "bad-view"
+    },
+    "method": "POST",
+    "path": "/api/render/stl"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Ephemeral rendering failed: File is not a zip file"
+    },
+    "location": null,
+    "status": 500
+  }
+}

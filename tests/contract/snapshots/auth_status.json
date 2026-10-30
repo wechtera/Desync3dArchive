@@ -1,0 +1,22 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/auth/status"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "client_id": "",
+      "client_secret": "",
+      "configured": false,
+      "connected": false,
+      "expires_at": "<VOLATILE>",
+      "is_expired": true,
+      "user_id": "<REDACTED>",
+      "username": "<REDACTED>"
+    },
+    "location": null,
+    "status": 200
+  }
+}

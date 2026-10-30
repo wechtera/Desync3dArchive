@@ -29,7 +29,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Scaffold complete in `DESYNC_3D_Archival`. No application code has been migrated.
+- **Phase:** Step 0A complete on branch `migration/00a-baseline`, waiting for approval to merge. No application code has been migrated.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -40,11 +40,13 @@ This directory tracks the state of the app, what has been done, and what comes n
 - [x] Stack proposal drafted and decisions recorded
 - [x] Migration prompts written
 - [x] New project created: git repository, README with setup steps, `.gitignore`, Python and Node dependency manifests, `tools/` linker, and these docs
+- [x] Step 0A: production manifest, sanitized dev data, throwaway old app, 105 contract snapshots, snapshot secret test, performance baseline
 - [x] Migration prompts reviewed against the code. Step 0 split into 0A, 0B and 0C, and data-safety, V6, backup and cutover gaps closed
 
 ## Next
 
-- [ ] Run Step 0A from `MIGRATION_PROMPTS.md`
+- [ ] Merge `migration/00a-baseline` after user approval
+- [ ] Run Step 0B from `MIGRATION_PROMPTS.md`
 
 ## Project decisions
 
@@ -60,6 +62,41 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Commits.** Commit freely on step branches. Merge to `main` after the exit check and user approval.
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
+
+## Step 0A results
+
+**Rebuild the baseline**
+
+```bash
+./scripts/build_dev_data.py --protect /Volumes/STL --protect ~/Downloads/DESYNC_Vault_local --protect ~/Downloads/DESYNC_Print_Queue2
+.venv/bin/python scripts/baseline/record_contract.py
+```
+
+**Contract snapshots:** 105 cases in `tests/contract/snapshots/`, covering every route and alias in the old dispatcher. Two full runs matched exactly. No snapshot held a production secret or a signed URL. The status mix is 84 of 200, 3 of 201, 14 of 400, 3 of 404 and 1 of 500.
+
+**Known limits of the snapshots**
+- `stash_export` records its failure path only, because the dev vault holds placeholders for one model.
+- `render_stl` records a 500 caused by a placeholder that is not a real zip. That is the old behavior for an invalid archive.
+- Scrape and ingest record failure paths, because the harness blocks `node` and outside network use.
+- `/previews` and static files are not `/api` routes, so they are not covered.
+
+**Performance baseline** (sanitized copy of 4,893 models, 15 repeats, on this Mac, in `tests/contract/performance_baseline.json`)
+
+| Measure | Median ms | Max ms |
+|---|---|---|
+| Startup to ready, from import | 30.4 | 39.2 |
+| Catalog first page | 2.13 | 3.36 |
+| Catalog search | 7.61 | 7.83 |
+| Catalog deep page, offset 4,800 | 3.06 | 3.35 |
+| Metrics | 11.63 | 11.95 |
+| Creators | 2.55 | 2.76 |
+| Releases | 1.38 | 1.49 |
+
+These are single-client timings on an idle app, so they say nothing about UI stalls during downloads.
+
+**`run_startup_analytics` and `releases`:** Confirmed. `run_startup_analytics` is exported but never called. The server's "Running database startup analytics" message only runs `init_persistent_tables`. The only `releases` writers are that function and the external indexer, so ingest does not update `releases`. It has not drifted yet: all 587 rows were computed on 2026-10-25, 7 MMF models were updated after that, and no designer-month is missing or has a wrong model count. A future ingest of new models would go stale.
+
+**Exit check:** Passed. The production manifest shows 0 differences across `library.db`, `cookies.json`, `metadata/`, `previews/`, `scrapes/`, `logs/`, `mmf_browser_profile/`, the NAS vault and `Loot Studios`. The staging and stash folders in `~/Downloads` could not be listed, because macOS privacy controls block this process, so the manifest does not cover them. The sanitizer and harness never receive those paths except as rewrite targets.
 
 ## Facts found along the way
 
@@ -77,4 +114,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 - `app_settings` stores the real NAS, staging and stash paths alongside the live secrets, so a plain `.backup` copy is not safe for development.
 - Old `ui/server.py` starts download workers at startup, and `VAULT_DB_PATH` only redirects the database. Logs, previews, scrapes and metadata still resolve under `ROOT_DIR`.
 - 4,886 `raw_backup_path` rows and the `metadata_backup_path` setting are relative. The other 7 rows are absolute paths under `test_stl_shelf`.
+- `/Volumes/STL/Loot Studios` is a registered external library, so it is production storage as well as the vault.
+- The old app was running from `scrapepage` on `0.0.0.0:8080` throughout Step 0A, started at 14:57 on 2026-10-30.
+- Blanked SQLite values survive in free pages until `VACUUM`, so the dev copy uses `secure_delete` and `VACUUM`, and its raw bytes are checked for secrets.
 - At last check, `downloaded_files` was all `nas` tier and `download_jobs` had no queued jobs, only 103 completed.

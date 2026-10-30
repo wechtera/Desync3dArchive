@@ -1,0 +1,22 @@
+{
+  "request": {
+    "body": {
+      "download_root_path": "<DEV>/nas/vault",
+      "download_work_path": "<DEV>/staging"
+    },
+    "method": "POST",
+    "path": "/api/storage/config"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "success": true,
+      "updated": [
+        "download_root_path",
+        "download_work_path"
+      ]
+    },
+    "location": null,
+    "status": 200
+  }
+}

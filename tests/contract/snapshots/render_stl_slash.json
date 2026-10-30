@@ -1,0 +1,15 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/render/stl/?source_type=file&view=bad-view"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Valid numeric 'id' is required."
+    },
+    "location": null,
+    "status": 400
+  }
+}

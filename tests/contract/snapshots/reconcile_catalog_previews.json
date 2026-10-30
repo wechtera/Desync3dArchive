@@ -1,0 +1,20 @@
+{
+  "request": {
+    "body": {
+      "model_ids": [
+        839284
+      ]
+    },
+    "method": "POST",
+    "path": "/api/reconcile/catalog-previews"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "message": "Catalog preview cache sweep dispatched in background.",
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

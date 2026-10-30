@@ -1,0 +1,22 @@
+{
+  "request": {
+    "body": {
+      "paths": [
+        "<DEV>/staging/contract_garbage.part"
+      ]
+    },
+    "method": "POST",
+    "path": "/api/reconcile/staging-purge"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "errors": [],
+      "purged_count": 0,
+      "reclaimed_bytes": 0,
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

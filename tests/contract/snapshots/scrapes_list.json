@@ -1,0 +1,15 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/scrapes/list"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "scrapes": []
+    },
+    "location": null,
+    "status": 200
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "request": {
+    "body": {
+      "client_id": "<REDACTED>",
+      "client_secret": "<REDACTED>"
+    },
+    "method": "POST",
+    "path": "/api/auth/config"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "configured": true,
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "request": {
+    "body": {
+      "action": "purge_incomplete"
+    },
+    "method": "POST",
+    "path": "/api/downloads/control"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "action": "purge_incomplete",
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

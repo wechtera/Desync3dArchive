@@ -1,0 +1,21 @@
+{
+  "request": {
+    "body": {
+      "paths": [
+        "<DEV>/nas/vault/contract_orphan_two"
+      ]
+    },
+    "method": "POST",
+    "path": "/api/reconcile/orphan-audit"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "deleted_count": 1,
+      "errors": [],
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

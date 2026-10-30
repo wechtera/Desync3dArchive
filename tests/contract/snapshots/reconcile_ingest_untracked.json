@@ -1,0 +1,24 @@
+{
+  "request": {
+    "body": {
+      "items": [
+        {
+          "file_path": "<DEV>/nas/vault/contract_untracked/extra.stl",
+          "model_id": 839284
+        }
+      ]
+    },
+    "method": "POST",
+    "path": "/api/reconcile/ingest-untracked"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "errors": [],
+      "ingested_count": 1,
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "request": {
+    "body": null,
+    "method": "DELETE",
+    "path": "/api/stashes/10"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "deleted_stash_id": 10,
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

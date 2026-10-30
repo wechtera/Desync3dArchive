@@ -1,0 +1,19 @@
+{
+  "request": {
+    "body": {
+      "model_ids": [
+        96576
+      ]
+    },
+    "method": "DELETE",
+    "path": "/api/downloads/queue"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

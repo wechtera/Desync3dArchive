@@ -1,0 +1,30 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/downloads/queue"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "active_downloads": [],
+      "active_offloads": [],
+      "active_workers": [],
+      "circuit_breaker_reason": "",
+      "circuit_breaker_tripped": false,
+      "counts": {
+        "completed": 103,
+        "downloading": 0,
+        "failed": 0,
+        "offloading": 0,
+        "pending": 0,
+        "staging_complete": 0
+      },
+      "is_paused": false,
+      "is_running": false,
+      "queued_jobs": []
+    },
+    "location": null,
+    "status": 200
+  }
+}

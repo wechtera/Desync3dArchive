@@ -1,0 +1,134 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/creators"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": [
+      {
+        "active_months": 76,
+        "bonus_models": 0,
+        "designer_id": 413021,
+        "designer_name": "Rescale Miniatures",
+        "first_seen": "2019-12",
+        "latest_seen": "2026-09",
+        "supported_models": 1528,
+        "total_models": 1530
+      },
+      {
+        "active_months": 85,
+        "bonus_models": 9,
+        "designer_id": 374925,
+        "designer_name": "Cast n Play",
+        "first_seen": "2019-07",
+        "latest_seen": "2026-09",
+        "supported_models": 1226,
+        "total_models": 1220
+      },
+      {
+        "active_months": 75,
+        "bonus_models": 2,
+        "designer_id": 41836,
+        "designer_name": "Mini Monster Mayhem",
+        "first_seen": "2020-02",
+        "latest_seen": "2026-10",
+        "supported_models": 291,
+        "total_models": 490
+      },
+      {
+        "active_months": 50,
+        "bonus_models": 13,
+        "designer_id": 411546,
+        "designer_name": "Titan Forge Miniatures",
+        "first_seen": "2020-04",
+        "latest_seen": "2026-10",
+        "supported_models": 404,
+        "total_models": 391
+      },
+      {
+        "active_months": 65,
+        "bonus_models": 2,
+        "designer_id": 490178,
+        "designer_name": "Bestiarum Miniatures",
+        "first_seen": "2020-08",
+        "latest_seen": "2026-10",
+        "supported_models": 302,
+        "total_models": 301
+      },
+      {
+        "active_months": 42,
+        "bonus_models": 0,
+        "designer_id": 635078,
+        "designer_name": "Comet Lord Miniatures",
+        "first_seen": "2021-03",
+        "latest_seen": "2026-07",
+        "supported_models": 266,
+        "total_models": 266
+      },
+      {
+        "active_months": 66,
+        "bonus_models": 8,
+        "designer_id": 362414,
+        "designer_name": "Archvillain Games",
+        "first_seen": "2021-05",
+        "latest_seen": "2026-10",
+        "supported_models": 72,
+        "total_models": 259
+      },
+      {
+        "active_months": 9,
+        "bonus_models": 0,
+        "designer_id": 611369,
+        "designer_name": "Duncan Shadow",
+        "first_seen": "2020-09",
+        "latest_seen": "2021-05",
+        "supported_models": 136,
+        "total_models": 136
+      },
+      {
+        "active_months": 45,
+        "bonus_models": 4,
+        "designer_id": 958619,
+        "designer_name": "Mammoth Factory",
+        "first_seen": "2022-01",
+        "latest_seen": "2026-10",
+        "supported_models": 134,
+        "total_models": 130
+      },
+      {
+        "active_months": 73,
+        "bonus_models": 0,
+        "designer_id": 348765,
+        "designer_name": "Artisan Guild",
+        "first_seen": "2019-07",
+        "latest_seen": "2026-10",
+        "supported_models": 99,
+        "total_models": 99
+      },
+      {
+        "active_months": 1,
+        "bonus_models": 0,
+        "designer_id": null,
+        "designer_name": "Loot Studios",
+        "first_seen": "2020-08",
+        "latest_seen": "2020-08",
+        "supported_models": 25,
+        "total_models": 25
+      },
+      {
+        "active_months": 1,
+        "bonus_models": 0,
+        "designer_id": 1842410,
+        "designer_name": "Death x Tiles",
+        "first_seen": "2025-01",
+        "latest_seen": "2025-01",
+        "supported_models": 1,
+        "total_models": 1
+      }
+    ],
+    "location": null,
+    "status": 200
+  }
+}

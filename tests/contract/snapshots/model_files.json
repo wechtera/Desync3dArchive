@@ -1,0 +1,43 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/models/839284/files"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "designer_name": "Cast n Play",
+      "files": [
+        {
+          "actual_bytes": 69110054,
+          "created_at": "<VOLATILE>",
+          "download_url": "https://www.myminifactory.com/download/839284?archive_id=585559",
+          "file_id": 585559,
+          "filename": "1119_Halfling Pumpkin Launcher Operators.zip",
+          "is_downloaded": 1,
+          "local_relative_path": "Cast_n_Play/2026-08/839284_Halfling_Pumpkin_Launcher_Operators_Pre-Supported_Halfling_Chronicles_Cast_n_Play/files/Halfling Pumpkin Launcher Operators.zip",
+          "size_bytes": 69110054
+        },
+        {
+          "actual_bytes": 14903062,
+          "created_at": "<VOLATILE>",
+          "download_url": "https://www.myminifactory.com/download/839284?archive_id=585567",
+          "file_id": 585567,
+          "filename": "25mm Base.zip",
+          "is_downloaded": 1,
+          "local_relative_path": "Cast_n_Play/2026-08/839284_Halfling_Pumpkin_Launcher_Operators_Pre-Supported_Halfling_Chronicles_Cast_n_Play/files/25mm Base.zip",
+          "size_bytes": 14903062
+        }
+      ],
+      "id": 839284,
+      "name": "Halfling Pumpkin Launcher Operators (Pre-Supported) | Halfling Chronicles | Cast n Play",
+      "primary_image_url": "https://assets.myminifactory.com/object-images/6a92c222ba8116.96949106/images/1000X1000-CastnPlay_1119_Halfling Pumpkin Launcher Operators.jpg",
+      "total_files": 2,
+      "total_size_bytes": 84013116,
+      "url": "https://www.myminifactory.com/object/3d-print-halfling-pumpkin-launcher-operators-pre-supported-halfling-chronicles-cast-n-play-839284"
+    },
+    "location": null,
+    "status": 200
+  }
+}

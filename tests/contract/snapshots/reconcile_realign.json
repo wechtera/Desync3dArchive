@@ -1,0 +1,19 @@
+{
+  "request": {
+    "body": {
+      "model_ids": []
+    },
+    "method": "POST",
+    "path": "/api/reconcile/drift/realign"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "errors": [],
+      "realigned_count": 0,
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/settings/directories"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "directories": [
+        {
+          "file_count": 1,
+          "formatted_size": "20 B",
+          "key": "staging",
+          "name": "Fast Local Staging",
+          "path": "<DEV>/staging",
+          "size_bytes": 20
+        },
+        {
+          "file_count": 3,
+          "formatted_size": "60 B",
+          "key": "nas",
+          "name": "NAS Target Vault",
+          "path": "<DEV>/nas/vault",
+          "size_bytes": 60
+        },
+        {
+          "file_count": 0,
+          "formatted_size": "0 B",
+          "key": "stash_export",
+          "name": "Slicer Print Queue Staging",
+          "path": "<DEV>/stash",
+          "size_bytes": 0
+        },
+        {
+          "file_count": 303,
+          "formatted_size": "432.68 MB",
+          "key": "previews",
+          "name": "Cached Previews",
+          "path": "<DEV>/old_app/previews",
+          "size_bytes": 453692853
+        },
+        {
+          "file_count": 50,
+          "formatted_size": "827.7 KB",
+          "key": "metadata",
+          "name": "Raw JSON Metadata",
+          "path": "<DEV>/old_app/metadata",
+          "size_bytes": 847532
+        },
+        {
+          "file_count": 0,
+          "formatted_size": "0 B",
+          "key": "scrapes",
+          "name": "Scrape Data Artifacts",
+          "path": "<DEV>/old_app/scrapes",
+          "size_bytes": 0
+        },
+        {
+          "file_count": 1,
+          "formatted_size": "0 B",
+          "key": "logs",
+          "name": "Application System Logs",
+          "path": "<DEV>/old_app/logs",
+          "size_bytes": 0
+        },
+        {
+          "file_count": 86,
+          "formatted_size": "0 B",
+          "key": "db_audit",
+          "name": "SQLite Audit Records",
+          "path": "download_audit_log (80 rows), pipeline_tasks (6 rows)",
+          "size_bytes": 0
+        }
+      ],
+      "items": [
+        {
+          "file_count": 1,
+          "formatted_size": "20 B",
+          "key": "staging",
+          "name": "Fast Local Staging",
+          "path": "<DEV>/staging",
+          "size_bytes": 20
+        },
+        {
+          "file_count": 3,
+          "formatted_size": "60 B",
+          "key": "nas",
+          "name": "NAS Target Vault",
+          "path": "<DEV>/nas/vault",
+          "size_bytes": 60
+        },
+        {
+          "file_count": 0,
+          "formatted_size": "0 B",
+          "key": "stash_export",
+          "name": "Slicer Print Queue Staging",
+          "path": "<DEV>/stash",
+          "size_bytes": 0
+        },
+        {
+          "file_count": 303,
+          "formatted_size": "432.68 MB",
+          "key": "previews",
+          "name": "Cached Previews",
+          "path": "<DEV>/old_app/previews",
+          "size_bytes": 453692853
+        },
+        {
+          "file_count": 50,
+          "formatted_size": "827.7 KB",
+          "key": "metadata",
+          "name": "Raw JSON Metadata",
+          "path": "<DEV>/old_app/metadata",
+          "size_bytes": 847532
+        },
+        {
+          "file_count": 0,
+          "formatted_size": "0 B",
+          "key": "scrapes",
+          "name": "Scrape Data Artifacts",
+          "path": "<DEV>/old_app/scrapes",
+          "size_bytes": 0
+        },
+        {
+          "file_count": 1,
+          "formatted_size": "0 B",
+          "key": "logs",
+          "name": "Application System Logs",
+          "path": "<DEV>/old_app/logs",
+          "size_bytes": 0
+        },
+        {
+          "file_count": 86,
+          "formatted_size": "0 B",
+          "key": "db_audit",
+          "name": "SQLite Audit Records",
+          "path": "download_audit_log (80 rows), pipeline_tasks (6 rows)",
+          "size_bytes": 0
+        }
+      ],
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

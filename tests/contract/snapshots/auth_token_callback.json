@@ -1,0 +1,21 @@
+{
+  "request": {
+    "body": {
+      "access_token": "<REDACTED>",
+      "expires_in": 60
+    },
+    "method": "POST",
+    "path": "/api/auth/token_callback"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "expires_at": "<VOLATILE>",
+      "success": true,
+      "user_id": "",
+      "username": ""
+    },
+    "location": null,
+    "status": 200
+  }
+}

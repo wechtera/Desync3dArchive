@@ -1,0 +1,17 @@
+{
+  "request": {
+    "body": {
+      "action": "nope"
+    },
+    "method": "POST",
+    "path": "/api/downloads/control"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Unknown action: nope"
+    },
+    "location": null,
+    "status": 400
+  }
+}

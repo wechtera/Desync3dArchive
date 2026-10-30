@@ -1,0 +1,15 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/api/tasks/kill"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/stashes"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "stashes": [
+        {
+          "created_at": "<VOLATILE>",
+          "description": "A pile of gray",
+          "id": 10,
+          "is_active": true,
+          "item_count": 5,
+          "name": "test",
+          "total_bytes": "<VOLATILE>",
+          "updated_at": "<VOLATILE>"
+        }
+      ],
+      "total": 1
+    },
+    "location": null,
+    "status": 200
+  }
+}

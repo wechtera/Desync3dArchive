@@ -1,0 +1,15 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/models/1"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Model 1 not found or missing metadata"
+    },
+    "location": null,
+    "status": 404
+  }
+}

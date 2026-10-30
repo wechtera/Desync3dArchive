@@ -1,0 +1,243 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/api/reconcile/drift"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "items": [
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000000_Choker1_V2",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Choker1_V2",
+          "model_id": 2000000000,
+          "model_name": "Choker1 V2",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000001_Desk_V2",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Desk_V2",
+          "model_id": 2000000001,
+          "model_name": "Desk V2",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000002_Sunathaer_Caex_V2",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Sunathaer Caex_V2",
+          "model_id": 2000000002,
+          "model_name": "Sunathaer Caex V2",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000003_Cormah_Shazan",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Cormah Shazan",
+          "model_id": 2000000003,
+          "model_name": "Cormah Shazan",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000004_Choker2",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Choker2",
+          "model_id": 2000000004,
+          "model_name": "Choker2",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000005_Telescope",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Telescope",
+          "model_id": 2000000005,
+          "model_name": "Telescope",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000006_Magic_Sphere",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Magic Sphere",
+          "model_id": 2000000006,
+          "model_name": "Magic Sphere",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000007_Jhonny_Trinity",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Jhonny Trinity",
+          "model_id": 2000000007,
+          "model_name": "Jhonny Trinity",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000008_Ettin_V3",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Ettin_V3",
+          "model_id": 2000000008,
+          "model_name": "Ettin V3",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000009_Chuul_V2",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Chuul_V2",
+          "model_id": 2000000009,
+          "model_name": "Chuul V2",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000010_Owl",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Owl",
+          "model_id": 2000000010,
+          "model_name": "Owl",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000011_Cage",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Cage",
+          "model_id": 2000000011,
+          "model_name": "Cage",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000012_Books",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Books",
+          "model_id": 2000000012,
+          "model_name": "Books",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000013_Bookshelf_V2",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Bookshelf_V2",
+          "model_id": 2000000013,
+          "model_name": "Bookshelf V2",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000014_Throne",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Throne",
+          "model_id": 2000000014,
+          "model_name": "Throne",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000015_Stone_Golem_V2",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Stone Golem_V2",
+          "model_id": 2000000015,
+          "model_name": "Stone Golem V2",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000016_Chimera_V2",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Chimera_V2",
+          "model_id": 2000000016,
+          "model_name": "Chimera V2",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000017_Girallon_75mm",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Girallon_75mm",
+          "model_id": 2000000017,
+          "model_name": "Girallon 75mm",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000018_Mad_Mage",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Mad Mage",
+          "model_id": 2000000018,
+          "model_name": "Mad Mage",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000019_Mimic_Book",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Mimic Book",
+          "model_id": 2000000019,
+          "model_name": "Mimic Book",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000020_Owlbear_V2",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Owlbear_V2",
+          "model_id": 2000000020,
+          "model_name": "Owlbear V2",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000021_Mage_Chest",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Mage Chest",
+          "model_id": 2000000021,
+          "model_name": "Mage Chest",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000022_Girallon_32mm",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Girallon_32mm",
+          "model_id": 2000000022,
+          "model_name": "Girallon 32mm",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000023_Globe_V2",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Globe V2",
+          "model_id": 2000000023,
+          "model_name": "Globe V2",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        },
+        {
+          "canonical_path": "<DEV>/nas/vault/Loot_Studios/2020-08/2000000024_Cauldron",
+          "current_path": "<DEV>/nas/Loot Studios/2020-08 - Crazed Mage/Cauldron",
+          "model_id": 2000000024,
+          "model_name": "Cauldron",
+          "reasons": [
+            "Contains unescaped spaces"
+          ]
+        }
+      ],
+      "success": true,
+      "total_drifts": 25
+    },
+    "location": null,
+    "status": 200
+  }
+}

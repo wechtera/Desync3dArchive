@@ -1,0 +1,31 @@
+{
+  "request": {
+    "body": {
+      "default_creator": "Contract",
+      "name": "Contract Library",
+      "path": "<DEV>/nas/contract_library"
+    },
+    "method": "POST",
+    "path": "/api/settings/libraries"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "library": {
+        "default_creator": "Contract",
+        "disk_bytes": 0,
+        "disk_formatted": "Calculating...",
+        "id": 3,
+        "last_scanned_at": null,
+        "name": "Contract Library",
+        "path": "<DEV>/nas/contract_library",
+        "total_files": 0,
+        "total_models": 0
+      },
+      "message": "Successfully registered in-place library 'Contract Library'. Disk usage calculation queued in background.",
+      "success": true
+    },
+    "location": null,
+    "status": 201
+  }
+}

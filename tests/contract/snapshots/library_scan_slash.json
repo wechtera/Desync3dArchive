@@ -1,0 +1,19 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/api/settings/libraries/1/scan/"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "library_id": 1,
+      "message": "Background scan dispatched for in-place library 'Loot Studios' (Task #30).",
+      "success": true,
+      "task_id": 30,
+      "task_type": "external_library_reconcile"
+    },
+    "location": null,
+    "status": 200
+  }
+}

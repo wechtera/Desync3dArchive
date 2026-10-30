@@ -1,0 +1,31 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/settings/libraries/"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "libraries": [
+        {
+          "created_at": "<VOLATILE>",
+          "default_creator": "Loot Studios",
+          "disk_bytes": 910704297497,
+          "disk_formatted": "848.16 GB",
+          "exists": false,
+          "id": 1,
+          "last_scanned_at": null,
+          "name": "Loot Studios",
+          "path": "<DEV>/nas/Loot Studios",
+          "total_files": 39238,
+          "total_models": 0
+        }
+      ],
+      "success": true,
+      "total": 1
+    },
+    "location": null,
+    "status": 200
+  }
+}

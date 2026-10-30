@@ -1,0 +1,27 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/reconcile/status"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "discrepancies": [],
+      "orphan_directories": [],
+      "scan_mode": "reverse",
+      "status": "completed",
+      "summary": {
+        "discrepancies": 0,
+        "healthy": 77,
+        "orphan_count": 0,
+        "total_audited": 77,
+        "untracked_count": 0
+      },
+      "timestamp": "<TIMESTAMP>",
+      "untracked_files": []
+    },
+    "location": null,
+    "status": 200
+  }
+}

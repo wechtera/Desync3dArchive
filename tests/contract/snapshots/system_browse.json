@@ -1,0 +1,31 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/system/browse?path=<DEV>/nas"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "current_path": "<DEV>/nas",
+      "directories": [
+        {
+          "name": "contract_library",
+          "path": "<DEV>/nas/contract_library"
+        },
+        {
+          "name": "vault",
+          "path": "<DEV>/nas/vault"
+        }
+      ],
+      "dirs": [
+        "contract_library",
+        "vault"
+      ],
+      "parent_path": "<DEV>",
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

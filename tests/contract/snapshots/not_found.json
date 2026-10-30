@@ -1,0 +1,15 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/does-not-exist"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Route not found: GET /api/does-not-exist"
+    },
+    "location": null,
+    "status": 404
+  }
+}

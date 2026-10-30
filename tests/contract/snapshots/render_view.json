@@ -1,0 +1,17 @@
+{
+  "request": {
+    "body": {
+      "view": "bad-view"
+    },
+    "method": "POST",
+    "path": "/api/models/2000000000/render-view"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Invalid view 'bad-view'. Must be one of: ['back_left', 'back_right', 'bottom_up', 'front_left', 'front_right', 'top_down']"
+    },
+    "location": null,
+    "status": 400
+  }
+}

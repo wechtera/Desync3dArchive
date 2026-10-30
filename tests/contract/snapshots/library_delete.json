@@ -1,0 +1,19 @@
+{
+  "request": {
+    "body": null,
+    "method": "DELETE",
+    "path": "/api/settings/libraries/1"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "deleted_id": 1,
+      "message": "Library 'Loot Studios' unlinked from database. No physical files on disk were modified or deleted.",
+      "name": "Loot Studios",
+      "path": "<DEV>/nas/Loot Studios",
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

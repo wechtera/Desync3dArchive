@@ -1,0 +1,78 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/models/archives/raw?file_id=585559"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "entries": [
+        {
+          "file_extension": ".lys",
+          "filename": "LYS_Halfling_Operator_A_Supported.lys",
+          "id": 12963,
+          "internal_path": "1119_Halfling Pumpkin Launcher Operators/Pre-Supported/LYS/LYS_Halfling_Operator_A_Supported.lys",
+          "is_supported": 1,
+          "size_bytes": 6480922,
+          "submodel_id": 1712,
+          "submodel_name": "LYS"
+        },
+        {
+          "file_extension": ".lys",
+          "filename": "LYS_Halfling_Operator_B_Supported.lys",
+          "id": 12962,
+          "internal_path": "1119_Halfling Pumpkin Launcher Operators/Pre-Supported/LYS/LYS_Halfling_Operator_B_Supported.lys",
+          "is_supported": 1,
+          "size_bytes": 8003653,
+          "submodel_id": 1712,
+          "submodel_name": "LYS"
+        },
+        {
+          "file_extension": ".stl",
+          "filename": "STL_Halfling_Operator_A_Supported.stl",
+          "id": 12961,
+          "internal_path": "1119_Halfling Pumpkin Launcher Operators/Pre-Supported/STL/STL_Halfling_Operator_A_Supported.stl",
+          "is_supported": 1,
+          "size_bytes": 18320484,
+          "submodel_id": 1711,
+          "submodel_name": "STL"
+        },
+        {
+          "file_extension": ".stl",
+          "filename": "STL_Halfling_Operator_B_Supported.stl",
+          "id": 12960,
+          "internal_path": "1119_Halfling Pumpkin Launcher Operators/Pre-Supported/STL/STL_Halfling_Operator_B_Supported.stl",
+          "is_supported": 1,
+          "size_bytes": 22550884,
+          "submodel_id": 1711,
+          "submodel_name": "STL"
+        },
+        {
+          "file_extension": ".stl",
+          "filename": "Halfling_Operator_A.stl",
+          "id": 12959,
+          "internal_path": "1119_Halfling Pumpkin Launcher Operators/STL/Halfling_Operator_A.stl",
+          "is_supported": 0,
+          "size_bytes": 17049084,
+          "submodel_id": 1711,
+          "submodel_name": "STL"
+        },
+        {
+          "file_extension": ".stl",
+          "filename": "Halfling_Operator_B.stl",
+          "id": 12958,
+          "internal_path": "1119_Halfling Pumpkin Launcher Operators/STL/Halfling_Operator_B.stl",
+          "is_supported": 0,
+          "size_bytes": 21158684,
+          "submodel_id": 1711,
+          "submodel_name": "STL"
+        }
+      ],
+      "file_id": 585559,
+      "total_entries": 6
+    },
+    "location": null,
+    "status": 200
+  }
+}

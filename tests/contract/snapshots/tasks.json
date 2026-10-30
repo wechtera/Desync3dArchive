@@ -1,0 +1,159 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/tasks"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "active_task": null,
+      "recent_tasks": [
+        {
+          "artifacts": {},
+          "artifacts_json": "{}",
+          "completed_at": "<VOLATILE>",
+          "created_at": "<VOLATILE>",
+          "id": 28,
+          "log_output": "[15:50:29] In-Place External Library Reconciler started for 'Loot Studios' (ID: 1).\n[15:50:29] Starting zero-copy, read-only sweep for 'Loot Studios' at <DEV>/nas/Loot Studios\n[15:50:30] Fatal external indexer exception: ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint\nTraceback (most recent call last):\n  File \"<DEV>/services/task_manager.py\", line 1365, in _run_external_indexer_worker\n    result = indexer.scan_and_reconcile_library(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<DEV>/services/external_indexer.py\", line 495, in scan_and_reconcile_library\n    conn.execute(\"\"\"\nsqlite3.OperationalError: ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint\n\n",
+          "progress_label": "Indexer error: ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint",
+          "progress_pct": 1.3,
+          "result_summary": {},
+          "result_summary_json": "{}",
+          "started_at": "<VOLATILE>",
+          "status": "failed",
+          "task_type": "external_library_reconcile"
+        },
+        {
+          "artifacts": {},
+          "artifacts_json": "{}",
+          "completed_at": "<VOLATILE>",
+          "created_at": "<VOLATILE>",
+          "id": 27,
+          "log_output": "[15:49:59] In-Place External Library Reconciler started for 'Loot Studios' (ID: 1).\n[15:49:59] Starting zero-copy, read-only sweep for 'Loot Studios' at <DEV>/nas/Loot Studios\n[15:50:08] Fatal external indexer exception: ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint\nTraceback (most recent call last):\n  File \"<DEV>/services/task_manager.py\", line 1365, in _run_external_indexer_worker\n    result = indexer.scan_and_reconcile_library(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<DEV>/services/external_indexer.py\", line 495, in scan_and_reconcile_library\n    conn.execute(\"\"\"\nsqlite3.OperationalError: ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint\n\n",
+          "progress_label": "Indexer error: ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint",
+          "progress_pct": 1.3,
+          "result_summary": {},
+          "result_summary_json": "{}",
+          "started_at": "<VOLATILE>",
+          "status": "failed",
+          "task_type": "external_library_reconcile"
+        },
+        {
+          "artifacts": {},
+          "artifacts_json": "{}",
+          "completed_at": "<VOLATILE>",
+          "created_at": "<VOLATILE>",
+          "id": 26,
+          "log_output": "[13:43:34] In-Place External Library Reconciler started for 'Loot Studios' (ID: 1).\n[13:43:34] Starting zero-copy, read-only sweep for 'Loot Studios' at <DEV>/nas/Loot Studios\n[13:43:34] Found 77 release folders in library.\n[13:43:36] Rendering thumbnail with Blender for Model #2000000000 (32mm_Choker1_V2.stl)...\n[13:43:41] Rendering thumbnail with Blender for Model #2000000001 (32mm_Desk_V2.stl)...\n[13:43:43] Rendering thumbnail with Blender for Model #2000000002 (75mm_Caex_Body_V2.stl)...\n[13:43:47] Rendering thumbnail with Blender for Model #2000000005 (32mm_Telescope.stl)...\n[13:43:48] Rendering thumbnail with Blender for Model #2000000006 (32mm_MagicSphere.stl)...\n[13:43:51] Rendering thumbnail with Blender for Model #2000000008 (32mm_Ettin.stl)...\n[13:43:53] Rendering thumbnail with Blender for Model #2000000009 (32mm_Chull_FullBody_V2.stl)...\n[13:43:55] Rendering thumbnail with Blender for Model #2000000010 (32mm_Owl.stl)...\n[13:43:57] Rendering thumbnail with Blender for Model #2000000011 (32mm_Cage.stl)...\n[13:43:59] Rendering thumbnail with Blender for Model #2000000012 (32mm_Books.stl)...\n[13:44:01] Rendering thumbnail with Blender for Model #2000000013 (32mm_Bookshelf_V2.stl)...\n[13:44:02] Rendering thumbnail with Blender for Model #2000000014 (32mm_Throne.stl)...\n[13:44:06] Rendering thumbnail with Blender for Model #2000000016 (32mm_Chimer_FullBody_V2.stl)...\n[13:44:11] Rendering thumbnail with Blender for Model #2000000019 (32mm_MimicBook.stl)...\n[13:44:13] Rendering thumbnail with Blender for Model #2000000021 (32mm_MageChest.stl)...\n[13:44:15] Rendering thumbnail with Blender for Model #2000000023 (32mm_Globe_V2.stl)...\n[13:44:16] Rendering thumbnail with Blender for Model #2000000024 (32mm_Cauldron.stl)...\n[13:44:18] Fatal external indexer exception: ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint\nTraceback (most recent call last):\n  File \"<DEV>/services/task_manager.py\", line 1365, in _run_external_indexer_worker\n    result = indexer.scan_and_reconcile_library(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<DEV>/services/external_indexer.py\", line 448, in scan_and_reconcile_library\n    conn.execute(\"\"\"\nsqlite3.OperationalError: ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint\n\n",
+          "progress_label": "Indexer error: ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint",
+          "progress_pct": 1.3,
+          "result_summary": {},
+          "result_summary_json": "{}",
+          "started_at": "<VOLATILE>",
+          "status": "failed",
+          "task_type": "external_library_reconcile"
+        },
+        {
+          "artifacts": {
+            "export_path": "<DEV>/stash/2026-10-29_22-19-51_test",
+            "folder_name": "2026-10-29_22-19-51_test",
+            "manifest_path": "<DEV>/stash/2026-10-29_22-19-51_test/manifest.json",
+            "stash_id": 10,
+            "stash_name": "test",
+            "success": true,
+            "total_bytes": "<VOLATILE>",
+            "total_files": 72
+          },
+          "artifacts_json": "{\"success\": true, \"stash_id\": 10, \"stash_name\": \"test\", \"export_path\": \"<DEV>/stash/2026-10-29_22-19-51_test\", \"folder_name\": \"2026-10-29_22-19-51_test\", \"total_files\": 72, \"total_bytes\": 2299825554, \"manifest_path\": \"<DEV>/stash/2026-10-29_22-19-51_test/manifest.json\"}",
+          "completed_at": "<VOLATILE>",
+          "created_at": "<VOLATILE>",
+          "id": 25,
+          "log_output": "[22:19:51] Slicer Stash Export worker started for Stash #10 (Filter: ALL).\n[22:19:51] Starting Slicer Export for Stash #10 ('test') -> <DEV>/stash/2026-10-29_22-19-51_test\n[22:19:55] [1/5] Extracted 15 files (440220232 B)\n[22:20:10] [2/5] Extracted 42 files (1314871232 B)\n[22:20:15] [3/5] Extracted 8 files (334052522 B)\n[22:20:15] [4/5] Extracted 1 files (18933501 B)\n[22:20:17] [5/5] Extracted 6 files (191748067 B)\n[22:20:17] Export complete: 72 files (2299825554 bytes) staged to <DEV>/stash/2026-10-29_22-19-51_test\n[22:20:17] Export ready: 72 files staged to 2026-10-29_22-19-51_test\n",
+          "progress_label": "Export ready: 72 files staged to 2026-10-29_22-19-51_test",
+          "progress_pct": 100.0,
+          "result_summary": {
+            "export_path": "<DEV>/stash/2026-10-29_22-19-51_test",
+            "folder_name": "2026-10-29_22-19-51_test",
+            "manifest_path": "<DEV>/stash/2026-10-29_22-19-51_test/manifest.json",
+            "stash_id": 10,
+            "stash_name": "test",
+            "success": true,
+            "total_bytes": "<VOLATILE>",
+            "total_files": 72
+          },
+          "result_summary_json": "{\"success\": true, \"stash_id\": 10, \"stash_name\": \"test\", \"export_path\": \"<DEV>/stash/2026-10-29_22-19-51_test\", \"folder_name\": \"2026-10-29_22-19-51_test\", \"total_files\": 72, \"total_bytes\": 2299825554, \"manifest_path\": \"<DEV>/stash/2026-10-29_22-19-51_test/manifest.json\"}",
+          "started_at": "<VOLATILE>",
+          "status": "completed",
+          "task_type": "stash_export"
+        },
+        {
+          "artifacts": {
+            "errors": [],
+            "images_extracted": 33,
+            "inspected": 5,
+            "submodels_created": 9,
+            "success": true,
+            "total_archives": 5
+          },
+          "artifacts_json": "{\"success\": true, \"total_archives\": 5, \"inspected\": 5, \"submodels_created\": 9, \"images_extracted\": 33, \"errors\": []}",
+          "completed_at": "<VOLATILE>",
+          "created_at": "<VOLATILE>",
+          "id": 24,
+          "log_output": "[00:38:08] Archive Peek Backfill worker started.\n[00:38:08] Locating uninspected archives on NAS vault storage...\n[00:38:08] Found 5 uninspected archives. Starting retroactive inspection sweep...\n[00:38:08] Model #841389 ('US Letter.rar'): Indexed 1 submodels, extracted 1 renders.\n[00:38:11] Model #841389 ('Maps.rar'): Indexed 1 submodels, extracted 29 renders.\n[00:38:11] Model #841389 ('A4.rar'): Indexed 1 submodels, extracted 1 renders.\n[00:38:12] Model #841381 ('Archvillain Games - Archvillain Bestiary Vol. XXXVII - Presupported.rar'): Indexed 3 submodels, extracted 1 renders.\n[00:38:12] Model #841381 ('Archvillain Games - Archvillain Bestiary Vol. XXXVII.rar'): Indexed 3 submodels, extracted 1 renders.\n[00:38:12] Archive backfill complete: 5/5 archives processed (9 submodels indexed, 33 images extracted).\n[00:38:12] Archive Peek complete: 5/5 archives (9 submodels, 33 images)\n",
+          "progress_label": "Archive Peek complete: 5/5 archives (9 submodels, 33 images)",
+          "progress_pct": 100.0,
+          "result_summary": {
+            "errors": [],
+            "images_extracted": 33,
+            "inspected": 5,
+            "submodels_created": 9,
+            "success": true,
+            "total_archives": 5
+          },
+          "result_summary_json": "{\"success\": true, \"total_archives\": 5, \"inspected\": 5, \"submodels_created\": 9, \"images_extracted\": 33, \"errors\": []}",
+          "started_at": "<VOLATILE>",
+          "status": "completed",
+          "task_type": "archive_peek_backfill"
+        },
+        {
+          "artifacts": {
+            "errors": [
+              "Model #841385 (Archvillain Games - Archvillain Society Vol. LXIII.rar): Archive contains zero readable entries",
+              "Model #841385 (Archvillain Games - Archvillain Society Vol. LXIII - Presupported.rar): Archive contains zero readable entries"
+            ],
+            "images_extracted": 0,
+            "inspected": 0,
+            "submodels_created": 0,
+            "success": true,
+            "total_archives": 2
+          },
+          "artifacts_json": "{\"success\": true, \"total_archives\": 2, \"inspected\": 0, \"submodels_created\": 0, \"images_extracted\": 0, \"errors\": [\"Model #841385 (Archvillain Games - Archvillain Society Vol. LXIII.rar): Archive contains zero readable entries\", \"Model #841385 (Archvillain Games - Archvillain Society Vol. LXIII - Presupported.rar): Archive contains zero readable entries\"]}",
+          "completed_at": "<VOLATILE>",
+          "created_at": "<VOLATILE>",
+          "id": 23,
+          "log_output": "[00:21:03] Archive Peek Backfill worker started.\n[00:21:03] Locating uninspected archives on NAS vault storage...\n[00:21:03] Found 2 uninspected archives. Starting retroactive inspection sweep...\n[00:21:03] [WARN] Model #841385 ('Archvillain Games - Archvillain Society Vol. LXIII.rar'): Archive contains zero readable entries\n[00:21:04] [WARN] Model #841385 ('Archvillain Games - Archvillain Society Vol. LXIII - Presupported.rar'): Archive contains zero readable entries\n[00:21:04] Archive backfill complete: 0/2 archives processed (0 submodels indexed, 0 images extracted).\n[00:21:04] Archive Peek complete: 0/2 archives (0 submodels, 0 images)\n",
+          "progress_label": "Archive Peek complete: 0/2 archives (0 submodels, 0 images)",
+          "progress_pct": 100.0,
+          "result_summary": {
+            "errors": [
+              "Model #841385 (Archvillain Games - Archvillain Society Vol. LXIII.rar): Archive contains zero readable entries",
+              "Model #841385 (Archvillain Games - Archvillain Society Vol. LXIII - Presupported.rar): Archive contains zero readable entries"
+            ],
+            "images_extracted": 0,
+            "inspected": 0,
+            "submodels_created": 0,
+            "success": true,
+            "total_archives": 2
+          },
+          "result_summary_json": "{\"success\": true, \"total_archives\": 2, \"inspected\": 0, \"submodels_created\": 0, \"images_extracted\": 0, \"errors\": [\"Model #841385 (Archvillain Games - Archvillain Society Vol. LXIII.rar): Archive contains zero readable entries\", \"Model #841385 (Archvillain Games - Archvillain Society Vol. LXIII - Presupported.rar): Archive contains zero readable entries\"]}",
+          "started_at": "<VOLATILE>",
+          "status": "completed",
+          "task_type": "archive_peek_backfill"
+        }
+      ]
+    },
+    "location": null,
+    "status": 200
+  }
+}

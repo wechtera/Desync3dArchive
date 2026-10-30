@@ -1,0 +1,390 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/models/detail?id=839284"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "archive_download_url": null,
+      "description": "Join us on Tribes to stay on top of our newest releases and get our exclusive welcome pack. myminifactory.com/users/CastnPlay",
+      "designer_id": 374925,
+      "designer_name": "Cast n Play",
+      "designer_username": "<REDACTED>",
+      "download_job": {
+        "completed_at": "<VOLATILE>",
+        "downloaded_bytes": 84013116,
+        "downloaded_files": 2,
+        "enqueued_at": "<TIMESTAMP>",
+        "error_message": null,
+        "status": "completed",
+        "total_bytes": "<VOLATILE>",
+        "total_files": 2
+      },
+      "download_status": "completed",
+      "featured": 0,
+      "files": [
+        {
+          "actual_bytes": 69110054,
+          "created_at": "<VOLATILE>",
+          "download_url": "https://www.myminifactory.com/download/839284?archive_id=585559",
+          "file_id": 585559,
+          "filename": "1119_Halfling Pumpkin Launcher Operators.zip",
+          "is_downloaded": 1,
+          "local_relative_path": "Cast_n_Play/2026-08/839284_Halfling_Pumpkin_Launcher_Operators_Pre-Supported_Halfling_Chronicles_Cast_n_Play/files/Halfling Pumpkin Launcher Operators.zip",
+          "size_bytes": 69110054,
+          "storage_tier": "nas"
+        },
+        {
+          "actual_bytes": 14903062,
+          "created_at": "<VOLATILE>",
+          "download_url": "https://www.myminifactory.com/download/839284?archive_id=585567",
+          "file_id": 585567,
+          "filename": "25mm Base.zip",
+          "is_downloaded": 1,
+          "local_relative_path": "Cast_n_Play/2026-08/839284_Halfling_Pumpkin_Launcher_Operators_Pre-Supported_Halfling_Chronicles_Cast_n_Play/files/25mm Base.zip",
+          "size_bytes": 14903062,
+          "storage_tier": "nas"
+        }
+      ],
+      "id": 839284,
+      "is_bonus": 0,
+      "likes": 8,
+      "name": "Halfling Pumpkin Launcher Operators (Pre-Supported) | Halfling Chronicles | Cast n Play",
+      "parent_category": "Characters & Creatures",
+      "pre_supported": 1,
+      "price_currency": "USD",
+      "price_value": 2.99,
+      "primary_category": "Fantasy Universe",
+      "primary_image_url": "https://assets.myminifactory.com/object-images/6a92c222ba8116.96949106/images/1000X1000-CastnPlay_1119_Halfling Pumpkin Launcher Operators.jpg",
+      "published_at": "<TIMESTAMP>",
+      "raw_backup_path": "metadata/model_839284.json",
+      "raw_metadata": {
+        "archive_download_url": null,
+        "categories": {
+          "items": [
+            {
+              "id": 780,
+              "name": "Fantasy Universe",
+              "parent": {
+                "id": 785,
+                "name": "Characters & Creatures",
+                "parent": {
+                  "id": 1015,
+                  "name": "Tabletop",
+                  "parent": null,
+                  "popularity": 156,
+                  "slug": "tabletop",
+                  "url": "https://www.myminifactory.com/category/tabletop"
+                },
+                "popularity": null,
+                "slug": "tabletop-characters",
+                "url": "https://www.myminifactory.com/category/tabletop-characters"
+              },
+              "popularity": null,
+              "slug": "fantasy-universe",
+              "url": "https://www.myminifactory.com/category/fantasy-universe"
+            },
+            {
+              "id": 785,
+              "name": "Characters & Creatures",
+              "parent": {
+                "id": 1015,
+                "name": "Tabletop",
+                "parent": null,
+                "popularity": 156,
+                "slug": "tabletop",
+                "url": "https://www.myminifactory.com/category/tabletop"
+              },
+              "popularity": null,
+              "slug": "tabletop-characters",
+              "url": "https://www.myminifactory.com/category/tabletop-characters"
+            },
+            {
+              "id": 1015,
+              "name": "Tabletop",
+              "parent": null,
+              "popularity": 156,
+              "slug": "tabletop",
+              "url": "https://www.myminifactory.com/category/tabletop"
+            },
+            {
+              "id": 1306,
+              "name": "Wargaming",
+              "parent": {
+                "id": 1015,
+                "name": "Tabletop",
+                "parent": null,
+                "popularity": 156,
+                "slug": "tabletop",
+                "url": "https://www.myminifactory.com/category/tabletop"
+              },
+              "popularity": null,
+              "slug": "wargaming",
+              "url": "https://www.myminifactory.com/category/wargaming"
+            },
+            {
+              "id": 1311,
+              "name": "Fantasy",
+              "parent": {
+                "id": 1306,
+                "name": "Wargaming",
+                "parent": {
+                  "id": 1015,
+                  "name": "Tabletop",
+                  "parent": null,
+                  "popularity": 156,
+                  "slug": "tabletop",
+                  "url": "https://www.myminifactory.com/category/tabletop"
+                },
+                "popularity": null,
+                "slug": "wargaming",
+                "url": "https://www.myminifactory.com/category/wargaming"
+              },
+              "popularity": null,
+              "slug": "fantasy",
+              "url": "https://www.myminifactory.com/category/fantasy"
+            }
+          ],
+          "total_count": 5
+        },
+        "complexity": null,
+        "complexity_name": null,
+        "description": "Join us on Tribes to stay on top of our newest releases and get our exclusive welcome pack. myminifactory.com/users/CastnPlay",
+        "description_html": "<p>Join us on Tribes to stay on top of our newest releases and get our exclusive welcome pack.</p>\n<p>myminifactory.com/users/CastnPlay</p>",
+        "designer": {
+          "avatar_small_thumbnail_url": "https://images2.myminifactory.com/insecure/rt:fill-down/w:50/h:50/el:1/plain/https://dl4.myminifactory.com/public-assets/profile-images/769c4f00c188d30d366761d32058b8162432f1dd.jpg",
+          "avatar_thumbnail_url": "https://images2.myminifactory.com/insecure/rt:fill-down/w:200/h:200/el:1/plain/https://dl4.myminifactory.com/public-assets/profile-images/769c4f00c188d30d366761d32058b8162432f1dd.jpg",
+          "avatar_url": "https://images2.myminifactory.com/insecure/rt:fill-down/w:400/h:400/el:1/plain/https://dl4.myminifactory.com/public-assets/profile-images/769c4f00c188d30d366761d32058b8162432f1dd.jpg",
+          "bio": "The Best 3D Printable Minis for Tabletop Gaming. www.castnplay.com",
+          "cover_url": "https://dl4.myminifactory.com/public-assets/profile-cover/8c961b54b4b51f01d40711a431db383e54f8072b.jpg",
+          "followers": 24047,
+          "following": false,
+          "followings": 1,
+          "id": 374925,
+          "isHobbyHunterPicked": false,
+          "is_admin": false,
+          "is_campaign_manager": true,
+          "is_premium": false,
+          "is_store_manager": true,
+          "likes": 132875,
+          "name": "Cast n Play",
+          "objects": 1477,
+          "printers": {
+            "items": [],
+            "total_count": 0
+          },
+          "printing_since": {
+            "date": "<TIMESTAMP>",
+            "timezone": "UTC",
+            "timezone_type": 3
+          },
+          "profile_settings_url": "https://www.myminifactory.com/settings/profile",
+          "profile_url": "https://www.myminifactory.com/users/CastnPlay",
+          "social_networks": {
+            "items": [
+              {
+                "id": 1,
+                "name": "Facebook",
+                "value": "https://www.facebook.com/castnplayminis/"
+              },
+              {
+                "id": 12,
+                "name": "Instagram",
+                "value": "https://www.instagram.com/castnplay/"
+              },
+              {
+                "id": 14,
+                "name": "Patreon",
+                "value": "https://www.patreon.com/castnplay"
+              },
+              {
+                "id": 10,
+                "name": "Youtube",
+                "value": "https://www.youtube.com/castnplay"
+              }
+            ],
+            "total_count": 4
+          },
+          "total_collections": 47,
+          "total_objects_store": 1463,
+          "total_prints": 5,
+          "username": "<REDACTED>",
+          "views": 1769861,
+          "website": "www.castnplay.com"
+        },
+        "dimensions": null,
+        "featured": false,
+        "file_mode": 1,
+        "files": {
+          "items": [
+            {
+              "created_at": "<VOLATILE>",
+              "download_url": "https://www.myminifactory.com/download/839284?archive_id=585559",
+              "filename": "1119_Halfling Pumpkin Launcher Operators.zip",
+              "id": 585559,
+              "path": "1119_Halfling Pumpkin Launcher Operators.zip",
+              "size": "69110054"
+            },
+            {
+              "created_at": "<VOLATILE>",
+              "download_url": "https://www.myminifactory.com/download/839284?archive_id=585567",
+              "filename": "25mm Base.zip",
+              "id": 585567,
+              "path": "25mm Base.zip",
+              "size": "14903062"
+            }
+          ],
+          "total_count": 2
+        },
+        "filters": [],
+        "id": 839284,
+        "images": [
+          {
+            "id": 3752567,
+            "is_primary": true,
+            "is_print_image_selected": false,
+            "large": {
+              "height": 1000,
+              "url": "https://assets.myminifactory.com/object-images/6a92c222ba8116.96949106/images/1000X1000-CastnPlay_1119_Halfling Pumpkin Launcher Operators.jpg",
+              "width": 1000
+            },
+            "original": {
+              "height": null,
+              "url": "https://assets.myminifactory.com/object-images/6a92c222ba8116.96949106/images/CastnPlay_1119_Halfling Pumpkin Launcher Operators.jpg",
+              "width": null
+            },
+            "standard": {
+              "height": 720,
+              "url": "https://assets.myminifactory.com/object-images/6a92c222ba8116.96949106/images/720X720-CastnPlay_1119_Halfling Pumpkin Launcher Operators.jpg",
+              "width": 720
+            },
+            "thumbnail": {
+              "height": 230,
+              "url": "https://assets.myminifactory.com/object-images/6a92c222ba8116.96949106/images/230X230-CastnPlay_1119_Halfling Pumpkin Launcher Operators.jpg",
+              "width": 230
+            },
+            "tiny": {
+              "height": 70,
+              "url": "https://assets.myminifactory.com/object-images/6a92c222ba8116.96949106/images/70X70-CastnPlay_1119_Halfling Pumpkin Launcher Operators.jpg",
+              "width": 70
+            },
+            "upload_id": "6a92c4b53a3074.05298222"
+          }
+        ],
+        "is_bought": false,
+        "is_liked": false,
+        "is_saved": false,
+        "license": "MyMiniFactory Digital File Store License",
+        "licenses": [
+          {
+            "type": "share",
+            "value": false
+          },
+          {
+            "type": "attribute",
+            "value": true
+          },
+          {
+            "type": "mention",
+            "value": true
+          },
+          {
+            "type": "remix",
+            "value": false
+          },
+          {
+            "type": "commercial-use",
+            "value": false
+          },
+          {
+            "type": "exclusivity",
+            "value": true
+          },
+          {
+            "type": "store",
+            "value": true
+          }
+        ],
+        "likes": 8,
+        "listed": true,
+        "material_quantity": null,
+        "name": "Halfling Pumpkin Launcher Operators (Pre-Supported) | Halfling Chronicles | Cast n Play",
+        "price": {
+          "currency": "USD",
+          "symbol": "$",
+          "value": "2.99"
+        },
+        "printing_details": null,
+        "printing_details_html": null,
+        "prints": {
+          "items": [],
+          "total_count": 0
+        },
+        "published_at": "<TIMESTAMP>",
+        "purchase_url": "https://www.myminifactory.com/object/3d-print-halfling-pumpkin-launcher-operators-pre-supported-halfling-chronicles-cast-n-play-839284",
+        "status": 2,
+        "status_name": "approved",
+        "support": true,
+        "tags": [
+          "dungeons",
+          "fantasy",
+          "modular",
+          "play",
+          "pumpkin",
+          "rpg",
+          "terrain",
+          "launcher",
+          "swords",
+          "D&D",
+          "DnD",
+          "cast",
+          "pumpkins",
+          "halfling",
+          "castnplay",
+          "presupported",
+          "halflings",
+          "supported",
+          "operators"
+        ],
+        "url": "https://www.myminifactory.com/object/3d-print-halfling-pumpkin-launcher-operators-pre-supported-halfling-chronicles-cast-n-play-839284",
+        "user_collections": [],
+        "views": 193,
+        "visibility": 2,
+        "visibility_name": "public"
+      },
+      "release_month": "2026-08",
+      "source": "mmf",
+      "tags": [
+        "cast",
+        "castnplay",
+        "d&d",
+        "dnd",
+        "dungeons",
+        "fantasy",
+        "halfling",
+        "halflings",
+        "launcher",
+        "modular",
+        "operators",
+        "play",
+        "presupported",
+        "pumpkin",
+        "pumpkins",
+        "rpg",
+        "supported",
+        "swords",
+        "terrain"
+      ],
+      "total_files": 2,
+      "total_size_bytes": 84013116,
+      "updated_at": "<VOLATILE>",
+      "url": "https://www.myminifactory.com/object/3d-print-halfling-pumpkin-launcher-operators-pre-supported-halfling-chronicles-cast-n-play-839284",
+      "vault_path": "<DEV>/nas/vault/Cast_n_Play/2026-08/839284_Halfling_Pumpkin_Launcher_Operators_Pre-Supported_Halfling_Chronicles_Cast_n_Play",
+      "views": 193
+    },
+    "location": null,
+    "status": 200
+  }
+}

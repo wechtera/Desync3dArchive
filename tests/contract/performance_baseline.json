@@ -1,0 +1,42 @@
+{
+  "startup_ms": {
+    "median": 30.4,
+    "max": 39.2
+  },
+  "catalog_first_page": {
+    "path": "/api/models?limit=24",
+    "median_ms": 2.13,
+    "max_ms": 3.36,
+    "repeats": 15
+  },
+  "catalog_search": {
+    "path": "/api/models?limit=24&search=dragon",
+    "median_ms": 7.61,
+    "max_ms": 7.83,
+    "repeats": 15
+  },
+  "catalog_deep_page": {
+    "path": "/api/models?limit=24&offset=4800",
+    "median_ms": 3.06,
+    "max_ms": 3.35,
+    "repeats": 15
+  },
+  "metrics": {
+    "path": "/api/metrics",
+    "median_ms": 11.63,
+    "max_ms": 11.95,
+    "repeats": 15
+  },
+  "creators": {
+    "path": "/api/creators",
+    "median_ms": 2.55,
+    "max_ms": 2.76,
+    "repeats": 15
+  },
+  "releases": {
+    "path": "/api/releases?limit=24",
+    "median_ms": 1.38,
+    "max_ms": 1.49,
+    "repeats": 15
+  }
+}

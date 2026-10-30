@@ -1,0 +1,22 @@
+{
+  "request": {
+    "body": {
+      "model_ids": [
+        839284
+      ]
+    },
+    "method": "POST",
+    "path": "/api/reconcile/archive-peek"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "message": "Archive peek backfill dispatched to background pipeline worker.",
+      "success": true,
+      "task_id": 31,
+      "task_type": "archive_peek_backfill"
+    },
+    "location": null,
+    "status": 200
+  }
+}

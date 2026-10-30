@@ -1,0 +1,15 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/scrapes/download?path=scrapes/none/model_ids.txt"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Artifact not found at scrapes/none/model_ids.txt"
+    },
+    "location": null,
+    "status": 404
+  }
+}

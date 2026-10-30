@@ -1,0 +1,15 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/api/reconcile/reset"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Missing model_ids list in request body"
+    },
+    "location": null,
+    "status": 400
+  }
+}

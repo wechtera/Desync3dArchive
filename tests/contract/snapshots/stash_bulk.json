@@ -1,0 +1,30 @@
+{
+  "request": {
+    "body": {
+      "model_ids": [
+        839284
+      ]
+    },
+    "method": "POST",
+    "path": "/api/stashes/10/bulk-models"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "added": 1,
+      "added_count": 1,
+      "added_models": [
+        839284
+      ],
+      "duplicates": 0,
+      "message": "Added 1 models to 'test' (0 skipped: not in vault, 0 duplicates).",
+      "skipped_undownloaded": [],
+      "stash_id": 10,
+      "stash_name": "test",
+      "success": true,
+      "total": 1
+    },
+    "location": null,
+    "status": 200
+  }
+}

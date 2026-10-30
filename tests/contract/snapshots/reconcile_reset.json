@@ -1,0 +1,20 @@
+{
+  "request": {
+    "body": {
+      "model_ids": [
+        839284
+      ]
+    },
+    "method": "POST",
+    "path": "/api/reconcile/reset"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "reset_count": 1,
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

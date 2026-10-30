@@ -1,0 +1,26 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/metrics"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "likely_bundles": 573,
+      "supported_models": 4484,
+      "total_bonus_models": 38,
+      "total_creators": 12,
+      "total_downloaded_bytes": 72527496884,
+      "total_downloaded_models": 103,
+      "total_files": 23572,
+      "total_library_size_bytes": 8097806628517,
+      "total_models": 4886,
+      "total_partial_models": 0,
+      "total_releases": 587,
+      "total_size_bytes": 8097806628517
+    },
+    "location": null,
+    "status": 200
+  }
+}

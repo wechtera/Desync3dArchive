@@ -1,0 +1,15 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/api/settings/libraries/"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Missing required field 'path'."
+    },
+    "location": null,
+    "status": 400
+  }
+}

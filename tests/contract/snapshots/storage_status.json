@@ -1,0 +1,30 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/storage/status"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "local": {
+        "configured": true,
+        "error": null,
+        "free_bytes": "<VOLATILE>",
+        "mounted": true,
+        "path": "<DEV>/staging",
+        "total_bytes": "<VOLATILE>"
+      },
+      "nas": {
+        "configured": true,
+        "error": null,
+        "free_bytes": "<VOLATILE>",
+        "mounted": true,
+        "path": "<DEV>/nas/vault",
+        "total_bytes": "<VOLATILE>"
+      }
+    },
+    "location": null,
+    "status": 200
+  }
+}

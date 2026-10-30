@@ -1,0 +1,15 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/api/ingest/start"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "No valid model IDs found. Provide 'scrape_folder' or 'raw_ids'."
+    },
+    "location": null,
+    "status": 400
+  }
+}

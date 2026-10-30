@@ -1,0 +1,18 @@
+{
+  "request": {
+    "body": {
+      "filter": "all",
+      "sync": true
+    },
+    "method": "POST",
+    "path": "/api/stashes/10/export"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Model #863981 vault directory not found on storage: <DEV>/nas/vault/Mini_Monster_Mayhem/2026-10/863981_Bloat_Steel_pose_1_of_2"
+    },
+    "location": null,
+    "status": 400
+  }
+}

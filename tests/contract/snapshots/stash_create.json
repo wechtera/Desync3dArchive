@@ -1,0 +1,28 @@
+{
+  "request": {
+    "body": {
+      "make_active": false,
+      "name": "Contract"
+    },
+    "method": "POST",
+    "path": "/api/stashes"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "stash": {
+        "created_at": "<VOLATILE>",
+        "description": "A pile of gray",
+        "id": 11,
+        "is_active": false,
+        "item_count": 0,
+        "name": "Contract",
+        "total_bytes": "<VOLATILE>",
+        "updated_at": "<VOLATILE>"
+      },
+      "success": true
+    },
+    "location": null,
+    "status": 201
+  }
+}

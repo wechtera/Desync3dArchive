@@ -1,0 +1,18 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/reconcile/staging"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "items": [],
+      "success": true,
+      "total_bytes": "<VOLATILE>",
+      "total_items": 0
+    },
+    "location": null,
+    "status": 200
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/api/auth/disconnect"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "connected": false,
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

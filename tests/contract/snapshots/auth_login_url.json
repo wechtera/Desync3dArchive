@@ -1,0 +1,15 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/auth/login-url"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "MyMiniFactory client_id (application slug) is not configured"
+    },
+    "location": null,
+    "status": 400
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "request": {
+    "body": {
+      "layers": [],
+      "level": "INFO"
+    },
+    "method": "POST",
+    "path": "/api/settings/logging"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "config": {
+        "available_layers": [
+          "archive",
+          "http",
+          "sql",
+          "storage"
+        ],
+        "layers": [],
+        "level": "INFO"
+      },
+      "message": "Logging configuration saved: Level=INFO, Layers=[]",
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

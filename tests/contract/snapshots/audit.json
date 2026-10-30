@@ -1,0 +1,116 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/audit"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "actual_months_count": 88,
+      "avg_models": 52.4,
+      "coverage_pct": 100.0,
+      "current_month": "2026-10",
+      "designer": "Entire Library",
+      "expected_months_count": 88,
+      "has_data": true,
+      "high_outliers": [
+        {
+          "count": 101,
+          "diff": 48.6,
+          "month": "2022-12"
+        },
+        {
+          "count": 96,
+          "diff": 43.6,
+          "month": "2023-02"
+        },
+        {
+          "count": 90,
+          "diff": 37.6,
+          "month": "2023-03"
+        },
+        {
+          "count": 104,
+          "diff": 51.6,
+          "month": "2023-05"
+        },
+        {
+          "count": 86,
+          "diff": 33.6,
+          "month": "2024-05"
+        }
+      ],
+      "latest_month": "2026-10",
+      "low_outliers": [
+        {
+          "count": 18,
+          "diff": 34.4,
+          "month": "2019-08"
+        },
+        {
+          "count": 15,
+          "diff": 37.4,
+          "month": "2019-09"
+        },
+        {
+          "count": 11,
+          "diff": 41.4,
+          "month": "2019-10"
+        },
+        {
+          "count": 10,
+          "diff": 42.4,
+          "month": "2019-11"
+        },
+        {
+          "count": 13,
+          "diff": 39.4,
+          "month": "2019-12"
+        },
+        {
+          "count": 21,
+          "diff": 31.4,
+          "month": "2020-01"
+        },
+        {
+          "count": 5,
+          "diff": 47.4,
+          "month": "2020-02"
+        },
+        {
+          "count": 18,
+          "diff": 34.4,
+          "month": "2020-03"
+        },
+        {
+          "count": 12,
+          "diff": 40.4,
+          "month": "2020-04"
+        },
+        {
+          "count": 14,
+          "diff": 38.4,
+          "month": "2020-05"
+        },
+        {
+          "count": 13,
+          "diff": 39.4,
+          "month": "2020-06"
+        },
+        {
+          "count": 15,
+          "diff": 37.4,
+          "month": "2020-07"
+        }
+      ],
+      "missing_count": 0,
+      "missing_months": [],
+      "oldest_month": "2019-07",
+      "std_dev": 22.0,
+      "total_bonus_models": 38
+    },
+    "location": null,
+    "status": 200
+  }
+}

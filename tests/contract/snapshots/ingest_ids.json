@@ -1,0 +1,22 @@
+{
+  "request": {
+    "body": {
+      "raw_ids": "96576"
+    },
+    "method": "POST",
+    "path": "/api/ingest/start"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "message": "Database is already up to date. Zero new or unavailable models to process.",
+      "new": 0,
+      "skipped": 1,
+      "submitted": 1,
+      "success": true,
+      "task_id": 35
+    },
+    "location": null,
+    "status": 200
+  }
+}

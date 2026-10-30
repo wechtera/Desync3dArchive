@@ -1,0 +1,17 @@
+{
+  "request": {
+    "body": {
+      "name": ""
+    },
+    "method": "POST",
+    "path": "/api/stashes/"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Stash name cannot be empty."
+    },
+    "location": null,
+    "status": 400
+  }
+}

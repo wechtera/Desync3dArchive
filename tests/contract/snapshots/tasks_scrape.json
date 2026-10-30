@@ -1,0 +1,17 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/api/tasks/scrape"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "success": true,
+      "task_id": 34,
+      "task_type": "library_scrape"
+    },
+    "location": null,
+    "status": 200
+  }
+}

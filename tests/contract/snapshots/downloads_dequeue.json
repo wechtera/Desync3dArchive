@@ -1,0 +1,19 @@
+{
+  "request": {
+    "body": {
+      "model_ids": [
+        96576
+      ]
+    },
+    "method": "POST",
+    "path": "/api/downloads/dequeue"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

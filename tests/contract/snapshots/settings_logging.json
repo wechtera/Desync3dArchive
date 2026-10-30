@@ -1,0 +1,25 @@
+{
+  "request": {
+    "body": null,
+    "method": "GET",
+    "path": "/api/settings/logging"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "config": {
+        "available_layers": [
+          "archive",
+          "http",
+          "sql",
+          "storage"
+        ],
+        "layers": [],
+        "level": "INFO"
+      },
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

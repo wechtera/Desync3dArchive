@@ -1,0 +1,36 @@
+{
+  "request": {
+    "body": {
+      "file_id": 585559,
+      "item_type": "file",
+      "model_id": 839284
+    },
+    "method": "POST",
+    "path": "/api/stashes/10/items"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "item": {
+        "added_at": "<TIMESTAMP>",
+        "already_exists": false,
+        "archive_member_id": null,
+        "duplicate": false,
+        "file_id": 585559,
+        "id": 11,
+        "item_id": 11,
+        "item_type": "file",
+        "message": "Added to stash.",
+        "model_id": 839284,
+        "notes": "",
+        "stash_id": 10,
+        "stash_name": "test",
+        "submodel_id": null,
+        "success": true
+      },
+      "success": true
+    },
+    "location": null,
+    "status": 201
+  }
+}

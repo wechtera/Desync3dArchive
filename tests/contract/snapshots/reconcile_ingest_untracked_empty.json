@@ -1,0 +1,17 @@
+{
+  "request": {
+    "body": {
+      "items": []
+    },
+    "method": "POST",
+    "path": "/api/reconcile/ingest-untracked"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Missing items list in request body"
+    },
+    "location": null,
+    "status": 400
+  }
+}

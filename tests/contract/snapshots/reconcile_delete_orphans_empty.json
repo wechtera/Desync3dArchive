@@ -1,0 +1,17 @@
+{
+  "request": {
+    "body": {
+      "paths": []
+    },
+    "method": "POST",
+    "path": "/api/reconcile/delete-orphans"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Missing paths list in request body"
+    },
+    "location": null,
+    "status": 400
+  }
+}

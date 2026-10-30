@@ -1,0 +1,18 @@
+{
+  "request": {
+    "body": {
+      "action": "pause"
+    },
+    "method": "POST",
+    "path": "/api/downloads/control"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "action": "pause",
+      "success": true
+    },
+    "location": null,
+    "status": 200
+  }
+}

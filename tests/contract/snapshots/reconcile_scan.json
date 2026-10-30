@@ -1,0 +1,21 @@
+{
+  "request": {
+    "body": {
+      "scan_mode": "fast"
+    },
+    "method": "POST",
+    "path": "/api/reconcile/scan"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "message": "Vault reconciliation (FAST) dispatched to background pipeline worker.",
+      "scan_mode": "fast",
+      "success": true,
+      "task_id": 32,
+      "task_type": "vault_reconcile"
+    },
+    "location": null,
+    "status": 200
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "request": {
+    "body": {
+      "item_type": "model",
+      "model_id": 96576
+    },
+    "method": "POST",
+    "path": "/api/stashes/10/items"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "error": "Model #96576 must be archived in the vault before adding to a stash."
+    },
+    "location": null,
+    "status": 400
+  }
+}
