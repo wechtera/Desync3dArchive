@@ -4,7 +4,7 @@ A single-user, local-first archive and asset manager for a MyMiniFactory (MMF) 3
 
 This project replaces `scrapepage`, which stays frozen in the sibling directory for reference and rollback.
 
-**Status:** Project scaffold only. The application has not been migrated yet, so there is no app to run. Follow [docs/Archeology/README.md](docs/Archeology/README.md) for the current state.
+**Status:** The app is migrated and matches the old app's API contract. It still has the old app's security problems until Step 2, so run it only on a trusted network. Follow [docs/Archeology/README.md](docs/Archeology/README.md) for the current state.
 
 ## Prerequisites
 
@@ -40,7 +40,23 @@ npm --prefix scraper ci
 cp .env.example .env
 ```
 
-Then edit `.env` and set `DESYNC_DATA_DIR` to an absolute path outside this repository.
+Then edit `.env` and set `DESYNC_DATA_DIR` to an absolute path outside this repository. Set `DESYNC_PROTECTED_PATHS` to your NAS, staging and stash folders. The app refuses to start in development without it.
+
+To build a sanitized development copy from production:
+
+```bash
+./scripts/build_dev_data.py --protect /path/to/nas --protect /path/to/staging --protect /path/to/stash
+```
+
+## Running
+
+```bash
+uv run python -m desync_archival.api.server   # web UI at http://localhost:8080
+uv run pytest                                 # tests
+uv run python scripts/baseline/record_contract.py --compare   # compare the API to the snapshots
+```
+
+The app and the old app both use port 8080, so stop one before starting the other.
 
 ## Data
 

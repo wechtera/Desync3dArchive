@@ -11,6 +11,5 @@ Open questions that do not block the migration. Move each one out when it is ans
 | Q5 | Should the app ever support more than one user or library? | Current plan is single user, with no users table | Step 7 |
 | Q6 | Should storage move behind an adapter for SMB or S3, or stay a mounted path? | Current plan keeps a mounted NAS path | Step 5 |
 | Q7 | Which disk should production backups use? | `DESYNC_BACKUP_DIR` must not share a disk with the data directory | Step 9 |
-| Q9 | Should this process get Full Disk Access, or should the staging and stash folders move out of `~/Downloads`? | macOS blocks listing them, so manifests can't cover them, and the guard needs to resolve them | Step 0B |
 | Q10 | Should the stash export success path get a snapshot, using a real small archive in the dev vault? | Only the failure path is recorded today | Step 0B |
 | Q8 | Should the `rnd/` Blender experiments feed better previews? | They stayed in `scrapepage` and were never reviewed | Any time |

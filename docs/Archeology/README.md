@@ -29,7 +29,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 0A complete on branch `migration/00a-baseline`, waiting for approval to merge. No application code has been migrated.
+- **Phase:** Step 0B complete on branch `migration/00b-migrate`, waiting for approval to merge. The app is migrated.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -40,13 +40,15 @@ This directory tracks the state of the app, what has been done, and what comes n
 - [x] Stack proposal drafted and decisions recorded
 - [x] Migration prompts written
 - [x] New project created: git repository, README with setup steps, `.gitignore`, Python and Node dependency manifests, `tools/` linker, and these docs
+- [x] Step 0B: app, tests, frontend and scraper migrated; settings module and production guard added
 - [x] Step 0A: production manifest, sanitized dev data, throwaway old app, 105 contract snapshots, snapshot secret test, performance baseline
 - [x] Migration prompts reviewed against the code. Step 0 split into 0A, 0B and 0C, and data-safety, V6, backup and cutover gaps closed
 
 ## Next
 
-- [ ] Merge `migration/00a-baseline` after user approval
-- [ ] Run Step 0B from `MIGRATION_PROMPTS.md`
+- [ ] Merge `migration/00b-migrate` after user approval
+- [ ] Run Step 0C from `MIGRATION_PROMPTS.md`
+- [ ] Grant Visual Studio Code Full Disk Access, then restart it, so manifests can cover the staging and stash folders
 
 ## Project decisions
 
@@ -62,6 +64,29 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Commits.** Commit freely on step branches. Merge to `main` after the exit check and user approval.
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
+
+## Step 0B results
+
+**Contract:** the migrated app matched all 105 snapshots from the old app, run from an unrelated working directory against the same sanitized data. The comparison has a test proving it detects changes.
+
+**Tests:** 142 pass, which includes the 84 migrated tests with their logic unchanged.
+
+**Intended behavior changes**
+- Python source is no longer served as static files, because the static root moved to `web/`. This closes part of V4 early.
+- Saving a production path outside `APP_ENV=production` now returns 400 from `POST /api/settings`, `POST /api/storage/config` and `POST /api/settings/libraries`.
+- Relative `raw_backup_path` and `metadata_backup_path` values now resolve against the data directory.
+- `scrape.js` requires `--cookies <path>`. The task manager passes the run folder's cookie file, which is the same file it used through its working directory.
+
+**Test changes, path constants only**
+- `tests/test_server_api.py`: the database and vault now come from the settings module, and `VAULT_DB_PATH` is gone.
+- `tests/test_mesh_renderer.py`: `previews_dir` now comes from the settings module.
+- All migrated tests: imports changed mechanically to `desync_archival`.
+
+**Not verified:** a real scrape, because it needs a visible browser and MMF. The `--cookies` flag is tested only up to the point where the browser would launch.
+
+**Existing findings, reported and not fixed:** ruff reports 758 and pyright reports 27 in the migrated code. New files are clean.
+
+**Still bound to `0.0.0.0:8080`:** behavior is unchanged until Step 2, so the migrated app has the same exposure as the old one when run directly. The baseline harness binds to loopback.
 
 ## Step 0A results
 
@@ -117,4 +142,5 @@ These are single-client timings on an idle app, so they say nothing about UI sta
 - `/Volumes/STL/Loot Studios` is a registered external library, so it is production storage as well as the vault.
 - The old app was running from `scrapepage` on `0.0.0.0:8080` throughout Step 0A, started at 14:57 on 2026-10-30.
 - Blanked SQLite values survive in free pages until `VACUUM`, so the dev copy uses `secure_delete` and `VACUUM`, and its raw bytes are checked for secrets.
+- `DEFAULT_STASH_EXPORT_PATH` falls back to `~/Downloads/DESYNC_Print_Queue`, a folder separate from the configured `DESYNC_Print_Queue2`. Both are in the local protected paths.
 - At last check, `downloaded_files` was all `nas` tier and `download_jobs` had no queued jobs, only 103 completed.

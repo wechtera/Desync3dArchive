@@ -239,8 +239,9 @@ def wait_for_idle(port: int, limit: float = 60) -> None:
 
 
 class Harness:
-    def __init__(self, dest: Path):
+    def __init__(self, dest: Path, code: str = "old"):
         self.dest = dest
+        self.code = code
         self.app = dest / "old_app"
         self.process: subprocess.Popen | None = None
         self.port = 0
@@ -282,7 +283,7 @@ class Harness:
         log = open(self.dest / "baseline" / "old_app.stderr.log", "w", encoding="utf-8")
         self.process = subprocess.Popen(
             [sys.executable, str(REPO_ROOT / "scripts" / "baseline" / "old_app_server.py"),
-             "--app-root", str(self.app)],
+             "--app-root", str(self.app), "--code", self.code],
             stdout=subprocess.PIPE, stderr=log, text=True,
         )
         log.close()
@@ -300,11 +301,11 @@ class Harness:
         self.process.wait(timeout=15)
 
 
-def record_run(dest: Path, source_db: Path) -> tuple[dict[str, Any], float, list[Case]]:
+def record_run(dest: Path, code: str = "old") -> tuple[dict[str, Any], float, list[Case]]:
     cases = build_cases(dest / "library.db", dest)
     replacements = [(str(dest), "<DEV>")]
     snapshots: dict[str, Any] = {}
-    with Harness(dest) as harness:
+    with Harness(dest, code) as harness:
         for case in cases:
             print(f"  {case.method} {case.path}", flush=True)
             result = request(harness.port, case)
@@ -391,17 +392,34 @@ def production_secret_values(source_db: Path) -> list[str]:
         conn.close()
 
 
+def compare_new_app(dest: Path) -> int:
+    """Runs the migrated app through every case and compares it to the stored snapshots."""
+    current, _, _ = record_run(dest, "new")
+    differences = 0
+    for name, snapshot in current.items():
+        stored = json.loads((SNAPSHOT_DIR / f"{name}.json").read_text(encoding="utf-8"))
+        fields = differing_fields(stored, json.loads(json.dumps(snapshot)))
+        if fields:
+            differences += 1
+            print(f"different: {name}: {fields[:8]}")
+    print(f"compared {len(current)} cases, {differences} different")
+    return 1 if differences else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--compare", action="store_true", help="Compare the migrated app to the snapshots")
     parser.add_argument("--dest", type=Path, default=Path.home() / "DESYNC_Data_dev")
     parser.add_argument("--source-db", type=Path, default=REPO_ROOT.parent / "scrapepage" / "library.db")
     args = parser.parse_args()
     dest = args.dest.resolve()
+    if args.compare:
+        return compare_new_app(dest)
 
     print("Run 1")
-    first, _, cases = record_run(dest, args.source_db)
+    first, _, cases = record_run(dest)
     print("Run 2")
-    second, _, _ = record_run(dest, args.source_db)
+    second, _, _ = record_run(dest)
 
     unstable = {
         name: fields

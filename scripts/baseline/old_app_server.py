@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Runs the old app's unmodified server code from the throwaway copy, for baselines only.
+"""Runs the old or migrated server code against throwaway data, for baselines only.
+
+With --code old, it runs the old app's unmodified code from the throwaway copy. With --code new, it
+runs the migrated package with that same directory as its data directory.
 
 It differs from the old main() in four ways: it binds to loopback, it never starts download
 workers, and it refuses outside network connections and node subprocesses. It will only run from
@@ -68,9 +71,40 @@ def install_guards() -> None:
     subprocess.Popen = GuardedPopen  # type: ignore[misc]
 
 
+def run_server(server, data_root: Path, started: float) -> int:
+    server.task_manager = server.TaskManager(server.DB_PATH, data_root)
+    server.download_manager = server.DownloadManager(server.DB_PATH)
+
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), server.RequestHandler) as httpd:
+        httpd.daemon_threads = True
+        startup_ms = (time.perf_counter() - started) * 1000
+        print(f"READY {httpd.server_address[1]} {startup_ms:.1f}", flush=True)
+        httpd.serve_forever()
+    return 0
+
+
+def serve_new(app_root: Path) -> int:
+    os.environ["APP_ENV"] = "development"
+    os.environ["DESYNC_DATA_DIR"] = str(app_root)
+    # A neutral working directory shows up any code still relying on the current directory.
+    os.chdir(app_root.parent / "baseline")
+
+    started = time.perf_counter()
+    from desync_archival import settings
+    from desync_archival.api import server
+
+    conn = server.get_db()
+    server.init_persistent_tables(conn)
+    settings.check_stored_paths(conn)
+    conn.close()
+    return run_server(server, settings.data_dir(), started)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app-root", type=Path, required=True)
+    parser.add_argument("--code", choices=("old", "new"), default="old")
     args = parser.parse_args()
 
     app_root = args.app_root.resolve()
@@ -78,11 +112,14 @@ def main() -> int:
         print(f"Refusing to run from {app_root}: not a throwaway app", file=sys.stderr)
         return 2
 
+    install_guards()
+    if args.code == "new":
+        return serve_new(app_root)
+
     os.environ.pop("VAULT_DB_PATH", None)
     os.chdir(app_root)
     sys.path.insert(0, str(app_root))
     sys.path.insert(0, str(app_root / "ui"))
-    install_guards()
 
     started = time.perf_counter()
     import server  # pyright: ignore[reportMissingImports]  # the old ui/server.py
@@ -95,16 +132,7 @@ def main() -> int:
     server.init_persistent_tables(conn)
     conn.close()
 
-    server.task_manager = server.TaskManager(server.DB_PATH, server.ROOT_DIR)
-    server.download_manager = server.DownloadManager(server.DB_PATH)
-
-    socketserver.ThreadingTCPServer.allow_reuse_address = True
-    with socketserver.ThreadingTCPServer(("127.0.0.1", 0), server.RequestHandler) as httpd:
-        httpd.daemon_threads = True
-        startup_ms = (time.perf_counter() - started) * 1000
-        print(f"READY {httpd.server_address[1]} {startup_ms:.1f}", flush=True)
-        httpd.serve_forever()
-    return 0
+    return run_server(server, server.ROOT_DIR, started)
 
 
 if __name__ == "__main__":
