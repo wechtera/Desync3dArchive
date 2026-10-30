@@ -89,6 +89,8 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 **Sign-in flow:** the implicit grant stays, and is the default. The value stored in `mmf_client_secret` is an MMF API key, and MMF has no OAuth client secret for this application, so the code grant fails with HTTP 401, "Invalid client ID or secret". The user confirmed this on 2026-10-30. The old app never sent that value, so this never surfaced. The code grant and refresh handling stay in the code behind `mmf_auth_flow`, and a real login has never tested them.
 
+**API key:** not used. The user chose OAuth only, so the app sends the key nowhere.
+
 **Limitation:** with the implicit grant there are no refresh tokens. Access tokens last about 6 hours, and a 401 during a long download run still trips the circuit breaker until the user reconnects. V5 is closed for `state` checking, but the implicit grant itself remains in use.
 
 **Bugs found and fixed**
