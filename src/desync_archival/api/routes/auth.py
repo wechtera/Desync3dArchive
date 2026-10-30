@@ -1,21 +1,18 @@
-import html
-import json
+import logging
 import secrets
 import sqlite3
 import time
-from typing import Any, Optional, Union
 import urllib.parse
+from typing import Any
 
-from desync_archival.services.downloader import DownloadManager
 from desync_archival.services import auth_service
-
-MMF_AUTHORIZE_URL = "https://auth.myminifactory.com/web/authorize"
-MMF_REDIRECT_URI = "http://localhost:8080/api/auth/callback"
+from desync_archival.services.downloader import DownloadManager
+from desync_archival.services.logger import log_layer
 
 
 def handle_get_auth_status(
     conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
+    download_manager: DownloadManager | None,
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
@@ -25,32 +22,46 @@ def handle_get_auth_status(
 
 def handle_post_auth_config(
     conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
+    download_manager: DownloadManager | None,
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
     client_id = str(body.get("client_id", "")).strip()
     client_secret = str(body.get("client_secret", body.get("api_key", ""))).strip()
+    redirect_uri = str(body.get("redirect_uri", "")).strip()
 
-    if not client_id and not client_secret:
+    if not client_id and not client_secret and not redirect_uri:
         return {"error": "Either client_id or api_key must be provided"}, 400
 
     updates = {}
     if "client_id" in body:
         updates["mmf_client_id"] = client_id
-    if "client_secret" in body or "api_key" in body:
+    # A blank secret means "keep the current one", because the form never receives it.
+    if client_secret:
         updates["mmf_client_secret"] = client_secret
+    if redirect_uri:
+        parts = urllib.parse.urlsplit(redirect_uri)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            return {"error": "redirect_uri must be an http or https URL"}, 400
+        updates["mmf_redirect_uri"] = redirect_uri
 
     auth_service.set_settings(conn, updates)
     return {"success": True, "configured": True}, 200
 
 
+def state_matches(conn: sqlite3.Connection, supplied: Any) -> bool:
+    """Checks the single-use OAuth state, then clears it so it can't be replayed."""
+    stored = auth_service.get_setting(conn, "mmf_oauth_state")
+    auth_service.set_settings(conn, {"mmf_oauth_state": ""})
+    return bool(stored) and secrets.compare_digest(stored.encode(), str(supplied or "").encode())
+
+
 def handle_get_auth_login(
     conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
+    download_manager: DownloadManager | None,
     body: dict,
     params: dict,
-) -> tuple[Union[dict, str], int]:
+) -> tuple[Any, ...]:
     client_id = auth_service.get_setting(conn, "mmf_client_id")
     if not client_id:
         return {"error": "MyMiniFactory client_id (application slug) is not configured"}, 400
@@ -58,37 +69,50 @@ def handle_get_auth_login(
     state = secrets.token_hex(16)
     auth_service.set_settings(conn, {"mmf_oauth_state": state})
 
-    # Use response_type=token (MMF Implicit Grant for public apps - no secret required)
+    # The authorization code grant needs the client secret. Without one, use the implicit grant.
+    response_type = "code" if auth_service.get_setting(conn, "mmf_client_secret") else "token"
     query_params = {
         "client_id": client_id,
-        "redirect_uri": MMF_REDIRECT_URI,
-        "response_type": "token",
+        "redirect_uri": auth_service.get_redirect_uri(conn),
+        "response_type": response_type,
         "state": state,
     }
-    auth_url = f"{MMF_AUTHORIZE_URL}?{urllib.parse.urlencode(query_params)}"
+    auth_url = f"{auth_service.MMF_AUTHORIZE_URL}?{urllib.parse.urlencode(query_params)}"
 
     if params.get("redirect", ["1"])[0] == "0":
         return {"auth_url": auth_url, "state": state}, 200
 
-    return (
-        f"<!DOCTYPE html><html><head><meta http-equiv='refresh' content='0;url={auth_url}'></head>"
-        f"<body style='background:#0b0f19;color:#00c4a6;font-family:sans-serif;padding:32px;'>"
-        f"<p>Redirecting to MyMiniFactory...</p><p><a href='{auth_url}' style='color:#00c4a6;'>Click here if not redirected</a></p>"
-        f"</body></html>",
-        302,
-    )
+    return "", 302, {"Location": auth_url}
 
 
 def handle_get_auth_callback(
     conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
+    download_manager: DownloadManager | None,
     body: dict,
     params: dict,
-) -> tuple[Union[dict, str], int]:
+) -> tuple[Any, ...]:
     """
-    Serves the callback page. In an Implicit flow, MMF sends the token in the URL hash fragment (#access_token=...),
+    Handles the MMF redirect. The authorization code grant is finished here on the server.
+    In an Implicit flow, MMF sends the token in the URL hash fragment (#access_token=...),
     which browsers do not send to servers via HTTP. This script extracts the hash and POSTs it to /api/auth/token_callback.
     """
+    code = params.get("code", [""])[0]
+    if code:
+        if not state_matches(conn, params.get("state", [""])[0]):
+            return {"error": "Sign-in state did not match. Start the connection again."}, 400
+        try:
+            payload = auth_service.exchange_code(conn, code)
+        except auth_service.TokenError as e:
+            log_layer("http", logging.WARNING, f"Authorization code exchange failed: {e}")
+            return {"error": "MyMiniFactory did not accept the sign-in. Try connecting again."}, 502
+
+        username, user_id = auth_service.fetch_user_profile(str(payload["access_token"]))
+        auth_service.set_settings(conn, {
+            "mmf_user_id": str(user_id or payload.get("user_id") or ""),
+            "mmf_username": str(username or ""),
+        })
+        return "", 302, {"Location": "/#settings"}
+
     html_page = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -177,7 +201,7 @@ def handle_get_auth_callback(
 
 def handle_post_auth_token_callback(
     conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
+    download_manager: DownloadManager | None,
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
@@ -187,6 +211,9 @@ def handle_post_auth_token_callback(
 
     if not access_token:
         return {"error": "Missing access_token"}, 400
+
+    if not state_matches(conn, body.get("state")):
+        return {"error": "Sign-in state did not match. Start the connection again."}, 403
 
     username, user_id = auth_service.fetch_user_profile(access_token)
     expires_at = int(time.time()) + expires_in
@@ -209,7 +236,7 @@ def handle_post_auth_token_callback(
 
 def handle_post_auth_disconnect(
     conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
+    download_manager: DownloadManager | None,
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:

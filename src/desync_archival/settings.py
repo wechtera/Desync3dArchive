@@ -10,6 +10,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PRODUCTION = "production"
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8080
+DEFAULT_ALLOWED_HOSTS = ("localhost", "127.0.0.1", "::1")
+MAX_BODY_BYTES = 2 * 1024 * 1024
 # Stored settings that hold filesystem paths.
 PATH_SETTING_KEYS = ("download_root_path", "download_work_path", "stash_download_path", "metadata_backup_path")
 
@@ -48,6 +52,26 @@ def app_env() -> str:
 
 def is_production() -> bool:
     return app_env() == PRODUCTION
+
+
+def host() -> str:
+    _load()
+    return os.environ.get("DESYNC_HOST", "").strip() or DEFAULT_HOST
+
+
+def port() -> int:
+    _load()
+    value = os.environ.get("DESYNC_PORT", "").strip()
+    try:
+        return int(value) if value else DEFAULT_PORT
+    except ValueError as e:
+        raise SettingsError("DESYNC_PORT must be a number.") from e
+
+
+def allowed_hosts() -> set[str]:
+    _load()
+    extra = os.environ.get("DESYNC_ALLOWED_HOSTS", "")
+    return set(DEFAULT_ALLOWED_HOSTS) | {item.strip().lower() for item in extra.split(",") if item.strip()}
 
 
 def protected_paths() -> list[Path]:

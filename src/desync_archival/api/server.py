@@ -3,12 +3,12 @@ api/server.py - FastAPI app: one catch-all /api route, static assets and preview
 Supports both 2-tuple JSON responses and 3-tuple binary image streams.
 """
 
+import ipaddress
 import json
 import mimetypes
 import re
 import sqlite3
 import time
-import traceback
 import urllib.parse
 import uuid
 from collections.abc import AsyncIterator
@@ -32,10 +32,8 @@ DB_PATH = app_config.db_path().resolve()
 PREVIEWS_DIR = app_config.previews_dir().resolve()
 PREVIEWS_DIR.mkdir(parents=True, exist_ok=True)
 
-HOST = "127.0.0.1"
-PORT = 8080
 REDIRECT_STATUSES = (301, 302, 303, 307, 308)
-CORS_HEADERS = {"Access-Control-Allow-Origin": "*"}
+GENERIC_ERROR = "Internal server error"
 PREVIEW_CACHE_CONTROL = "public, max-age=604800"
 PREVIEW_CONTENT_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 SVG_PLACEHOLDER = (
@@ -85,6 +83,95 @@ class RequestLoggingMiddleware:
                 logger.info(f"{scope['method']} {scope['path']} {status['code']} {duration_ms:.1f}ms")
 
 
+class BodyTooLargeError(Exception):
+    pass
+
+
+def split_host_header(value: str) -> tuple[str, str]:
+    """Splits a Host header into a lowercase hostname and port, including IPv6 forms."""
+    parts = urllib.parse.urlsplit(f"//{value}")
+    try:
+        port = str(parts.port or "")
+    except ValueError:
+        port = ""
+    return (parts.hostname or "").lower(), port
+
+
+class SecurityMiddleware:
+    """Validates Host, Origin, content type and body size before a request reaches a route.
+
+    Host blocks DNS rebinding, and Origin blocks cross-site requests. A POST or DELETE with a body
+    must be JSON, so a cross-site form can't reach a route. An empty body has nothing to parse.
+    """
+
+    def __init__(self, app: Any):
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope)
+        refusal = self.check(request, scope)
+        if refusal:
+            status, message = refusal
+            logger.warning(f"Refused {scope['method']} {scope['path']}: {message}")
+            await JSONResponse({"error": message}, status)(scope, receive, send)
+            return
+
+        total = 0
+        started = False
+
+        async def limited_receive() -> dict:
+            nonlocal total
+            message = await receive()
+            if message["type"] == "http.request":
+                total += len(message.get("body", b""))
+                if total > app_config.MAX_BODY_BYTES:
+                    raise BodyTooLargeError
+            return message
+
+        async def tracked_send(message: dict) -> None:
+            nonlocal started
+            started = started or message["type"] == "http.response.start"
+            await send(message)
+
+        try:
+            await self.app(scope, limited_receive, tracked_send)
+        except BodyTooLargeError:
+            if not started:
+                await JSONResponse({"error": "Request body too large"}, 413)(scope, receive, send)
+
+    @staticmethod
+    def check(request: Request, scope: dict) -> tuple[int, str] | None:
+        allowed = app_config.allowed_hosts()
+        host, port = split_host_header(request.headers.get("host", ""))
+        if host not in allowed:
+            return 400, "Host not allowed"
+
+        origin = request.headers.get("origin")
+        if origin is not None:
+            parts = urllib.parse.urlsplit(origin)
+            origin_host = (parts.hostname or "").lower()
+            try:
+                origin_port = str(parts.port or "")
+            except ValueError:
+                origin_port = "invalid"
+            if parts.scheme not in ("http", "https") or origin_host != host or origin_port != port:
+                return 403, "Origin not allowed"
+
+        if scope["method"] in ("POST", "DELETE") and scope["path"].startswith("/api/"):
+            length = request.headers.get("content-length", "")
+            has_body = "transfer-encoding" in request.headers or (length not in ("", "0"))
+            content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+            if has_body and content_type != "application/json":
+                return 415, "Content-Type must be application/json"
+            if length.isdigit() and int(length) > app_config.MAX_BODY_BYTES:
+                return 413, "Request body too large"
+        return None
+
+
 def redirect_location(data: Any) -> str | None:
     if isinstance(data, str):
         match = re.search(r"url=([^'>\s]+)", data) or re.search(r"href=['\"]([^'\"]+)['\"]", data)
@@ -95,7 +182,7 @@ def redirect_location(data: Any) -> str | None:
 
 
 def build_response(data: Any, status: int = 200, extra_headers: dict | None = None) -> Response:
-    headers = {**CORS_HEADERS, **(extra_headers or {})}
+    headers = dict(extra_headers or {})
 
     if status in REDIRECT_STATUSES:
         location = redirect_location(data)
@@ -137,9 +224,9 @@ def run_route(method: str, path: str, body_data: Any, params: dict) -> Response:
             query_params=params,
             task_manager=task_manager,
         )
-    except Exception as e:
-        traceback.print_exc()
-        route_res = ({"error": f"Internal Server Error: {e}"}, 500)
+    except Exception:
+        logger.exception(f"Unhandled error in {method} {path}")
+        route_res = ({"error": GENERIC_ERROR}, 500)
     finally:
         conn.close()
 
@@ -209,6 +296,7 @@ def create_app(manage_workers: bool = True) -> FastAPI:
             await run_in_threadpool(stop_managers)
 
     app = FastAPI(title="DESYNC 3D Vault", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(SecurityMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "DELETE"])
@@ -234,16 +322,7 @@ def create_app(manage_workers: bool = True) -> FastAPI:
     def fallback(request: Request) -> Response:
         if request.method == "GET":
             return JSONResponse({"error": "Not found"}, 404)
-        if request.method == "OPTIONS":
-            return Response(
-                status_code=204,
-                headers={
-                    **CORS_HEADERS,
-                    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-                },
-            )
-        return JSONResponse({"error": "Method not allowed for static paths"}, 405, headers=CORS_HEADERS)
+        return JSONResponse({"error": "Method not allowed for static paths"}, 405)
 
     return app
 
@@ -251,9 +330,23 @@ def create_app(manage_workers: bool = True) -> FastAPI:
 app = create_app()
 
 
+def check_bind_host(host: str) -> None:
+    """Binding beyond loopback needs the login and TLS that LAN mode adds."""
+    if host == "localhost":
+        return
+    try:
+        loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        loopback = False
+    if not loopback:
+        raise app_config.SettingsError(f"Refusing to bind to {host}: only loopback is supported until LAN mode.")
+
+
 def main() -> None:
-    logger.info(f"[Server] Starting Web UI and API at http://localhost:{PORT}")
-    uvicorn.run(app, host=HOST, port=PORT, log_config=None, access_log=False, timeout_graceful_shutdown=5)
+    host, port = app_config.host(), app_config.port()
+    check_bind_host(host)
+    logger.info(f"[Server] Starting Web UI and API at http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, log_config=None, access_log=False, timeout_graceful_shutdown=5)
 
 
 if __name__ == "__main__":

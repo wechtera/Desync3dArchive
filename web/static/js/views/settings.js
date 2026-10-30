@@ -102,24 +102,22 @@ export async function loadSettings() {
     setVal('setting-stream-chunk', data.stream_chunk_size_mb || 1.0);
     setVal('setting-offload-chunk', data.offload_chunk_size_mb || 4.0);
 
-    const rawJson = data.cookies_json || '';
-    setVal('setting-cookies-raw', rawJson);
+    // The server never sends secrets, so these fields only show whether a value is set.
+    const secrets = data.secrets_configured || {};
+    const setSecret = (id, configured) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.dataset.emptyPlaceholder === undefined) el.dataset.emptyPlaceholder = el.placeholder;
+      el.value = '';
+      el.placeholder = configured ? 'Configured. Leave blank to keep it.' : el.dataset.emptyPlaceholder;
+    };
 
-    let cf = data.cookie_cf_clearance || '';
-    let php = data.cookie_phpsessid || '';
-
-    // Auto-extract from raw JSON if individual fields are empty
-    if ((!cf || !php) && rawJson) {
-      const extracted = extractTokensFromCookiesJson(rawJson);
-      if (!cf) cf = extracted.cf;
-      if (!php) php = extracted.php;
-    }
-
-    setVal('setting-cookie-cf', cf);
-    setVal('setting-cookie-php', php);
+    setSecret('setting-cookies-raw', secrets.cookies_json);
+    setSecret('setting-cookie-cf', secrets.cookie_cf_clearance || secrets.cf_clearance);
+    setSecret('setting-cookie-php', secrets.cookie_phpsessid || secrets.PHPSESSID);
 
     setVal('setting-auth-client-id', data.mmf_client_id || '');
-    setVal('setting-auth-api-key', data.mmf_client_secret || '');
+    setSecret('setting-auth-api-key', secrets.mmf_client_secret);
   } catch (err) {
     console.error('Failed to load settings:', err);
   }
@@ -523,13 +521,6 @@ export async function saveSettingsForm() {
     } catch (e) {
       return alert('Raw Browser Cookies JSON is not valid JSON format.');
     }
-  } else if (cfVal || phpVal) {
-    const synth = [];
-    if (cfVal) synth.push({ domain: ".myminifactory.com", name: "cf_clearance", path: "/", value: cfVal });
-    if (phpVal) synth.push({ domain: ".myminifactory.com", name: "PHPSESSID", path: "/", value: phpVal });
-    cleanJson = JSON.stringify(synth);
-    const rawEl = document.getElementById('setting-cookies-raw');
-    if (rawEl) rawEl.value = JSON.stringify(synth, null, 2);
   }
 
   const cfEl = document.getElementById('setting-cookie-cf');
@@ -599,10 +590,10 @@ export function saveAuthSlug() {
 
 export async function connectAccount() {
   try {
-    const res = await fetch('/api/auth/login');
+    const res = await fetch('/api/auth/login?redirect=0');
     const data = await res.json();
-    if (data.login_url) {
-      window.location.href = data.login_url;
+    if (data.auth_url) {
+      window.location.href = data.auth_url;
     } else {
       alert(data.error || 'Failed to generate MyMiniFactory login authorization URL.');
     }

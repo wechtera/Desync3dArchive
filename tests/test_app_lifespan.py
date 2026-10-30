@@ -18,7 +18,7 @@ class LifespanTests(unittest.TestCase):
     def test_managers_start_and_stop_with_the_app(self):
         manager = MagicMock()
         with patch.object(server, "DownloadManager", return_value=manager), patch.object(server, "TaskManager") as tasks, \
-                TestClient(server.create_app()) as client:
+                TestClient(server.create_app(), base_url="http://localhost") as client:
             self.assertEqual(client.get("/api/does-not-exist").status_code, 404)
             manager.start.assert_called_once()
             tasks.assert_called_once()
@@ -29,7 +29,7 @@ class LifespanTests(unittest.TestCase):
         manager = MagicMock()
         manager.start.side_effect = server.StorageUnavailableError("no storage")
         with patch.object(server, "DownloadManager", return_value=manager), patch.object(server, "TaskManager"), \
-                TestClient(server.create_app()) as client:
+                TestClient(server.create_app(), base_url="http://localhost") as client:
             self.assertEqual(client.get("/").status_code, 200)
 
     def test_workers_stay_off_when_the_caller_owns_them(self):
@@ -83,19 +83,19 @@ class RequestLoggingTests(unittest.TestCase):
         return [json.loads(line) for line in log.APP_LOG_PATH.read_text(encoding="utf-8").splitlines()]
 
     def test_request_is_logged_with_id_and_outcome(self):
-        with TestClient(server.create_app(manage_workers=False)) as client:
+        with TestClient(server.create_app(manage_workers=False), base_url="http://localhost") as client:
             client.get("/api/logging-check")
         entry = [e for e in self.entries() if "/api/logging-check" in e["message"]][-1]
         self.assertIn("404", entry["message"])
         self.assertTrue(entry["request_id"])
 
     def test_query_string_is_left_out(self):
-        with TestClient(server.create_app(manage_workers=False)) as client:
+        with TestClient(server.create_app(manage_workers=False), base_url="http://localhost") as client:
             client.get("/api/query-check?code=abc123query")
         self.assertNotIn("abc123query", log.APP_LOG_PATH.read_text(encoding="utf-8"))
 
     def test_each_request_gets_its_own_id(self):
-        with TestClient(server.create_app(manage_workers=False)) as client:
+        with TestClient(server.create_app(manage_workers=False), base_url="http://localhost") as client:
             client.get("/api/id-check")
             client.get("/api/id-check")
         ids = [e["request_id"] for e in self.entries() if "/api/id-check" in e["message"]]
@@ -104,7 +104,7 @@ class RequestLoggingTests(unittest.TestCase):
 
 class ResponseTests(unittest.TestCase):
     def setUp(self):
-        self.client = TestClient(server.create_app(manage_workers=False), follow_redirects=False)
+        self.client = TestClient(server.create_app(manage_workers=False), follow_redirects=False, base_url="http://localhost")
 
     def respond_with(self, value):
         target = "desync_archival.api.server.dispatch_route"
@@ -114,7 +114,6 @@ class ResponseTests(unittest.TestCase):
         with self.respond_with(({"a": 1}, 201)):
             response = self.client.get("/api/x")
         self.assertEqual((response.status_code, response.json()), (201, {"a": 1}))
-        self.assertEqual(response.headers["access-control-allow-origin"], "*")
 
     def test_three_tuple_bytes_with_headers(self):
         with self.respond_with((b"\xff\xd8", 200, {"Content-Type": "image/jpeg", "X-Test": "1"})):
@@ -142,19 +141,17 @@ class ResponseTests(unittest.TestCase):
 
     def test_invalid_json_body_becomes_empty_dict(self):
         with self.respond_with(({}, 200)) as dispatch:
-            self.client.post("/api/x", content=b"{not json")
+            self.client.post("/api/x", content=b"{not json", headers={"Content-Type": "application/json"})
         self.assertEqual(dispatch.call_args.kwargs["body_data"], {})
 
-    def test_route_exception_returns_500_with_error_text(self):
+    def test_route_exception_returns_generic_500(self):
         with patch("desync_archival.api.server.dispatch_route", side_effect=ValueError("boom")):
             response = self.client.get("/api/x")
         self.assertEqual(response.status_code, 500)
-        self.assertEqual(response.json(), {"error": "Internal Server Error: boom"})
+        self.assertEqual(response.json(), {"error": "Internal server error"})
 
-    def test_options_and_static_writes_match_the_old_server(self):
-        response = self.client.options("/anything")
-        self.assertEqual(response.status_code, 204)
-        self.assertIn("POST", response.headers["access-control-allow-methods"])
+    def test_static_writes_are_refused(self):
+        self.assertEqual(self.client.options("/anything").status_code, 405)
         self.assertEqual(self.client.post("/anything").status_code, 405)
         self.assertEqual(self.client.get("/anything").status_code, 404)
 

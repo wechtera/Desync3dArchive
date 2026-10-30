@@ -4,7 +4,7 @@ A single-user, local-first archive and asset manager for a MyMiniFactory (MMF) 3
 
 This project replaces `scrapepage`, which stays frozen in the sibling directory for reference and rollback.
 
-**Status:** The app runs on FastAPI, bound to loopback, and matches the old app's API contract. It still has most of the old app's security problems until Step 2. Follow [docs/Archeology/README.md](docs/Archeology/README.md) for the current state.
+**Status:** The app runs on FastAPI, bound to loopback, with the Step 2 security fixes in place. It has no login yet, so it stays loopback-only until Step 7. Follow [docs/Archeology/README.md](docs/Archeology/README.md) for the current state.
 
 ## Prerequisites
 

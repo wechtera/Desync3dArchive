@@ -5,7 +5,7 @@ Open questions that do not block the migration. Move each one out when it is ans
 | # | Question | Why it matters | Needed by |
 |---|---|---|---|
 | Q1 | What OS will the LAN server run? | Affects path defaults and how the app runs as a service | Step 7 |
-| Q2 | Does MMF return a refresh token for this client, and does a new login revoke older tokens? | The docs say refresh tokens are optional. This decides how long download runs can last | Step 2 |
+| Q2 | Does MMF return a refresh token for this client, and does it rotate them in practice? | The docs don't say a new login revokes older tokens, and they say rotation MAY happen. The user's real sign-in answers this | Step 2 |
 | Q3 | Should rejected options be revisited now that development cost carries little weight? | SQLAlchemy and React or Svelte were rejected partly because of rewrite size. Their other objections still stand: no capability this app needs, and the risk of losing behavior | Step 3 for data access, Step 6 for frontend |
 | Q4 | Is the MMF terms of service position on automated library access settled? | The scraper stays because no API replaces it, but stealth browsing may breach the terms | Step 5 |
 | Q5 | Should the app ever support more than one user or library? | Current plan is single user, with no users table | Step 7 |

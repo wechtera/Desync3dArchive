@@ -18,6 +18,7 @@ import logging
 import os
 from pathlib import Path
 from desync_archival import settings as app_config
+from desync_archival.services import auth_service
 import re
 import shutil
 import sqlite3
@@ -894,7 +895,7 @@ class TaskManager:
             except Exception:
                 pass
 
-        auth_token = self._get_setting("mmf_access_token", "").strip()
+        auth_token = auth_service.refresh_tokens(self.db_path).strip()
         active_headers = dict(base_headers)
         if auth_token:
             active_headers["Authorization"] = f"Bearer {auth_token}"
@@ -956,6 +957,15 @@ class TaskManager:
                                     await asyncio.sleep(0.15)
                                     break
                                 elif res.status_code == 401:
+                                    rejected = client.headers.get("Authorization", "").removeprefix("Bearer ")
+                                    if rejected:
+                                        replacement = await asyncio.to_thread(
+                                            auth_service.refresh_tokens, self.db_path, rejected
+                                        )
+                                        if replacement and replacement != rejected:
+                                            client.headers["Authorization"] = f"Bearer {replacement}"
+                                            self._append_log(task_id, "MMF access token refreshed after a 401.")
+                                            continue
                                     self._append_log(task_id, "MMF Bearer token expired (401). Falling back to session cookies.")
                                     log_layer("http", logging.WARNING, f"Model #{model_id}: 401 Bearer expired. Removing Authorization header.")
                                     if "Authorization" in client.headers:

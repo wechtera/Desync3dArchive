@@ -9,6 +9,7 @@ import logging
 import os
 from pathlib import Path
 from desync_archival import settings as app_config
+from desync_archival.services import auth_service
 import shutil
 import sqlite3
 import threading
@@ -166,6 +167,33 @@ def _extract_tokens_from_json(raw_json: str) -> Tuple[str, str]:
 # Core Settings Endpoints
 # -------------------------------------------------------------------------
 
+def _has_settings_table(conn: sqlite3.Connection) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_settings';"
+    ).fetchone() is not None
+
+
+def _merge_cookies(existing_json: str, updates: dict[str, str | None]) -> str:
+    """Replaces named cookies in the stored list and keeps every other cookie."""
+    try:
+        parsed = json.loads(existing_json) if existing_json else []
+    except ValueError:
+        parsed = []
+    if isinstance(parsed, dict):
+        parsed = [{"name": str(k), "value": str(v)} for k, v in parsed.items()]
+    cookies = [c for c in parsed if isinstance(c, dict)]
+
+    for name, value in updates.items():
+        if not value:
+            continue
+        match = next((c for c in cookies if str(c.get("name", "")).lower() == name.lower()), None)
+        if match:
+            match["value"] = value
+        else:
+            cookies.append({"domain": ".myminifactory.com", "name": name, "path": "/", "value": value})
+    return json.dumps(cookies)
+
+
 def handle_get_settings(
     conn: sqlite3.Connection,
     download_manager: Any = None,
@@ -183,12 +211,10 @@ def handle_get_settings(
     if not settings.get("stash_download_path"):
         settings["stash_download_path"] = DEFAULT_STASH_EXPORT_PATH
 
-    if settings.get("cookies_json"):
-        cf_extracted, php_extracted = _extract_tokens_from_json(settings["cookies_json"])
-        if cf_extracted and not settings.get("cookie_cf_clearance"):
-            settings["cookie_cf_clearance"] = cf_extracted
-        if php_extracted and not settings.get("cookie_phpsessid"):
-            settings["cookie_phpsessid"] = php_extracted
+    # Secrets stay on the server. The UI only learns whether each one is set.
+    configured = {key: bool(settings.pop(key, "")) for key in auth_service.SECRET_SETTING_KEYS}
+    settings.pop("mmf_token_expires_at", None)
+    settings["secrets_configured"] = configured
 
     return settings, 200
 
@@ -209,12 +235,24 @@ def handle_post_settings(
             except app_config.ProductionPathError as e:
                 return {"error": str(e)}, 400
 
+    for key in auth_service.AUTH_MANAGED_KEYS:
+        data.pop(key, None)
+    # Forms never receive secrets, so a blank field means "keep the current value".
+    for key in auth_service.SECRET_SETTING_KEYS:
+        if key in data and not str(data[key] or "").strip():
+            del data[key]
+
     if data.get("cookies_json"):
         cf_extracted, php_extracted = _extract_tokens_from_json(data["cookies_json"])
         if cf_extracted and not data.get("cookie_cf_clearance"):
             data["cookie_cf_clearance"] = cf_extracted
         if php_extracted and not data.get("cookie_phpsessid"):
             data["cookie_phpsessid"] = php_extracted
+    elif data.get("cookie_cf_clearance") or data.get("cookie_phpsessid"):
+        data["cookies_json"] = _merge_cookies(
+            auth_service.get_setting(conn, "cookies_json") if _has_settings_table(conn) else "",
+            {"cf_clearance": data.get("cookie_cf_clearance"), "PHPSESSID": data.get("cookie_phpsessid")},
+        )
 
     with conn:
         conn.execute("""

@@ -101,7 +101,7 @@ The work happens in `DESYNC_3D_Archival`, a new repository beside `scrapepage`. 
 | 4 | Routers replace the catch-all one domain at a time, read-only first: catalog, downloads, stashes, settings, tasks, reconcile |
 | 5 | Job runner and external tool adapters, with extraction hardening and scheduled backups |
 | 6 | Frontend ported view by view to `lit-html` |
-| 7 | LAN mode (login and TLS) |
+| 7 | LAN mode (login and TLS), which also finishes V1 |
 | 8 | Measured performance work, including FTS5 |
 | 9 | Secrets, then rehearsed cutover on a copy, then production cutover to `~/DESYNC_Data` |
 

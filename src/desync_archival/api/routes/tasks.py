@@ -33,6 +33,9 @@ def handle_get_scrapes_list(
     return {"scrapes": scrapes}, 200
 
 
+SCRAPE_ARTIFACT_PATTERN = re.compile(r"scrapes/[^/]+/(model_ids\.txt|models\.json)")
+
+
 def handle_get_scrapes_download(
     conn: sqlite3.Connection,
     download_manager: Any,
@@ -43,6 +46,8 @@ def handle_get_scrapes_download(
     rel_path = params.get("path", [""])[0].strip()
     if not rel_path or ".." in rel_path or rel_path.startswith("/") or rel_path.startswith("\\"):
         return {"error": "Invalid or unsafe path"}, 400
+    if not SCRAPE_ARTIFACT_PATTERN.fullmatch(rel_path):
+        return {"error": "Only scrape model_ids.txt and models.json can be downloaded"}, 403
 
     root_dir = task_manager.root_dir if task_manager else app_config.data_dir()
     target = (root_dir / rel_path).resolve()

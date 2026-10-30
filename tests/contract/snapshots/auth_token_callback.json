@@ -10,12 +10,9 @@
   "response": {
     "content_type": "application/json",
     "json": {
-      "expires_at": "<VOLATILE>",
-      "success": true,
-      "user_id": "",
-      "username": ""
+      "error": "Sign-in state did not match. Start the connection again."
     },
     "location": null,
-    "status": 200
+    "status": 403
   }
 }

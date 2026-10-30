@@ -406,13 +406,30 @@ def compare_new_app(dest: Path) -> int:
     return 1 if differences else 0
 
 
+def accept_changes(dest: Path, names: list[str]) -> int:
+    """Rewrites only the named snapshots, for changes listed as intended."""
+    current, _, _ = record_run(dest, "new")
+    for name in names:
+        snapshot = current[name]
+        if find_leaks(snapshot["response"]):
+            print(f"refused: {name} holds a secret or signed URL")
+            return 1
+        text = json.dumps(snapshot, indent=2, sort_keys=True) + "\n"
+        (SNAPSHOT_DIR / f"{name}.json").write_text(text, encoding="utf-8")
+    print(f"accepted {len(names)} snapshots")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compare", action="store_true", help="Compare the migrated app to the snapshots")
+    parser.add_argument("--accept", nargs="+", default=[], help="Rewrite only these snapshots from the current app")
     parser.add_argument("--dest", type=Path, default=Path.home() / "DESYNC_Data_dev")
     parser.add_argument("--source-db", type=Path, default=REPO_ROOT.parent / "scrapepage" / "library.db")
     args = parser.parse_args()
     dest = args.dest.resolve()
+    if args.accept:
+        return accept_changes(dest, args.accept)
     if args.compare:
         return compare_new_app(dest)
 

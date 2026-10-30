@@ -29,7 +29,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 1 complete on branch `migration/01-fastapi-shell`, waiting for approval to merge.
+- **Phase:** Step 2 code complete on branch `migration/02-security`. Its exit check still needs the user's real sign-in and test download.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -40,6 +40,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 - [x] Stack proposal drafted and decisions recorded
 - [x] Migration prompts written
 - [x] New project created: git repository, README with setup steps, `.gitignore`, Python and Node dependency manifests, `tools/` linker, and these docs
+- [x] Step 2 code: V1 to V5 and V9 closed, code grant with refresh, token rotation handling, no secrets in responses
 - [x] Step 1: FastAPI and uvicorn shell, lifespan, threadpool, request logging, Playwright smoke test
 - [x] Step 0C: `check.sh`, per-file lint and type ratchet, JSON log lines, request and job IDs, redaction
 - [x] Step 0B: app, tests, frontend and scraper migrated; settings module and production guard added
@@ -48,8 +49,10 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Next
 
-- [ ] Merge `migration/01-fastapi-shell` after user approval
-- [ ] Run Step 2 from `MIGRATION_PROMPTS.md`
+- [ ] User: real MMF sign-in on the dev instance, then a test download to the dev vault
+- [ ] Merge `migration/02-security` after that and user approval
+- [ ] Ask the user before removing the implicit flow
+- [ ] Run Step 3 from `MIGRATION_PROMPTS.md`
 
 ## Project decisions
 
@@ -65,6 +68,46 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Commits.** Commit freely on step branches. Merge to `main` after the exit check and user approval.
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
+
+## Step 2 results
+
+**Exit check:** Not complete. `check.sh` passes, but the user still has to confirm a real sign-in and a test download. Nothing in this step has been tried against the live MMF service. Token handling is tested with mocks built from MMF's documentation.
+
+**Findings closed, each with tests in `tests/test_security.py`**
+- **V1:** host and port are settings, defaulting to `127.0.0.1:8080`. The app refuses to bind beyond loopback until LAN mode exists. There is still no login, so V1 fully closes in Step 7.
+- **V2:** `GET /api/settings` and `GET /api/auth/status` return no secrets, only configured flags. `/api/scrapes/download` serves only `scrapes/<run>/model_ids.txt` and `models.json`.
+- **V3:** wildcard CORS is gone. Host and Origin are validated on every request, and a POST or DELETE with a body must be JSON.
+- **V4:** only `web/index.html` and `web/static/` are served, with no directory listings.
+- **V5:** the authorization code grant, with single-use verified `state`, server-side exchange and stored refresh tokens. `state` is also required on the implicit callback.
+- **V9:** login is a real 302 with an encoded URL.
+- **V11, in part:** bodies are limited to 2 MiB, and unhandled exceptions return a generic error and log the detail.
+
+**MMF token findings**
+- MMF's documentation does not say a new login revokes older tokens.
+- It does say a refresh MAY issue a new refresh token and MAY revoke the old one. So refresh tokens are treated as single-use: one refresh at a time under a lock, and the replacement is saved at once.
+- The documented example shows access tokens lasting 3,600 seconds under the code grant, compared with 21,600 under the implicit grant. Tokens refresh 5 minutes before expiry and on a 401.
+- A 401 on the download stream, on metadata requests and during ingest now refreshes once and retries before the old failure path runs. 403 still trips the circuit breaker at once.
+
+**Implicit flow:** it stays available, and is used when no client secret is set. Remove it only after the user has tested the new flow and approved.
+
+**Bugs found and fixed**
+- The Connect button could never work: it called `fetch` on a cross-site redirect and read a `login_url` field the API has never returned.
+- Replacing one cookie in Settings used to rebuild `cookies_json` from that one value, dropping the rest. The server now merges it into the stored list.
+
+**Decision:** a POST or DELETE with an empty body needs no Content-Type. It has nothing to parse, and Origin checks still cover it. The frontend sends several of these.
+
+**Contract snapshots changed, all intended, 3 of 105**
+- `settings`: secret keys removed, `secrets_configured` added.
+- `auth_status`: `client_secret` removed, and `secret_configured`, `refresh_configured`, `flow` and `redirect_uri` added.
+- `auth_token_callback`: now 403 without a matching `state`.
+
+**Existing tests changed because they asserted unsafe behavior**
+- `test_server_api.py::test_auth_config_persistence`: expected the client secret back from the status route.
+- `test_server_api.py::test_auth_login_url_generation`: expected the implicit grant even with a secret set.
+- `test_server_api.py::test_auth_token_callback_success`: sent no `state`.
+- `test_app_lifespan.py`: wildcard CORS, OPTIONS preflight and exception text in 500 responses are gone, and test clients now use an allowed host.
+
+**Still open:** 20 route error paths return exception text, for example `Failed reading artifact: {e}`. Step 4 replaces those handlers, and the work is logged as E12.
 
 ## Step 1 results
 
@@ -179,4 +222,5 @@ These are single-client timings on an idle app, so they say nothing about UI sta
 - The old app was running from `scrapepage` on `0.0.0.0:8080` throughout Step 0A, started at 14:57 on 2026-10-30.
 - Blanked SQLite values survive in free pages until `VACUUM`, so the dev copy uses `secure_delete` and `VACUUM`, and its raw bytes are checked for secrets.
 - `DEFAULT_STASH_EXPORT_PATH` falls back to `~/Downloads/DESYNC_Print_Queue`, a folder separate from the configured `DESYNC_Print_Queue2`. Both are in the local protected paths.
+- MMF's OAuth documentation is `oauth2-instructions.md` in `MyMiniFactory/api-documentation`.
 - At last check, `downloaded_files` was all `nas` tier and `download_jobs` had no queued jobs, only 103 completed.

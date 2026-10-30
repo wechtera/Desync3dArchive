@@ -10,7 +10,10 @@ import json
 import logging
 import os
 from pathlib import Path
+from contextlib import contextmanager
+
 from desync_archival import settings as app_config
+from desync_archival.services import auth_service
 import re
 import shutil
 import sqlite3
@@ -312,9 +315,11 @@ class DownloadManager:
         log_layer("http", logging.DEBUG, f"Starting stream for Model #{model_id} File #{file_id} ({cleaned_filename})")
 
         for attempt in range(1, 3):
+            if self.access_token and "Authorization" in req_headers:
+                req_headers["Authorization"] = f"Bearer {self.access_token}"
             try:
                 with httpx.Client(headers=req_headers, cookies=cookies, follow_redirects=True, timeout=30.0) as client:
-                    with client.stream("GET", download_url) as resp:
+                    with self._auth_stream(client, download_url) as resp:
                         if resp.status_code in (401, 403):
                             reason = (
                                 f"OAuth authentication failure (HTTP {resp.status_code})"
@@ -450,6 +455,30 @@ class DownloadManager:
                     conn.execute("ALTER TABLE downloaded_files ADD COLUMN vault_path TEXT;")
                 if "sha256" not in df_cols:
                     conn.execute("ALTER TABLE downloaded_files ADD COLUMN sha256 TEXT;")
+
+    def _refresh_token_if_expiring(self):
+        """Replaces the access token shortly before it expires."""
+        if self.access_token:
+            self.access_token = auth_service.refresh_tokens(self.db_path) or self.access_token
+
+    def _recover_from_401(self) -> bool:
+        """Tries to replace a rejected token. False means the caller's failure path applies."""
+        if not self.access_token:
+            return False
+        rejected = self.access_token
+        self.access_token = auth_service.refresh_tokens(self.db_path, stale_token=rejected) or rejected
+        return self.access_token != rejected
+
+    @contextmanager
+    def _auth_stream(self, client: httpx.Client, url: str):
+        """Streams a URL, refreshing the token and retrying once after a 401."""
+        with client.stream("GET", url) as resp:
+            if resp.status_code != 401 or not self._recover_from_401():
+                yield resp
+                return
+        client.headers["Authorization"] = f"Bearer {self.access_token}"
+        with client.stream("GET", url) as resp:
+            yield resp
 
     def _load_settings(self):
         with self._get_db() as conn:
@@ -629,6 +658,8 @@ class DownloadManager:
     def _process_download_to_staging(self, worker_id: int, job: sqlite3.Row, work_dir: Path):
         model_id = job["model_id"]
 
+        self._refresh_token_if_expiring()
+
         # --- PRE-DOWNLOAD OAUTH REFRESH: Fetch live authenticated URLs ---
         if self.access_token:
             api_url = f"https://www.myminifactory.com/api/v2/objects/{model_id}"
@@ -641,6 +672,9 @@ class DownloadManager:
                 log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Refreshing live OAuth download URLs for Model #{model_id}")
                 with httpx.Client(timeout=15.0, follow_redirects=True) as meta_client:
                     resp = meta_client.get(api_url, headers=auth_headers)
+                    if resp.status_code == 401 and self._recover_from_401():
+                        auth_headers["Authorization"] = f"Bearer {self.access_token}"
+                        resp = meta_client.get(api_url, headers=auth_headers)
                     if resp.status_code == 200:
                         obj_data = resp.json()
                         archive_dl_url = obj_data.get("archive_download_url")
@@ -744,7 +778,7 @@ class DownloadManager:
 
                 log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Streaming {cleaned_name} ({expected_size} B) for Model #{model_id}")
 
-                with client.stream("GET", dl_url) as resp:
+                with self._auth_stream(client, dl_url) as resp:
                     if resp.status_code in (401, 403):
                         reason = (
                             f"MyMiniFactory OAuth token expired (HTTP {resp.status_code}) on file {filename}"
