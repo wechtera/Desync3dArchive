@@ -52,7 +52,7 @@ To build a sanitized development copy from production:
 
 ```bash
 uv run python -m desync_archival.api.server   # web UI at http://localhost:8080
-uv run pytest                                 # tests
+./check.sh                                    # tests, lint, types and dependency audits
 uv run python scripts/baseline/record_contract.py --compare   # compare the API to the snapshots
 ```
 

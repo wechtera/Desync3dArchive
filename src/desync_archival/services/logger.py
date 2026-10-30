@@ -3,10 +3,17 @@ services/logger.py - Centralized rotating file logger with dynamic subsystem lay
 """
 
 from collections import deque
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from datetime import UTC, datetime
+from functools import wraps
+import json
 import logging
 from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
+import re
 from desync_archival import settings as app_config
 import sqlite3
 import threading
@@ -28,6 +35,75 @@ _CONFIG_LOCK = threading.Lock()
 # Dynamic runtime configuration (defaults)
 _ACTIVE_LEVEL = logging.INFO
 _ACTIVE_LAYERS: Set[str] = set()
+
+# Correlation IDs. Threads start with an empty context, so workers must bind their own.
+_REQUEST_ID: ContextVar[str | None] = ContextVar("request_id", default=None)
+_JOB_ID: ContextVar[str | None] = ContextVar("job_id", default=None)
+
+REDACTED = "[REDACTED]"
+_SECRET_NAMES = (
+    r"access_token|refresh_token|id_token|client_secret|api_key|password|authorization|"
+    r"cookies_json|cookie_cf_clearance|cookie_phpsessid|cf_clearance|phpsessid|mmf_access_token|"
+    r"mmf_refresh_token|mmf_client_secret|token|secret|set-cookie|cookie"
+)
+_SIGNED_QUERY_NAMES = (
+    r"x-amz-[a-z0-9-]+|signature|sig|token|access_token|expires|policy|key-pair-id|"
+    r"awsaccesskeyid|googleaccessid"
+)
+_REDACTION_RULES = (
+    # Authorization: Bearer abc
+    (re.compile(r"\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE), rf"\1 {REDACTED}"),
+    # "name": "value" and 'name': 'value', including JSON-encoded values
+    (
+        re.compile(rf"""(["'])({_SECRET_NAMES})\1(\s*:\s*)(["'])(?:\\.|(?!\4).)*\4""", re.IGNORECASE),
+        rf"\1\2\1\3\4{REDACTED}\4",
+    ),
+    # name=value and name: value, up to a separator. Includes Cookie headers.
+    (
+        re.compile(rf"\b({_SECRET_NAMES})(\s*[=:]\s*)(?![\[\"'{{])[^\s&;,'\"]+", re.IGNORECASE),
+        rf"\1\2{REDACTED}",
+    ),
+    # Signed URL query values
+    (
+        re.compile(rf"([?&](?:{_SIGNED_QUERY_NAMES})=)[^&\s'\"]+", re.IGNORECASE),
+        rf"\1{REDACTED}",
+    ),
+    # cookie: a=1; b=2 leaves later pairs behind the first redaction
+    (re.compile(r"(\[REDACTED\])(?:;\s*[\w.-]+=[^;\s'\"]+)+"), r"\1"),
+)
+
+
+def redact(text: str) -> str:
+    """Removes tokens, cookies and signed URL values from text."""
+    for pattern, replacement in _REDACTION_RULES:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+@contextmanager
+def log_context(request_id: str | None = None, job_id: str | None = None) -> Iterator[None]:
+    """Binds correlation IDs to every log line emitted inside the block."""
+    tokens = []
+    if request_id is not None:
+        tokens.append((_REQUEST_ID, _REQUEST_ID.set(request_id)))
+    if job_id is not None:
+        tokens.append((_JOB_ID, _JOB_ID.set(job_id)))
+    try:
+        yield
+    finally:
+        for variable, token in reversed(tokens):
+            variable.reset(token)
+
+
+def job_logged(job_id_for: Callable[..., Any]) -> Callable:
+    """Decorates a worker so its log lines carry the job ID built from its arguments."""
+    def decorator(function: Callable) -> Callable:
+        @wraps(function)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            with log_context(job_id=str(job_id_for(*args, **kwargs))):
+                return function(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 class UILogHandler(logging.Handler):
@@ -67,6 +143,36 @@ class LayerFilter(logging.Filter):
         return True
 
 
+class RedactionFilter(logging.Filter):
+    """Redacts each record once, before any handler sees it."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = redact(record.getMessage())
+        record.args = None
+        if record.exc_info:
+            record.exc_text = redact(logging.Formatter().formatException(record.exc_info))
+            record.exc_info = None
+        if record.stack_info:
+            record.stack_info = redact(record.stack_info)
+        return True
+
+
+class JsonLinesFormatter(logging.Formatter):
+    """Writes each record as one JSON object."""
+    def format(self, record: logging.LogRecord) -> str:
+        entry: dict[str, Any] = {
+            "ts": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
+            "level": record.levelname,
+            "thread": record.threadName,
+            "message": record.getMessage(),
+            "layer": getattr(record, "layer", None),
+            "request_id": _REQUEST_ID.get(),
+            "job_id": _JOB_ID.get(),
+        }
+        if record.exc_text:
+            entry["exception"] = record.exc_text
+        return json.dumps(entry, ensure_ascii=False)
+
+
 def setup_logger() -> logging.Logger:
     logger = logging.getLogger("vault")
     if logger.handlers:
@@ -74,6 +180,7 @@ def setup_logger() -> logging.Logger:
 
     logger.setLevel(logging.DEBUG)  # Root level stays DEBUG; handlers filter
     logger.addFilter(LayerFilter())
+    logger.addFilter(RedactionFilter())
 
     formatter = logging.Formatter(
         fmt="%(asctime)s | %(levelname)-7s | %(threadName)-12s | %(message)s",
@@ -87,7 +194,7 @@ def setup_logger() -> logging.Logger:
         backupCount=3,
         encoding="utf-8",
     )
-    file_handler.setFormatter(formatter)
+    file_handler.setFormatter(JsonLinesFormatter())
     file_handler.setLevel(logging.DEBUG)
     logger.addHandler(file_handler)
 

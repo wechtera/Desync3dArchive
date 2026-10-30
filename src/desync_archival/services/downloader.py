@@ -23,7 +23,7 @@ import zipfile
 
 import httpx
 
-from desync_archival.services.logger import log_layer, logger
+from desync_archival.services.logger import job_logged, log_layer, logger
 
 try:
     from .archive_peeker import ArchivePeeker
@@ -625,6 +625,7 @@ class DownloadManager:
 
             time.sleep(self.batch_cooldown_seconds)
 
+    @job_logged(lambda self, worker_id, job, *_: f"download-{job['id']}")
     def _process_download_to_staging(self, worker_id: int, job: sqlite3.Row, work_dir: Path):
         model_id = job["model_id"]
 
@@ -976,6 +977,7 @@ class DownloadManager:
             meta["tags"] = [r[0] for r in conn.execute("SELECT tag FROM model_tags WHERE model_id = ?", (model_id,)).fetchall()]
             target_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
+    @job_logged(lambda self, worker_id, job, *_: f"offload-{job['id']}")
     def _process_nas_offload(self, worker_id: int, job: sqlite3.Row, nas_root: Path):
         model_id = job["model_id"]
         clean_creator = sanitize_segment(job["creator_name"])

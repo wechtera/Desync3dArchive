@@ -15,6 +15,7 @@ import socketserver
 import sqlite3
 import sys
 from typing import Any, Optional
+import uuid
 import urllib.parse
 
 
@@ -22,6 +23,7 @@ import urllib.parse
 from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
 from desync_archival.api.routes import dispatch_route
 from desync_archival.services.db import get_db_connection, init_persistent_tables
+from desync_archival.services.logger import log_context
 from desync_archival.services.task_manager import TaskManager
 
 DB_PATH = app_config.db_path().resolve()
@@ -127,6 +129,10 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(500, f"Error streaming preview file: {e}")
 
     def _handle_api_route(self, method: str, path: str, body_data: dict, params: dict):
+        with log_context(request_id=uuid.uuid4().hex):
+            self._dispatch_api_route(method, path, body_data, params)
+
+    def _dispatch_api_route(self, method: str, path: str, body_data: dict, params: dict):
         conn = get_db()
         try:
             route_res = dispatch_route(

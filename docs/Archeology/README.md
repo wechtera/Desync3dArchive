@@ -29,7 +29,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 0B complete on branch `migration/00b-migrate`, waiting for approval to merge. The app is migrated.
+- **Phase:** Step 0C complete on branch `migration/00c-tooling`, stacked on `migration/00b-migrate`. Both wait for the production manifest check and approval to merge.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -40,14 +40,15 @@ This directory tracks the state of the app, what has been done, and what comes n
 - [x] Stack proposal drafted and decisions recorded
 - [x] Migration prompts written
 - [x] New project created: git repository, README with setup steps, `.gitignore`, Python and Node dependency manifests, `tools/` linker, and these docs
+- [x] Step 0C: `check.sh`, per-file lint and type ratchet, JSON log lines, request and job IDs, redaction
 - [x] Step 0B: app, tests, frontend and scraper migrated; settings module and production guard added
 - [x] Step 0A: production manifest, sanitized dev data, throwaway old app, 105 contract snapshots, snapshot secret test, performance baseline
 - [x] Migration prompts reviewed against the code. Step 0 split into 0A, 0B and 0C, and data-safety, V6, backup and cutover gaps closed
 
 ## Next
 
-- [ ] Merge `migration/00b-migrate` after user approval
-- [ ] Run Step 0C from `MIGRATION_PROMPTS.md`
+- [ ] Merge `migration/00b-migrate` and `migration/00c-tooling` after the manifest check and user approval
+- [ ] Run Step 1 from `MIGRATION_PROMPTS.md`
 - [ ] Grant Visual Studio Code Full Disk Access, then restart it, so manifests can cover the staging and stash folders
 
 ## Project decisions
@@ -64,6 +65,20 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Commits.** Commit freely on step branches. Merge to `main` after the exit check and user approval.
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
+
+## Step 0C results
+
+**`check.sh`:** runs pytest, the snapshot secret test, ruff, pyright, pip-audit and `npm audit --audit-level=moderate`. All pass. The contract still matches all 105 snapshots after the logging change.
+
+**Ratchet:** `quality_baseline.json` holds existing findings per file: ruff 752 and pyright 29, across `src`, `tests` and `scripts`. A new finding fails `check.sh`. The 2 extra pyright findings compared with Step 0B are `bpy` imports in the Blender script, which came from adding `scripts` to the scope.
+
+**Logging**
+- `logs/vault.log` now holds one JSON object per line, so old text lines and new JSON lines will sit in one file after cutover if `logs/` is copied.
+- The UI log viewer and console keep the readable text format.
+- `request_id` is set per API request. `job_id` is set in the task workers and in download and offload processing.
+- Redaction runs on the logger, so the file, UI buffer and console all get redacted text, including exception text.
+- `pipeline_tasks.log_output` is a separate store and is not redacted by this filter.
+- The audit reports 3 low-severity issues in the `deepmerge` chain under the stealth plugin. They are below the moderate threshold.
 
 ## Step 0B results
 

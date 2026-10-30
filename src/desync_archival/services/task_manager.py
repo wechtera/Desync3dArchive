@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from desync_archival.services.logger import log_layer, logger
+from desync_archival.services.logger import job_logged, log_layer, logger
 from .reconciler import VaultReconciler
 
 
@@ -629,6 +629,7 @@ class TaskManager:
             return {"error": res.get("error")}, 409
         return res, 200
 
+    @job_logged(lambda self, task_id, *_: f"task-{task_id}")
     def _run_scrape_worker(self, task_id: int):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         target_dir = self.scrapes_dir / f"scrape_{timestamp}"
@@ -822,6 +823,7 @@ class TaskManager:
             "new": len(pending_ids),
         }, 200
 
+    @job_logged(lambda self, task_id, *_: f"task-{task_id}")
     def _run_ingest_worker(
         self,
         task_id: int,
@@ -1148,6 +1150,7 @@ class TaskManager:
     # 3. Vault Reconciliation Pipeline Worker
     # -------------------------------------------------------------------------
 
+    @job_logged(lambda self, task_id, *_: f"task-{task_id}")
     def _run_reconcile_worker(self, task_id: int, params: Dict[str, Any]):
         scan_mode = params.get("scan_mode", "fast")
         self._append_log(task_id, f"Vault Reconciliation worker started (Mode: {scan_mode.upper()}).")
@@ -1221,6 +1224,7 @@ class TaskManager:
     # 4. Retroactive Archive Peeker Sweep Worker
     # -------------------------------------------------------------------------
 
+    @job_logged(lambda self, task_id, *_: f"task-{task_id}")
     def _run_archive_peek_worker(self, task_id: int, params: Dict[str, Any]):
         self._append_log(task_id, "Archive Peek Backfill worker started.")
 
@@ -1294,6 +1298,7 @@ class TaskManager:
     # 5. Background Slicer Stash Export Worker
     # -------------------------------------------------------------------------
 
+    @job_logged(lambda self, task_id, *_: f"task-{task_id}")
     def _run_stash_export_worker(self, task_id: int, params: Dict[str, Any]):
         stash_id = int(params.get("stash_id", 0))
         filter_mode = str(params.get("filter_mode", "all"))
@@ -1346,6 +1351,7 @@ class TaskManager:
     # 6. In-Place External Library Reconciler Worker (Phase 8)
     # -------------------------------------------------------------------------
 
+    @job_logged(lambda self, task_id, *_: f"task-{task_id}")
     def _run_external_indexer_worker(self, task_id: int, params: Dict[str, Any]):
         library_id = params.get("library_id")
         lib_name = params.get("library_name") or f"Library #{library_id}"
