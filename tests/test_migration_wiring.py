@@ -3,16 +3,15 @@
 import http.client
 import json
 import shutil
-import socketserver
 import subprocess
 import sys
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 
+from live_server import LiveServer
+
 from desync_archival import settings
-from desync_archival.api import server
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts" / "baseline"))
@@ -37,17 +36,15 @@ class ContractComparisonTests(unittest.TestCase):
 class StaticServingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.httpd = socketserver.ThreadingTCPServer(("127.0.0.1", 0), server.RequestHandler)
-        cls.httpd.daemon_threads = True
-        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
+        cls.live_server = LiveServer()
+        cls.port = cls.live_server.start()
 
     @classmethod
     def tearDownClass(cls):
-        cls.httpd.shutdown()
-        cls.httpd.server_close()
+        cls.live_server.stop()
 
     def _get(self, path):
-        connection = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=10)
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         try:
             connection.request("GET", path)
             response = connection.getresponse()

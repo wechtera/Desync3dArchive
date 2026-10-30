@@ -84,13 +84,15 @@ def run_server(server, data_root: Path, started: float) -> int:
     return 0
 
 
-def serve_new(app_root: Path) -> int:
+def serve_new(app_root: Path, port: int) -> int:
     os.environ["APP_ENV"] = "development"
     os.environ["DESYNC_DATA_DIR"] = str(app_root)
     # A neutral working directory shows up any code still relying on the current directory.
     os.chdir(app_root.parent / "baseline")
 
     started = time.perf_counter()
+    import uvicorn
+
     from desync_archival import settings
     from desync_archival.api import server
 
@@ -98,13 +100,26 @@ def serve_new(app_root: Path) -> int:
     server.init_persistent_tables(conn)
     settings.check_stored_paths(conn)
     conn.close()
-    return run_server(server, settings.data_dir(), started)
+
+    server.task_manager = server.TaskManager(server.DB_PATH, settings.data_dir())
+    server.download_manager = server.DownloadManager(server.DB_PATH)
+
+    sock = socket.socket()
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("127.0.0.1", port))
+    config = uvicorn.Config(server.create_app(manage_workers=False), log_config=None, access_log=False)
+    uvicorn_server = uvicorn.Server(config)
+    startup_ms = (time.perf_counter() - started) * 1000
+    print(f"READY {sock.getsockname()[1]} {startup_ms:.1f}", flush=True)
+    uvicorn_server.run(sockets=[sock])
+    return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app-root", type=Path, required=True)
     parser.add_argument("--code", choices=("old", "new"), default="old")
+    parser.add_argument("--port", type=int, default=0)
     args = parser.parse_args()
 
     app_root = args.app_root.resolve()
@@ -114,7 +129,7 @@ def main() -> int:
 
     install_guards()
     if args.code == "new":
-        return serve_new(app_root)
+        return serve_new(app_root, args.port)
 
     os.environ.pop("VAULT_DB_PATH", None)
     os.chdir(app_root)

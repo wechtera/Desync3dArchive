@@ -4,7 +4,7 @@ A single-user, local-first archive and asset manager for a MyMiniFactory (MMF) 3
 
 This project replaces `scrapepage`, which stays frozen in the sibling directory for reference and rollback.
 
-**Status:** The app is migrated and matches the old app's API contract. It still has the old app's security problems until Step 2, so run it only on a trusted network. Follow [docs/Archeology/README.md](docs/Archeology/README.md) for the current state.
+**Status:** The app runs on FastAPI, bound to loopback, and matches the old app's API contract. It still has most of the old app's security problems until Step 2. Follow [docs/Archeology/README.md](docs/Archeology/README.md) for the current state.
 
 ## Prerequisites
 
@@ -33,10 +33,14 @@ npm --prefix scraper ci
 # 3. Optional: a Chromium fallback for when the scraper can't launch Chrome
 (cd scraper && npx playwright install chromium)
 
-# 4. External tools: symlinks local installs into tools/, and moves nothing
+# 4. Browser tests: installs Playwright and its Chromium build
+npm --prefix tests/e2e ci
+(cd tests/e2e && npx playwright install chromium)
+
+# 5. External tools: symlinks local installs into tools/, and moves nothing
 ./scripts/link_tools.sh
 
-# 5. Local configuration
+# 6. Local configuration
 cp .env.example .env
 ```
 
@@ -56,7 +60,7 @@ uv run python -m desync_archival.api.server   # web UI at http://localhost:8080
 uv run python scripts/baseline/record_contract.py --compare   # compare the API to the snapshots
 ```
 
-The app and the old app both use port 8080, so stop one before starting the other.
+The app and the old app both use port 8080, so stop one before starting the other. `check.sh` runs the browser tests when `~/DESYNC_Data_dev` exists, and they use port 8099.
 
 ## Data
 
@@ -85,7 +89,7 @@ DESYNC_3D_Archival/
   scraper/      scrape.js and its Node dependencies
   migrations/   Numbered .sql schema files
   scripts/      Project scripts, including link_tools.sh
-  tests/        Test suite
+  tests/        Test suite, with browser tests in tests/e2e/
   tools/        Symlinks to local installations only
   docs/
     Archeology/ Migration state, findings, stack decisions and step prompts

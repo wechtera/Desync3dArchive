@@ -11,7 +11,7 @@
     "src/desync_archival/api/routes/stashes.py": 59,
     "src/desync_archival/api/routes/storage.py": 5,
     "src/desync_archival/api/routes/tasks.py": 16,
-    "src/desync_archival/api/server.py": 12,
+    "src/desync_archival/api/server.py": 2,
     "src/desync_archival/services/__init__.py": 3,
     "src/desync_archival/services/analytics.py": 3,
     "src/desync_archival/services/archive_peeker.py": 65,

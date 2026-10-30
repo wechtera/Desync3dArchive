@@ -29,7 +29,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 0C complete on branch `migration/00c-tooling`, stacked on `migration/00b-migrate`. Both passed their exit checks and wait for approval to merge.
+- **Phase:** Step 1 complete on branch `migration/01-fastapi-shell`, waiting for approval to merge.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -40,6 +40,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 - [x] Stack proposal drafted and decisions recorded
 - [x] Migration prompts written
 - [x] New project created: git repository, README with setup steps, `.gitignore`, Python and Node dependency manifests, `tools/` linker, and these docs
+- [x] Step 1: FastAPI and uvicorn shell, lifespan, threadpool, request logging, Playwright smoke test
 - [x] Step 0C: `check.sh`, per-file lint and type ratchet, JSON log lines, request and job IDs, redaction
 - [x] Step 0B: app, tests, frontend and scraper migrated; settings module and production guard added
 - [x] Step 0A: production manifest, sanitized dev data, throwaway old app, 105 contract snapshots, snapshot secret test, performance baseline
@@ -47,8 +48,8 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Next
 
-- [ ] Merge `migration/00b-migrate` and `migration/00c-tooling` after the manifest check and user approval
-- [ ] Run Step 1 from `MIGRATION_PROMPTS.md`
+- [ ] Merge `migration/01-fastapi-shell` after user approval
+- [ ] Run Step 2 from `MIGRATION_PROMPTS.md`
 
 ## Project decisions
 
@@ -64,6 +65,25 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Commits.** Commit freely on step branches. Merge to `main` after the exit check and user approval.
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
+
+## Step 1 results
+
+**Exit check:** Passed. All 105 contract snapshots match on FastAPI. The Playwright smoke test passes 12 of 12 against a sanitized dev copy, with every request outside the local app blocked. `check.sh` passes.
+
+**Real start:** the app started through `main()` on dev data with live workers, bound to loopback, served the UI and API, and logged a clean shutdown on SIGTERM.
+
+**Dependencies added:** `fastapi` and `uvicorn`, from the accepted stack, and `@playwright/test` in `tests/e2e/`, kept apart from the scraper's dependencies.
+
+**Intended behavior changes**
+- The server binds to `127.0.0.1:8080`. Step 2 still has to make host and port settings.
+- Directory listings under `/static/` are gone, and `/static/` paths that are not files return 404. HEAD on `/api` routes is not served.
+- Static files use ETag caching from Starlette, not the `http.server` `Last-Modified` handling.
+- Every request is logged at INFO with method, path, status and duration. Query strings are left out, because they can carry credentials, and uvicorn's own access log is off.
+- Unknown GET paths return JSON 404 instead of an HTML 404.
+
+**Kept on purpose until Step 2:** wildcard CORS, Python exception text in 500 responses, and no Host or Origin checks.
+
+**Test wiring changes:** `tests/test_server_api.py` and `tests/test_migration_wiring.py` now start the app through `tests/live_server.py`. Test logic is unchanged. The logs folder's size is now marked volatile in the `settings_directories` snapshot, because it depends on how much has been logged.
 
 ## Step 0C results
 
@@ -119,7 +139,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 - `stash_export` records its failure path only, because the dev vault holds placeholders for one model.
 - `render_stl` records a 500 caused by a placeholder that is not a real zip. That is the old behavior for an invalid archive.
 - Scrape and ingest record failure paths, because the harness blocks `node` and outside network use.
-- `/previews` and static files are not `/api` routes, so they are not covered.
+- `/previews` and static files are not `/api` routes, so snapshots do not cover them. `tests/test_app_lifespan.py` and the Playwright test do.
 
 **Performance baseline** (sanitized copy of 4,893 models, 15 repeats, on this Mac, in `tests/contract/performance_baseline.json`)
 

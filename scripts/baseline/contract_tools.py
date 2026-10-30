@@ -87,7 +87,11 @@ def normalize_text(text: str, replacements: list[tuple[str, str]]) -> str:
 
 def normalize(value: Any, replacements: list[tuple[str, str]], key: str = "") -> Any:
     if isinstance(value, dict):
-        return {k: normalize(v, replacements, str(k)) for k, v in value.items()}
+        result = {k: normalize(v, replacements, str(k)) for k, v in value.items()}
+        # The logs folder grows with every request, so its size says nothing about the API.
+        if result.get("key") == "logs" and "size_bytes" in result:
+            result.update(file_count=VOLATILE, size_bytes=VOLATILE, formatted_size=VOLATILE)
+        return result
     if isinstance(value, list):
         return [normalize(item, replacements, key) for item in value]
     if key in VOLATILE_KEYS and value is not None:

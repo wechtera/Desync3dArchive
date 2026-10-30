@@ -7,7 +7,6 @@ import http.client
 import json
 import os
 from pathlib import Path
-import socketserver
 import sys
 import tempfile
 import threading
@@ -18,6 +17,7 @@ from unittest.mock import MagicMock, patch
 import zipfile
 
 from desync_archival import settings as app_config
+from live_server import LiveServer
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 UI_DIR = ROOT_DIR / "ui"
@@ -40,8 +40,7 @@ assert server.DB_PATH != (ROOT_DIR / "library.db").resolve(), (
 
 
 class TestServerAPI(unittest.TestCase):
-    httpd: Optional[socketserver.ThreadingTCPServer] = None
-    server_thread: Optional[threading.Thread] = None
+    live_server: Optional[LiveServer] = None
     host: str = "127.0.0.1"
     port: int = 0
 
@@ -213,17 +212,13 @@ class TestServerAPI(unittest.TestCase):
             """)
         conn.close()
 
-        cls.httpd = socketserver.ThreadingTCPServer((cls.host, 0), server.RequestHandler)
-        cls.port = cls.httpd.server_address[1]
-        cls.server_thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
-        cls.server_thread.start()
-        time.sleep(0.05)
+        cls.live_server = LiveServer(cls.host)
+        cls.port = cls.live_server.start()
 
     @classmethod
     def tearDownClass(cls):
-        if cls.httpd:
-            cls.httpd.shutdown()
-            cls.httpd.server_close()
+        if cls.live_server:
+            cls.live_server.stop()
 
     def _get_db(self):
         return get_db_connection(TEST_DB_PATH)

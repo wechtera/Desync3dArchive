@@ -12,4 +12,6 @@ Ideas found during migration. None are scheduled unless a step or the user asks 
 | E7 | Rename the misleading "Running database startup analytics" startup message | It runs schema setup, not analytics | Step 0A |
 | E8 | Measure catalog search under concurrent download writes before adding FTS5 | Search is 7.6 ms on an idle app, so the idle gain may be small | Step 0A |
 | E9 | Redact task log text before it is written to `pipeline_tasks.log_output` | Task logs bypass the logger's redaction filter | Step 0C |
+| E10 | Replace `fastapi.testclient`'s deprecated `httpx` client path when Starlette's replacement settles | Clears a test warning | Step 1 |
+| E11 | Lower the INFO log volume from UI status polling | Polling fills `vault.log` faster now that every request is logged | Step 1 |
 | E6 | Accessibility and responsive layout review | Neither has been assessed | Archeology section 9 |

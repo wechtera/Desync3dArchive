@@ -21,6 +21,13 @@ run "snapshot secrets" uv run pytest -q tests/test_contract_snapshots.py
 run "ruff and pyright" uv run python scripts/quality_ratchet.py
 run "pip-audit" uv run pip-audit --skip-editable
 run "npm audit" npm --prefix scraper audit --audit-level=moderate
+run "npm audit e2e" npm --prefix tests/e2e audit --audit-level=moderate
+
+if [ -f "${DESYNC_DEV_DIR:-$HOME/DESYNC_Data_dev}/old_app/library.db" ]; then
+  run "playwright" npm --prefix tests/e2e test
+else
+  echo "--- playwright skipped: build dev data first with scripts/build_dev_data.py"
+fi
 
 echo
 if [ "${#failures[@]}" -gt 0 ]; then

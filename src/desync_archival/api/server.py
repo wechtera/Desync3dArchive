@@ -1,265 +1,259 @@
 """
-api/server.py - Local HTTP/JSON server, static assets router, and preview streaming engine.
+api/server.py - FastAPI app: one catch-all /api route, static assets and preview streaming.
 Supports both 2-tuple JSON responses and 3-tuple binary image streams.
 """
 
-import http.server
 import json
 import mimetypes
-import os
-from pathlib import Path
-from desync_archival import settings as app_config
 import re
-import shutil
-import socketserver
 import sqlite3
-import sys
-from typing import Any, Optional
-import uuid
+import time
+import traceback
 import urllib.parse
+import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from typing import Any
 
+import uvicorn
+from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
-
-from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
+from desync_archival import settings as app_config
 from desync_archival.api.routes import dispatch_route
 from desync_archival.services.db import get_db_connection, init_persistent_tables
-from desync_archival.services.logger import log_context
+from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
+from desync_archival.services.logger import log_context, logger
 from desync_archival.services.task_manager import TaskManager
 
 DB_PATH = app_config.db_path().resolve()
 PREVIEWS_DIR = app_config.previews_dir().resolve()
 PREVIEWS_DIR.mkdir(parents=True, exist_ok=True)
 
-download_manager: Optional[DownloadManager] = None
-task_manager: Optional[TaskManager] = None
+HOST = "127.0.0.1"
+PORT = 8080
+REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+CORS_HEADERS = {"Access-Control-Allow-Origin": "*"}
+PREVIEW_CACHE_CONTROL = "public, max-age=604800"
+PREVIEW_CONTENT_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+SVG_PLACEHOLDER = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200" viewBox="0 0 300 200">'
+    b'<rect width="300" height="200" fill="#1e1e24"/>'
+    b'<path d="M110 130 L150 80 L190 130 Z" fill="#3a3a46"/>'
+    b'<circle cx="130" cy="75" r="12" fill="#505060"/>'
+    b'<text x="150" y="160" font-family="sans-serif" font-size="12" fill="#888899" text-anchor="middle">No Preview Available</text>'
+    b"</svg>"
+)
+
+download_manager: DownloadManager | None = None
+task_manager: TaskManager | None = None
 
 
 def get_db() -> sqlite3.Connection:
     return get_db_connection(DB_PATH)
 
 
-class RequestHandler(http.server.SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=str(app_config.web_dir()), **kwargs)
+class RequestLoggingMiddleware:
+    """Gives every request a request_id and logs its outcome.
 
-    def _send_response(self, data: Any, status: int = 200, extra_headers: Optional[dict] = None):
-        self.send_response(status)
-        self.send_header("Access-Control-Allow-Origin", "*")
+    Query strings are left out of the log line because they can carry credentials.
+    """
 
-        headers_dict = dict(extra_headers or {})
+    def __init__(self, app: Any):
+        self.app = app
 
-        # Emit Location header on HTTP redirects (e.g. OAuth /api/auth/login)
-        if status in (301, 302, 303, 307, 308):
-            redirect_url = None
-            if isinstance(data, str):
-                match = re.search(r"url=([^'>\s]+)", data) or re.search(r"href=['\"]([^'\"]+)['\"]", data)
-                if match:
-                    redirect_url = match.group(1)
-            elif isinstance(data, dict):
-                redirect_url = data.get("location") or data.get("auth_url") or data.get("url")
-            if redirect_url:
-                headers_dict["Location"] = redirect_url
-
-        if isinstance(data, (bytes, bytearray)):
-            payload = bytes(data)
-            if "Content-Type" not in headers_dict:
-                headers_dict["Content-Type"] = "application/octet-stream"
-        elif isinstance(data, str):
-            payload = data.encode("utf-8")
-            if "Content-Type" not in headers_dict:
-                headers_dict["Content-Type"] = "text/html; charset=utf-8"
-        else:
-            payload = json.dumps(data).encode("utf-8")
-            if "Content-Type" not in headers_dict:
-                headers_dict["Content-Type"] = "application/json"
-
-        headers_dict["Content-Length"] = str(len(payload))
-
-        for h_key, h_val in headers_dict.items():
-            self.send_header(h_key, h_val)
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def _serve_preview_file(self, rel_path: str):
-        clean_rel = urllib.parse.unquote(rel_path.lstrip("/"))
-        file_path = (app_config.data_dir() / clean_rel).resolve()
-
-        if not file_path.is_relative_to(PREVIEWS_DIR) or not file_path.exists() or not file_path.is_file():
-            # Graceful SVG placeholder fallback instead of breaking 404 JSON
-            svg_placeholder = (
-                '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200" viewBox="0 0 300 200">'
-                '<rect width="300" height="200" fill="#1e1e24"/>'
-                '<path d="M110 130 L150 80 L190 130 Z" fill="#3a3a46"/>'
-                '<circle cx="130" cy="75" r="12" fill="#505060"/>'
-                '<text x="150" y="160" font-family="sans-serif" font-size="12" fill="#888899" text-anchor="middle">No Preview Available</text>'
-                '</svg>'
-            ).encode("utf-8")
-
-            self.send_response(200)
-            self.send_header("Content-Type", "image/svg+xml")
-            self.send_header("Content-Length", str(len(svg_placeholder)))
-            self.send_header("Cache-Control", "no-cache")
-            self.end_headers()
-            self.wfile.write(svg_placeholder)
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
             return
 
-        content_type, _ = mimetypes.guess_type(str(file_path))
-        if not content_type:
-            ext = file_path.suffix.lower()
-            if ext in (".jpg", ".jpeg"):
-                content_type = "image/jpeg"
-            elif ext == ".png":
-                content_type = "image/png"
-            elif ext == ".webp":
-                content_type = "image/webp"
-            else:
-                content_type = "application/octet-stream"
+        status = {"code": 500}
 
-        try:
-            stat_res = file_path.stat()
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(stat_res.st_size))
-            self.send_header("Cache-Control", "public, max-age=604800")
-            self.end_headers()
+        async def capture_status(message: dict) -> None:
+            if message["type"] == "http.response.start":
+                status["code"] = message["status"]
+            await send(message)
 
-            with open(file_path, "rb") as f:
-                shutil.copyfileobj(f, self.wfile)
-        except Exception as e:
-            self.send_error(500, f"Error streaming preview file: {e}")
-
-    def _handle_api_route(self, method: str, path: str, body_data: dict, params: dict):
+        started = time.perf_counter()
         with log_context(request_id=uuid.uuid4().hex):
-            self._dispatch_api_route(method, path, body_data, params)
-
-    def _dispatch_api_route(self, method: str, path: str, body_data: dict, params: dict):
-        conn = get_db()
-        try:
-            route_res = dispatch_route(
-                method=method,
-                path=path,
-                conn=conn,
-                download_manager=download_manager,
-                body_data=body_data,
-                query_params=params,
-                task_manager=task_manager,
-            )
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            route_res = ({"error": f"Internal Server Error: {e}"}, 500)
-        finally:
-            conn.close()
-
-        if isinstance(route_res, tuple) and len(route_res) == 3:
-            data, status, extra_headers = route_res
-            self._send_response(data, status, extra_headers=extra_headers)
-        elif isinstance(route_res, tuple) and len(route_res) == 2:
-            data, status = route_res
-            self._send_response(data, status)
-        elif route_res is not None:
-            self._send_response(route_res, 200)
-
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-        params = urllib.parse.parse_qs(parsed.query)
-
-        if path.startswith("/previews/"):
-            self._serve_preview_file(path)
-            return
-
-        if path.startswith("/api/"):
-            self._handle_api_route("GET", path, {}, params)
-            return
-
-        if path == "/":
-            self.path = "/index.html"
-        super().do_GET()
-
-    def do_POST(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-        params = urllib.parse.parse_qs(parsed.query)
-
-        content_length = int(self.headers.get("Content-Length", 0))
-        body_bytes = self.rfile.read(content_length) if content_length > 0 else b""
-        body_data = {}
-        if body_bytes:
             try:
-                body_data = json.loads(body_bytes.decode("utf-8"))
-            except Exception:
-                body_data = {}
-
-        if path.startswith("/api/"):
-            self._handle_api_route("POST", path, body_data, params)
-            return
-
-        self._send_response({"error": "Method not allowed for static paths"}, 405)
-
-    def do_DELETE(self):
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-        params = urllib.parse.parse_qs(parsed.query)
-
-        content_length = int(self.headers.get("Content-Length", 0))
-        body_bytes = self.rfile.read(content_length) if content_length > 0 else b""
-        body_data = {}
-        if body_bytes:
-            try:
-                body_data = json.loads(body_bytes.decode("utf-8"))
-            except Exception:
-                body_data = {}
-
-        if path.startswith("/api/"):
-            self._handle_api_route("DELETE", path, body_data, params)
-            return
-
-        self._send_response({"error": "Method not allowed for static paths"}, 405)
-
-    def do_OPTIONS(self):
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.end_headers()
-
-    def log_message(self, format, *args):
-        sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), format % args))
+                await self.app(scope, receive, capture_status)
+            finally:
+                duration_ms = (time.perf_counter() - started) * 1000
+                logger.info(f"{scope['method']} {scope['path']} {status['code']} {duration_ms:.1f}ms")
 
 
-def main():
-    global download_manager, task_manager
-    print("[Server] Running database startup analytics...")
+def redirect_location(data: Any) -> str | None:
+    if isinstance(data, str):
+        match = re.search(r"url=([^'>\s]+)", data) or re.search(r"href=['\"]([^'\"]+)['\"]", data)
+        return match.group(1) if match else None
+    if isinstance(data, dict):
+        return data.get("location") or data.get("auth_url") or data.get("url")
+    return None
+
+
+def build_response(data: Any, status: int = 200, extra_headers: dict | None = None) -> Response:
+    headers = {**CORS_HEADERS, **(extra_headers or {})}
+
+    if status in REDIRECT_STATUSES:
+        location = redirect_location(data)
+        if location:
+            headers["Location"] = location
+
+    if isinstance(data, (bytes, bytearray)):
+        payload = bytes(data)
+        headers.setdefault("Content-Type", "application/octet-stream")
+    elif isinstance(data, str):
+        payload = data.encode("utf-8")
+        headers.setdefault("Content-Type", "text/html; charset=utf-8")
+    else:
+        payload = json.dumps(data).encode("utf-8")
+        headers.setdefault("Content-Type", "application/json")
+
+    return Response(content=payload, status_code=status, headers=headers)
+
+
+def parse_body(body_bytes: bytes) -> Any:
+    if not body_bytes:
+        return {}
+    try:
+        return json.loads(body_bytes.decode("utf-8"))
+    except Exception:
+        return {}
+
+
+def run_route(method: str, path: str, body_data: Any, params: dict) -> Response:
+    """Blocking route work, run in the threadpool."""
     conn = get_db()
-    init_persistent_tables(conn)
-    app_config.check_stored_paths(conn)
-    conn.close()
+    try:
+        route_res = dispatch_route(
+            method=method,
+            path=path,
+            conn=conn,
+            download_manager=download_manager,
+            body_data=body_data,
+            query_params=params,
+            task_manager=task_manager,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        route_res = ({"error": f"Internal Server Error: {e}"}, 500)
+    finally:
+        conn.close()
 
-    print("[Server] Initializing background TaskManager...")
+    if isinstance(route_res, tuple) and len(route_res) == 3:
+        data, status, extra_headers = route_res
+        return build_response(data, status, extra_headers=extra_headers)
+    if isinstance(route_res, tuple) and len(route_res) == 2:
+        data, status = route_res
+        return build_response(data, status)
+    return build_response(route_res, 200)
+
+
+def serve_preview(rel_path: str) -> Response:
+    file_path = (app_config.data_dir() / "previews" / rel_path).resolve()
+
+    if not file_path.is_relative_to(PREVIEWS_DIR) or not file_path.is_file():
+        # Graceful SVG placeholder fallback instead of breaking 404 JSON
+        return Response(
+            content=SVG_PLACEHOLDER,
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    content_type, _ = mimetypes.guess_type(str(file_path))
+    if not content_type:
+        content_type = PREVIEW_CONTENT_TYPES.get(file_path.suffix.lower(), "application/octet-stream")
+
+    return FileResponse(file_path, media_type=content_type, headers={"Cache-Control": PREVIEW_CACHE_CONTROL})
+
+
+def start_managers() -> None:
+    global download_manager, task_manager
+    logger.info("[Server] Initializing database schema")
+    conn = get_db()
+    try:
+        init_persistent_tables(conn)
+        app_config.check_stored_paths(conn)
+    finally:
+        conn.close()
+
+    logger.info("[Server] Initializing background TaskManager")
     task_manager = TaskManager(DB_PATH, app_config.data_dir())
 
-    print("[Server] Initializing background DownloadManager...")
+    logger.info("[Server] Initializing background DownloadManager")
     download_manager = DownloadManager(DB_PATH)
     try:
         download_manager.start()
     except StorageUnavailableError as e:
-        print(f"[Server] Storage notice: {e} (Workers will start once storage is configured via UI)")
+        logger.warning(f"[Server] Storage notice: {e} (Workers will start once storage is configured via UI)")
 
-    host = "0.0.0.0"
-    port = 8080
 
-    socketserver.ThreadingTCPServer.allow_reuse_address = True
-    with socketserver.ThreadingTCPServer((host, port), RequestHandler) as httpd:
-        httpd.daemon_threads = True
-        print(f"[Server] Starting Web UI & API at http://localhost:{port}")
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\n[Server] Shutting down...")
-            if download_manager:
-                download_manager.stop()
-            httpd.server_close()
+def stop_managers() -> None:
+    logger.info("[Server] Shutting down")
+    if download_manager:
+        download_manager.stop()
+
+
+def create_app(manage_workers: bool = True) -> FastAPI:
+    """Builds the app. With manage_workers off, the caller owns the background managers."""
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if manage_workers:
+            await run_in_threadpool(start_managers)
+        yield
+        if manage_workers:
+            await run_in_threadpool(stop_managers)
+
+    app = FastAPI(title="DESYNC 3D Vault", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(RequestLoggingMiddleware)
+
+    @app.api_route("/api/{rest:path}", methods=["GET", "POST", "DELETE"])
+    async def api_catch_all(request: Request) -> Response:
+        # raw_path keeps the percent-encoding that dispatch_route has always received.
+        path = request.scope["raw_path"].decode("latin-1").split("?", 1)[0]
+        params = urllib.parse.parse_qs(request.url.query)
+        body_data = parse_body(await request.body()) if request.method != "GET" else {}
+        return await run_in_threadpool(run_route, request.method, path, body_data, params)
+
+    @app.get("/previews/{rel_path:path}")
+    def previews(rel_path: str) -> Response:
+        return serve_preview(rel_path)
+
+    @app.get("/")
+    @app.get("/index.html")
+    def index() -> Response:
+        return FileResponse(app_config.web_dir() / "index.html")
+
+    app.mount("/static", StaticFiles(directory=app_config.web_dir() / "static"), name="static")
+
+    @app.api_route("/{rest:path}", methods=["GET", "POST", "DELETE", "OPTIONS"])
+    def fallback(request: Request) -> Response:
+        if request.method == "GET":
+            return JSONResponse({"error": "Not found"}, 404)
+        if request.method == "OPTIONS":
+            return Response(
+                status_code=204,
+                headers={
+                    **CORS_HEADERS,
+                    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                },
+            )
+        return JSONResponse({"error": "Method not allowed for static paths"}, 405, headers=CORS_HEADERS)
+
+    return app
+
+
+app = create_app()
+
+
+def main() -> None:
+    logger.info(f"[Server] Starting Web UI and API at http://localhost:{PORT}")
+    uvicorn.run(app, host=HOST, port=PORT, log_config=None, access_log=False, timeout_graceful_shutdown=5)
 
 
 if __name__ == "__main__":

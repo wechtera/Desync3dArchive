@@ -57,12 +57,12 @@
           "size_bytes": 0
         },
         {
-          "file_count": 1,
-          "formatted_size": "0 B",
+          "file_count": "<VOLATILE>",
+          "formatted_size": "<VOLATILE>",
           "key": "logs",
           "name": "Application System Logs",
           "path": "<DEV>/old_app/logs",
-          "size_bytes": 0
+          "size_bytes": "<VOLATILE>"
         },
         {
           "file_count": 86,
@@ -123,12 +123,12 @@
           "size_bytes": 0
         },
         {
-          "file_count": 1,
-          "formatted_size": "0 B",
+          "file_count": "<VOLATILE>",
+          "formatted_size": "<VOLATILE>",
           "key": "logs",
           "name": "Application System Logs",
           "path": "<DEV>/old_app/logs",
-          "size_bytes": 0
+          "size_bytes": "<VOLATILE>"
         },
         {
           "file_count": 86,
