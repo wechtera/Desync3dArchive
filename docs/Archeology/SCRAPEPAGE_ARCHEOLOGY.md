@@ -1,4 +1,4 @@
-# SCRAPEPAGE — Application Archeology
+# SCRAPEPAGE: Application Archeology
 
 **Purpose:** Establish what this application does, who uses it and how, what it is built from, and what is weak, so the codebase can be re-platformed with no functional gaps and no inherited vulnerabilities.
 **Method:** Static read of the working tree (including uncommitted changes), the live `library.db` schema and row counts, and a run of the existing test suite. No network calls were made, and no secret values are reproduced here.

@@ -1,0 +1,12 @@
+# Enhancements
+
+Ideas found during migration. None are scheduled unless a step or the user asks for them.
+
+| # | Idea | Benefit | Source |
+|---|---|---|---|
+| E1 | Scheduled delta sync: scrape, diff, ingest, download | Removes the manual run of the full pipeline | Archeology section 9 |
+| E2 | Scheduled integrity checks using the reconciler's SHA-256 and STL validation | Finds silent NAS corruption early | Archeology section 9 |
+| E3 | Health endpoint and basic metrics | Faster diagnosis of long-running jobs | Archeology section 9 |
+| E4 | Back up `metadata/` as well as `library.db` | Raw API JSON is the source of truth for the catalog | Migration prompt review |
+| E5 | Backup and restore controls in the Settings view | Runs and checks backups without a terminal | Migration prompt review |
+| E6 | Accessibility and responsive layout review | Neither has been assessed | Archeology section 9 |

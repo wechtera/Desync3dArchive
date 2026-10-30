@@ -70,11 +70,13 @@ These are in place before any feature moves, and they apply to every later chang
 - **Production guard.** Outside `APP_ENV=production`, the app and the test suite refuse to start if any configured path resolves to a production location. That covers both `scrapepage` and `~/DESYNC_Data`.
 - **Destructive actions.** They get a dry-run step and an audit log entry, and are disabled outside production.
 - **Cutover is a separate, approved step.** WAL mode, migrations and moving secrets all change the real database. Each runs only at cutover, after a verified backup, with row counts compared before and after. Nothing gets deleted from `app_settings` until the secrets file has been confirmed working.
-- **Rollback.** Cutover copies production data to `~/DESYNC_Data`, and the new app changes only that copy. The originals in `scrapepage` stay as they are, with the old app runnable against them, until the new one has been accepted.
+- **Dev data is sanitized.** The dev copy has secrets blanked and every stored path moved into `~/DESYNC_Data_dev`. Real MMF tests use a dev-only vault.
+- **Backups.** A verified backup and restore command, with a daily schedule, writes to `DESYNC_BACKUP_DIR` on a different disk from the data directory.
+- **Rollback.** Cutover copies production data to `~/DESYNC_Data`, and the new app changes only that copy. The originals in `scrapepage` stay as they are, with the old app runnable against them, until the new one has been accepted. The NAS vault and stash export directory stay shared, so after a rollback the old `delete-orphans` must not run until a reconcile has reviewed new files.
 
 ## 6. Performance
 
-Nothing has been profiled yet, so these are expected gains. Phase 0 records a baseline to measure them against.
+Nothing has been profiled yet, so these are expected gains. Phase 0A records a baseline to measure them against.
 
 | Target | Change |
 |---|---|
@@ -86,16 +88,18 @@ Nothing has been profiled yet, so these are expected gains. Phase 0 records a ba
 
 ## 7. Migration shape
 
-The work happens in `DESYNC_3D_Archival`, a new repository beside `scrapepage`. Each file is either net new or migrated, and `scrapepage` stays frozen. The new app stays usable after every phase from Phase 0. URLs under `/api` don't change, so the frontend keeps working throughout.
+The work happens in `DESYNC_3D_Archival`, a new repository beside `scrapepage`. Each file is either net new or migrated, and `scrapepage` stays frozen. The new app stays usable after every phase from Phase 0B. URLs under `/api` don't change, so the frontend keeps working throughout.
 
 | Phase | Work |
 |---|---|
-| 0 | Foundations: migrate the code and tests, production guard, dev data copy, `check.sh`, logging baseline, contract snapshots, performance baseline |
+| 0A | Sanitized dev data, contract snapshots and performance baseline, recorded from a throwaway copy of the old app |
+| 0B | Migrate the code and tests, settings module, production guard |
+| 0C | `check.sh` and logging baseline |
 | 1 | FastAPI wraps the existing `dispatch_route` through one catch-all route, so every endpoint moves at once with no logic changes |
 | 2 | Security fixes on the FastAPI shell (loopback bind, secret exposure, CORS, static files, OAuth `state`). This follows Phase 1 so nothing is built twice for `http.server` |
-| 3 | Migration runner, with the live schema captured as the baseline |
+| 3 | Backup and restore commands, then the migration runner, with the live schema captured as the baseline |
 | 4 | Routers replace the catch-all one domain at a time, read-only first: catalog, downloads, stashes, settings, tasks, reconcile |
-| 5 | Job runner and external tool adapters, with extraction hardening |
+| 5 | Job runner and external tool adapters, with extraction hardening and scheduled backups |
 | 6 | Frontend ported view by view to `lit-html` |
 | 7 | LAN mode (login and TLS) |
 | 8 | Measured performance work, including FTS5 |
@@ -106,7 +110,7 @@ The work happens in `DESYNC_3D_Archival`, a new repository beside `scrapepage`. 
 1. **Network reach: local, with optional access from another computer on the LAN.** Loopback stays the default. LAN mode is opt-in and refuses to start without a password and a TLS certificate.
 2. **Scraper: stays.** The documented API (`MyMiniFactory/api-documentation`, read 2026-10-30) has no library or purchases endpoint. `/users/{username}/objects` is documented only as "a user's objects", with nothing tying it to purchases. `scrape.js` also catches JSON from an undocumented endpoint on the library page, but past task logs do not record its URL. Phase 5 logs that URL, for information only.
 3. **Frontend: `lit-html`.**
-4. **New project.** See "Project decisions" in `README.md` for the new root, layout, `tools/` and data location decisions.
+4. **New project.** See "Project decisions" in `README.md` for the new root, layout, `tools/`, data location, path limit, commit and backup decisions.
 
 ## 9. LAN consequences
 
@@ -118,5 +122,4 @@ The work happens in `DESYNC_3D_Archival`, a new repository beside `scrapepage`. 
 
 ## 10. Still to confirm
 
-- **Server OS for LAN use.** It affects only path defaults and how the app is run as a service, so it does not block Phases 0 to 6.
-- **MMF token behavior.** The docs say refresh tokens are optional ("MAY"), and the live response has to be tested with your client in Phase 2.
+Open items are tracked in `Questions.md`.

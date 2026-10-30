@@ -81,3 +81,5 @@ DESYNC_3D_Archival/
 Migration work runs one step at a time, on the branch named in [docs/Archeology/MIGRATION_PROMPTS.md](docs/Archeology/MIGRATION_PROMPTS.md). The project rules are in [docs/Archeology/README.md](docs/Archeology/README.md).
 
 This repository has no remote yet, and all commits are local.
+
+Open questions go in [docs/Archeology/Questions.md](docs/Archeology/Questions.md), and enhancement ideas go in [docs/Archeology/Enhancements.md](docs/Archeology/Enhancements.md).
