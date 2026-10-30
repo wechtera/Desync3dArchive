@@ -39,6 +39,7 @@ PERFORMANCE_REQUESTS = {
     "releases": "/api/releases?limit=24",
 }
 PERFORMANCE_REPEATS = 15
+CLEAN_DB = "library.clean.db"
 
 
 @dataclass
@@ -254,7 +255,7 @@ class Harness:
             shutil.rmtree(target, ignore_errors=True)
             target.mkdir(parents=True)
 
-        conn = sqlite3.connect(f"{(self.dest / 'library.db').as_uri()}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"{(self.dest / CLEAN_DB).as_uri()}?mode=ro", uri=True)
         stored = conn.execute("SELECT model_id FROM downloaded_files ORDER BY model_id LIMIT 1").fetchone()[0]
         rows = conn.execute("SELECT vault_path FROM downloaded_files WHERE model_id = ?", (stored,)).fetchall()
         conn.close()
@@ -276,7 +277,7 @@ class Harness:
             target = self.app / name
             if target.is_dir():
                 shutil.rmtree(target)
-        shutil.copy2(self.dest / "library.db", self.app / "library.db")
+        shutil.copy2(self.dest / CLEAN_DB, self.app / "library.db")
         for path in (self.app / "library.db-journal", self.app / "library.db-wal"):
             path.unlink(missing_ok=True)
 
@@ -302,7 +303,7 @@ class Harness:
 
 
 def record_run(dest: Path, code: str = "old") -> tuple[dict[str, Any], float, list[Case]]:
-    cases = build_cases(dest / "library.db", dest)
+    cases = build_cases(dest / CLEAN_DB, dest)
     replacements = [(str(dest), "<DEV>")]
     snapshots: dict[str, Any] = {}
     with Harness(dest, code) as harness:

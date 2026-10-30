@@ -29,7 +29,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 2 code complete on branch `migration/02-security`. Its exit check still needs the user's real sign-in and test download.
+- **Phase:** Step 2 code complete on branch `migration/02-security`. Its exit check still needs the user's real sign-in, on the implicit flow, and a test download.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -51,7 +51,6 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 - [ ] User: real MMF sign-in on the dev instance, then a test download to the dev vault
 - [ ] Merge `migration/02-security` after that and user approval
-- [ ] Ask the user before removing the implicit flow
 - [ ] Run Step 3 from `MIGRATION_PROMPTS.md`
 
 ## Project decisions
@@ -78,7 +77,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **V2:** `GET /api/settings` and `GET /api/auth/status` return no secrets, only configured flags. `/api/scrapes/download` serves only `scrapes/<run>/model_ids.txt` and `models.json`.
 - **V3:** wildcard CORS is gone. Host and Origin are validated on every request, and a POST or DELETE with a body must be JSON.
 - **V4:** only `web/index.html` and `web/static/` are served, with no directory listings.
-- **V5:** the authorization code grant, with single-use verified `state`, server-side exchange and stored refresh tokens. `state` is also required on the implicit callback.
+- **V5:** `state` is single-use and verified on the implicit callback, so a caller can't inject a token. The authorization code grant is built, but this account can't use it.
 - **V9:** login is a real 302 with an encoded URL.
 - **V11, in part:** bodies are limited to 2 MiB, and unhandled exceptions return a generic error and log the detail.
 
@@ -88,7 +87,9 @@ This directory tracks the state of the app, what has been done, and what comes n
 - The documented example shows access tokens lasting 3,600 seconds under the code grant, compared with 21,600 under the implicit grant. Tokens refresh 5 minutes before expiry and on a 401.
 - A 401 on the download stream, on metadata requests and during ingest now refreshes once and retries before the old failure path runs. 403 still trips the circuit breaker at once.
 
-**Implicit flow:** it stays available, and is used when no client secret is set. Remove it only after the user has tested the new flow and approved.
+**Sign-in flow:** the implicit grant stays, and is the default. The value stored in `mmf_client_secret` is an MMF API key, and MMF has no OAuth client secret for this application, so the code grant fails with HTTP 401, "Invalid client ID or secret". The user confirmed this on 2026-10-30. The old app never sent that value, so this never surfaced. The code grant and refresh handling stay in the code behind `mmf_auth_flow`, and a real login has never tested them.
+
+**Limitation:** with the implicit grant there are no refresh tokens. Access tokens last about 6 hours, and a 401 during a long download run still trips the circuit breaker until the user reconnects. V5 is closed for `state` checking, but the implicit grant itself remains in use.
 
 **Bugs found and fixed**
 - The Connect button could never work: it called `fetch` on a cross-site redirect and read a `login_url` field the API has never returned.

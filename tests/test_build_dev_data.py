@@ -146,6 +146,11 @@ class BuildDevDataTests(unittest.TestCase):
         self.assertFalse((old_app / "cookies.json").exists())
         self.assertTrue((old_app / "previews" / "1" / "cover.jpg").exists())
 
+    def test_clean_baseline_copy_is_written_with_no_secrets(self):
+        self._build()
+        raw = (self.dest / build_dev_data.CLEAN_DB_NAME).read_bytes()
+        self.assertNotIn(ACCESS_TOKEN.encode(), raw)
+
     def test_destination_inside_source_is_refused(self):
         self.dest = self.source / "dev"
         with self.assertRaises(build_dev_data.SanitizeError):

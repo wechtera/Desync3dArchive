@@ -58,7 +58,7 @@ class AppCase(unittest.TestCase):
         )
 
     def tearDown(self):
-        self.set(mmf_redirect_uri="")
+        self.set(mmf_redirect_uri="", mmf_auth_flow="")
 
     def setting(self, key):
         conn = get_db_connection(server.DB_PATH)
@@ -243,7 +243,7 @@ class V4StaticServingTests(AppCase):
 
 class V5OAuthFlowTests(AppCase):
     def login_state(self):
-        self.set(mmf_client_secret="client-secret-value")
+        self.set(mmf_client_secret="client-secret-value", mmf_auth_flow=auth_service.FLOW_CODE)
         data = self.client.get("/api/auth/login?redirect=0").json()
         return data["state"], urllib.parse.parse_qs(urllib.parse.urlsplit(data["auth_url"]).query)
 
@@ -252,9 +252,16 @@ class V5OAuthFlowTests(AppCase):
         self.assertEqual(query["response_type"], ["code"])
         self.assertEqual(query["redirect_uri"], [auth_service.DEFAULT_REDIRECT_URI])
 
-    def test_login_keeps_implicit_grant_without_a_secret(self):
+    def test_implicit_grant_is_the_default_even_with_a_stored_api_key(self):
+        self.set(mmf_client_secret="an-api-key-not-a-client-secret")
         data = self.client.get("/api/auth/login?redirect=0").json()
         self.assertIn("response_type=token", data["auth_url"])
+        self.assertEqual(self.client.get("/api/auth/status").json()["flow"], auth_service.FLOW_IMPLICIT)
+
+    def test_flow_is_a_validated_setting(self):
+        self.assertEqual(self.client.post("/api/auth/config", json={"flow": "authorization_code"}).status_code, 200)
+        self.assertEqual(self.client.get("/api/auth/status").json()["flow"], auth_service.FLOW_CODE)
+        self.assertEqual(self.client.post("/api/auth/config", json={"flow": "other"}).status_code, 400)
 
     def test_redirect_uri_is_a_setting(self):
         response = self.client.post("/api/auth/config", json={"redirect_uri": "http://localhost:9000/api/auth/callback"})
@@ -316,6 +323,23 @@ class V5OAuthFlowTests(AppCase):
         self.assertEqual(response.status_code, 502)
         self.assertNotIn("client-secret-value", response.text)
         self.assertEqual(self.setting("mmf_access_token"), "")
+
+    @patch("httpx.Client.post")
+    def test_refused_exchange_is_logged_with_the_reason_and_no_secrets(self, post):
+        post.return_value = httpx.Response(401, json={"error": "invalid_client"})
+        state, _ = self.login_state()
+        self.client.get(f"/api/auth/callback?code=the-secret-code&state={state}")
+        text = log.APP_LOG_PATH.read_text(encoding="utf-8")
+        self.assertIn("HTTP 401, invalid_client", text)
+        self.assertNotIn("the-secret-code", text.split("Authorization code exchange failed")[-1].split("\n")[0])
+        self.assertNotIn("client-secret-value", text)
+
+    @patch("httpx.Client.post")
+    def test_non_json_refusal_is_described(self, post):
+        post.return_value = httpx.Response(403, text="<html>blocked</html>", headers={"content-type": "text/html"})
+        state, _ = self.login_state()
+        self.client.get(f"/api/auth/callback?code=x&state={state}")
+        self.assertIn("HTTP 403, text/html", log.APP_LOG_PATH.read_text(encoding="utf-8"))
 
     def test_implicit_page_still_served_without_a_code(self):
         response = self.client.get("/api/auth/callback")

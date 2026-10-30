@@ -311,9 +311,9 @@ class TestServerAPI(unittest.TestCase):
         status, data, _, _ = self._request("GET", "/api/auth/login?redirect=0")
         self.assertEqual(status, 200)
         auth_url = data.get("auth_url", "")
+        self.assertIn("response_type=token", auth_url)
         self.assertTrue(auth_url.startswith("https://auth.myminifactory.com/web/authorize"))
         self.assertIn("client_id=desync-3d-vault", auth_url)
-        self.assertIn("response_type=code", auth_url)
         self.assertIn("redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fapi%2Fauth%2Fcallback", auth_url)
 
         conn = self._get_db()
@@ -326,7 +326,7 @@ class TestServerAPI(unittest.TestCase):
         location = headers.get("location", "")
         self.assertTrue(location.startswith("https://auth.myminifactory.com/web/authorize"))
         self.assertIn("client_id=desync-3d-vault", location)
-        self.assertIn("response_type=code", location)
+        self.assertIn("response_type=token", location)
 
     def test_auth_callback_html(self):
         status, _, body, headers = self._request("GET", "/api/auth/callback")

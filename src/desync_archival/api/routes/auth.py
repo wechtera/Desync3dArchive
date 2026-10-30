@@ -1,4 +1,3 @@
-import logging
 import secrets
 import sqlite3
 import time
@@ -7,7 +6,7 @@ from typing import Any
 
 from desync_archival.services import auth_service
 from desync_archival.services.downloader import DownloadManager
-from desync_archival.services.logger import log_layer
+from desync_archival.services.logger import logger
 
 
 def handle_get_auth_status(
@@ -29,8 +28,9 @@ def handle_post_auth_config(
     client_id = str(body.get("client_id", "")).strip()
     client_secret = str(body.get("client_secret", body.get("api_key", ""))).strip()
     redirect_uri = str(body.get("redirect_uri", "")).strip()
+    flow = str(body.get("flow", "")).strip()
 
-    if not client_id and not client_secret and not redirect_uri:
+    if not client_id and not client_secret and not redirect_uri and not flow:
         return {"error": "Either client_id or api_key must be provided"}, 400
 
     updates = {}
@@ -44,6 +44,11 @@ def handle_post_auth_config(
         if parts.scheme not in ("http", "https") or not parts.netloc:
             return {"error": "redirect_uri must be an http or https URL"}, 400
         updates["mmf_redirect_uri"] = redirect_uri
+
+    if flow:
+        if flow not in (auth_service.FLOW_IMPLICIT, auth_service.FLOW_CODE):
+            return {"error": "flow must be implicit or authorization_code"}, 400
+        updates["mmf_auth_flow"] = flow
 
     auth_service.set_settings(conn, updates)
     return {"success": True, "configured": True}, 200
@@ -69,8 +74,7 @@ def handle_get_auth_login(
     state = secrets.token_hex(16)
     auth_service.set_settings(conn, {"mmf_oauth_state": state})
 
-    # The authorization code grant needs the client secret. Without one, use the implicit grant.
-    response_type = "code" if auth_service.get_setting(conn, "mmf_client_secret") else "token"
+    response_type = "code" if auth_service.get_auth_flow(conn) == auth_service.FLOW_CODE else "token"
     query_params = {
         "client_id": client_id,
         "redirect_uri": auth_service.get_redirect_uri(conn),
@@ -103,7 +107,7 @@ def handle_get_auth_callback(
         try:
             payload = auth_service.exchange_code(conn, code)
         except auth_service.TokenError as e:
-            log_layer("http", logging.WARNING, f"Authorization code exchange failed: {e}")
+            logger.warning(f"Authorization code exchange failed: {e}")
             return {"error": "MyMiniFactory did not accept the sign-in. Try connecting again."}, 502
 
         username, user_id = auth_service.fetch_user_profile(str(payload["access_token"]))

@@ -21,6 +21,7 @@ from pathlib import Path
 logger = logging.getLogger("build_dev_data")
 
 MARKER_NAME = ".desync_dev_data"
+CLEAN_DB_NAME = "library.clean.db"
 KEPT_ON_REBUILD = {"baseline", MARKER_NAME}
 SAMPLE_SIZE = 25
 
@@ -273,6 +274,8 @@ def build(
     copy_old_app(source_root, dest)
     copy_sample(source_root, dest / "old_app", model_ids)
     shutil.copy2(final_db, dest / "old_app" / "library.db")
+    # Baselines start from this copy, so real use of library.db can't reach a snapshot.
+    shutil.copy2(final_db, dest / CLEAN_DB_NAME)
     logger.info("Built %s with %d sampled models", dest, len(model_ids))
 
 

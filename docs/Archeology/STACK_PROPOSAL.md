@@ -18,7 +18,7 @@ The problems found in the archeology are in the HTTP layer, secrets handling, sc
 | HTTP | stdlib `http.server`, regex if-chain | **FastAPI on uvicorn**, bound to `127.0.0.1` by default, with LAN bind opt-in | Request validation, size limits, middleware for Host/Origin checks, generated API docs |
 | App login | None | **One password, stored as a salted hash (stdlib `scrypt`), with a session cookie.** Required when bound beyond loopback | Enough for one user on a LAN. No user table or roles |
 | Transport | HTTP only | **HTTP on loopback. For LAN, uvicorn serves TLS from a local certificate made with `mkcert`** | The password and session cookie should not cross the network in clear text. No reverse proxy needed |
-| MMF sign-in | Implicit grant, no refresh | **Authorization code grant with refresh tokens** | Documented by MMF. Stops the 6-hour token expiry from halting long download runs |
+| MMF sign-in | Implicit grant, no refresh | **Implicit grant with verified `state`, with the authorization code grant available by setting** | The application has only an API key, which the code grant rejects. A client secret from MMF would enable refresh tokens |
 | Database | SQLite, rollback-journal mode | **SQLite in WAL mode** | Readers stop blocking on the download workers' writes |
 | Data access | Raw SQL | **Keep raw SQL**, moved into per-domain query modules | An ORM adds a large layer and no capability this app needs |
 | Migrations | `CREATE IF NOT EXISTS` and `ALTER` in 7 modules | **Numbered `.sql` files plus `PRAGMA user_version`**, with a runner of about 50 lines | One schema source of truth. `user_version` is 0 today, so the live DB becomes the baseline |
