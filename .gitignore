@@ -1,0 +1,80 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.env
+*secrets*.json
+*secrets*.toml
+*cookies*.json
+*.pem
+*.key
+
+# Production and dev data. Data lives outside this repository
+data/
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+library.db*
+metadata/
+previews/
+scrapes/
+staging/
+vault_staging/
+mmf_browser_profile/
+model_ids.txt
+models.json
+tree_discovery.txt
+
+# Scrape run output and in-flight downloads
+.work/
+**/.work/
+*.part
+*.tmp
+
+# Symlinks to local installations, made by scripts/link_tools.sh
+tools/*
+!tools/README.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.pyright/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Playwright test output
+test-results/
+playwright-report/
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
