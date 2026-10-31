@@ -193,7 +193,7 @@ test.describe('tasks', () => {
     await expect(rows).toHaveCount(2);
     await expect(rows.first()).toContainText('Library Scrape');
     await expect(rows.first()).toContainText('COMPLETED');
-    await expect(rows.nth(1)).toContainText('Metadata Ingest');
+    await expect(rows.nth(1)).toContainText('MMF Metadata Ingest');
     await expect(rows.nth(1).locator('.cell-label-truncate')).toHaveText(HOSTILE);
     await expect(rows.nth(1).locator('.status-failed')).toHaveCount(1);
     await expect(page.locator('#task-history-tbody img')).toHaveCount(0);

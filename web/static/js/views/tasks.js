@@ -68,7 +68,7 @@ export async function renderTasksView() {
 
       const typeLabel = active.task_type === 'library_scrape'
         ? 'Library Scraper'
-        : (active.task_type === 'metadata_ingest' ? 'Metadata Ingestion' : active.task_type);
+        : (active.task_type === 'metadata_ingest' ? 'MMF Metadata Ingest' : active.task_type);
 
       if (typeBadge) typeBadge.textContent = `Task #${active.id} - ${typeLabel}`;
       if (cancelBtn) cancelBtn.style.display = 'inline-flex';
@@ -115,7 +115,7 @@ export async function renderTasksView() {
 function taskRow(t) {
   const typeName = t.task_type === 'library_scrape'
     ? 'Library Scrape'
-    : (t.task_type === 'metadata_ingest' ? 'Metadata Ingest' : t.task_type);
+    : (t.task_type === 'metadata_ingest' ? 'MMF Metadata Ingest' : t.task_type);
   const started = t.started_at ? formatTime(t.started_at) : '-';
   const completed = t.completed_at ? formatTime(t.completed_at) : (t.status === 'running' ? 'In Progress' : '-');
 

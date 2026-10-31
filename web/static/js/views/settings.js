@@ -228,6 +228,10 @@ export async function loadLibraryUsage() {
   }
 }
 
+// Stored names stay as they are. Only what's shown changes.
+const PROCESS_LABELS = { metadata_ingest: 'MMF_Metadata_Ingest' };
+const processLabel = (name) => PROCESS_LABELS[name] || name;
+
 export async function loadInactive() {
   const container = document.getElementById('inactive-table-container');
   if (!container) return;
@@ -240,7 +244,7 @@ export async function loadInactive() {
       const selected = filterEl.value;
       render(html`
         <option value="">Everything open</option>
-        ${data.open_counts.map(c => html`<option value="${c.process}|${c.reason}">${c.process}: ${c.reason} (${c.count})</option>`)}
+        ${data.open_counts.map(c => html`<option value="${c.process}|${c.reason}">${processLabel(c.process)}: ${c.reason} (${c.count})</option>`)}
       `, filterEl);
       filterEl.value = selected;
     }
@@ -254,7 +258,7 @@ export async function loadInactive() {
               <tr>
                 <td>${item.item_name || `#${item.item_id}`}</td>
                 <td>${item.item_type}</td>
-                <td class="font-mono font-xs">${item.process}</td>
+                <td class="font-mono font-xs">${processLabel(item.process)}</td>
                 <td class="font-mono font-xs">${item.reason}</td>
                 <td class="font-xs text-dim">${item.detail || '-'}</td>
                 <td class="font-sm">${parseServerTime(item.created_at)?.toLocaleString() || '-'}</td>
