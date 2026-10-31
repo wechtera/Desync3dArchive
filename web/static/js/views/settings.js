@@ -10,7 +10,12 @@ import {
   fetchExternalLibraries,
   addExternalLibrary,
   deleteExternalLibrary,
-  scanExternalLibrary
+  scanExternalLibrary,
+  fetchLibraryPreview,
+  approveLibraryPreview,
+  fetchImageQueue,
+  postImageQueue,
+  fetchInactive
 } from '../api.js';
 
 let currentBrowsePath = '';
@@ -190,6 +195,8 @@ export async function loadDirectoryUsage() {
 // -----------------------------------------------------------------------------
 
 export function switchSettingsTab(tab) {
+  if (tab === 'inactive') loadInactive();
+  if (tab === 'libraries') loadImageQueue().catch(() => {});
   // Panels stay in the page while hidden, so a save still reads every field.
   document.querySelectorAll('[data-settings-tab]').forEach(panel => {
     panel.hidden = panel.dataset.settingsTab !== tab;
@@ -238,6 +245,8 @@ export async function loadExternalLibraries() {
     <div id="external-libraries-table-container">
       <div class="table-msg">Loading registered libraries...</div>
     </div>
+    <div id="library-preview-container"></div>
+    <div id="library-image-queue" class="mt-3"></div>
     <div class="mt-4 pt-3" style="border-top: 1px solid #262635;">
       <h3 class="font-bold font-md mb-2 text-accent">Register New In-Place Library</h3>
       <div class="settings-form-row two-col">
@@ -294,7 +303,7 @@ export async function loadExternalLibraries() {
             <th>Models</th>
             <th>Total Files</th>
             <th>Last Scanned</th>
-            <th style="width: 175px;">Actions</th>
+            <th style="width: 300px;">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -321,8 +330,13 @@ export async function loadExternalLibraries() {
                 <td class="font-sm">${lastScan}</td>
                 <td>
                   <div class="flex gap-1">
-                    <button type="button" class="btn-pill font-xs btn-action-primary" @click=${() => window.handleScanExternalLibrary(lib.id, lib.name)} title="Scan and reconcile external models into library">
-                      Scan Library
+                    <button type="button" class="btn-pill font-xs btn-action-primary" @click=${() => startLibraryPass(lib, 'preview')}
+                      title="Finds new folders and shows them for approval. Adds nothing.">
+                      Preview New Folders
+                    </button>
+                    <button type="button" class="btn-pill font-xs" @click=${() => startLibraryPass(lib, 'full')}
+                      title="Checks known models against storage. Never adds new folders.">
+                      Full Rescan
                     </button>
                     <button type="button" class="btn-pill font-xs btn-action-cancel" @click=${() => window.handleDeleteExternalLibrary(lib.id, lib.name)} title="Unlink library from database (preserves source NAS files)">
                       Remove
@@ -335,6 +349,7 @@ export async function loadExternalLibraries() {
         </tbody>
       </table>
     `, tableContainer);
+    await Promise.all([loadLibraryPreview(libs[0]), loadImageQueue()]);
   } catch (err) {
     render(html`<div class="table-msg text-alert">Failed loading external libraries: ${err.message}</div>`, tableContainer);
   }
@@ -384,6 +399,165 @@ export async function handleScanExternalLibrary(libraryId, libraryName) {
     }
   } catch (err) {
     alert(`Scan error: ${err.message}`);
+  }
+}
+
+async function startLibraryPass(lib, mode) {
+  try {
+    const res = await scanExternalLibrary(lib.id, mode);
+    showToast(`Started for '${lib.name}' (Task #${res.task_id}). Follow it on the Tasks tab.`);
+    window.checkHealth?.();
+  } catch (err) {
+    alert(`Could not start: ${err.message}`);
+  }
+}
+
+async function approveAndAdd(lib) {
+  const skipped = [...document.querySelectorAll('.preview-release-check')]
+    .filter(box => !box.checked)
+    .map(box => box.dataset.release);
+  try {
+    const res = await approveLibraryPreview(lib.id, skipped);
+    showToast(`Approved ${res.approved} folders.`);
+    await startLibraryPass(lib, 'add');
+    await loadLibraryPreview(lib);
+  } catch (err) {
+    alert(`Approval failed: ${err.message}`);
+  }
+}
+
+function previewFolderList(label, folders) {
+  if (!folders.length) return nothing;
+  return html`<div class="text-dim font-xs mt-1">${label}: ${folders.join(', ')}</div>`;
+}
+
+async function loadLibraryPreview(lib) {
+  const container = document.getElementById('library-preview-container');
+  if (!container || !lib) return;
+  const data = await fetchLibraryPreview(lib.id);
+  const candidates = data.candidates || {};
+  const waiting = candidates.proposed || 0;
+  const approved = candidates.approved || 0;
+  const report = data.report;
+  if (!report && !approved) {
+    render(nothing, container);
+    return;
+  }
+
+  const releases = (report?.releases || []).filter(r => r.new.length || r.overlaps.length || r.empty.length || r.outside_rules);
+  render(html`
+    <div class="mt-4 pt-3" style="border-top: 1px solid #262635;">
+      <h3 class="font-bold font-md mb-2 text-accent">Preview for ${lib.name}</h3>
+      ${report ? html`
+        <p class="text-dim font-sm" id="library-preview-summary">
+          ${report.totals.new} new, ${report.totals.known} already known, ${report.totals.overlaps} overlapping,
+          ${report.totals.empty} empty, ${report.totals.outside_rules} treated as one model.
+          Overlapping and empty folders are never added.
+        </p>
+        <table class="table-compact">
+          <thead><tr><th style="width: 60px;">Add</th><th>Release</th><th>New</th><th>Known</th><th>Needs a look</th></tr></thead>
+          <tbody>
+            ${releases.map(r => html`
+              <tr>
+                <td>${r.new.length ? html`<input type="checkbox" class="preview-release-check" data-release=${r.name} ?checked=${!r.outside_rules}>` : nothing}</td>
+                <td>${r.name}</td>
+                <td class="font-mono">${r.new.length}</td>
+                <td class="font-mono">${r.known}</td>
+                <td>
+                  ${r.outside_rules ? html`<span class="status-badge status-failed font-xs">One model</span>` : nothing}
+                  ${previewFolderList('Overlaps', r.overlaps)}
+                  ${previewFolderList('Empty', r.empty)}
+                </td>
+              </tr>
+            `)}
+          </tbody>
+        </table>
+      ` : nothing}
+      <div class="flex gap-2 mt-2">
+        ${waiting ? html`<button type="button" class="btn-pill btn-action-primary" id="btn-approve-preview" @click=${() => approveAndAdd(lib)}>Approve and Add ${waiting} Folders</button>` : nothing}
+        ${approved ? html`<button type="button" class="btn-pill" @click=${() => startLibraryPass(lib, 'add')}>Resume Adding ${approved} Folders</button>` : nothing}
+      </div>
+    </div>
+  `, container);
+}
+
+const IMAGE_STATES = {
+  paused: 'Paused',
+  waiting_for_inventory: 'Waiting for the library scan to finish',
+  storage_offline: 'Waiting for storage to come back',
+  blender_unavailable: 'Waiting for Blender',
+  idle: 'Nothing to do',
+  working: 'Working',
+  stopped: 'Not running',
+};
+
+async function changeImageQueue(action) {
+  try {
+    await postImageQueue(action);
+    await loadImageQueue();
+  } catch (err) {
+    alert(`Image queue: ${err.message}`);
+  }
+}
+
+export async function loadImageQueue() {
+  const container = document.getElementById('library-image-queue');
+  if (!container) return;
+  const data = await fetchImageQueue();
+  const counts = data.counts;
+  render(html`
+    <div class="mt-4 pt-3" style="border-top: 1px solid #262635;">
+      <h3 class="font-bold font-md mb-2 text-accent">Background Images</h3>
+      <p class="text-dim font-sm" id="image-queue-summary">
+        ${IMAGE_STATES[data.state] || data.state}. ${counts.pending} waiting, ${counts.done} done,
+        ${counts.failed} failed, ${counts.no_source} with nothing to render.
+      </p>
+      <div class="flex gap-2 mt-2">
+        <button type="button" class="btn-pill" id="btn-image-queue-toggle" @click=${() => changeImageQueue(data.paused ? 'resume' : 'pause')}>${data.paused ? 'Resume' : 'Pause'}</button>
+        ${counts.failed ? html`<button type="button" class="btn-pill" @click=${() => changeImageQueue('retry')}>Retry ${counts.failed} Failed</button>` : nothing}
+      </div>
+    </div>
+  `, container);
+}
+
+export async function loadInactive() {
+  const container = document.getElementById('inactive-table-container');
+  if (!container) return;
+  const filterEl = document.getElementById('inactive-filter');
+  const history = document.getElementById('inactive-history')?.checked;
+  const [process, reason] = (filterEl?.value || '|').split('|');
+  try {
+    const data = await fetchInactive({ process, reason, include_resolved: history ? '1' : '' });
+    if (filterEl) {
+      const selected = filterEl.value;
+      render(html`
+        <option value="">Everything open</option>
+        ${data.open_counts.map(c => html`<option value="${c.process}|${c.reason}">${c.process}: ${c.reason} (${c.count})</option>`)}
+      `, filterEl);
+      filterEl.value = selected;
+    }
+    render(data.items.length === 0
+      ? html`<div class="table-msg text-dim">Nothing here.</div>`
+      : html`
+        <table class="table-compact">
+          <thead><tr><th>Item</th><th>Type</th><th>Process</th><th>Reason</th><th>Detail</th><th>When</th><th>Resolved</th></tr></thead>
+          <tbody>
+            ${data.items.map(item => html`
+              <tr>
+                <td>${item.item_name || `#${item.item_id}`}</td>
+                <td>${item.item_type}</td>
+                <td class="font-mono font-xs">${item.process}</td>
+                <td class="font-mono font-xs">${item.reason}</td>
+                <td class="font-xs text-dim">${item.detail || '-'}</td>
+                <td class="font-sm">${parseServerTime(item.created_at)?.toLocaleString() || '-'}</td>
+                <td class="font-sm">${item.resolved_at ? parseServerTime(item.resolved_at)?.toLocaleString() : '-'}</td>
+              </tr>
+            `)}
+          </tbody>
+        </table>
+      `, container);
+  } catch (err) {
+    render(html`<div class="table-msg text-alert">Failed loading inactive items: ${err.message}</div>`, container);
   }
 }
 
@@ -782,6 +956,7 @@ Object.assign(window, {
   handleAddExternalLibrary,
   handleScanExternalLibrary,
   handleDeleteExternalLibrary,
+  loadInactive,
   loadAuthStatus,
   loadLoggingSettings,
   saveLoggingSettings,

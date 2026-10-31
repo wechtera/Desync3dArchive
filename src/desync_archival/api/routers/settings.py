@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from desync_archival.api import schemas
 from desync_archival.api.routes import settings as handlers
 from desync_archival.api.routes import storage as storage_handlers
-from desync_archival.api.routing import RouteContext, add_route, plain
+from desync_archival.api.routing import RouteContext, add_route, plain, with_path_id
 
 router = APIRouter()
 
@@ -23,13 +23,20 @@ def delete_library(ctx: RouteContext):
 
 
 add_route(router, "POST", ("/api/settings/libraries/{library_id:int}/scan", "/api/settings/libraries/{library_id:int}/scan/"),
-          scan_library)
+          scan_library, schemas.LibraryScanBody)
 add_route(router, "DELETE", ("/api/settings/libraries/{library_id:int}", "/api/settings/libraries/{library_id:int}/"),
           delete_library)
 add_route(router, "GET", ("/api/settings/libraries", "/api/settings/libraries/"),
           plain(handlers.handle_get_external_libraries))
 add_route(router, "POST", ("/api/settings/libraries", "/api/settings/libraries/"),
           plain(handlers.handle_post_external_library), schemas.LibraryBody)
+add_route(router, "GET", "/api/settings/libraries/{library_id:int}/preview",
+          with_path_id(handlers.handle_get_library_preview, "library_id"))
+add_route(router, "POST", "/api/settings/libraries/{library_id:int}/preview/approve",
+          with_path_id(handlers.handle_post_library_approve, "library_id"), schemas.LibraryApproveBody)
+add_route(router, "GET", "/api/library-images", plain(handlers.handle_get_image_queue))
+add_route(router, "POST", "/api/library-images", plain(handlers.handle_post_image_queue), schemas.ImageQueueBody)
+add_route(router, "GET", "/api/inactive", plain(handlers.handle_get_inactive))
 add_route(router, "GET", "/api/settings", plain(handlers.handle_get_settings))
 add_route(router, "POST", "/api/settings", plain(handlers.handle_post_settings), schemas.SettingsBody)
 add_route(router, "GET", "/api/settings/directories", plain(handlers.handle_get_directory_usage))

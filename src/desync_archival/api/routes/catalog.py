@@ -289,6 +289,7 @@ def handle_get_model_detail(
 
     if isinstance(row, sqlite3.Row):
         model_data = dict(row)
+        model_data.pop("last_scan_run_id", None)
     else:
         cols = [d[0] for d in cursor.description]
         model_data = dict(zip(cols, row))

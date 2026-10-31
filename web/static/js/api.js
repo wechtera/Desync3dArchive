@@ -193,10 +193,11 @@ export async function deleteExternalLibrary(libraryId) {
   });
 }
 
-export async function scanExternalLibrary(libraryId) {
+export async function scanExternalLibrary(libraryId, mode = 'full') {
   return request(`/api/settings/libraries/${libraryId}/scan`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode })
   });
 }
 
@@ -473,4 +474,33 @@ export async function exportStash(stashId, options = {}) {
     throw new Error(data.error || `HTTP ${res.status}`);
   }
   return data;
+}
+
+export async function fetchLibraryPreview(libraryId) {
+  return request(`/api/settings/libraries/${libraryId}/preview`);
+}
+
+export async function approveLibraryPreview(libraryId, skipReleases) {
+  return request(`/api/settings/libraries/${libraryId}/preview/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ skip_releases: skipReleases })
+  });
+}
+
+export async function fetchImageQueue() {
+  return request('/api/library-images');
+}
+
+export async function postImageQueue(action) {
+  return request('/api/library-images', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action })
+  });
+}
+
+export async function fetchInactive(filters = {}) {
+  const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
+  return request(`/api/inactive?${params}`);
 }

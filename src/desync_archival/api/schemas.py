@@ -87,6 +87,18 @@ class LibraryBody(RequestBody):
     default_creator: str | None = None
 
 
+class LibraryScanBody(RequestBody):
+    mode: str | None = None
+
+
+class LibraryApproveBody(RequestBody):
+    skip_releases: list[str] | None = None
+
+
+class ImageQueueBody(RequestBody):
+    action: str = ""
+
+
 class LoggingBody(RequestBody):
     level: str | None = None
     layers: list[str] | None = None

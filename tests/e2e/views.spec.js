@@ -475,6 +475,78 @@ test.describe('settings', () => {
     await expect(page.getByText('Never Scanned')).toBeVisible();
   });
 
+  const previewReport = {
+    finished_at: '2026-05-01 12:00:00',
+    candidates: { proposed: 2 },
+    report: {
+      totals: { new: 2, known: 1, overlaps: 1, empty: 1, outside_rules: 1 },
+      releases: [
+        { name: HOSTILE, new: [{ rel_path: 'a/b', category: 'Heroes' }], known: 1, overlaps: ['a/c'], empty: ['a/d'], outside_rules: false },
+        { name: 'Odd Release', new: [{ rel_path: 'Odd Release', category: 'Miniatures' }], known: 0, overlaps: [], empty: [], outside_rules: true },
+      ],
+    },
+  };
+
+  test('a preview lists what would be added, and odd releases start unticked', async ({ page }) => {
+    await mock(page, '/api/settings/libraries/2/preview', previewReport);
+    await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true, total_models: 1, total_files: 1 }], total: 1 });
+    let approved = null;
+    let mode = null;
+    await page.route('**/api/settings/libraries/2/preview/approve', (route) => {
+      approved = route.request().postDataJSON();
+      return route.fulfill({ json: { success: true, approved: 1, skipped: 1 } });
+    });
+    await page.route('**/api/settings/libraries/2/scan', (route) => {
+      mode = route.request().postDataJSON().mode;
+      return route.fulfill({ json: { success: true, task_id: 4 } });
+    });
+    await page.goto('/#settings');
+    await page.locator('[data-settings-tab-btn="libraries"]').click();
+
+    await expect(page.locator('#library-preview-summary')).toContainText('2 new, 1 already known, 1 overlapping');
+    await expect(page.getByText(HOSTILE)).toBeVisible();
+    await expect(page.locator('body img[src="x"]')).toHaveCount(0);
+    await expect(page.locator('.preview-release-check[data-release="Odd Release"]')).not.toBeChecked();
+
+    await page.locator('#btn-approve-preview').click();
+    await expect.poll(() => mode).toBe('add');
+    expect(approved).toEqual({ skip_releases: ['Odd Release'] });
+  });
+
+  test('the image queue reports its state and can be paused', async ({ page }) => {
+    await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true }], total: 1 });
+    let action = null;
+    await page.route('**/api/library-images', (route) => {
+      if (route.request().method() === 'POST') {
+        action = route.request().postDataJSON().action;
+        return route.fulfill({ json: { success: true } });
+      }
+      return route.fulfill({ json: { paused: false, state: 'storage_offline', counts: { pending: 3, done: 1, failed: 2, no_source: 4, skipped: 0 } } });
+    });
+    await page.goto('/#settings');
+    await page.locator('[data-settings-tab-btn="libraries"]').click();
+
+    await expect(page.locator('#image-queue-summary')).toContainText('Waiting for storage to come back. 3 waiting, 1 done');
+    await page.locator('#btn-image-queue-toggle').click();
+    await expect.poll(() => action).toBe('pause');
+  });
+
+  test('the inactive tab shows items, with hostile text as text', async ({ page }) => {
+    await page.route('**/api/inactive*', (route) => route.fulfill({
+      json: {
+        total: 1,
+        open_counts: [{ process: 'library_scan', reason: 'folder_missing', count: 1 }],
+        items: [{ id: 1, item_type: 'model', item_id: 9, item_name: HOSTILE, process: 'library_scan', reason: 'folder_missing', detail: HOSTILE, created_at: '2026-05-01 12:00:00', resolved_at: null }],
+      },
+    }));
+    await page.goto('/#settings');
+    await page.locator('[data-settings-tab-btn="inactive"]').click();
+
+    await expect(page.locator('#inactive-table-container')).toContainText('folder_missing');
+    await expect(page.locator('body img[src="x"]')).toHaveCount(0);
+    await expect(page.locator('#inactive-filter option').nth(1)).toHaveText('library_scan: folder_missing (1)');
+  });
+
   test('a library can be scanned', async ({ page }) => {
     await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true, total_models: 1, total_files: 2, disk_bytes: 1 }] });
     let scanned = false;
@@ -482,7 +554,7 @@ test.describe('settings', () => {
     page.on('dialog', (dialog) => dialog.accept());
     await page.goto('/#settings');
     await page.locator('[data-settings-tab-btn="libraries"]').click();
-    await page.getByRole('button', { name: /Scan/ }).first().click();
+    await page.getByRole('button', { name: 'Full Rescan' }).first().click();
     await expect.poll(() => scanned).toBe(true);
   });
 

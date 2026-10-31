@@ -23,6 +23,7 @@ from db_helper import init_persistent_tables
 
 from desync_archival.services.db import get_db_connection
 from desync_archival.services.external_indexer import ExternalLibraryIndexer
+from desync_archival.services.image_worker import WORKING, ImageWorker
 
 
 class TestExternalIndexer(unittest.TestCase):
@@ -292,6 +293,13 @@ class TestExternalIndexer(unittest.TestCase):
         indexer = ExternalLibraryIndexer(self.db_path)
         indexer.previews_root = self.previews_dir
         indexer.scan_and_index_library(1)
+
+        self.assertEqual(mock_render_primary.call_count, 0, "The inventory pass must never render.")
+        worker = ImageWorker(self.db_path)
+        worker.indexer = indexer
+        with patch("desync_archival.services.image_worker.app_config.previews_dir", return_value=self.previews_dir):
+            while worker.run_once() == WORKING:
+                pass
 
         conn = self._get_db()
 

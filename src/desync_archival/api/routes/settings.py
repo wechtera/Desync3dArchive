@@ -12,12 +12,24 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from desync_archival import settings as app_config
 from desync_archival.db.queries import settings as queries
-from desync_archival.services import audit, auth_service, secret_store
-from desync_archival.services.external_indexer import deactivate_library
+from desync_archival.services import (
+    audit,
+    auth_service,
+    image_worker,
+    inactive_log,
+    secret_store,
+)
+from desync_archival.services.external_indexer import (
+    FULL,
+    PREVIEW,
+    SCAN_MODES,
+    ExternalLibraryIndexer,
+    deactivate_library,
+)
 
 try:
     from desync_archival.services.logger import (
@@ -37,19 +49,19 @@ except ImportError:
     logger = logging.getLogger("vault")
 
 __all__ = [
-    "handle_get_settings",
-    "handle_post_settings",
+    "format_bytes",
+    "handle_delete_external_library",
     "handle_get_directory_usage",
-    "handle_get_system_browse",
+    "handle_get_external_libraries",
     "handle_get_logging_config",
+    "handle_get_settings",
+    "handle_get_system_browse",
+    "handle_post_external_library",
+    "handle_post_external_library_scan",
     "handle_post_logging_config",
     "handle_post_logs_purge",
+    "handle_post_settings",
     "handle_post_stashes_purge",
-    "handle_get_external_libraries",
-    "handle_post_external_library",
-    "handle_delete_external_library",
-    "handle_post_external_library_scan",
-    "format_bytes",
 ]
 
 DEFAULT_STASH_EXPORT_PATH = str(Path.home() / "Downloads" / "DESYNC_Print_Queue")
@@ -69,7 +81,7 @@ def format_bytes(num_bytes: int) -> str:
         return f"{num_bytes / (1024**4):.2f} TB"
 
 
-def _fast_dir_stats(path: Path) -> Tuple[int, int]:
+def _fast_dir_stats(path: Path) -> tuple[int, int]:
     """
     Iterative depth-first traversal using os.scandir for high performance.
     Avoids recursion depth limits and ignores broken symlinks.
@@ -116,7 +128,7 @@ def _bg_calculate_library_telemetry(db_path: Path, library_id: int, lib_path: Pa
         log_layer("storage", logging.ERROR, f"Background disk usage scan failed for Library #{library_id}: {e}")
 
 
-def _extract_tokens_from_json(raw_json: str) -> Tuple[str, str]:
+def _extract_tokens_from_json(raw_json: str) -> tuple[str, str]:
     cf_val, php_val = "", ""
     if not raw_json:
         return cf_val, php_val
@@ -176,9 +188,9 @@ def _merge_cookies(existing_json: str, updates: dict[str, str]) -> str:
 def handle_get_settings(
     conn: sqlite3.Connection,
     download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-) -> Tuple[Dict[str, Any], int]:
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
     """Retrieves all key-value configuration pairs from app_settings."""
     try:
         conn.row_factory = sqlite3.Row
@@ -202,9 +214,9 @@ def handle_get_settings(
 def handle_post_settings(
     conn: sqlite3.Connection,
     download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-) -> Tuple[Dict[str, Any], int]:
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
     """Persists settings key-value pairs into app_settings and reloads the download manager."""
     data = dict(body or {})
 
@@ -257,9 +269,9 @@ def handle_post_settings(
 def handle_get_external_libraries(
     conn: sqlite3.Connection,
     download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-) -> Tuple[Dict[str, Any], int]:
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
     """
     GET /api/settings/libraries
     Returns all registered in-place external library directories with telemetry,
@@ -290,9 +302,9 @@ def handle_get_external_libraries(
 def handle_post_external_library(
     conn: sqlite3.Connection,
     download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-) -> Tuple[Dict[str, Any], int]:
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
     """
     POST /api/settings/libraries
     Registers a new top-level in-place library folder.
@@ -367,9 +379,9 @@ def handle_delete_external_library(
     conn: sqlite3.Connection,
     library_id: int,
     download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-) -> Tuple[Dict[str, Any], int]:
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
     """
     DELETE /api/settings/libraries/:id
     Unlinks an in-place library record from SQLite.
@@ -400,10 +412,10 @@ def handle_post_external_library_scan(
     conn: sqlite3.Connection,
     library_id: int,
     download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
+    body: dict | None = None,
+    params: dict | None = None,
     task_manager: Any = None,
-) -> Tuple[Dict[str, Any], int]:
+) -> tuple[dict[str, Any], int]:
     """
     POST /api/settings/libraries/:id/scan
     Dispatches task_type = 'external_library_reconcile' to scan and index the external library in-place.
@@ -416,8 +428,13 @@ def handle_post_external_library_scan(
     if task_manager is None:
         return {"error": "TaskManager background service is unavailable."}, 503
 
+    mode = str((body or {}).get("mode") or FULL)
+    if mode not in SCAN_MODES:
+        return {"error": f"Scan mode must be one of {', '.join(SCAN_MODES)}."}, 400
+
     res = task_manager.start_task("external_library_reconcile", {
         "library_id": library_id,
+        "mode": mode,
         "library_name": row["name"],
         "library_root": row["path"],
         "path": row["path"],
@@ -435,6 +452,93 @@ def handle_post_external_library_scan(
     }, 200
 
 
+def handle_get_library_preview(
+    conn: sqlite3.Connection,
+    library_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    """GET /api/settings/libraries/:id/preview: the latest report, and what is waiting on a decision."""
+    conn.row_factory = sqlite3.Row
+    run = conn.execute(
+        "SELECT id, status, report_json, finished_at FROM library_scan_runs"
+        " WHERE library_id = ? AND mode = ? AND status = 'completed' ORDER BY id DESC LIMIT 1;",
+        (library_id, PREVIEW),
+    ).fetchone()
+    statuses = dict(conn.execute(
+        "SELECT status, COUNT(*) FROM library_candidates WHERE library_id = ? GROUP BY status;", (library_id,)
+    ).fetchall())
+    return {
+        "report": json.loads(run["report_json"]) if run and run["report_json"] else None,
+        "finished_at": run["finished_at"] if run else None,
+        "candidates": statuses,
+    }, 200
+
+
+def handle_post_library_approve(
+    conn: sqlite3.Connection,
+    library_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    """POST /api/settings/libraries/:id/preview/approve: only approved folders can become models."""
+    skip = [str(name) for name in (body or {}).get("skip_releases") or []]
+    conn.row_factory = sqlite3.Row
+    result = ExternalLibraryIndexer(app_config.db_path()).approve_candidates(conn, library_id, skip)
+    log_layer("storage", logging.INFO, f"Library #{library_id}: approved {result['approved']} folders, skipped {result['skipped']}")
+    return {"success": True, **result}, 200
+
+
+def handle_get_image_queue(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    return image_worker.status(conn), 200
+
+
+def handle_post_image_queue(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    action = str((body or {}).get("action") or "")
+    if action == "pause":
+        image_worker.set_paused(conn, True)
+    elif action == "resume":
+        image_worker.set_paused(conn, False)
+    elif action == "retry":
+        retried = image_worker.retry_failed(conn)
+        log_layer("storage", logging.INFO, f"Image queue: {retried} failed items set to retry")
+    else:
+        return {"error": "Action must be pause, resume or retry."}, 400
+    return {"success": True, **image_worker.status(conn)}, 200
+
+
+def handle_get_inactive(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    """GET /api/inactive: what went inactive or failed, from every process."""
+    def param(name: str) -> str:
+        return ((params or {}).get(name) or [""])[0]
+
+    try:
+        limit = int(param("limit") or inactive_log.DEFAULT_LIMIT)
+        offset = int(param("offset") or 0)
+    except ValueError:
+        return {"error": "limit and offset must be numbers."}, 400
+    return inactive_log.query(
+        conn, param("process"), param("reason"), param("include_resolved") == "1", max(1, limit), max(0, offset),
+    ), 200
+
+
 # -------------------------------------------------------------------------
 # Directory Metrics & System Browse Endpoints
 # -------------------------------------------------------------------------
@@ -442,9 +546,9 @@ def handle_post_external_library_scan(
 def handle_get_directory_usage(
     conn: sqlite3.Connection,
     download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-) -> Tuple[Dict[str, Any], int]:
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
     """Gathers storage usage metrics across scratch staging, vault NAS, slicer queue, previews, metadata, and logs."""
     settings = {}
     try:
@@ -472,7 +576,7 @@ def handle_get_directory_usage(
         ("Application System Logs", "logs", LOGS_DIR.resolve()),
     ]
 
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
 
     for label, key, dir_p in directories:
         cnt, sz = _fast_dir_stats(dir_p) if dir_p.exists() and dir_p.is_dir() else (0, 0)
@@ -538,9 +642,9 @@ def handle_get_directory_usage(
 def handle_get_system_browse(
     conn: sqlite3.Connection,
     download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-) -> Tuple[Dict[str, Any], int]:
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
     folder_val = ""
     if params:
         folder_val = (params.get("folder", [""])[0] or params.get("path", [""])[0] or "").strip()
@@ -581,18 +685,18 @@ def handle_get_system_browse(
 def handle_get_logging_config(
     conn: sqlite3.Connection,
     download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-) -> Tuple[Dict[str, Any], int]:
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
     return {"success": True, "config": get_logging_config()}, 200
 
 
 def handle_post_logging_config(
     conn: sqlite3.Connection,
     download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-) -> Tuple[Dict[str, Any], int]:
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
     data = body or {}
     level = str(data.get("level", "INFO")).upper()
     layers = data.get("layers", [])
@@ -618,9 +722,9 @@ def handle_post_logging_config(
 def handle_post_logs_purge(
     conn: sqlite3.Connection,
     download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-) -> Tuple[Dict[str, Any], int]:
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
     data = body or {}
     try:
         days = int(data.get("days", 14))
@@ -677,9 +781,9 @@ def handle_post_logs_purge(
 def handle_post_stashes_purge(
     conn: sqlite3.Connection,
     download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-) -> Tuple[Dict[str, Any], int]:
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
     """Purges export folders in stash_download_path older than X days."""
     data = body or {}
     try:

@@ -586,6 +586,7 @@
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="mmf" data-click="switchSettingsTab" data-args='["mmf"]'>MMF Sign-In</button>
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="cookies" data-click="switchSettingsTab" data-args='["cookies"]'>Session &amp; Cookies</button>
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="tasks" data-click="switchSettingsTab" data-args='["tasks"]'>Tasks</button>
+      <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="inactive" data-click="switchSettingsTab" data-args='["inactive"]'>Inactive</button>
     </div>
     <div class="settings-grid">
 
@@ -1009,6 +1010,31 @@
         </div>
       </div>
 
+
+      <!-- Card 8: Inactive, tombstoned and failed items from every process -->
+      <div class="settings-panel" data-settings-tab="inactive" hidden>
+        <div class="settings-panel-header">
+          <div>
+            <h2 class="settings-panel-title">Inactive &amp; Failed Items</h2>
+            <div class="settings-panel-subtitle">
+              Everything flagged by a scan, an unlink, an ingest or the image worker. Nothing here is ever deleted.
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button type="button" class="btn-pill" data-click="loadInactive">Refresh</button>
+          </div>
+        </div>
+        <div class="settings-form-row two-col">
+          <div class="settings-field-group">
+            <label for="inactive-filter">Show</label>
+            <select id="inactive-filter" data-change="loadInactive"><option value="">Everything open</option></select>
+          </div>
+          <div class="settings-field-group">
+            <label for="inactive-history"><input type="checkbox" id="inactive-history" data-change="loadInactive"> Include resolved items</label>
+          </div>
+        </div>
+        <div id="inactive-table-container" class="mt-3"></div>
+      </div>
     </div>
   </div>
 

@@ -30,7 +30,7 @@ import httpx
 from desync_archival import backup
 from desync_archival import settings as app_config
 from desync_archival.services import auth_service, jobs
-from desync_archival.services import identity, secret_store
+from desync_archival.services import identity, inactive_log, secret_store
 from desync_archival.services.analytics import run_startup_analytics
 from desync_archival.services.logger import job_logged, log_layer, logger
 from desync_archival.services.paths import sanitize_segment
@@ -1047,6 +1047,15 @@ class TaskManager:
 
                         self._cache_cover(local_id, model_row[16])
 
+                        with conn:
+                            if is_tombstone:
+                                inactive_log.record(
+                                    conn, inactive_log.MODEL, local_id, data.get("name"), inactive_log.METADATA_INGEST,
+                                    inactive_log.UNAVAILABLE, data.get("description"),
+                                )
+                            else:
+                                inactive_log.resolve(conn, inactive_log.MODEL, local_id, inactive_log.UNAVAILABLE)
+
                         if is_tombstone:
                             tombstone_count += 1
                         else:
@@ -1337,14 +1346,15 @@ class TaskManager:
             return self._cancel_requested
 
         try:
-            from desync_archival.services.external_indexer import ExternalLibraryIndexer
+            from desync_archival.services.external_indexer import ADD, FULL, PREVIEW, ExternalLibraryIndexer
             indexer = ExternalLibraryIndexer(self.db_path)
-            result = indexer.scan_and_reconcile_library(
-                library_id=int(library_id),
-                progress_cb=progress_cb,
-                log_cb=log_cb,
-                cancel_cb=cancel_cb,
-            )
+            mode = params.get("mode", FULL)
+            run_pass = {
+                PREVIEW: indexer.preview_library,
+                ADD: indexer.add_approved,
+                FULL: indexer.rescan_known,
+            }[mode]
+            result = run_pass(int(library_id), progress_cb=progress_cb, log_cb=log_cb, cancel_cb=cancel_cb)
 
             if self._cancel_requested:
                 self._append_log(task_id, "Library crawl cancelled by operator.")
@@ -1369,9 +1379,14 @@ class TaskManager:
                 )
                 return
 
-            models_count = result.get("models_indexed", 0)
-            files_count = result.get("files_indexed", 0)
-            label = f"Scan complete: {models_count} models, {files_count} files indexed"
+            if mode == PREVIEW:
+                label = f"Preview ready: {result.get('new', 0)} new folders to review"
+            elif mode == ADD:
+                label = f"Added {result.get('models_added', 0)} models, {result.get('files_added', 0)} files"
+            elif result.get("missing_held"):
+                label = f"Rescan held: {result['missing_held']} folders look missing, check the mount"
+            else:
+                label = f"Rescan complete: {result.get('models_checked', 0)} models, {result.get('files_checked', 0)} files"
             self._append_log(task_id, label)
             self._finalize_task(task_id, "completed", label, result, result)
 

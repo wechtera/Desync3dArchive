@@ -24,7 +24,7 @@ from starlette.datastructures import MutableHeaders
 
 from desync_archival import migrations
 from desync_archival import settings as app_config
-from desync_archival.services import jobs, login
+from desync_archival.services import image_worker, jobs, login
 from desync_archival.services.db import get_db_connection, seed_default_settings
 from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
 from desync_archival.services.logger import log_context, logger
@@ -298,6 +298,9 @@ def start_managers() -> None:
     except StorageUnavailableError as e:
         logger.warning(f"[Server] Storage notice: {e} (Workers will start once storage is configured via UI)")
 
+    image_worker.current = image_worker.ImageWorker(DB_PATH)
+    image_worker.current.start()
+
     schedule_stop.clear()
     threading.Thread(target=backup_schedule, name="backup-schedule", daemon=True).start()
 
@@ -314,6 +317,8 @@ def backup_schedule() -> None:
 def stop_managers() -> None:
     logger.info("[Server] Shutting down")
     schedule_stop.set()
+    if image_worker.current:
+        image_worker.current.stop()
     if download_manager:
         download_manager.stop()
 
