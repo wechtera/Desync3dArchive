@@ -642,6 +642,10 @@ test.describe('settings', () => {
     await page.locator('.archive-review-open').click();
     await expect(page.locator('#library-review-title')).toContainText('Vampire Court - peeked');
     await expect(page.locator('#btn-review-reset')).toHaveCount(0);
+    await page.locator('.review-card[data-card="Ghul A"] .review-card-name').fill('Zombie');
+    await page.locator('.review-row[data-path="3/a.zip"] .review-select').check();
+    await expect(page.locator('#review-target option')).toHaveText(['Ghul B', 'Zombie']);
+    await page.locator('.review-row[data-path="3/a.zip"] .review-select').uncheck();
     await page.locator('.review-card[data-card="Ghul B"] .review-card-group').fill('Undead');
     await page.locator('#btn-review-save').click();
     await expect.poll(() => saved).not.toBeNull();

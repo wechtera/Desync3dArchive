@@ -532,7 +532,7 @@ function drawReview() {
           <span class="font-sm" id="review-selected">${selected} selected</span>
           <button type="button" class="btn-pill font-xs" id="btn-review-new" ?disabled=${!selected} @click=${newCard}>New Card</button>
           <select id="review-target" aria-label="Card to move to">
-            ${cards.map(c => html`<option value=${c.key}>${c.name}</option>`)}
+            ${[...review.cards].sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true, sensitivity: 'base' })).map(c => html`<option value=${c.key}>${c.name}</option>`)}
           </select>
           <button type="button" class="btn-pill font-xs" id="btn-review-move" ?disabled=${!selected} @click=${moveToChosen}>Move to Card</button>
         </div>
