@@ -299,6 +299,19 @@ class PeekTests(unittest.TestCase):
         catalog_levels.assign_images(self.conn, self.collection)
         self.assertIsNone(self.conn.execute("SELECT image_path FROM catalog_models WHERE state = 'proposed'").fetchone()[0])
 
+    def test_a_reviewed_collection_gets_its_picture_when_one_is_repaired(self):
+        self.peek(["Piotr/Piotr_Body.stl", "Piotr/Piotr.jpg"])
+        path = self.conn.execute("SELECT image_path FROM catalog_models WHERE state = 'proposed'").fetchone()[0]
+        self.conn.row_factory = sqlite3.Row
+        cards = archive_review.view(self.conn, self.collection)["cards"]
+        cards[0]["name"] = "Piotr Renamed"
+        archive_review.save(self.conn, self.collection, cards, True)
+        with self.conn:
+            self.conn.execute("UPDATE catalog_models SET image_path = NULL")
+        self.assertEqual(catalog_levels.rebuild_unreviewed(self.conn)["reset"], 0)
+        row = self.conn.execute("SELECT name, image_path FROM catalog_models WHERE name = 'Piotr Renamed'").fetchone()
+        self.assertEqual(tuple(row), ("Piotr Renamed", path))
+
     def test_a_peek_records_when_it_ran(self):
         self.peek(["Piotr/Piotr_Body.stl"])
         self.assertIsNotNone(self.conn.execute("SELECT peeked_at FROM model_files WHERE file_id = ?", (self.file_id,)).fetchone()[0])

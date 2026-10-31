@@ -250,7 +250,7 @@ def build_archive_models(conn: sqlite3.Connection, only_collection: int | None =
             by_collection[row["collection_id"]][row["file_id"]].append(row)
 
     known = _known_signatures(conn)
-    summary = {"collections": 0, "models": 0, "shared": 0, "groups": 0, "artifacts": 0}
+    summary: dict[str, Any] = {"collections": 0, "models": 0, "shared": 0, "groups": 0, "artifacts": 0}
     for collection_id, archives in by_collection.items():
         # New contents are something a human hasn't seen.
         conn.execute("UPDATE collection_reviews SET reviewed = 0 WHERE collection_id = ?;", (collection_id,))
@@ -295,8 +295,17 @@ def build_archive_models(conn: sqlite3.Connection, only_collection: int | None =
                 conn.execute(
                     "DELETE FROM catalog_model_collections WHERE catalog_model_id = ? AND collection_id = ?;", (spare, collection_id),
                 )
-            assign_images(conn, collection_id)
         summary["collections"] += 1
         summary["groups"] += len(groups)
+    # Outside the loop, because a repaired preview can belong to a reviewed collection with nothing
+    # new to build. Only models without a picture are touched, so reviewed work stays as it was.
+    peeked = [only_collection] if only_collection is not None else [
+        r[0] for r in conn.execute("""
+            SELECT DISTINCT f.model_id FROM model_artifacts a JOIN model_files f ON f.file_id = a.file_id
+            WHERE a.archive_member_id IS NOT NULL;
+        """).fetchall()
+    ]
+    with conn:
+        summary["images"] = sum(assign_images(conn, collection_id) for collection_id in peeked)
     log_layer("storage", 20, f"Catalog levels built from stored archive lists: {summary}")
     return summary
