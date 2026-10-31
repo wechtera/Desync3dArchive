@@ -154,12 +154,13 @@ class SavingTests(ReviewCase):
         with self.assertRaises(ReviewError):
             self.save([{"name": "Thief", "members": [f"{self.release}/Rings"]}])
 
-    def test_an_approved_release_cannot_change(self):
+    def test_an_approved_card_leaves_the_review_and_its_paths_lock(self):
         conn = self.connect()
         self.indexer.approve_candidates(conn, 1, [])
         conn.close()
-        with self.assertRaisesRegex(ReviewError, "already approved"):
-            self.save(self.view()["cards"])
+        self.assertEqual(self.view()["cards"], [])
+        with self.assertRaisesRegex(ReviewError, "already belongs"):
+            self.save([{"name": "Thief", "members": [f"{self.release}/Rings"]}])
 
     def test_reset_returns_the_code_guess(self):
         self.save(self.split("x", f"{self.release}/Voxshax/GraveyardMausoleum", "Mausoleum"))
@@ -212,6 +213,75 @@ class PreviewAgainTests(ReviewCase):
         entry = next(r for r in report["releases"] if r["name"] == self.release)
         self.assertTrue(entry["reviewed"])
         self.assertIn("Mausoleum", [m["name"] for m in entry["new"]])
+
+
+class ApproveReviewedTests(ReviewCase):
+    def ready(self, hold=()):
+        conn = self.connect()
+        try:
+            result = library_review.approve_ready(conn, 1, list(hold))
+        finally:
+            conn.close()
+        self.indexer.add_approved(1)
+        return result
+
+    def added(self):
+        return {r[0] for r in self.rows("SELECT name FROM library_candidates WHERE status = 'added'")}
+
+    def proposed(self):
+        return {r[0] for r in self.rows("SELECT name FROM library_candidates WHERE status = 'proposed'")}
+
+    def test_unflagged_cards_go_and_flagged_ones_wait(self):
+        self.ready()
+        self.assertIn("Rings", self.added())
+        self.assertIn("Voxshax", self.proposed())
+        self.assertIn("Untitled Bust", self.proposed())
+
+    def test_a_reviewed_release_goes_whole_even_with_flags(self):
+        self.save(self.view()["cards"])
+        self.ready()
+        self.assertIn("Voxshax", self.added())
+        self.assertEqual(self.proposed(), set())
+
+    def test_a_held_release_stays_proposed_not_skipped(self):
+        result = self.ready([self.release])
+        self.assertEqual(result["approved"], self.count(
+            "SELECT COUNT(*) FROM library_candidates WHERE status = 'added' AND release_name != ?", self.release
+        ))
+        self.assertEqual(self.count("SELECT COUNT(*) FROM library_candidates WHERE status = 'skipped'"), 0)
+        self.assertIn("Rings", self.proposed())
+
+    def test_what_waits_can_still_be_reviewed_and_added_later(self):
+        self.ready()
+        view = self.view()
+        self.assertNotIn("Rings", [c["name"] for c in view["cards"]])
+        self.assertEqual(len(view["settled"]), self.count(
+            "SELECT COUNT(*) FROM library_candidates WHERE status = 'added' AND release_name = ?", self.release
+        ))
+        cards = view["cards"]
+        next(c for c in cards if c["name"] == "Voxshax")["name"] = "Voxshax Reviewed"
+        self.save(cards)
+        self.ready()
+        self.assertIn("Voxshax Reviewed", self.added())
+        self.assertIn("Rings", self.added())
+        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE name = 'Rings'"), 1)
+
+    def test_the_report_shows_only_what_is_left(self):
+        self.ready()
+        conn = self.connect()
+        report = json.loads(conn.execute("SELECT report_json FROM library_scan_runs WHERE mode = 'preview' ORDER BY id DESC").fetchone()[0])
+        report = library_review.with_reviews(conn, 1, report)
+        conn.close()
+        entry = next(r for r in report["releases"] if r["name"] == self.release)
+        self.assertNotIn("Rings", [m["name"] for m in entry["new"]])
+        self.assertGreater(entry["added"], 0)
+        self.assertEqual(report["totals"]["ready"], 0)
+
+    def test_a_new_preview_keeps_what_waits(self):
+        self.ready()
+        self.indexer.preview_library(1)
+        self.assertIn("Voxshax", self.proposed())
+        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE name = 'Rings'"), 1)
 
 
 class LevelsTests(ReviewCase):

@@ -4,7 +4,7 @@
  */
 
 import { formatBytes } from '../utils.js';
-import { html, imageFallback, nothing, render } from '../template.js';
+import { html, imageFallback, nothing, render, safeUrl } from '../template.js';
 import { fetchCatalogModel, fetchCatalogModels, fetchModelGroup } from '../api.js';
 
 const SEARCH_DELAY_MS = 250;
@@ -24,6 +24,18 @@ function card(model, onClick) {
   `;
 }
 
+function stashArtifact(artifact) {
+  const inArchive = artifact.archive_member_id != null;
+  window.openAddToStashModal({
+    item_type: inArchive ? 'archive_member' : 'file',
+    model_id: artifact.collection_id,
+    file_id: artifact.file_id,
+    submodel_id: artifact.submodel_id || 'null',
+    archive_member_id: artifact.archive_member_id,
+    title: artifact.filename,
+  });
+}
+
 function artifactLine(artifact) {
   const traits = [artifact.scale, artifact.supported ? 'Supported' : 'Unsupported', artifact.hollow ? 'Hollow' : ''].filter(Boolean);
   return html`
@@ -31,6 +43,7 @@ function artifactLine(artifact) {
       <td class="font-mono font-xs">${artifact.filename}</td>
       <td class="font-xs">${traits.join(', ')}</td>
       <td class="font-mono font-xs">${formatBytes(artifact.size_bytes || 0)}</td>
+      <td><button type="button" class="btn-pill font-xs artifact-stash" @click=${() => stashArtifact(artifact)}>+ Stash</button></td>
     </tr>
   `;
 }
@@ -38,18 +51,33 @@ function artifactLine(artifact) {
 export async function openBrowseModel(modelId) {
   const model = await fetchCatalogModel(modelId);
   document.getElementById('model-view-title').textContent = model.name;
+  const facts = [
+    ['Creator', model.designer_name],
+    ['Release', model.release_month],
+    ['Category', model.category],
+    ['Size', model.total_bytes ? formatBytes(model.total_bytes) : ''],
+    ['Collections', model.collections.map(c => c.name).join(', ')],
+  ].filter(([, value]) => value);
   render(html`
     <div id="browse-model-view">
-      ${model.groups.length ? html`
-        <p class="font-sm">Part of ${model.groups.map(g => html`
-          <button type="button" class="browse-link browse-group-link" @click=${() => openBrowseGroup(g.id)}>${g.name}</button>
-        `)}</p>
-      ` : nothing}
-      <p class="font-sm text-dim">In ${model.collections.map(c => c.name).join(', ')}</p>
-      ${model.tags.length ? html`<p class="font-sm text-dim">Tags: ${model.tags.join(', ')}</p>` : nothing}
+      <div class="model-view-head">
+        <img src=${model.image_path ? `/${model.image_path}` : `/previews/${model.cover_id}/cover.jpg`} @error=${imageFallback(model.image_url)} alt=${model.name}>
+        <div>
+          <dl class="model-view-facts" id="model-view-facts">
+            ${facts.map(([label, value]) => html`<dt>${label}</dt><dd>${value}</dd>`)}
+          </dl>
+          ${model.groups.length ? html`
+            <p class="font-sm">Part of ${model.groups.map(g => html`
+              <button type="button" class="browse-link browse-group-link" @click=${() => openBrowseGroup(g.id)}>${g.name}</button>
+            `)}</p>
+          ` : nothing}
+          ${model.url ? html`<p class="font-sm"><a href=${safeUrl(model.url)} target="_blank" rel="noopener noreferrer">View source page</a></p>` : nothing}
+          ${model.tags.length ? html`<div class="model-view-tags">${model.tags.map(t => html`<span class="badge font-xs">${t}</span>`)}</div>` : nothing}
+        </div>
+      </div>
       ${model.artifacts.length ? html`
         <table class="table-compact">
-          <thead><tr><th>Artifact</th><th>Print</th><th>Size</th></tr></thead>
+          <thead><tr><th>Artifact</th><th>Print</th><th>Size</th><th>Stash</th></tr></thead>
           <tbody>${model.artifacts.map(artifactLine)}</tbody>
         </table>
       ` : html`<p class="text-dim font-sm">Contents unknown until this collection is peeked.</p>`}

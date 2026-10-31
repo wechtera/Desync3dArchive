@@ -35,7 +35,8 @@ PREVIEWS_DIR = app_config.previews_dir().resolve()
 PREVIEWS_DIR.mkdir(parents=True, exist_ok=True)
 
 REDIRECT_STATUSES = (301, 302, 303, 307, 308)
-PREVIEW_CACHE_CONTROL = "public, max-age=604800"
+# A re-peek rewrites these in place, so a browser has to ask before reusing one.
+PREVIEW_CACHE_CONTROL = "no-cache"
 PREVIEW_CONTENT_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 SVG_PLACEHOLDER = (
     b'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200" viewBox="0 0 300 200">'

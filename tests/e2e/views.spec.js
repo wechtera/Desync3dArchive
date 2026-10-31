@@ -487,7 +487,7 @@ test.describe('settings', () => {
     },
   };
 
-  test('a preview lists what would be added, and odd releases start unticked', async ({ page }) => {
+  test('a preview lists what would be added, and an unticked release is left out', async ({ page }) => {
     await mock(page, '/api/settings/libraries/2/preview', previewReport);
     await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true, total_models: 1, total_files: 1 }], total: 1 });
     let approved = null;
@@ -506,8 +506,8 @@ test.describe('settings', () => {
     await expect(page.locator('#library-preview-summary')).toContainText('2 new, 1 already known, 1 overlapping');
     await expect(page.getByText(HOSTILE)).toBeVisible();
     await expect(page.locator('body img[src="x"]')).toHaveCount(0);
-    await expect(page.locator('.preview-release-check[data-release="Odd Release"]')).not.toBeChecked();
-
+    await page.locator('.preview-release-check[data-release="Odd Release"]').uncheck();
+    page.on('dialog', (dialog) => dialog.accept());
     await page.locator('#btn-approve-preview').click();
     await expect.poll(() => mode).toBe('add');
     expect(approved).toEqual({ skip_releases: ['Odd Release'] });
@@ -545,6 +545,29 @@ test.describe('settings', () => {
     await page.goto('/#downloads');
     await page.locator('#sub-btn-libraries').click();
   }
+
+  test('approve and add reviewed sends only held releases and starts the add', async ({ page }) => {
+    const report = structuredClone(reviewReport);
+    report.report.totals.ready = 2;
+    await mock(page, '/api/settings/libraries/2/preview', report);
+    await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true }], total: 1 });
+    let approved = null;
+    let mode = null;
+    await page.route('**/api/settings/libraries/2/preview/approve', (route) => {
+      approved = route.request().postDataJSON();
+      return route.fulfill({ json: { success: true, approved: 1, waiting: 1 } });
+    });
+    await page.route('**/api/settings/libraries/2/scan', (route) => {
+      mode = route.request().postDataJSON().mode;
+      return route.fulfill({ json: { success: true, task_id: 4 } });
+    });
+    await page.goto('/#downloads');
+    await page.locator('#sub-btn-libraries').click();
+    await page.locator('.preview-release-check[data-release="Calm"]').uncheck();
+    await page.locator('#btn-approve-ready').click();
+    await expect.poll(() => mode).toBe('add');
+    expect(approved).toEqual({ skip_releases: ['Calm'], ready_only: true });
+  });
 
   test('flagged releases come first and models can be read in the list', async ({ page }) => {
     await openReviewScreen(page);
@@ -603,13 +626,19 @@ test.describe('settings', () => {
   test('a model leads to its group, and a variant leads back to a model', async ({ page }) => {
     const variant = { ...browseModel, id: 8, name: 'Ghul B' };
     await page.route('**/api/catalog-models?*', (route) => route.fulfill({ json: { models: [browseModel], total: 1, page: 1, page_size: 48 } }));
-    await page.route('**/api/catalog-models/7', (route) => route.fulfill({ json: { ...browseModel, tags: ['undead'], artifacts: [{ id: 1, filename: '32mm_Ghul_A.stl', scale: '32mm', supported: 0, hollow: 0, size_bytes: 10 }] } }));
+    await page.route('**/api/catalog-models/7', (route) => route.fulfill({ json: { ...browseModel, tags: ['undead'], artifacts: [{ id: 1, filename: '32mm_Ghul_A.stl', scale: '32mm', supported: 0, hollow: 0, size_bytes: 10, file_id: 5, archive_member_id: 6, collection_id: 3 }] } }));
     await page.route('**/api/catalog-models/8', (route) => route.fulfill({ json: { ...variant, tags: [], artifacts: [] } }));
     await page.route('**/api/model-groups/4', (route) => route.fulfill({ json: { id: 4, name: 'Ghul', models: [browseModel, variant] } }));
     await page.goto('/');
     await page.evaluate(() => window.switchTab('browse'));
     await page.locator('.browse-card[data-model="7"]').click();
     await expect(page.locator('#browse-model-view')).toContainText('32mm_Ghul_A.stl');
+
+    await expect(page.locator('#model-view-facts')).toContainText('Maker');
+    await expect(page.locator('#browse-model-view')).toContainText('undead');
+    await page.locator('.artifact-stash').click();
+    await expect(page.locator('#modal-add-to-stash-backdrop')).toBeVisible();
+    await page.evaluate(() => { document.getElementById('modal-add-to-stash-backdrop').style.display = 'none'; });
 
     await page.locator('.browse-group-link').click();
     await expect(page.locator('#browse-group-view .browse-card')).toHaveCount(2);

@@ -489,6 +489,13 @@ def handle_post_library_approve(
     """POST /api/settings/libraries/:id/preview/approve: only approved folders can become models."""
     skip = [str(name) for name in (body or {}).get("skip_releases") or []]
     conn.row_factory = sqlite3.Row
+    if (body or {}).get("ready_only"):
+        try:
+            ready = library_review.approve_ready(conn, library_id, skip)
+        except library_review.ReviewError as e:
+            return {"success": False, "error": str(e)}, 409
+        log_layer("storage", logging.INFO, f"Library #{library_id}: approved the reviewed and unflagged folders: {ready}")
+        return {"success": True, **ready}, 200
     result = ExternalLibraryIndexer(app_config.db_path()).approve_candidates(conn, library_id, skip)
     log_layer("storage", logging.INFO, f"Library #{library_id}: approved {result['approved']} folders, skipped {result['skipped']}")
     return {"success": True, **result}, 200

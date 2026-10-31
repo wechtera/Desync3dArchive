@@ -3079,3 +3079,10 @@ pre, .task-log-viewer, .console-output {
 .browse-card-title { padding: 6px 8px 0; font-size: 0.85rem; }
 .browse-card-meta { padding: 2px 8px 8px; font-size: 0.7rem; opacity: 0.7; }
 .browse-variants { display: flex; flex-wrap: wrap; gap: 6px; }
+.model-view-head { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; margin-bottom: 12px; }
+.model-view-head img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+.model-view-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 0 0 8px; font-size: 0.8rem; }
+.model-view-facts dt { opacity: 0.7; }
+.model-view-facts dd { margin: 0; }
+.model-view-tags { display: flex; flex-wrap: wrap; gap: 4px; max-height: 96px; overflow-y: auto; }
+@media (max-width: 600px) { .model-view-head { grid-template-columns: minmax(0, 1fr); } }

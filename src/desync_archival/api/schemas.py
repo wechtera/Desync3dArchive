@@ -93,6 +93,7 @@ class LibraryScanBody(RequestBody):
 
 class LibraryApproveBody(RequestBody):
     skip_releases: list[str] | None = None
+    ready_only: bool | None = None
 
 
 class ArchiveReviewBody(RequestBody):

@@ -171,12 +171,12 @@ class ResponseTests(unittest.TestCase):
         self.assertEqual(self.client.post("/anything").status_code, 405)
         self.assertEqual(self.client.get("/anything").status_code, 404)
 
-    def test_preview_cache_headers_match_the_old_server(self):
+    def test_previews_are_revalidated_because_a_peek_can_rewrite_them(self):
         target = server.PREVIEWS_DIR / "cache_test" / "cover.jpg"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"image")
         response = self.client.get("/previews/cache_test/cover.jpg")
-        self.assertEqual(response.headers["cache-control"], "public, max-age=604800")
+        self.assertEqual(response.headers["cache-control"], "no-cache")
         self.assertEqual(response.headers["content-type"], "image/jpeg")
         self.assertEqual(self.client.get("/previews/none.jpg").headers["cache-control"], "no-cache")
 

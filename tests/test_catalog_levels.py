@@ -498,6 +498,25 @@ class BrowseTests(BuildCase):
         group = catalog_browse.group_detail(self.conn, detail["groups"][0]["id"])
         self.assertEqual([m["name"] for m in group["models"]], ["Ghoul A", "Ghoul B"])
 
+    def test_a_model_shows_its_creator_and_inherits_collection_tags(self):
+        with self.conn:
+            self.conn.execute("UPDATE models SET designer_name = 'Maker', release_month = '2026-10' WHERE id = ?", (self.collection,))
+            self.conn.execute("INSERT INTO model_tags (model_id, tag) VALUES (?, 'undead')", (self.collection,))
+        model = catalog_browse.list_models(self.conn, "Ghoul A")["models"][0]
+        detail = catalog_browse.model_detail(self.conn, model["id"])
+        self.assertEqual((detail["designer_name"], detail["release_month"]), ("Maker", "2026-10"))
+        self.assertIn("undead", detail["tags"])
+        self.assertTrue(detail["artifacts"][0]["archive_member_id"])
+        self.assertEqual(detail["artifacts"][0]["collection_id"], self.collection)
+
+    def test_a_shared_model_lists_each_artifact_once(self):
+        other = self.add_collection("Single", "1/s")
+        self.archive(other, [("Ghouls/Unique.stl", 99)])
+        self.archive(self.add_collection("Twin", "1/t"), [("Ghouls/Unique.stl", 99)])
+        self.build()
+        model = catalog_browse.list_models(self.conn, "Unique")["models"][0]
+        self.assertEqual(len(catalog_browse.model_detail(self.conn, model["id"])["artifacts"]), 1)
+
     def test_an_inactive_collection_hides_its_only_model(self):
         with self.conn:
             self.conn.execute("UPDATE models SET is_active = 0 WHERE id = ?", (self.collection,))

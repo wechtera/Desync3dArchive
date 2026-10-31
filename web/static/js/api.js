@@ -520,11 +520,11 @@ export async function fetchModelGroup(groupId) {
   return request(`/api/model-groups/${groupId}`);
 }
 
-export async function approveLibraryPreview(libraryId, skipReleases) {
+export async function approveLibraryPreview(libraryId, skipReleases, readyOnly = false) {
   return request(`/api/settings/libraries/${libraryId}/preview/approve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ skip_releases: skipReleases })
+    body: JSON.stringify(readyOnly ? { skip_releases: skipReleases, ready_only: true } : { skip_releases: skipReleases })
   });
 }
 

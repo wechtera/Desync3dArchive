@@ -909,14 +909,17 @@ function renderRawArchiveTreeView(container, rawData) {
   }
 
   const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp'];
+  // Older copies were cached for a week, and that cached copy may be the empty file from the RAR bug.
+  const openedAt = Date.now();
 
   const rowsHtml = entries.map((entry, idx) => {
     const ext = (entry.file_extension || '').toLowerCase();
     const isImage = IMAGE_EXTS.includes(ext);
     const isStl = ext === '.stl' || (entry.filename || '').toLowerCase().endsWith('.stl');
 
-    const cleanDiskName = (entry.filename || '').replace(/[^\w\-_\.]/g, '_');
-    const imagePreviewUrl = `/previews/${modelId}/${fileId}/${cleanDiskName}`;
+    // Must match the peeker's cleanup, and Python's \w includes unicode letters where JS's doesn't.
+    const cleanDiskName = (entry.filename || '').replace(/[^\p{L}\p{N}\-_.]/gu, '_');
+    const imagePreviewUrl = `/previews/${modelId}/${fileId}/${encodeURIComponent(cleanDiskName)}?v=${openedAt}`;
 
     let pathDisplay = html`<span class="font-mono">${entry.internal_path}</span>`;
     if (isImage) {

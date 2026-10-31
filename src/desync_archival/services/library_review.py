@@ -100,6 +100,13 @@ def _known_paths(conn: sqlite3.Connection, library_id: int, release: str) -> tup
             " WHERE m.library_id = ? AND f.excluded = 0;", (library_id,)
         ).fetchall()
     }
+    # Approved cards count as taken too, even before the add reaches them.
+    for rel_path, folders in conn.execute(
+        "SELECT rel_path, folders_json FROM library_candidates WHERE library_id = ? AND release_name = ? AND status IN (?, ?);",
+        (library_id, release, APPROVED, ADDED),
+    ).fetchall():
+        keys.add(rel_path)
+        held.update(json.loads(folders))
     return {k for k in keys if k.startswith(prefix)}, {p for p in held if p.startswith(prefix)}
 
 
@@ -201,14 +208,16 @@ def release_view(conn: sqlite3.Connection, library_id: int, release: str) -> dic
         raise ReviewError("Run a preview first.")
     saved = _saved(conn, library_id).get(release)
     keys, held = _known_paths(conn, library_id, release)
+    settled = _settled(conn, library_id, release)
+    cards = saved["cards"] if saved else _code_cards(latest[1], release)
     return {
         "release": release,
         **tree,
-        "cards": saved["cards"] if saved else _code_cards(latest[1], release),
+        "cards": [c for c in cards if f"{release}/{c['key']}" not in settled],
         "reviewed": bool(saved and saved["reviewed"]),
         "changed": saved is not None,
         "locked": sorted(keys | held),
-        "settled": sorted(_settled(conn, library_id, release)),
+        "settled": sorted(settled),
     }
 
 
@@ -217,15 +226,17 @@ def save(conn: sqlite3.Connection, library_id: int, release: str, cards: list[di
     tree = _tree(conn, library_id, release)
     if not latest or tree is None:
         raise ReviewError("Run a preview first.")
-    if _settled(conn, library_id, release):
-        raise ReviewError(f"{release} is already approved, so its cards can't change.")
+    # Added cards are history and stay as they were. The rest of the release stays open.
+    settled = _settled(conn, library_id, release)
+    earlier = _saved(conn, library_id).get(release, {}).get("cards") or _code_cards(latest[1], release)
+    kept = [c for c in earlier if f"{release}/{c['key']}" in settled]
     files = set(tree["files"])
     keys, held = _known_paths(conn, library_id, release)
     prefix = f"{release}/"
     clean = _clean(cards, set(tree["folders"]) | files, keys | held, release, {k.removeprefix(prefix) for k in keys})
     with conn:
-        _store(conn, library_id, release, clean, reviewed)
-        write_candidates(conn, library_id, latest[0], release, clean, files)
+        _store(conn, library_id, release, [*kept, *clean], reviewed)
+        write_candidates(conn, library_id, latest[0], release, [*kept, *clean], files)
     return {"success": True, "cards": len(clean), "skipped": sum(c["skip"] for c in clean), "reviewed": reviewed}
 
 
@@ -234,8 +245,6 @@ def reset(conn: sqlite3.Connection, library_id: int, release: str) -> dict[str, 
     tree = _tree(conn, library_id, release)
     if not latest or tree is None:
         raise ReviewError("Run a preview first.")
-    if _settled(conn, library_id, release):
-        raise ReviewError(f"{release} is already approved, so its cards can't change.")
     cards = _code_cards(latest[1], release)
     with conn:
         conn.execute(
@@ -280,14 +289,56 @@ def merge_preview(conn: sqlite3.Connection, library_id: int, run_id: int, report
     return decided
 
 
+def _drop_settled(entry: dict[str, Any], settled: set[str]) -> None:
+    waiting = [item for item in entry["new"] if item["rel_path"] not in settled]
+    entry["added"] = len(entry["new"]) - len(waiting)
+    entry["new"] = waiting
+    entry["ready"] = sum(_is_ready(entry, item) for item in waiting)
+
+
+def _is_ready(entry: dict[str, Any], item: dict[str, Any]) -> bool:
+    # Trusted means a human looked, or the code raised nothing worth looking at.
+    return bool(entry.get("reviewed")) or not (
+        item.get("flags") or any(note.startswith(f"{item['rel_path']}:") for note in entry["low_confidence"])
+    )
+
+
+def approve_ready(conn: sqlite3.Connection, library_id: int, hold_releases: list[str]) -> dict[str, int]:
+    """Approves what's reviewed or unflagged. The rest stays proposed, so nothing is lost by waiting."""
+    latest = _latest_run(conn, library_id)
+    if not latest:
+        raise ReviewError("Run a preview first.")
+    report = with_reviews(conn, library_id, latest[1])
+    ready = [
+        item["rel_path"] for entry in report["releases"] if entry["name"] not in hold_releases
+        for item in entry["new"] if _is_ready(entry, item)
+    ]
+    with conn:
+        approved = sum(
+            conn.execute(
+                "UPDATE library_candidates SET status = ? WHERE library_id = ? AND rel_path = ? AND status = ?;",
+                (APPROVED, library_id, rel_path, PROPOSED),
+            ).rowcount
+            for rel_path in ready
+        )
+    waiting = conn.execute(
+        "SELECT COUNT(*) FROM library_candidates WHERE library_id = ? AND status = ?;", (library_id, PROPOSED)
+    ).fetchone()[0]
+    return {"approved": approved, "waiting": waiting}
+
+
 def with_reviews(conn: sqlite3.Connection, library_id: int, report: dict[str, Any]) -> dict[str, Any]:
     """The report as the human left it. Saved cards replace the resolver's guess for that release."""
     saved = _saved(conn, library_id)
+    settled = {r[0] for r in conn.execute(
+        "SELECT rel_path FROM library_candidates WHERE library_id = ? AND status IN (?, ?);", (library_id, APPROVED, ADDED)
+    ).fetchall()}
     for entry in report.get("releases", []):
         review = saved.get(entry["name"])
         entry["reviewed"] = bool(review and review["reviewed"])
         entry["edited"] = review is not None
         if not review:
+            _drop_settled(entry, settled)
             continue
         keep = [c for c in review["cards"] if not c.get("skip")]
         entry["new"] = [
@@ -297,7 +348,9 @@ def with_reviews(conn: sqlite3.Connection, library_id: int, report: dict[str, An
         ]
         entry["skipped"] = len(review["cards"]) - len(keep)
         entry["low_confidence"] = []
+        _drop_settled(entry, settled)
     if report.get("totals"):
+        report["totals"]["ready"] = sum(r["ready"] for r in report["releases"])
         report["totals"]["new"] = sum(len(r["new"]) for r in report["releases"])
         report["totals"]["low_confidence"] = sum(len(r["low_confidence"]) for r in report["releases"])
     return report

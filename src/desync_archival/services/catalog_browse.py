@@ -78,15 +78,29 @@ def model_detail(conn: sqlite3.Connection, model_id: int) -> dict[str, Any] | No
         ).fetchone()
     if not row:
         return None
-    artifacts = [dict(r) for r in conn.execute("""
-        SELECT a.id, a.filename, a.path, a.size_bytes, a.scale, a.supported, a.hollow, a.file_id, f.filename AS archive
+    artifacts = conn.execute("""
+        SELECT a.id, a.filename, a.path, a.size_bytes, a.scale, a.supported, a.hollow, a.file_id, a.archive_member_id,
+               f.filename AS archive, f.model_id AS collection_id, m.submodel_id
         FROM model_artifacts a LEFT JOIN model_files f ON f.file_id = a.file_id
+        LEFT JOIN file_archive_members m ON m.id = a.archive_member_id
         WHERE a.catalog_model_id = ? ORDER BY a.scale, a.filename;
+    """, (row["id"],)).fetchall()
+    # A model sold twice has each file twice. One line each, and the first copy supplies it.
+    unique = {(a["filename"].lower(), a["size_bytes"]): dict(a) for a in reversed(artifacts)}
+    tags = [r[0] for r in conn.execute("""
+        SELECT tag FROM catalog_model_tags WHERE catalog_model_id = ?1
+        UNION SELECT t.tag FROM model_tags t JOIN catalog_model_collections l ON l.collection_id = t.model_id
+        WHERE l.catalog_model_id = ?1 ORDER BY 1;
     """, (row["id"],)).fetchall()]
-    tags = [r[0] for r in conn.execute(
-        "SELECT tag FROM catalog_model_tags WHERE catalog_model_id = ? ORDER BY tag;", (row["id"],)
-    ).fetchall()]
-    return {**_summary(conn, row), "artifacts": artifacts, "tags": tags}
+    first = conn.execute("""
+        SELECT c.release_month, c.url, c.published_at FROM models c JOIN catalog_model_collections l ON l.collection_id = c.id
+        WHERE l.catalog_model_id = ? ORDER BY c.id LIMIT 1;
+    """, (row["id"],)).fetchone()
+    return {
+        **_summary(conn, row), **(dict(first) if first else {}), "tags": tags,
+        "artifacts": sorted(unique.values(), key=lambda a: (a["scale"] or "", a["filename"].lower())),
+        "total_bytes": sum(a["size_bytes"] or 0 for a in unique.values()),
+    }
 
 
 def group_detail(conn: sqlite3.Connection, group_id: int) -> dict[str, Any] | None:

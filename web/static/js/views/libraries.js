@@ -248,6 +248,21 @@ async function startLibraryPass(lib, mode) {
   }
 }
 
+// Waiting costs nothing here: flagged cards and unticked releases just stay proposed.
+async function approveReviewed(lib) {
+  const held = [...document.querySelectorAll('.preview-release-check')]
+    .filter(box => !box.checked)
+    .map(box => box.dataset.release);
+  try {
+    const res = await approveLibraryPreview(lib.id, held, true);
+    showToast(`Approved ${res.approved} folders. ${res.waiting} stay for review.`);
+    await startLibraryPass(lib, 'add');
+    await loadLibraryPreview(lib);
+  } catch (err) {
+    alert(`Approval failed: ${err.message}`);
+  }
+}
+
 async function approveAndAdd(lib) {
   const skipped = [...document.querySelectorAll('.preview-release-check')]
     .filter(box => !box.checked)
@@ -304,7 +319,7 @@ async function loadLibraryPreview(lib) {
           <tbody>
             ${releases.map(r => html`
               <tr class=${flagsIn(r) ? 'preview-row-flagged' : ''}>
-                <td>${r.new.length ? html`<input type="checkbox" class="preview-release-check" data-release=${r.name} ?checked=${!r.low_confidence.length}>` : nothing}</td>
+                <td>${r.new.length ? html`<input type="checkbox" class="preview-release-check" data-release=${r.name} checked>` : nothing}</td>
                 <td>
                   ${r.new.length ? html`<button type="button" class="link-btn preview-release-open" data-release=${r.name} @click=${() => openReview(lib, r.name)}>${r.name}</button>` : r.name}
                   ${r.new.length ? html`
@@ -332,8 +347,14 @@ async function loadLibraryPreview(lib) {
         </table>
       ` : nothing}
       ${unread ? html`<p class="text-dim font-sm mt-2" id="preview-unread">${unread} flagged models are in releases you haven't reviewed.</p>` : nothing}
+      ${report && waiting ? html`
+        <p class="text-dim font-sm mt-2" id="preview-ready">
+          ${report.totals.ready} ready: reviewed by you, or unflagged. Unticked releases and flagged models stay for review.
+        </p>
+      ` : nothing}
       <div class="flex gap-2 mt-2">
-        ${waiting ? html`<button type="button" class="btn-pill btn-action-primary" id="btn-approve-preview" @click=${() => approveAndAdd(lib)}>Approve and Add ${waiting} Folders</button>` : nothing}
+        ${report?.totals.ready ? html`<button type="button" class="btn-pill btn-action-primary" id="btn-approve-ready" @click=${() => approveReviewed(lib)}>Approve and Add Reviewed</button>` : nothing}
+        ${waiting ? html`<button type="button" class="btn-pill" id="btn-approve-preview" @click=${() => approveAndAdd(lib)}>Approve and Add All ${waiting} Folders</button>` : nothing}
         ${approved ? html`<button type="button" class="btn-pill" @click=${() => startLibraryPass(lib, 'add')}>Resume Adding ${approved} Folders</button>` : nothing}
       </div>
     </div>
@@ -522,7 +543,7 @@ function drawReview() {
   // Flagged cards first. The key tiebreak stops a card jumping while its name is being edited.
   const cards = [...review.cards].sort((a, b) => (b.flags || []).length - (a.flags || []).length || a.key.localeCompare(b.key));
   render(html`
-    ${data.settled.length ? html`<p class="text-dim font-sm">This release is approved, so its cards are read-only.</p>` : nothing}
+    ${data.settled.length ? html`<p class="text-dim font-sm">${data.settled.length} cards here are already approved and hidden. Their paths show as In library.</p>` : nothing}
     <div class="review-layout">
       <div class="review-tree" id="review-tree">
         ${top.map(f => drawTreeRow(f, false, 0))}
@@ -541,10 +562,10 @@ function drawReview() {
       </div>
     </div>
     <div class="flex gap-2 mt-2">
-      <button type="button" class="btn-pill btn-action-primary" id="btn-review-next" ?disabled=${!!data.settled.length} @click=${() => saveReview(true, true)}>Mark Reviewed and Next</button>
-      <button type="button" class="btn-pill" id="btn-review-save" ?disabled=${!!data.settled.length} @click=${() => saveReview(data.reviewed, false)}>Save</button>
+      <button type="button" class="btn-pill btn-action-primary" id="btn-review-next" ?disabled=${!data.cards.length} @click=${() => saveReview(true, true)}>Mark Reviewed and Next</button>
+      <button type="button" class="btn-pill" id="btn-review-save" ?disabled=${!data.cards.length} @click=${() => saveReview(data.reviewed, false)}>Save</button>
       ${review.source.reset ? html`
-        <button type="button" class="btn-pill btn-action-cancel" id="btn-review-reset" ?disabled=${!!data.settled.length || !data.changed} @click=${resetReview}>Reset to Code's Guess</button>
+        <button type="button" class="btn-pill btn-action-cancel" id="btn-review-reset" ?disabled=${!data.changed} @click=${resetReview}>Reset to Code's Guess</button>
       ` : nothing}
     </div>
   `, body);

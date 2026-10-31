@@ -44,10 +44,10 @@ export async function openAddToStashModal(itemContext, onSuccess = null) {
   render(html`<div class="loading-placeholder">Checking stash manifests...</div>`, body);
 
   const tierLabels = {
-    model: 'MODEL BUNDLE',
+    model: 'COLLECTION',
     file: 'ARCHIVE FILE',
-    submodel: 'LOGICAL SUBMODEL',
-    archive_member: 'RAW MESH MEMBER',
+    submodel: 'MODEL',
+    archive_member: 'ARTIFACT',
     bulk_models: 'BULK MODELS'
   };
 
