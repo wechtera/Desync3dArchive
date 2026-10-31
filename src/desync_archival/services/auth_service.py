@@ -236,9 +236,9 @@ def fetch_user_profile(access_token: str) -> tuple[str, str]:
                 user_id = str(data.get("id") or "")
                 log_layer("http", logging.INFO, f"OAuth connected to MyMiniFactory user: '{username}' (User ID: {user_id})")
             elif resp.status_code == 401:
-                log_layer("http", logging.WARNING, "MMF User Profile query returned HTTP 401: Invalid or expired Bearer token.")
+                logger.warning("MMF User Profile query returned HTTP 401: Invalid or expired Bearer token.")
             else:
-                log_layer("http", logging.WARNING, f"MMF User Profile returned HTTP {resp.status_code}")
+                logger.warning(f"MMF User Profile returned HTTP {resp.status_code}")
     except Exception as e:
         log_layer("http", logging.ERROR, f"OAuth Profile network error: {e}")
 

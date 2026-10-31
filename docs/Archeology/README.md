@@ -91,9 +91,13 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 **API key:** not used. The user chose OAuth only, so the app sends the key nowhere.
 
-**Limitation:** with the implicit grant there are no refresh tokens. Access tokens last about 6 hours, and a 401 during a long download run still trips the circuit breaker until the user reconnects. V5 is closed for `state` checking, but the implicit grant itself remains in use.
+**Token duration:** the user chooses it on MMF's login page, and that choice sets `expires_in`. A real sign-in on 2026-10-31 returned a token lasting 168 hours, far more than the 21,600 seconds in MMF's documentation. Only the Client ID in Settings matters for this flow.
+
+**Limitation:** the implicit grant has no refresh tokens, so a 401 after the chosen duration still trips the circuit breaker until the user reconnects. V5 is closed for `state` checking, but the implicit grant itself remains in use.
 
 **Bugs found and fixed**
+- Running download workers kept the token from startup, so a sign-in didn't reach them until a restart. They now reload on sign-in and disconnect.
+- The profile lookup can fail just after sign-in, which left the username blank. The status route now fills it in.
 - The Connect button could never work: it called `fetch` on a cross-site redirect and read a `login_url` field the API has never returned.
 - Replacing one cookie in Settings used to rebuild `cookies_json` from that one value, dropping the rest. The server now merges it into the stored list.
 

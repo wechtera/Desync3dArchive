@@ -363,6 +363,40 @@ class V5OAuthFlowTests(AppCase):
         self.assertEqual(self.setting("mmf_access_token"), "implicit-token")
 
 
+class SignInFollowUpTests(AppCase):
+    def live_token(self):
+        self.set(mmf_access_token="live-token", mmf_token_expires_at=str(int(time.time()) + 3600), mmf_username="")
+
+    @patch("desync_archival.services.auth_service.fetch_user_profile", return_value=("maker", "7"))
+    def test_status_fills_in_a_missing_username(self, profile):
+        self.live_token()
+        data = self.client.get("/api/auth/status").json()
+        self.assertEqual((data["username"], data["user_id"]), ("maker", "7"))
+        self.assertEqual(self.setting("mmf_username"), "maker")
+        self.client.get("/api/auth/status")
+        profile.assert_called_once()
+
+    @patch("desync_archival.services.auth_service.fetch_user_profile", return_value=("", ""))
+    def test_status_survives_a_failed_profile_lookup(self, _profile):
+        self.live_token()
+        self.assertTrue(self.client.get("/api/auth/status").json()["connected"])
+
+    @patch("desync_archival.services.auth_service.fetch_user_profile", return_value=("maker", "7"))
+    def test_workers_get_the_new_token_after_sign_in(self, _profile):
+        manager = MagicMock()
+        self.set(mmf_oauth_state="real-state")
+        with patch.object(server, "download_manager", manager):
+            body = {"access_token": "fresh-token", "state": "real-state"}
+            self.assertEqual(self.client.post("/api/auth/token_callback", json=body).status_code, 200)
+        manager._load_settings.assert_called_once()
+
+    def test_workers_drop_the_token_on_disconnect(self):
+        manager = MagicMock()
+        with patch.object(server, "download_manager", manager):
+            self.client.post("/api/auth/disconnect")
+        manager._load_settings.assert_called_once()
+
+
 class TokenRefreshTests(AppCase):
     def seed(self, expires_in=3600, access="old-access", refresh="old-refresh"):
         self.set(

@@ -16,6 +16,12 @@ def handle_get_auth_status(
     params: dict,
 ) -> tuple[dict[str, Any], int]:
     status = auth_service.get_auth_status(conn)
+    if status["connected"] and not status["username"]:
+        # A token can fail the profile lookup in the moment after sign-in, so try again here.
+        username, user_id = auth_service.fetch_user_profile(auth_service.get_setting(conn, "mmf_access_token"))
+        if username:
+            auth_service.set_settings(conn, {"mmf_username": username, "mmf_user_id": str(user_id or "")})
+            status.update(username=username, user_id=user_id)
     return status, 200
 
 
@@ -52,6 +58,12 @@ def handle_post_auth_config(
 
     auth_service.set_settings(conn, updates)
     return {"success": True, "configured": True}, 200
+
+
+def reload_workers(download_manager: DownloadManager | None) -> None:
+    """Workers keep a copy of the token, so they must see every sign-in and disconnect."""
+    if download_manager:
+        download_manager._load_settings()
 
 
 def state_matches(conn: sqlite3.Connection, supplied: Any) -> bool:
@@ -115,6 +127,7 @@ def handle_get_auth_callback(
             "mmf_user_id": str(user_id or payload.get("user_id") or ""),
             "mmf_username": str(username or ""),
         })
+        reload_workers(download_manager)
         return "", 302, {"Location": "/#settings"}
 
     html_page = """<!DOCTYPE html>
@@ -229,6 +242,7 @@ def handle_post_auth_token_callback(
         "mmf_username": str(username or ""),
         "mmf_oauth_state": "",
     })
+    reload_workers(download_manager)
 
     return {
         "success": True,
@@ -252,4 +266,5 @@ def handle_post_auth_disconnect(
         "mmf_username": "",
         "mmf_oauth_state": "",
     })
+    reload_workers(download_manager)
     return {"success": True, "connected": False}, 200
