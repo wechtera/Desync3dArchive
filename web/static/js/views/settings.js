@@ -189,6 +189,18 @@ export async function loadDirectoryUsage() {
 // In-Place External Libraries Management (Phase 9)
 // -----------------------------------------------------------------------------
 
+export function switchSettingsTab(tab) {
+  // Panels stay in the page while hidden, so a save still reads every field.
+  document.querySelectorAll('[data-settings-tab]').forEach(panel => {
+    panel.hidden = panel.dataset.settingsTab !== tab;
+  });
+  document.querySelectorAll('[data-settings-tab-btn]').forEach(btn => {
+    const selected = btn.dataset.settingsTabBtn === tab;
+    btn.classList.toggle('active', selected);
+    btn.setAttribute('aria-selected', selected ? 'true' : 'false');
+  });
+}
+
 export async function loadExternalLibraries() {
   let panel = document.getElementById('external-libraries-panel');
 
@@ -199,6 +211,8 @@ export async function loadExternalLibraries() {
       panel = document.createElement('div');
       panel.id = 'external-libraries-panel';
       panel.className = 'settings-panel';
+      panel.dataset.settingsTab = 'libraries';
+      panel.hidden = !document.querySelector('[data-settings-tab-btn="libraries"].active');
       if (grid.children.length > 1) {
         grid.insertBefore(panel, grid.children[1]);
       } else {

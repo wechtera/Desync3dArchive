@@ -50,6 +50,7 @@ test('login opens the app, and Log Out closes it', async ({ page, context }) => 
   expect(cookie).toMatchObject({ name: 'desync_session', httpOnly: true, secure: true, sameSite: 'Strict' });
 
   await page.goto('/#settings');
+  await page.click('[data-settings-tab-btn="mmf"]');
   await page.click('#btn-logout');
   await expect(page).toHaveURL(`${BASE}/login`);
 

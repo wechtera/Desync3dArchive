@@ -2517,6 +2517,16 @@ pre, .task-log-viewer, .console-output {
   box-sizing: border-box;
 }
 
+.settings-tabs {
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 0;
+}
+
+.settings-panel[hidden] {
+  display: none;
+}
+
 .settings-panel {
   width: 100%;
   background: var(--bg-surface, #1e1e24);

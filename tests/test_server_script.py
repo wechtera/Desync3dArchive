@@ -30,7 +30,7 @@ class ServerScriptTests(unittest.TestCase):
 
     def run_script(self, *args):
         return subprocess.run(
-            [str(SCRIPT), *args], capture_output=True, text=True, timeout=30,
+            [str(SCRIPT), *args], capture_output=True, text=True, timeout=30, check=False,
             env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(self.base), "DESYNC_PRODUCTION_ENV": str(self.env_file)},
         )
 

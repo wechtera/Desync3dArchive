@@ -577,10 +577,20 @@
 
   <!-- View 6: Settings & Pipeline Tasks Workspace -->
   <div id="view-settings" style="display:none;">
+    <div class="sub-tabs settings-tabs" role="tablist" aria-label="Settings sections">
+      <button type="button" class="sub-btn active" role="tab" aria-selected="true" data-settings-tab-btn="usage" data-click="switchSettingsTab" data-args='["usage"]'>Disk Usage</button>
+      <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="libraries" data-click="switchSettingsTab" data-args='["libraries"]'>Libraries</button>
+      <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="directories" data-click="switchSettingsTab" data-args='["directories"]'>Directories</button>
+      <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="workers" data-click="switchSettingsTab" data-args='["workers"]'>Workers</button>
+      <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="logging" data-click="switchSettingsTab" data-args='["logging"]'>Logging</button>
+      <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="mmf" data-click="switchSettingsTab" data-args='["mmf"]'>MMF Sign-In</button>
+      <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="cookies" data-click="switchSettingsTab" data-args='["cookies"]'>Session &amp; Cookies</button>
+      <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="tasks" data-click="switchSettingsTab" data-args='["tasks"]'>Tasks</button>
+    </div>
     <div class="settings-grid">
 
       <!-- Card 1: Critical Storage & Directory Usage -->
-      <div class="settings-panel">
+      <div class="settings-panel" data-settings-tab="usage">
         <div class="settings-panel-header">
           <div>
             <h2 class="settings-panel-title">Critical Storage &amp; Directory Usage</h2>
@@ -605,7 +615,7 @@
       </div>
 
       <!-- Card 1b: In-Place External Libraries Management -->
-      <div class="settings-panel" id="external-libraries-panel">
+      <div class="settings-panel" id="external-libraries-panel" data-settings-tab="libraries" hidden>
         <div class="settings-panel-header">
           <div>
             <h2 class="settings-panel-title">In-Place External Libraries</h2>
@@ -655,7 +665,7 @@
       </div>
 
       <!-- Card 2: Storage & Directory Configuration -->
-      <div class="settings-panel">
+      <div class="settings-panel" data-settings-tab="directories" hidden>
         <div class="settings-panel-header">
           <div>
             <h2 class="settings-panel-title">Storage &amp; Directory Configuration</h2>
@@ -708,7 +718,7 @@
       </div>
 
       <!-- Card 3: Worker Engine Tuning & I/O Buffers -->
-      <div class="settings-panel">
+      <div class="settings-panel" data-settings-tab="workers" hidden>
         <div class="settings-panel-header">
           <div>
             <h2 class="settings-panel-title">Worker Engine &amp; I/O Stream Tuning</h2>
@@ -774,7 +784,7 @@
       </div>
 
       <!-- Card 4: Diagnostic Logging & Subsystem Layers -->
-      <div class="settings-panel">
+      <div class="settings-panel" data-settings-tab="logging" hidden>
         <div class="settings-panel-header">
           <div>
             <h2 class="settings-panel-title">Diagnostic Logging &amp; Subsystem Layers</h2>
@@ -823,7 +833,7 @@
       </div>
 
       <!-- Card 5: MyMiniFactory Native OAuth 2.0 Authentication -->
-      <div class="settings-panel">
+      <div class="settings-panel" data-settings-tab="mmf" hidden>
         <div class="settings-panel-header">
           <div>
             <h2 class="settings-panel-title">MyMiniFactory Native Authentication</h2>
@@ -866,7 +876,7 @@
       </div>
 
       <!-- Card 6: Session Authentication & Cookies -->
-      <div class="settings-panel">
+      <div class="settings-panel" data-settings-tab="cookies" hidden>
         <div class="settings-panel-header">
           <div>
             <h2 class="settings-panel-title">Session Authentication &amp; Cookies</h2>
@@ -920,7 +930,7 @@
       </div>
 
       <!-- Card 7: Pipeline Tasks & Automation (Full-Width Bottom Panel) -->
-      <div class="settings-panel settings-panel-full" id="settings-pipeline-tasks">
+      <div class="settings-panel settings-panel-full" id="settings-pipeline-tasks" data-settings-tab="tasks" hidden>
         <div class="settings-panel-header">
           <div>
             <h2 class="settings-panel-title">Pipeline Tasks &amp; Automation</h2>

@@ -450,6 +450,7 @@ test.describe('settings', () => {
     await expect(page.locator('#critical-directories-table-container')).toContainText('10 B');
     await expect(page.getByText(HOSTILE).first()).toBeVisible();
     await expect(page.locator('body img[src="x"]')).toHaveCount(0);
+    await page.locator('[data-settings-tab-btn="libraries"]').click();
     await expect(page.getByText('Never Scanned')).toBeVisible();
   });
 
@@ -459,6 +460,7 @@ test.describe('settings', () => {
     await page.route('**/api/settings/libraries/2/scan', (route) => { scanned = true; return route.fulfill({ json: { success: true, task_id: 1 } }); });
     page.on('dialog', (dialog) => dialog.accept());
     await page.goto('/#settings');
+    await page.locator('[data-settings-tab-btn="libraries"]').click();
     await page.getByRole('button', { name: /Scan/ }).first().click();
     await expect.poll(() => scanned).toBe(true);
   });

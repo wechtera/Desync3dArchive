@@ -47,6 +47,39 @@ test('the tasks route opens inside settings', async ({ page }) => {
   await expect(page).toHaveURL(/#settings$/);
 });
 
+test('the tasks route opens the tasks tab', async ({ page }) => {
+  await page.goto('/#tasks');
+  await expect(page.locator('#settings-pipeline-tasks')).toBeVisible();
+  await expect(page.locator('[data-settings-tab-btn="tasks"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('[data-settings-tab="usage"]')).toBeHidden();
+});
+
+test('settings shows one tab at a time and keeps it across views', async ({ page }) => {
+  await page.goto('/#settings');
+  await expect(page.locator('[data-settings-tab]:visible')).toHaveCount(1);
+  await expect(page.locator('[data-settings-tab="usage"]')).toBeVisible();
+
+  await page.locator('[data-settings-tab-btn="workers"]').click();
+  await expect(page.locator('[data-settings-tab]:visible')).toHaveCount(1);
+  await expect(page.locator('[data-settings-tab="workers"]')).toBeVisible();
+  await expect(page.locator('[data-settings-tab-btn="usage"]')).toHaveAttribute('aria-selected', 'false');
+
+  await page.locator('#nav-tab-help').click();
+  await page.locator('#nav-tab-settings').click();
+  await expect(page.locator('[data-settings-tab="workers"]')).toBeVisible();
+});
+
+test('every settings panel has a tab', async ({ page }) => {
+  await page.goto('/#settings');
+  const panels = await page.locator('.settings-grid > .settings-panel').evaluateAll(
+    (nodes) => nodes.map((node) => node.dataset.settingsTab),
+  );
+  const buttons = await page.locator('[data-settings-tab-btn]').evaluateAll(
+    (nodes) => nodes.map((node) => node.dataset.settingsTabBtn),
+  );
+  expect(panels).toEqual(buttons);
+});
+
 test('navigation tabs switch views', async ({ page }) => {
   await page.goto('/');
   await page.locator('#nav-tab-settings').click();
@@ -85,6 +118,7 @@ test('connect button goes to the MMF sign-in page', async ({ page }) => {
     json: { configured: true, connected: false },
   }));
   await page.goto('/#settings');
+  await page.locator('[data-settings-tab-btn="mmf"]').click();
   await page.locator('#btn-connect-auth').click();
   await expect(page).toHaveURL(/#help$/);
 });

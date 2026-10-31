@@ -121,7 +121,8 @@ import {
   connectAccount,
   disconnectAccount,
   logOut,
-  testAccountConnection
+  testAccountConnection,
+  switchSettingsTab
 } from './views/settings.js';
 
 // --- View: Pipeline Tasks, Scraper & Ingest Automation ---
@@ -204,11 +205,11 @@ export function refreshCurrentView() {
 }
 
 export function switchTab(tabName) {
-  // If user requests legacy #tasks, redirect to settings and scroll to tasks
-  let shouldScrollToTasks = false;
+  // If user requests legacy #tasks, redirect to settings and open the Tasks tab
+  let shouldOpenTasks = false;
   if (tabName === 'tasks') {
     tabName = 'settings';
-    shouldScrollToTasks = true;
+    shouldOpenTasks = true;
   }
 
   const allViews = ['releases', 'models', 'creators', 'downloads', 'stashes', 'settings', 'help'];
@@ -265,14 +266,7 @@ export function switchTab(tabName) {
     stopActiveTransfersPolling();
     loadSettingsView();
     renderTasksView();
-    if (shouldScrollToTasks) {
-      setTimeout(() => {
-        const tasksSection = document.getElementById('settings-pipeline-tasks') || document.getElementById('active-task-container');
-        if (tasksSection) {
-          tasksSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }
-      }, 60);
-    }
+    if (shouldOpenTasks) switchSettingsTab('tasks');
   } else {
     stopActiveTransfersPolling();
   }
@@ -580,6 +574,7 @@ Object.assign(window, {
   cancelActiveTask,
   killActiveTask,
   clearTaskHistory,
+  switchSettingsTab,
   clearTaskLogView: () => {
     const log = document.getElementById('task-live-logs');
     if (log) log.textContent = '';
