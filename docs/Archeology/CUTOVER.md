@@ -1,6 +1,6 @@
 # Cutover runbook
 
-**Status:** Ready to run from stage 1. No production stage has been run except the read-only preflight. Every stage marked **Approval** waits for the user.
+**Status:** Stages 1 to 5 ran on 2026-10-31 and passed. Production runs from `~/DESYNC_Data`. Stage 6 is next, then stage 7 after the user accepts. The pre-migration backup is `DESYNC_Backups/library-20261031-131839-482898.db`.
 
 **Rule:** a small sample goes first and is inspected before the rest. Rollback is tested before anything touches production.
 
@@ -77,9 +77,11 @@ The first command is a dry run. Expect the added row in `dropped`, and `passed: 
 
 ### 5. Production cutover: **Approval**
 
+Production settings live in `~/.config/desync-archival/production.env`, and `scripts/production.sh` runs a command with them. That file sets every value, so the dev `.env` fills no gaps. The commands below ran through it. Production started on `127.0.0.1` because LAN mode needs a password only the user can set.
+
 1. Stop the old app.
 2. Take a verified backup of the old `library.db`, and confirm the row counts.
-3. Copy production data to `~/DESYNC_Data`. The originals stay unchanged.
+3. Copy production data to `~/DESYNC_Data`. The originals stay unchanged. Logging creates `logs/vault.log` as soon as a production command runs, so keep that line when copying the old log over it.
 4. Run `uv run python -m desync_archival.dbtool migrate --confirm-production` with `APP_ENV=production` on the copy.
 5. Rewrite stored paths so the 7 absolute `raw_backup_path` rows follow the data, then verify against the backup:
 
@@ -92,7 +94,7 @@ The first command is a dry run. Expect the added row in `dropped`, and `passed: 
 7. Set `DESYNC_SECRETS_FILE` to its own production file, such as `~/.config/desync-archival/production.json`. The default file also holds the dev login, so production must not share it.
 8. Run `uv run python -m desync_archival.dbtool export-secrets`, then `set-password` if LAN mode stays on.
 9. Set `DESYNC_BACKUP_DIR` to the production backup folder.
-10. Start the new app. Check the catalog, a stash, and a model on each storage tier.
+10. Start the new app with `scripts/production.sh python -m desync_archival.api.server`. Check the catalog, a stash, and a model on each storage tier.
 
 ### 6. After cutover
 

@@ -4,7 +4,7 @@ A single-user, local-first archive and asset manager for a MyMiniFactory (MMF) 3
 
 This project replaces `scrapepage`, which stays frozen in the sibling directory for reference and rollback.
 
-**Status:** Migration is through Step 8 and key decoupling on `main`. Step 9 preparation is on `migration/09-cutover`, and production has not moved yet. The cutover steps are in [docs/Archeology/CUTOVER.md](docs/Archeology/CUTOVER.md). The app is usable on dev data, bound to loopback by default, and production has not moved yet. Start with [docs/Archeology/HANDOFF.md](docs/Archeology/HANDOFF.md).
+**Status:** Production cut over on 2026-10-31 and runs from `~/DESYNC_Data` on code from `migration/09-cutover`, which is not merged yet. Run production commands through `scripts/production.sh`. Remaining steps are in [docs/Archeology/CUTOVER.md](docs/Archeology/CUTOVER.md). Start with [docs/Archeology/HANDOFF.md](docs/Archeology/HANDOFF.md).
 
 ## Prerequisites
 
@@ -108,8 +108,8 @@ Code and data are kept apart, and no data belongs in this repository.
 | Location | Purpose |
 |---|---|
 | `~/DESYNC_Data_dev` | Development copy, safe to reset |
-| `~/DESYNC_Data` | Production, created at cutover in Step 9 |
-| `../scrapepage` | Current production data until cutover, then the rollback copy |
+| `~/DESYNC_Data` | Production |
+| `../scrapepage` | The rollback copy of production, unchanged since cutover |
 
 Never point a development run at `../scrapepage` or `~/DESYNC_Data`.
 

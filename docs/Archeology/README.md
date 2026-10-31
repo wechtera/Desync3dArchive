@@ -30,7 +30,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 8B is merged. Step 9 preparation is on `migration/09-cutover`, and no production stage has run except the read-only preflight.
+- **Phase:** Production cut over on 2026-10-31 and runs on `migration/09-cutover`, not yet merged. Runbook stages 6 and 7 remain.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** `check.sh` passes at the latest commit: 384 Python tests, 1 skipped, 22 browser tests and 110 contract cases.
 - **Production data:** Untouched. Dev work never reaches it, and `library.db` still has its 15:50 modified time from 2026-10-30. The last full NAS comparison, after Step 4, was clean.
@@ -61,7 +61,8 @@ This directory tracks the state of the app, what has been done, and what comes n
 - [x] Step 8B code: key decoupling, duplicate report, cutover tool
 - [x] Merge Step 8B
 - [x] Step 9 preparation: runbook, secrets file, stored path rewrite, staged rehearsal on dev data
-- [ ] Step 9 production stages, one approval at a time
+- [x] Step 9 production stages 1 to 5: sample, full, rollback rehearsal, cutover
+- [ ] Step 9 stages 6 and 7: post-cutover checks and acceptance, then blank and rotate secrets
 
 ## Project decisions
 
