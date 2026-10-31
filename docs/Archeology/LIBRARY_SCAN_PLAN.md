@@ -42,6 +42,18 @@ Library facts from 2026-10-31: 77 release folders, 712 second-level folders, 39,
 - **An empty library root counts as unmounted,** so a mount that lists as empty cannot flag anything.
 - **API contract:** 110 of 110. `last_scan_run_id` is removed from model responses.
 
+## Dry run on the real library, 2026-10-31
+
+Read-only, nothing written. The classifier took 73 seconds, and walking every proposed folder took 14 minutes: 37,784 files, about 790 GB, 49 archives.
+
+**Do not deploy or approve yet. The classifier is wrong for 60 of the 77 releases.** Only the 17 `2020-08` to `2021-12` releases have one folder per model. From 2022 on, a release is laid out by scale, then category, then support variant, then model, such as `April 2024/32mm_PhoenixForge/All_PhoenixForge_Construct_32mm/PhoenixForge_Construct_32mm_LYCHEE/BrazenBull_32mm_LYCHEE`. The same character repeats across scales and variants.
+
+- 17 releases collapse into one model each, with up to 1,261 files. Many others become 3 models named after a scale or bust folder.
+- Releases named like `April 2022` get no month, because only `2022-04` style names are parsed. They land in `Unassigned`.
+- `Loyalty` is empty.
+
+Waiting on the user: what one model is in these releases.
+
 ## Before deploying
 
 1. Merge `feature/library-scan`. Production runs from `migration/09-cutover` in `DESYNC_3D_Archival`, so the checkout must move with it.
