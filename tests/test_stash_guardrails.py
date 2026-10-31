@@ -175,11 +175,9 @@ class TestStashGuardrails(unittest.TestCase):
             self.service.add_to_stash(stash_id=1, item_type="model", model_id=101, conn=self.conn)
         self.assertIn("must be archived in the vault", str(ctx.exception))
 
-    def test_add_model_with_missing_disk_path_raises_value_error(self):
-        """Adding a model whose vault_path does not exist on disk must be rejected."""
-        with self.assertRaises(ValueError) as ctx:
-            self.service.add_to_stash(stash_id=1, item_type="model", model_id=102, conn=self.conn)
-        self.assertIn("vault directory not found on storage", str(ctx.exception))
+    def test_add_model_on_an_offline_mount_succeeds(self):
+        """An archived model can be stashed while its mount is offline, because only export needs files."""
+        self.service.add_to_stash(stash_id=1, item_type="model", model_id=102, conn=self.conn)
 
     def test_add_downloaded_model_succeeds(self):
         """Adding a model with an existing directory on disk succeeds."""
@@ -232,7 +230,7 @@ class TestStashGuardrails(unittest.TestCase):
     def test_bulk_add_all_undownloaded_raises_value_error(self):
         """Bulk adding only un-downloaded models raises a ValueError."""
         with self.assertRaises(ValueError) as ctx:
-            self.service.bulk_add_models(stash_id=1, model_ids=[101, 102], conn=self.conn)
+            self.service.bulk_add_models(stash_id=1, model_ids=[101], conn=self.conn)
         self.assertIn("must be downloaded to the vault before adding to a stash", str(ctx.exception))
 
     def test_bulk_add_mixed_models_filters_and_reports_skipped(self):
@@ -257,7 +255,7 @@ class TestStashGuardrails(unittest.TestCase):
 
     def test_route_bulk_add_all_undownloaded_returns_400(self):
         """HTTP bulk handler returns 400 when all requested models are un-downloaded."""
-        body = {"model_ids": [101, 102]}
+        body = {"model_ids": [101]}
         resp, status = handle_bulk_add_models(conn=self.conn, stash_id=1, body=body)
         self.assertEqual(status, 400)
         self.assertIn("must be downloaded to the vault", resp["error"])

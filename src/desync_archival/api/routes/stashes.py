@@ -255,6 +255,9 @@ def handle_post_export_stash(
         fid = it["file_id"]
         smid = it["submodel_id"]
         amid = it["archive_member_id"]
+        # The exporter skips items from an unlinked library, so they can't stop the export here.
+        if conn.execute(queries.POST_EXPORT_STASH_INACTIVE, (mid,)).fetchone():
+            continue
         try:
             if itype == "model":
                 _stash_service._verify_model_downloaded(conn, mid)
@@ -264,6 +267,7 @@ def handle_post_export_stash(
                 _stash_service._verify_submodel_downloaded(conn, smid, fid)
             elif itype == "archive_member":
                 _stash_service._verify_archive_member_downloaded(conn, amid, fid)
+            _stash_service.verify_on_storage(conn, it)
         except ValueError as ve:
             return {"error": str(ve)}, 400
 

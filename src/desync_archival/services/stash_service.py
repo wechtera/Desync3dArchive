@@ -43,6 +43,7 @@ class StashService:
         except Exception:
             return False
 
+    # These checks read the catalog, never the disk. A mount can be offline, and only export needs the files.
     def _verify_model_downloaded(self, conn: sqlite3.Connection, model_id: int):
         if not self._has_vault_columns(conn):
             return
@@ -57,10 +58,6 @@ class StashService:
         if not vault_path:
             raise ValueError(f"Model #{model_id} must be archived in the vault before adding to a stash.")
 
-        p = Path(vault_path)
-        if not p.exists() or not p.is_dir():
-            raise ValueError(f"Model #{model_id} vault directory not found on storage: {vault_path}")
-
     def _verify_file_downloaded(self, conn: sqlite3.Connection, file_id: int):
         if not self._has_vault_columns(conn):
             return
@@ -72,10 +69,6 @@ class StashService:
         """, (file_id,)).fetchone()
 
         if not row or row["storage_tier"] not in ("nas", "local"):
-            raise ValueError(f"File #{file_id} must be downloaded before adding to a stash.")
-
-        target = Path(row["vault_path"]) if (row["storage_tier"] == "nas" and row["vault_path"]) else Path(row["staging_path"] or "")
-        if not target or not target.exists() or not target.is_file():
             raise ValueError(f"File #{file_id} must be downloaded before adding to a stash.")
 
     def _verify_submodel_downloaded(self, conn: sqlite3.Connection, submodel_id: int, file_id: Optional[int]):
@@ -113,6 +106,31 @@ class StashService:
             self._verify_file_downloaded(conn, resolved_file_id)
         except ValueError:
             raise ValueError(f"Parent archive for archive member #{archive_member_id} must be downloaded before adding to a stash.")
+
+    def verify_on_storage(self, conn: sqlite3.Connection, item: Any) -> None:
+        """Export is the one stash action that needs the files, so it alone checks the disk."""
+        if not self._has_vault_columns(conn):
+            return
+
+        file_id = item["file_id"]
+        if item["item_type"] == "model":
+            row = conn.execute("SELECT vault_path FROM models WHERE id = ?;", (item["model_id"],)).fetchone()
+            path = Path(row["vault_path"])
+            if not path.is_dir():
+                raise ValueError(f"Model #{item['model_id']} vault directory not found on storage: {path}")
+            return
+
+        if file_id is None and item["submodel_id"] is not None:
+            row = conn.execute("SELECT file_id FROM file_archive_submodels WHERE id = ?;", (item["submodel_id"],)).fetchone()
+            file_id = row["file_id"]
+        elif file_id is None:
+            row = conn.execute("SELECT file_id FROM file_archive_members WHERE id = ?;", (item["archive_member_id"],)).fetchone()
+            file_id = row["file_id"]
+
+        row = conn.execute("SELECT vault_path, staging_path, storage_tier FROM downloaded_files WHERE file_id = ?;", (file_id,)).fetchone()
+        target = Path(row["vault_path"]) if (row["storage_tier"] == "nas" and row["vault_path"]) else Path(row["staging_path"] or "")
+        if not target.is_file():
+            raise ValueError(f"File #{file_id} not found on storage: {target}")
 
     # -------------------------------------------------------------------------
     # Stash Manifest Lifecycle
@@ -630,15 +648,6 @@ class StashService:
                             "model_id": mid,
                             "name": row["name"] if row else f"Model #{mid}",
                             "reason": "Not archived in vault",
-                        })
-                        continue
-
-                    v_path = Path(row["vault_path"])
-                    if not v_path.exists() or not v_path.is_dir():
-                        skipped_undownloaded.append({
-                            "model_id": mid,
-                            "name": row["name"],
-                            "reason": f"Vault path not accessible on disk: {v_path}",
                         })
                         continue
 

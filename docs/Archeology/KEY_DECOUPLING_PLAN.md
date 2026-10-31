@@ -14,7 +14,7 @@ All numbers come from the sanitized copy, which has the same row counts as produ
 
 ### Collision paths
 
-**Correction:** the first version of this plan said the collision was live. It reproduced the sequence with `unlink_library`, but nothing calls that method. The Unlink button runs `handle_delete_external_library`, which removed only the library row and left the library's models active in the catalog. Phase 2 fixed that defect. These paths remain:
+**Correction:** the first version of this plan said the collision was live. It reproduced the sequence with `unlink_library`, but nothing calls that method. The Unlink button runs `handle_delete_external_library`, which removed only the library row and left the library's models active in the catalog. Phase 2 fixed that defect. These paths remain, and phases 4 and 5 remove them:
 
 - `_alloc_model_id` and `_alloc_file_id` use `MAX + 1` and start over at the offset when the top rows are gone, so a freed ID comes back ([external_indexer.py:69](../../src/desync_archival/services/external_indexer.py#L69)). Reaching this needs rows to be deleted, which phase 2 stopped doing on unlink.
 - `reconciler.py:625` allocates with `MAX(file_id) + 1` across all sources, for adopted MMF files. Once external files exist, that lands in the external range, while the indexer holds its next ID in memory for a run. A reconcile during a scan can collide.
@@ -141,6 +141,10 @@ Migration 0006 rebuilds tables, using the migration runner's existing no-transac
 ### Phase 8: Feed into Step 9
 
 Add migrations 0005 and 0006 to the rehearsal, and update `CUTOVER.md` when it's written. Production changes only at Step 9, and rollback to the old app stays safe because the old database is never modified. The new `~/DESYNC_Data` copy is what changes.
+
+## Rule added during phase 2
+
+A missing mount limits features and never invalidates data. Browsing, metadata and adding to stashes read the catalog and work with the NAS or a library offline. Export, render and download need the files, so they stop with a clear error. Reconcile skips offline libraries and reports `skipped_offline`, so their files can't be reported missing and reset. Every later phase must follow this, including the duplicate triggers, which must not touch the disk.
 
 ## Risks
 

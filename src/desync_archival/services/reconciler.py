@@ -300,6 +300,8 @@ class VaultReconciler:
         discrepancies: List[Dict[str, Any]] = []
         healthy_count = 0
         baselined_hashes = 0
+        skipped_offline = 0
+        offline_roots = self._offline_library_roots()
 
         for i, m in enumerate(models, 1):
             if is_cancelled():
@@ -316,6 +318,11 @@ class VaultReconciler:
 
             model_issues: List[Dict[str, Any]] = []
             model_dir_str = m["vault_path"] or m["destination_path"]
+
+            # An offline mount says nothing about its files, so they must not be reported as missing.
+            if model_dir_str and any(model_dir_str.startswith(root) for root in offline_roots):
+                skipped_offline += 1
+                continue
 
             if model_dir_str:
                 model_dir = Path(model_dir_str)
@@ -468,6 +475,7 @@ class VaultReconciler:
         summary = {
             "total_audited": total,
             "healthy": healthy_count,
+            "skipped_offline": skipped_offline,
             "discrepancies": len(discrepancies),
             "hashes_baselined": baselined_hashes,
         }
@@ -526,6 +534,14 @@ class VaultReconciler:
                 "orphan_directories": report.get("orphan_directories", []),
                 "untracked_files": report.get("untracked_files", []),
             }
+
+    def _offline_library_roots(self) -> list[str]:
+        with self._get_db() as conn:
+            roots = [row[0] for row in conn.execute("SELECT path FROM external_libraries WHERE is_active = 1;")]
+        offline = [f"{root}/" for root in roots if not Path(root).is_dir()]
+        if offline:
+            log_layer("storage", logging.WARNING, f"Audit skipping offline libraries: {offline}")
+        return offline
 
     def reset_reconciliation_models(self, model_ids: List[int], dry_run: bool = False) -> Dict[str, Any]:
         if not model_ids:

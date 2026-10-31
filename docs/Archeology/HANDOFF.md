@@ -86,6 +86,7 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 ## Decisions that are easy to get wrong
 
+- **A missing mount limits features, it never invalidates data.** If the NAS or an external library is offline, browsing, metadata and adding to stashes still work, because they read the catalog. Only work that needs the files, such as export, render or download, stops. Reconcile skips offline libraries so their files are not reported as missing. Unlinking is different: it is a deliberate choice and flags contents inactive.
 - **Sign-in is the OAuth implicit flow.** The user chooses the token duration on MMF's login page, and 168 hours has been confirmed. There are no refresh tokens. The value stored as `mmf_client_secret` is an API key, not an OAuth secret. The user decided not to use it, so Step 6 removed the field and the code grant. Step 9 blanks the stored value.
 - **Frontend rules:** render with `template.js`, never `innerHTML`. Bind events with `@click` in templates and `data-click` in `index.html`, because the CSP blocks inline handlers. Pass API URLs through `safeUrl`. A local variable must never be named `html`.
 - **Only the Client ID is needed to sign in,** because the login page requires it. Session cookies are still required for `scrape.js`, which has no token path.
