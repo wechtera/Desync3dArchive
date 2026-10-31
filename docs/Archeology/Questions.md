@@ -13,7 +13,3 @@ Open questions that do not block the migration. Move each one out when it is ans
 | Q12 | Is the rare browser test failure gone? | One test failed once. Test mocks that outlived a test are the likely cause and were removed. `playwright-last.log` keeps the output if it recurs | If it recurs |
 | Q10 | Should the stash export success path get a snapshot, using a real small archive in the dev vault? | Only the failure path is recorded today | Step 0B |
 | Q8 | Should the `rnd/` Blender experiments feed better previews? | They stayed in `scrapepage` and were never reviewed | Any time |
-| Q13 | Should `app_settings` keep `key` as its primary key? | It is a dictionary of setting names with no outside IDs, and `ON CONFLICT(key)` is used throughout. The plan leaves it unless the increment rule should cover it too | Key decoupling |
-| Q14 | When a library is unlinked, should stash items from it be removed, or kept and marked missing? | Today they are left orphaned and can attach to a new model | Key decoupling phase 2 |
-| Q15 | Should every file in Loot Studios be hashed? | Duplicate detection needs it, but it means reading the whole library over the network | Key decoupling phase 6 |
-| Q16 | Should default catalog order stay "newest on MMF"? | `ORDER BY id` becomes "newest added" once IDs are agnostic | Key decoupling phase 1 |

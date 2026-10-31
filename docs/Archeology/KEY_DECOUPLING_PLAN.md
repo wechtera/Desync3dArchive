@@ -1,6 +1,6 @@
 # Key decoupling plan
 
-**Status:** Proposed, nothing implemented. Runs after Step 8 merges and before Step 9.
+**Status:** Approved 2026-10-30 and in progress. Runs before Step 9.
 **Branch:** `migration/08b-keys`.
 **Goal:** no source of models, present or future, can collide with another. MMF IDs stop being keys and become data.
 
@@ -36,10 +36,11 @@ Three causes:
 | `downloaded_files` | 496 | `file_id` | Copy of `model_files.file_id`, with no foreign key to it | |
 | `model_tags` | 73,545 | `(model_id, tag)` | Composite | |
 | `releases` | 587 | `id` TEXT | `designer_month`, such as `362414_2021-05` | |
-| `app_settings` | | `key` TEXT | Setting name | |
 | `download_jobs` | 103 | `id`, increment | | `model_id` UNIQUE |
 | `external_libraries` | | `id`, increment | | `path` UNIQUE |
 | Other 9 tables | | `id`, increment | | |
+
+`app_settings` is out of scope. It is a list of setting names, and the user chose to leave it alone.
 
 ### How the keys are used
 
@@ -55,7 +56,7 @@ Three causes:
 | Parsing IDs from folder names | [reconciler.py:150](../../src/desync_archival/services/reconciler.py#L150), `:661`, `:676` | The number is an MMF ID, so look up by `external_key` |
 | Preview folders | `previews/{id}/` in routes, reconciler, stash exporter, `models.js`, `releases.js` | Keep, because this really is the internal ID |
 | "External means 2 billion or more" | [catalog.py:462](../../src/desync_archival/api/routes/catalog.py#L462), [models.js:418](../../web/static/js/views/models.js#L418), `external_indexer.py:482` | Remove and use `source`. **This is the worst trap: every new MMF model would be treated as external** |
-| Sorting by ID | `ORDER BY m.id DESC` at [catalog.py:229](../../src/desync_archival/api/routes/catalog.py#L229), `reconciler.py:293`, `queries/catalog.py:44` | Default order stops meaning "newest on MMF" and becomes "newest added". Sort by `published_at` where date is intended |
+| Sorting by ID | `ORDER BY m.id DESC` at [catalog.py:229](../../src/desync_archival/api/routes/catalog.py#L229), `reconciler.py:293`, `queries/catalog.py:44` | Sort by `published_at`, then `id` |
 | API and UI | `/api/models/{model_id}`, `model_ids` in queue and stash bodies, `file_id` routes | Keep. They carry the internal ID, and the API adds `external_key` |
 
 References to `model_id` or `file_id`: `downloader.py` 111, `reconciler.py` 100, `stash_service.py` 77, `external_indexer.py` 54, `task_manager.py` 47, `archive_peeker.py` 46, `stash_exporter.py` 41, `routes/catalog.py` 40, `downloads.js` 37, `queries/catalog.py` 31, `models.js` 30. Phase 1 classifies every one. Most are internal joins and need no change.
@@ -89,7 +90,9 @@ Classify every reference above as internal ID, MMF ID, or path, in a table added
 
 ### Phase 2: Fix the live bug first
 
-Turn on `foreign_keys` in the indexer, make `unlink_library` handle stash items, and add a test that reproduces the sequence above. This stands alone, so it doesn't wait for the schema work.
+Unlinking a library flags its contents inactive and deletes nothing. A flagged stash item needs its model row, so the models, files and library row stay and carry `is_active = 0`. Inactive models leave the catalog, search, metrics and queues. Stash items stay visible, marked inactive, and are skipped on export. Relinking the same path reactivates the same rows with the same IDs.
+
+Turn on `foreign_keys` in the indexer and add a test that reproduces the sequence above. This stands alone, so it doesn't wait for the schema work.
 
 ### Phase 3: Add the new columns, with no behavior change
 
@@ -127,9 +130,9 @@ Migration 0006 rebuilds tables, using the migration runner's existing no-transac
 
 ### Phase 6: Duplicate detection
 
-- **Hash coverage:** a resumable background job computes SHA-256 for files that lack one. Reconcile already has `compute_file_sha256`. Zero or missing sizes are ignored.
-- **Inside archives:** store each member's CRC-32 from the zip or rar listing, without extracting. This is the only cheap way to match a zip against loose files. Existing archives need a re-peek.
-- **File levels:** `exact` is the same SHA-256. `member` is the same CRC-32 and size. `candidate` is the same normalized name and size, with no hash available.
+- **Hash coverage:** SHA-256 comes from MMF downloads, which already record it, and from files added through the import channel (enhancement E20). Linked libraries such as Loot Studios are never hashed, by the user's decision.
+- **Consequence:** a linked library file can only ever be a `candidate`, so MMF and Loot Studios won't get exact matches. Zero or missing sizes are ignored.
+- **File levels:** `exact` is the same SHA-256. `candidate` is the same normalized name and size, where a hash is missing on either side.
 - **Model levels:** `duplicate` means all files match. `overlap` means some do, which is the normal case for shared bases.
 - **Output:** a read-only report and a Settings or Reconcile view, with a shared-file allowlist for things like bases and supports. No automatic action.
 
@@ -153,10 +156,11 @@ Add migrations 0005 and 0006 to the rehearsal, and update `CUTOVER.md` when it's
 | Hidden `id` means MMF ID bug in old rows | Fixtures with differing values, and a real new-model run in phase 7 |
 | Rollback after cutover: new rows have IDs the old app doesn't know | Already covered by the Step 9 rollback rule, and to be added to the runbook |
 | Rebuild goes wrong on production data | Verified backup first, and the migration runs on the copy |
-| Catalog default order changes for new models | Decide in phase 1, and contract comparison shows it |
-| Hashing a large NAS library is slow | Background, resumable, and optional per library |
 | Turning on foreign keys exposes hidden orphans | Run `foreign_key_check` first. Current orphan checks are clean, but not every table has been checked |
 
-## Open questions
+## Decisions from the user, 2026-10-30
 
-Tracked as Q13 to Q16 in `Questions.md`.
+- `app_settings` is left alone.
+- Unlinked library contents are flagged inactive.
+- Linked libraries are not hashed. Only files added through another channel are (E20).
+- Catalog order uses `published_at`.
