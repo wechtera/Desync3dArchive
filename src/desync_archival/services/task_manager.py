@@ -212,6 +212,7 @@ class TaskManager:
         self.active_task_id: Optional[int] = None
         self.active_process: Optional[subprocess.Popen] = None
         self._cancel_requested: bool = False
+        self._scrape_error: str = ""
         self._initialized = True
 
     def _get_db(self) -> sqlite3.Connection:
@@ -342,6 +343,9 @@ class TaskManager:
             self._update_progress(task_id, 95.0, "Finalizing outputs on disk...")
         elif name == "done":
             self._append_log(task_id, f"Scraper finished with {count} model IDs")
+        elif name == "error":
+            self._scrape_error = str(event.get("message", "Scrape failed"))
+            self._append_log(task_id, self._scrape_error)
         else:
             self._append_log(task_id, str(event.get("message", line)))
 
@@ -680,6 +684,9 @@ class TaskManager:
         with self._get_db() as conn:
             expected_count = conn.execute("SELECT count(*) FROM models WHERE source = 'mmf';").fetchone()[0]
         cmd = [node_bin, str(scrape_script), "--cookies", str(cookies_dest), "--expected", str(expected_count)]
+        if self._get_setting("scraper_headless", "1") != "0":
+            cmd.append("--headless")
+        self._scrape_error = ""
         try:
             process = subprocess.Popen(
                 cmd,
@@ -707,7 +714,7 @@ class TaskManager:
                 return
 
             if return_code != 0:
-                err = f"scrape.js exited with non-zero return code: {return_code}"
+                err = self._scrape_error or f"scrape.js exited with non-zero return code: {return_code}"
                 self._finalize_task(task_id, "failed", err, {})
                 return
 

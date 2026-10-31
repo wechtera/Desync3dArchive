@@ -84,6 +84,8 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Backups (item 7):** a daily `database_backup` task runs through the job runner, checked hourly, and waits if another task is running. Settings shows the last result.
 - **Token expiry (item 8):** workers stop claiming new jobs 10 minutes before a token that can't refresh expires, and a banner asks to reconnect. Signing in reloads the workers, so the queue resumes alone. A file already downloading finishes if it can.
 
+- **Scrape fixes after the first real run:** session cookies were dropped by Chrome, because they reached it as `SameSite=None` without `secure`, so the page showed a login. Cookies are now always secure, and Cookie-Editor's `lax` and `no_restriction` values map correctly. The scrape is headless by default through `scraper_headless`, with a Settings switch for a visible window. A login page, a Cloudflare check in headless mode, or a closed window now stops with a plain message. Headless can't pass a Cloudflare check. The app reports that and does not try to get around it.
+
 **Contract:** `downloads_status` and `downloads_queue_get` gain `reconnect_required`.
 
 **Tool syntax verified against real binaries:** 7-Zip treated `-oevil.stl` as an option without `--`, and extracted it as a file with `--`. unrar also uses `--`: a bare `-` fails with "Unknown option", which `test_real_unrar_accepts_the_stop_marker` guards. No real RAR archive has been extracted through the adapter yet, so that is part of the Step 5 exit check.

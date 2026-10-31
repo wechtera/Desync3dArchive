@@ -163,7 +163,10 @@ def _merge_cookies(existing_json: str, updates: dict[str, str | None]) -> str:
         if match:
             match["value"] = value
         else:
-            cookies.append({"domain": ".myminifactory.com", "name": name, "path": "/", "value": value})
+            cookies.append({
+                "domain": ".myminifactory.com", "name": name, "path": "/", "value": value,
+                "secure": True, "httpOnly": True,
+            })
     return json.dumps(cookies)
 
 

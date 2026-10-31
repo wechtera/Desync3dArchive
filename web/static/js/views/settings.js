@@ -119,6 +119,9 @@ export async function loadSettings() {
     setVal('setting-auth-client-id', data.mmf_client_id || '');
     setSecret('setting-auth-api-key', secrets.mmf_client_secret);
 
+    const headlessEl = document.getElementById('setting-scraper-headless');
+    if (headlessEl) headlessEl.checked = data.scraper_headless !== '0';
+
     const backupEl = document.getElementById('backup-status');
     if (backupEl) {
       backupEl.textContent = data.last_backup_at
@@ -545,6 +548,7 @@ export async function saveSettingsForm() {
     batch_cooldown_seconds: getVal('setting-cooldown') || 3.0,
     stream_chunk_size_mb: getVal('setting-stream-chunk') || 1.0,
     offload_chunk_size_mb: getVal('setting-offload-chunk') || 4.0,
+    scraper_headless: document.getElementById('setting-scraper-headless')?.checked === false ? '0' : '1',
     cookie_cf_clearance: cfVal,
     cookie_phpsessid: phpVal,
     cookies_json: cleanJson,

@@ -151,6 +151,10 @@ class V2SecretExposureTests(AppCase):
         cookies = {c["name"]: c["value"] for c in json.loads(self.setting("cookies_json"))}
         self.assertEqual(cookies, {"cf_clearance": "fresh-cf", "other": "keep"})
 
+    def test_merged_cookies_are_secure(self):
+        merged = json.loads(_merge_cookies("", {"PHPSESSID": "x"}))
+        self.assertTrue(merged[0]["secure"])
+
     def test_merge_adds_missing_cookies_and_survives_bad_json(self):
         merged = json.loads(_merge_cookies("not json", {"PHPSESSID": "x", "cf_clearance": None}))
         self.assertEqual([(c["name"], c["value"]) for c in merged], [("PHPSESSID", "x")])

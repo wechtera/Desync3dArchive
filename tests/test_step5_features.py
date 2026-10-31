@@ -39,6 +39,7 @@ class TempDb(unittest.TestCase):
         manager.active_task_id = None
         manager.active_process = None
         manager._cancel_requested = False
+        manager._scrape_error = ""
         return manager
 
     def add_task(self):
@@ -85,6 +86,18 @@ class ScrapeEventTests(TempDb):
         manager, task_id = self.task_manager(), self.add_task()
         manager._handle_scrape_line(task_id, "TypeError: boom", 10)
         self.assertIn("TypeError: boom", self.task(task_id)[3])
+
+    def test_scraper_error_becomes_the_task_failure(self):
+        manager, task_id = self.task_manager(), self.add_task()
+        manager._handle_scrape_line(task_id, '{"event": "error", "message": "login needed"}', 10)
+        self.assertEqual(manager._scrape_error, "login needed")
+        self.assertIn("login needed", self.task(task_id)[3])
+
+    def test_scraper_marks_cookies_secure_and_can_run_headless(self):
+        source = (REPO_ROOT / "scraper" / "scrape.js").read_text(encoding="utf-8")
+        self.assertIn("secure: true", source)
+        self.assertIn("no_restriction: 'None'", source)
+        self.assertEqual(source.count("      headless,\n"), 2)
 
     def test_scraper_source_keeps_its_safety_changes(self):
         source = (REPO_ROOT / "scraper" / "scrape.js").read_text(encoding="utf-8")

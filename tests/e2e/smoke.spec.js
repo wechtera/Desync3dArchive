@@ -185,3 +185,8 @@ test('settings shows the last backup', async ({ page }) => {
   await page.goto('/#settings');
   await expect(page.locator('#backup-status')).toContainText('2026-10-30 20:00:00');
 });
+
+test('headless scraping defaults on and can be turned off', async ({ page }) => {
+  await page.goto('/#settings');
+  await expect(page.locator('#setting-scraper-headless')).toBeChecked();
+});

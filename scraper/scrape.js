@@ -16,6 +16,19 @@ function emit(event, fields = {}) {
   console.log(JSON.stringify({ event, ...fields }));
 }
 
+const headless = process.argv.includes('--headless');
+const SAME_SITE = { strict: 'Strict', lax: 'Lax', none: 'None', no_restriction: 'None' };
+
+function stop(message) {
+  emit('error', { message });
+  process.exitCode = 1;
+}
+
+async function isLoginPage(page) {
+  return /\/(login|signin)\b|auth\.myminifactory\.com/i.test(page.url())
+    || (await page.$('input[type="password"]')) !== null;
+}
+
 (async () => {
   if (!cookiesPath) {
     console.error('Usage: node scrape.js --cookies <path>');
@@ -33,10 +46,11 @@ function emit(event, fields = {}) {
     value: c.value,
     domain: c.domain || '.myminifactory.com',
     path: c.path || '/',
-    secure: Boolean(c.secure),
+    // MMF is HTTPS only, and Chrome drops SameSite=None cookies that aren't secure.
+    secure: true,
     httpOnly: Boolean(c.httpOnly),
     expires: c.expirationDate ? Number(c.expirationDate) : undefined,
-    sameSite: ['Strict', 'Lax', 'None'].includes(c.sameSite) ? c.sameSite : 'None'
+    sameSite: SAME_SITE[String(c.sameSite).toLowerCase()] || 'Lax'
   }));
 
   // Launch installed Chrome if available; fallback to standard Chromium
@@ -44,7 +58,7 @@ function emit(event, fields = {}) {
   try {
     browser = await chromium.launch({
       channel: 'chrome',
-      headless: false,
+      headless,
       args: [
         '--disable-blink-features=AutomationControlled',
         '--disable-infobars'
@@ -53,7 +67,7 @@ function emit(event, fields = {}) {
   } catch (err) {
     emit('status', { message: 'Chrome launch failed, falling back to Chromium' });
     browser = await chromium.launch({
-      headless: false,
+      headless,
       args: ['--disable-blink-features=AutomationControlled']
     });
   }
@@ -121,6 +135,11 @@ function emit(event, fields = {}) {
                          (await page.$('#challenge-running')) !== null || 
                          (await page.$('#cf-turnstile')) !== null;
 
+    if (hasChallenge && headless) {
+      await browser.close();
+      return stop('Cloudflare asked for a check, which needs a visible window. Turn off headless scraping in Settings, or refresh your cookies.');
+    }
+
     if (hasChallenge) {
       emit('status', { message: 'Cloudflare check detected. Click the box in the browser window if prompted.' });
 
@@ -136,6 +155,11 @@ function emit(event, fields = {}) {
     }
   } catch (cfErr) {
     emit('status', { message: `Cloudflare wait ended: ${cfErr.message}` });
+  }
+
+  if (await isLoginPage(page)) {
+    await browser.close();
+    return stop('MyMiniFactory asked for a login, so the session cookies were not accepted. Export fresh cookies, including REMEMBERME, into Settings.');
   }
 
   // Wait for initial JSON payloads to stream in
@@ -209,4 +233,7 @@ function emit(event, fields = {}) {
 
   emit('done', { count: sortedIds.length });
   await browser.close();
-})();
+})().catch((err) => {
+  const closed = /has been closed/.test(String(err));
+  stop(closed ? 'The browser window was closed before the scrape finished.' : `Scrape failed: ${err.message}`);
+});
