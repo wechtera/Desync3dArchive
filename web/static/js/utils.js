@@ -2,6 +2,8 @@
  * ui/static/js/utils.js - Shared UI formatting and sanitization utilities
  */
 
+import { html } from './template.js';
+
 /**
  * Parses a time from the server. SQLite's CURRENT_TIMESTAMP gives UTC with a space and no zone.
  * Python's isoformat() gives local time with a T, which the browser already reads as local.
@@ -51,6 +53,22 @@ export function getFileExtension(filename) {
   if (!filename) return 'FILE';
   const parts = filename.split('.');
   return parts.length > 1 ? parts.pop().toUpperCase() : 'FILE';
+}
+
+const STATUS_BADGES = {
+  completed: ['status-completed', 'Archived'],
+  queued: ['status-queued', 'Queued'],
+  partial: ['status-partial', 'Partial'],
+  failed: ['status-failed', 'Failed'],
+};
+
+export function statusBadge(status) {
+  const s = (status || 'not_downloaded').toLowerCase();
+  if (['downloading', 'staging_complete', 'offloading'].includes(s)) {
+    return html`<span class="status-badge status-queued">${s.replace('_', ' ')}</span>`;
+  }
+  const [css, label] = STATUS_BADGES[s] || ['status-not_downloaded', 'Not Downloaded'];
+  return html`<span class="status-badge ${css}">${label}</span>`;
 }
 
 export function renderStatusBadge(status) {
