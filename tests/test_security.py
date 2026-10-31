@@ -151,12 +151,26 @@ class V2SecretExposureTests(AppCase):
         cookies = {c["name"]: c["value"] for c in json.loads(self.setting("cookies_json"))}
         self.assertEqual(cookies, {"cf_clearance": "fresh-cf", "other": "keep"})
 
-    def test_merged_cookies_are_secure(self):
-        merged = json.loads(_merge_cookies("", {"PHPSESSID": "x"}))
-        self.assertTrue(merged[0]["secure"])
+    def test_merged_cookies_are_secure_with_the_right_domain(self):
+        merged = json.loads(_merge_cookies("", {"cookie_rememberme": "x"}))[0]
+        self.assertEqual((merged["name"], merged["domain"]), ("REMEMBERME", "www.myminifactory.com"))
+        self.assertTrue(merged["secure"])
+
+    def test_each_cookie_field_is_saved_hidden_and_merged(self):
+        values = {key: f"value-{key}-123456" for key in auth_service.COOKIE_FIELDS}
+        self.client.post("/api/settings", json=values)
+        names = {c["name"]: c["value"] for c in json.loads(self.setting("cookies_json"))}
+        for key, (name, _) in auth_service.COOKIE_FIELDS.items():
+            self.assertEqual(names[name], values[key])
+        response = self.client.get("/api/settings")
+        self.assertNotIn("value-cookie_rememberme", response.text)
+        self.assertTrue(response.json()["secrets_configured"]["cookie_rememberme"])
+
+    def test_cookie_values_never_reach_the_logs(self):
+        self.assertNotIn("abc123def", log.redact("REMEMBERME=abc123def; __cf_bm=abc123def"))
 
     def test_merge_adds_missing_cookies_and_survives_bad_json(self):
-        merged = json.loads(_merge_cookies("not json", {"PHPSESSID": "x", "cf_clearance": None}))
+        merged = json.loads(_merge_cookies("not json", {"cookie_phpsessid": "x"}))
         self.assertEqual([(c["name"], c["value"]) for c in merged], [("PHPSESSID", "x")])
 
 

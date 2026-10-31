@@ -146,8 +146,8 @@ def _extract_tokens_from_json(raw_json: str) -> Tuple[str, str]:
 # Core Settings Endpoints
 # -------------------------------------------------------------------------
 
-def _merge_cookies(existing_json: str, updates: dict[str, str | None]) -> str:
-    """Replaces named cookies in the stored list and keeps every other cookie."""
+def _merge_cookies(existing_json: str, updates: dict[str, str]) -> str:
+    """Replaces cookies named by single-cookie settings and keeps every other cookie."""
     try:
         parsed = json.loads(existing_json) if existing_json else []
     except ValueError:
@@ -156,15 +156,14 @@ def _merge_cookies(existing_json: str, updates: dict[str, str | None]) -> str:
         parsed = [{"name": str(k), "value": str(v)} for k, v in parsed.items()]
     cookies = [c for c in parsed if isinstance(c, dict)]
 
-    for name, value in updates.items():
-        if not value:
-            continue
+    for key, value in updates.items():
+        name, domain = auth_service.COOKIE_FIELDS[key]
         match = next((c for c in cookies if str(c.get("name", "")).lower() == name.lower()), None)
         if match:
             match["value"] = value
         else:
             cookies.append({
-                "domain": ".myminifactory.com", "name": name, "path": "/", "value": value,
+                "domain": domain, "name": name, "path": "/", "value": value,
                 "secure": True, "httpOnly": True,
             })
     return json.dumps(cookies)
@@ -224,11 +223,12 @@ def handle_post_settings(
             data["cookie_cf_clearance"] = cf_extracted
         if php_extracted and not data.get("cookie_phpsessid"):
             data["cookie_phpsessid"] = php_extracted
-    elif data.get("cookie_cf_clearance") or data.get("cookie_phpsessid"):
-        data["cookies_json"] = _merge_cookies(
-            auth_service.get_setting(conn, "cookies_json"),
-            {"cf_clearance": data.get("cookie_cf_clearance"), "PHPSESSID": data.get("cookie_phpsessid")},
-        )
+
+    # Single fields apply on top of the list, including one just pasted as JSON.
+    single_cookies = {key: str(data[key]) for key in auth_service.COOKIE_FIELDS if data.get(key)}
+    if single_cookies:
+        base = data.get("cookies_json") or auth_service.get_setting(conn, "cookies_json")
+        data["cookies_json"] = _merge_cookies(base, single_cookies)
 
     with conn:
         for k, v in data.items():

@@ -22,8 +22,12 @@
       "secrets_configured": {
         "PHPSESSID": false,
         "cf_clearance": false,
+        "cookie_cf_bm": false,
         "cookie_cf_clearance": false,
+        "cookie_cflb": false,
+        "cookie_cfuvid": false,
         "cookie_phpsessid": false,
+        "cookie_rememberme": false,
         "cookies_json": false,
         "mmf_access_token": false,
         "mmf_client_secret": false,

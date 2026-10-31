@@ -43,7 +43,7 @@ _JOB_ID: ContextVar[str | None] = ContextVar("job_id", default=None)
 REDACTED = "[REDACTED]"
 _SECRET_NAMES = (
     r"access_token|refresh_token|id_token|client_secret|api_key|password|authorization|"
-    r"cookies_json|cookie_cf_clearance|cookie_phpsessid|cf_clearance|phpsessid|mmf_access_token|"
+    r"cookies_json|cookie_[a-z_]+|cf_clearance|phpsessid|rememberme|__cf_bm|_cfuvid|__cflb|mmf_access_token|"
     r"mmf_refresh_token|mmf_client_secret|token|secret|set-cookie|cookie"
 )
 _SIGNED_QUERY_NAMES = (

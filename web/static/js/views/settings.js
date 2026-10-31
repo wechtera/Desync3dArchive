@@ -82,6 +82,13 @@ export async function loadSettingsView() {
   bindCookieJsonSync();
 }
 
+const EXTRA_COOKIE_FIELDS = [
+  ['setting-cookie-rememberme', 'cookie_rememberme'],
+  ['setting-cookie-cf-bm', 'cookie_cf_bm'],
+  ['setting-cookie-cfuvid', 'cookie_cfuvid'],
+  ['setting-cookie-cflb', 'cookie_cflb'],
+];
+
 export async function loadSettings() {
   try {
     const res = await fetch('/api/settings');
@@ -115,6 +122,7 @@ export async function loadSettings() {
     setSecret('setting-cookies-raw', secrets.cookies_json);
     setSecret('setting-cookie-cf', secrets.cookie_cf_clearance || secrets.cf_clearance);
     setSecret('setting-cookie-php', secrets.cookie_phpsessid || secrets.PHPSESSID);
+    for (const [id, key] of EXTRA_COOKIE_FIELDS) setSecret(id, secrets[key]);
 
     setVal('setting-auth-client-id', data.mmf_client_id || '');
     setSecret('setting-auth-api-key', secrets.mmf_client_secret);
@@ -551,6 +559,7 @@ export async function saveSettingsForm() {
     scraper_headless: document.getElementById('setting-scraper-headless')?.checked === false ? '0' : '1',
     cookie_cf_clearance: cfVal,
     cookie_phpsessid: phpVal,
+    ...Object.fromEntries(EXTRA_COOKIE_FIELDS.map(([id, key]) => [key, getVal(id)])),
     cookies_json: cleanJson,
   };
 

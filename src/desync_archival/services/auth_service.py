@@ -28,13 +28,27 @@ SECRET_SETTING_KEYS = (
     "PHPSESSID",
     "cf_clearance",
     "cookie_cf_clearance",
+    "cookie_cf_bm",
+    "cookie_cfuvid",
+    "cookie_cflb",
     "cookie_phpsessid",
+    "cookie_rememberme",
     "cookies_json",
     "mmf_access_token",
     "mmf_client_secret",
     "mmf_oauth_state",
     "mmf_refresh_token",
 )
+# Single-cookie settings, with the cookie name and domain each one is sent under.
+COOKIE_FIELDS = {
+    "cookie_cf_clearance": ("cf_clearance", ".myminifactory.com"),
+    "cookie_phpsessid": ("PHPSESSID", ".myminifactory.com"),
+    "cookie_rememberme": ("REMEMBERME", "www.myminifactory.com"),
+    "cookie_cf_bm": ("__cf_bm", ".myminifactory.com"),
+    "cookie_cfuvid": ("_cfuvid", ".myminifactory.com"),
+    "cookie_cflb": ("__cflb", "www.myminifactory.com"),
+}
+
 # Set only by the sign-in flow, never through POST /api/settings.
 AUTH_MANAGED_KEYS = ("mmf_access_token", "mmf_oauth_state", "mmf_refresh_token", "mmf_token_expires_at")
 

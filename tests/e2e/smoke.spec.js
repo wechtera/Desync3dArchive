@@ -190,3 +190,10 @@ test('headless scraping defaults on and can be turned off', async ({ page }) => 
   await page.goto('/#settings');
   await expect(page.locator('#setting-scraper-headless')).toBeChecked();
 });
+
+test('every session cookie has its own field', async ({ page }) => {
+  await page.goto('/#settings');
+  for (const id of ['cf', 'php', 'rememberme', 'cf-bm', 'cfuvid', 'cflb']) {
+    await expect(page.locator(`#setting-cookie-${id}`)).toBeAttached();
+  }
+});

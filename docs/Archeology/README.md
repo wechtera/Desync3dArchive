@@ -86,7 +86,9 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 - **Scrape fixes after the first real run:** session cookies were dropped by Chrome, because they reached it as `SameSite=None` without `secure`, so the page showed a login. Cookies are now always secure, and Cookie-Editor's `lax` and `no_restriction` values map correctly. The scrape is headless by default through `scraper_headless`, with a Settings switch for a visible window. A login page, a Cloudflare check in headless mode, or a closed window now stops with a plain message. Headless can't pass a Cloudflare check. The app reports that and does not try to get around it.
 
-**Contract:** `downloads_status` and `downloads_queue_get` gain `reconnect_required`.
+- **Cookie fields:** Settings has a field for each of `cf_clearance`, `PHPSESSID`, `REMEMBERME`, `__cf_bm`, `_cfuvid` and `__cflb`. Each is a hidden secret and merges into `cookies_json` under its own domain, so nobody has to maintain the JSON by hand.
+
+**Contract:** `downloads_status` and `downloads_queue_get` gain `reconnect_required`, and `settings` gains flags for the four new cookie fields.
 
 **Tool syntax verified against real binaries:** 7-Zip treated `-oevil.stl` as an option without `--`, and extracted it as a file with `--`. unrar also uses `--`: a bare `-` fails with "Unknown option", which `test_real_unrar_accepts_the_stop_marker` guards. No real RAR archive has been extracted through the adapter yet, so that is part of the Step 5 exit check.
 
