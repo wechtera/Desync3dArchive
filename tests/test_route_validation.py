@@ -87,3 +87,9 @@ class ReconcileValidationTests(RouteCase):
         self.refused("/api/reconcile/staging/purge", {"paths": 5})
         self.refused("/api/reconcile/ingest-untracked", {"items": ["x"]})
         self.refused("/api/reconcile/scan", {"scan_mode": 5})
+
+
+class AuthValidationTests(RouteCase):
+    def test_bad_auth_bodies_are_refused(self):
+        self.refused("/api/auth/token_callback", {"access_token": "x", "expires_in": "soon"})
+        self.refused("/api/auth/config", {"client_id": 5})
