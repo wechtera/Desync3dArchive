@@ -23,6 +23,7 @@
         "total_files": 2
       },
       "download_status": "completed",
+      "external_key": "839284",
       "featured": 0,
       "files": [
         {
@@ -51,6 +52,7 @@
       "id": 839284,
       "is_active": 1,
       "is_bonus": 0,
+      "library_id": null,
       "likes": 8,
       "name": "Halfling Pumpkin Launcher Operators (Pre-Supported) | Halfling Chronicles | Cast n Play",
       "parent_category": "Characters & Creatures",

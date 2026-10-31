@@ -14,6 +14,7 @@
       "designer_username": "<REDACTED>",
       "download_job": null,
       "download_status": "not_downloaded",
+      "external_key": "96576",
       "featured": 0,
       "files": [
         {
@@ -31,6 +32,7 @@
       "id": 96576,
       "is_active": 1,
       "is_bonus": 0,
+      "library_id": null,
       "likes": 1649,
       "name": "Baalzrodan the Demon King",
       "parent_category": "Tabletop",

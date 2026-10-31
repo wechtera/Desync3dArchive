@@ -54,6 +54,33 @@ All numbers come from the sanitized copy, which has the same row counts as produ
 
 References to `model_id` or `file_id`: `downloader.py` 111, `reconciler.py` 100, `stash_service.py` 77, `external_indexer.py` 54, `task_manager.py` 47, `archive_peeker.py` 46, `stash_exporter.py` 41, `routes/catalog.py` 40, `downloads.js` 37, `queries/catalog.py` 31, `models.js` 30. Phase 1 classifies every one. Most are internal joins and need no change.
 
+### Inventory by file
+
+Every reference falls into one of three meanings. "Internal" needs no change, because the value stays valid.
+
+| File | Internal | Means MMF ID, must change | Writes a key, must change |
+|---|---|---|---|
+| `task_manager.py` | Task and job rows | Ingest input list, duplicate check, API URL, metadata filename | Model upsert, tags, delete and re-insert of files |
+| `downloader.py` | Staging folders, `.part` names, queue rows | API URL, live URL refresh by file ID, vault folder name, metadata fallback | `model_id * 1000 + 1` archive file, `INSERT OR REPLACE` on `model_files` and `downloaded_files` |
+| `reconciler.py` | Staging scan, reset, previews | Folder name parsing, `metadata.json` ID, canonical folder name, drift scan | `MAX(file_id) + 1`, `ON CONFLICT(file_id)` |
+| `external_indexer.py` | Preview folders, tags | None | Both `_alloc` methods, `ON CONFLICT(id)` on releases |
+| `archive_peeker.py` | Preview paths | Metadata fallback filename | None |
+| `routes/catalog.py` | Everything else | Metadata fallback, 2 billion guard | None |
+| `routes/downloads.py`, `queries/downloads.py` | Queue | None | `ON CONFLICT(model_id)` |
+| `queries/settings.py` | | None | `ON CONFLICT(path)` |
+| `analytics.py` | | None | `INSERT OR REPLACE INTO releases` |
+| `stash_service.py`, `stash_exporter.py`, `mesh_renderer.py` | All | None | None |
+| Front end | All | 2 billion check at `models.js:418` | None |
+
+Found during the inventory:
+
+- **Ingest deletes and re-inserts a model's files.** That only works with stable MMF file IDs. With increment keys it would orphan downloads, so ingest updates in place, and a file MMF dropped stays if it was downloaded.
+- **Ingest builds the preview path before the insert.** New models get their ID from the insert, so the cover download moves after it.
+- **`stash_items` has a `CREATE UNIQUE INDEX`.** The uniqueness rule covers it, so phase 5 replaces it with a trigger.
+- **`releases.id` text is used by the queue as `designer_month`.** The API keeps returning that text as `id`.
+- **`foreign_keys` is off in the downloader, reconciler, task manager, archive peeker and exporter.** Phase 4 turns it on. `foreign_key_check` on the sanitized copy is clean.
+- **`release.model_count` grows on every rescan.** Phase 4 fixes it by counting models.
+
 ### What duplicate detection has to work with
 
 - **Few hashes exist.** 162 of 496 `downloaded_files` rows have a SHA-256, all from MMF. No external file has one. `model_files` has no hash column, so the 23,076 files not yet downloaded have none.
@@ -75,7 +102,7 @@ References to `model_id` or `file_id`: `downloader.py` 111, `reconciler.py` 100,
 
 Each phase is a commit gated on `check.sh`. The contract is compared at every phase, and any API change is reviewed before `--accept`.
 
-### Phase 1: Finish the inventory
+### Phase 1: Finish the inventory (done)
 
 Classify every reference above as internal ID, MMF ID, or path, in a table added to this document. Audit every SQLite connection for `foreign_keys`. Confirm what `download_jobs.model_id UNIQUE` is relied on for.
 
