@@ -317,12 +317,10 @@ def handle_post_external_library(
     default_creator = str(data.get("default_creator", "")).strip() or lib_path.name
 
     with conn:
-        cursor = conn.execute(queries.POST_EXTERNAL_LIBRARY_1, (name, str(lib_path), default_creator))
-
-        lib_id = cursor.lastrowid
-        if not lib_id:
-            row = conn.execute(queries.POST_EXTERNAL_LIBRARY_2, (str(lib_path),)).fetchone()
-            lib_id = row[0] if row else None
+        if not conn.execute(queries.POST_EXTERNAL_LIBRARY_1, (name, default_creator, str(lib_path))).rowcount:
+            conn.execute(queries.POST_EXTERNAL_LIBRARY_1B, (name, str(lib_path), default_creator))
+        row = conn.execute(queries.POST_EXTERNAL_LIBRARY_2, (str(lib_path),)).fetchone()
+        lib_id = row[0] if row else None
 
     # Resolve database path for the background worker
     db_path = None
@@ -377,7 +375,7 @@ def handle_delete_external_library(
     lib_name = row["name"]
     lib_path = row["path"]
 
-    deactivate_library(conn, library_id, lib_path)
+    deactivate_library(conn, library_id)
 
     log_layer("storage", logging.INFO, f"Unlinked in-place library #{library_id} ('{lib_name}'). Physical files on NAS left untouched.")
 

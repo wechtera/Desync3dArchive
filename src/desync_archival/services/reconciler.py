@@ -113,6 +113,7 @@ class VaultReconciler:
         conn = sqlite3.connect(str(self.db_path), timeout=45.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout = 45000;")
+        conn.execute("PRAGMA foreign_keys = ON;")
         return conn
 
     def execute_reconciliation(
@@ -177,7 +178,10 @@ class VaultReconciler:
         log_layer("storage", logging.DEBUG, f"Reverse audit: {total} candidate directories found on disk.")
 
         with self._get_db() as conn:
-            known_model_ids = {r[0] for r in conn.execute("SELECT id FROM models;").fetchall()}
+            # Vault folders carry the MMF ID, which is not the internal key.
+            model_id_by_mmf_id = dict(conn.execute(
+                "SELECT external_key, id FROM models WHERE source = 'mmf' AND external_key IS NOT NULL;"
+            ).fetchall())
 
         orphan_directories: List[Dict[str, Any]] = []
         untracked_files: List[Dict[str, Any]] = []
@@ -203,7 +207,8 @@ class VaultReconciler:
                 except Exception:
                     pass
 
-            if extracted_id is None or extracted_id not in known_model_ids:
+            local_id = model_id_by_mmf_id.get(str(extracted_id))
+            if extracted_id is None or local_id is None:
                 try:
                     sz = sum(f.stat().st_size for f in model_dir.rglob("*") if f.is_file())
                 except Exception:
@@ -224,13 +229,13 @@ class VaultReconciler:
             had_untracked = False
             if files_dir.exists() and files_dir.is_dir():
                 with self._get_db() as conn:
-                    model_row = conn.execute("SELECT name, designer_name FROM models WHERE id = ?", (extracted_id,)).fetchone()
+                    model_row = conn.execute("SELECT name, designer_name FROM models WHERE id = ?", (local_id,)).fetchone()
                     db_files = conn.execute("""
                         SELECT mf.filename, df.cleaned_filename
                         FROM model_files mf
                         LEFT JOIN downloaded_files df ON mf.file_id = df.file_id
                         WHERE mf.model_id = ?;
-                    """, (extracted_id,)).fetchall()
+                    """, (local_id,)).fetchall()
 
                 tracked = set()
                 for f in db_files:
@@ -249,7 +254,7 @@ class VaultReconciler:
                         sz = disk_file.stat().st_size
                         untracked_files.append({
                             "defect": "UNTRACKED_FILE",
-                            "model_id": extracted_id,
+                            "model_id": local_id,
                             "model_name": model_row["name"] if model_row else f"Model #{extracted_id}",
                             "creator_name": model_row["designer_name"] if model_row else "Unknown",
                             "filename": disk_file.name,
@@ -286,7 +291,7 @@ class VaultReconciler:
         with self._get_db() as conn:
             models = conn.execute("""
                 SELECT DISTINCT m.id, m.name, m.designer_name, m.designer_username,
-                                m.release_month, m.vault_path, dj.destination_path
+                                m.release_month, m.vault_path, m.external_key, dj.destination_path
                 FROM models m
                 LEFT JOIN download_jobs dj ON dj.id = (SELECT MAX(id) FROM download_jobs WHERE model_id = m.id)
                 WHERE m.is_active = 1 AND (dj.status = 'completed' OR m.vault_path IS NOT NULL)
@@ -330,7 +335,7 @@ class VaultReconciler:
                 rel_creator = sanitize_segment(creator)
                 rel_month = sanitize_segment(m["release_month"] or "Unassigned")
                 clean_title = sanitize_segment(model_name)
-                model_dir = nas_root / rel_creator / rel_month / f"{model_id}_{clean_title}"
+                model_dir = nas_root / rel_creator / rel_month / f"{m['external_key'] or model_id}_{clean_title}"
 
             if not model_dir.exists() or not model_dir.is_dir():
                 model_issues.append({
@@ -625,7 +630,7 @@ class VaultReconciler:
                     fpath = Path(fpath_str).resolve()
                     if not fpath.exists() or not fpath.is_file():
                         continue
-                    model_row = conn.execute("SELECT id, name, designer_name, release_month FROM models WHERE id = ?", (model_id,)).fetchone()
+                    model_row = conn.execute("SELECT id, name, designer_name, release_month, external_key, source FROM models WHERE id = ?", (model_id,)).fetchone()
                     if not model_row:
                         continue
                     filename = fpath.name
@@ -634,24 +639,21 @@ class VaultReconciler:
                     sha = compute_file_sha256(fpath)
                     clean_c = sanitize_segment(model_row["designer_name"] or "Unknown")
                     clean_m = sanitize_segment(model_row["release_month"] or "Unassigned")
-                    clean_obj = f"{model_id}_{sanitize_segment(model_row['name'])}"
+                    clean_obj = f"{model_row['external_key'] or model_id}_{sanitize_segment(model_row['name'])}"
                     rel_p = str(Path(clean_c) / clean_m / clean_obj / "files" / filename)
 
                     with conn:
-                        cur = conn.execute("SELECT COALESCE(MAX(file_id), 100000) + 1 FROM model_files;")
-                        new_file_id = cur.fetchone()[0]
-                        conn.execute("""
-                            INSERT INTO model_files (file_id, model_id, filename, size_bytes, download_url, created_at)
-                            VALUES (?, ?, ?, ?, '', CURRENT_TIMESTAMP);
-                        """, (new_file_id, model_id, filename, sz))
+                        cur = conn.execute("""
+                            INSERT INTO model_files (model_id, filename, size_bytes, download_url, created_at, source)
+                            VALUES (?, ?, ?, '', CURRENT_TIMESTAMP, ?);
+                        """, (model_id, filename, sz, model_row["source"]))
+                        new_file_id = cur.lastrowid
                         conn.execute("""
                             INSERT INTO downloaded_files (
                                 file_id, model_id, original_filename, cleaned_filename,
                                 local_relative_path, expected_bytes, actual_bytes,
                                 file_extension, storage_tier, vault_path, sha256, downloaded_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'nas', ?, ?, CURRENT_TIMESTAMP)
-                            ON CONFLICT(file_id) DO UPDATE SET
-                                vault_path = excluded.vault_path, sha256 = excluded.sha256, actual_bytes = excluded.actual_bytes;
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'nas', ?, ?, CURRENT_TIMESTAMP);
                         """, (new_file_id, model_id, filename, filename, rel_p, sz, sz, ext, str(fpath), sha))
                         conn.execute("UPDATE models SET vault_path = ? WHERE id = ?;", (str(fpath.parent.parent), model_id))
                     ingested.append(fpath_str)
@@ -737,14 +739,14 @@ class VaultReconciler:
     def scan_path_drift(self) -> Dict[str, Any]:
         nas_root = self.storage.get_root_path().resolve()
         with self._get_db() as conn:
-            models = conn.execute("SELECT id, name, designer_name, designer_username, release_month, vault_path FROM models WHERE vault_path IS NOT NULL;").fetchall()
+            models = conn.execute("SELECT id, name, designer_name, designer_username, release_month, vault_path, external_key FROM models WHERE source = 'mmf' AND vault_path IS NOT NULL;").fetchall()
         drift_items = []
         for m in models:
             mid = m["id"]
             cur = Path(m["vault_path"]).resolve()
             clean_c = sanitize_segment(m["designer_name"] or m["designer_username"] or "Unknown_Creator")
             clean_m = sanitize_segment(m["release_month"] or "Unassigned")
-            canonical = (nas_root / clean_c / clean_m / f"{mid}_{sanitize_segment(m['name'])}").resolve()
+            canonical = (nas_root / clean_c / clean_m / f"{m['external_key'] or mid}_{sanitize_segment(m['name'])}").resolve()
             if cur != canonical:
                 reasons = []
                 if "[" in cur.name or "]" in cur.name: reasons.append("Bracketed ID prefix")

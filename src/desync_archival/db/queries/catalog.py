@@ -41,7 +41,7 @@ GET_RELEASES_2 = """
                AND m.primary_image_url IS NOT NULL 
                AND m.primary_image_url != ''
                AND {VALID_MODEL_M}
-             ORDER BY m.id DESC LIMIT 1) AS sample_model_id,
+             ORDER BY m.published_at DESC, m.id DESC LIMIT 1) AS sample_model_id,
             (SELECT COUNT(*) FROM models m JOIN download_jobs j ON m.id = j.model_id 
              WHERE m.designer_name = r.designer_name 
                AND m.release_month = r.release_month 

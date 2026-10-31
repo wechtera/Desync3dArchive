@@ -134,11 +134,11 @@ class TestDownloaderOAuth(unittest.TestCase):
                 INSERT OR REPLACE INTO app_settings (key, value) VALUES ('cookies_json', '[]');
 
                 -- Seed sample model
-                INSERT INTO models (id, name, designer_name, release_month, raw_backup_path)
-                VALUES (101, 'Dragon Slayer', 'Archvillain Games', '2026-10', '');
+                INSERT INTO models (external_key, id, name, designer_name, release_month, raw_backup_path)
+                VALUES ('90101', 101, 'Dragon Slayer', 'Archvillain Games', '2026-10', '');
 
-                INSERT INTO model_files (file_id, model_id, filename, size_bytes, download_url)
-                VALUES (5001, 101, 'Dragon_Slayer.zip', {len(VALID_ZIP_CONTENT)}, 'https://example.com/initial_stale.zip');
+                INSERT INTO model_files (external_key, file_id, model_id, filename, size_bytes, download_url)
+                VALUES ('7777', 5001, 101, 'Dragon_Slayer.zip', {len(VALID_ZIP_CONTENT)}, 'https://example.com/initial_stale.zip');
 
                 INSERT INTO download_jobs (id, model_id, status, total_files)
                 VALUES (1, 101, 'pending', 1);
@@ -177,7 +177,7 @@ class TestDownloaderOAuth(unittest.TestCase):
             "files": {
                 "items": [
                     {
-                        "id": 5001,
+                        "id": 7777,
                         "filename": "Dragon_Slayer.zip",
                         "size": len(VALID_ZIP_CONTENT),
                         "download_url": "https://cdn.example.com/presigned_5001.zip",
@@ -197,6 +197,7 @@ class TestDownloaderOAuth(unittest.TestCase):
         job = self.dm._claim_next_download_job()
         self.assertIsNotNone(job)
         self.dm._process_download_to_staging(1, job, self.staging_path)
+        self.assertIn("/objects/90101", mock_get.call_args.args[0])
 
         # Assert metadata query was sent with Authorization: Bearer
         meta_call_headers = mock_get.call_args[1].get("headers", {})
@@ -262,7 +263,8 @@ class TestDownloaderOAuth(unittest.TestCase):
             conn.row_factory = sqlite3.Row
             synth_files = conn.execute("SELECT * FROM model_files WHERE model_id = 101;").fetchall()
             self.assertEqual(len(synth_files), 1)
-            self.assertIn(".zip", synth_files[0]["filename"])
+            self.assertTrue(synth_files[0]["filename"].startswith("90101_"))
+            self.assertEqual(synth_files[0]["external_key"], "90101001")
             self.assertEqual(synth_files[0]["download_url"], "https://cdn.example.com/full_bundle_101.zip")
 
 

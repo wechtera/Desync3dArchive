@@ -232,7 +232,7 @@ def handle_get_models(
     elif sort == "name_desc":
         order_clause = " ORDER BY m.name COLLATE NOCASE DESC"
     else:
-        order_clause = " ORDER BY m.id DESC"
+        order_clause = " ORDER BY m.published_at DESC, m.id DESC"
 
     query += f"{order_clause} LIMIT ? OFFSET ?;"
     rows = conn.execute(query, args + [limit, offset]).fetchall()
@@ -373,8 +373,8 @@ def handle_get_model_detail(
                 raw_json = None
 
     if not raw_json:
-        fallback = app_config.metadata_dir() / f"model_{model_id}.json"
-        if fallback.exists() and fallback.is_file():
+        fallback = app_config.metadata_dir() / f"model_{model_data.get('external_key')}.json"
+        if fallback.is_file():
             try:
                 raw_json = json.loads(fallback.read_text(encoding="utf-8"))
             except Exception:
@@ -447,7 +447,7 @@ def handle_post_model_render_view(
     """
     POST /api/models/:id/render-view
     Renders and caches on-demand secondary perspectives to previews/<model_id>/view_<view>.jpg.
-    Scoped strictly to external/in-place models (id >= 2,000,000,000 or source != 'mmf').
+    Scoped strictly to external/in-place models (source != 'mmf').
     Guards MMF models since they already possess official photography and API covers.
     """
     payload = body or {}
@@ -465,7 +465,7 @@ def handle_post_model_render_view(
         return {"error": f"Model #{model_id} not found."}, 404
 
     # MMF Guard: MMF models have official photography. Render individual components via /api/render/stl instead.
-    if model["source"] == "mmf" and model_id < 2_000_000_000:
+    if model["source"] == "mmf":
         return {
             "error": f"Model #{model_id} is an MMF catalog item with official cover imagery. "
                      "Root 3D thumbnail rendering is reserved for external libraries. "

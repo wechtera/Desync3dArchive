@@ -19,14 +19,15 @@ POST_DOWNLOADS_QUEUE_1 = "SELECT id FROM models WHERE designer_name = ? AND rele
 POST_DOWNLOADS_QUEUE_2 = "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM model_files WHERE model_id = ?;"
 
 POST_DOWNLOADS_QUEUE_3 = """
+                UPDATE download_jobs
+                SET status = 'pending', total_files = ?, total_bytes = ?,
+                    enqueued_at = CURRENT_TIMESTAMP, error_message = NULL
+                WHERE model_id = ?;
+            """
+
+POST_DOWNLOADS_QUEUE_4 = """
                 INSERT INTO download_jobs (model_id, status, total_files, total_bytes, enqueued_at)
-                VALUES (?, 'pending', ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(model_id) DO UPDATE SET
-                    status = 'pending',
-                    total_files = excluded.total_files,
-                    total_bytes = excluded.total_bytes,
-                    enqueued_at = CURRENT_TIMESTAMP,
-                    error_message = NULL;
+                VALUES (?, 'pending', ?, ?, CURRENT_TIMESTAMP);
             """
 
 DELETE_DOWNLOADS_QUEUE_1 = "DELETE FROM download_jobs WHERE status IN ('pending', 'downloading', 'failed');"

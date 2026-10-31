@@ -45,6 +45,7 @@ class UnlinkCase(unittest.TestCase):
             "INSERT INTO models (id, name, designer_name, raw_backup_path) VALUES (50, 'MMF Golem', 'Other', '')"
         )
         self.conn.execute("INSERT INTO external_libraries (id, name, path) VALUES (1, 'Lib', ?)", (str(self.library),))
+        self.conn.execute("UPDATE models SET library_id = 1 WHERE id = 100")
         self.conn.execute(
             "INSERT INTO releases (id, designer_name, designer_id, release_month, model_count, total_files, total_size_bytes)"
             " VALUES ('external_Forge_2024-01', 'Forge', 0, '2024-01', 1, 0, 0)"
@@ -79,12 +80,6 @@ class UnlinkTests(UnlinkCase):
     def test_only_that_library_is_flagged(self):
         self.unlink()
         self.assertEqual(self.active(50), 1)
-        self.assertEqual(self.active(101), 1)
-
-    def test_a_path_that_only_shares_a_prefix_is_not_flagged(self):
-        self.conn.execute("UPDATE models SET vault_path = ? WHERE id = 101", (f"{self.library}2/Sibling",))
-        self.conn.commit()
-        self.unlink()
         self.assertEqual(self.active(101), 1)
 
     def test_files_on_disk_are_untouched(self):
@@ -184,7 +179,7 @@ class IndexerTests(UnlinkCase):
         self.assertEqual(self.active(100), 0)
 
     def test_deactivate_reports_the_models_it_flagged(self):
-        self.assertEqual(deactivate_library(self.conn, 1, str(self.library)), [100])
+        self.assertEqual(deactivate_library(self.conn, 1), [100])
 
 
 if __name__ == "__main__":

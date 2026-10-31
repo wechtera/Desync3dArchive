@@ -30,6 +30,7 @@ import httpx
 from desync_archival import backup
 from desync_archival import settings as app_config
 from desync_archival.services import auth_service, jobs
+from desync_archival.services import identity
 from desync_archival.services.analytics import run_startup_analytics
 from desync_archival.services.logger import job_logged, log_layer, logger
 from desync_archival.services.paths import sanitize_segment
@@ -176,7 +177,7 @@ def extract_normalized_records(model_id: int, data: dict, backup_path: Path):
     if not file_rows and archive_dl_url:
         clean_title = sanitize_segment(data.get("name") or f"Model_{model_id}")
         file_rows.append((
-            model_id * 1000 + 1,
+            identity.archive_file_key(model_id),
             model_id,
             f"{clean_title}.zip",
             None,
@@ -219,7 +220,30 @@ class TaskManager:
         conn = sqlite3.connect(str(self.db_path), timeout=45.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout = 45000;")
+        conn.execute("PRAGMA foreign_keys = ON;")
         return conn
+
+    def _cache_cover(self, model_id: int, image_url: str | None) -> None:
+        if not image_url:
+            return
+        cover_dir = (self.root_dir / "previews" / str(model_id)).resolve()
+        cover_file = cover_dir / "cover.jpg"
+        if cover_file.exists() and cover_file.stat().st_size > 0:
+            return
+        try:
+            cover_dir.mkdir(parents=True, exist_ok=True)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Referer": "https://www.myminifactory.com/",
+                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            }
+            with httpx.Client(headers=headers, timeout=12.0, follow_redirects=True) as client_img:
+                resp = client_img.get(image_url)
+                if resp.status_code == 200 and len(resp.content) > 0:
+                    cover_file.write_bytes(resp.content)
+                    log_layer("http", logging.DEBUG, f"Model #{model_id}: Cached cover image")
+        except (httpx.HTTPError, OSError) as e:
+            log_layer("http", logging.WARNING, f"Model #{model_id}: Cover download failed: {e}")
 
     def _get_setting(self, key: str, default: str = "") -> str:
         with self._get_db() as conn:
@@ -772,12 +796,12 @@ class TaskManager:
                     return {"error": f"A pipeline task (Task #{running['id']}) is already running."}, 409
 
                 active_ids = {
-                    row["id"]
+                    row["external_key"]
                     for row in conn.execute(
-                        "SELECT id FROM models WHERE name IS NOT NULL AND name NOT LIKE '[Unavailable Model%';"
+                        "SELECT external_key FROM models WHERE source = 'mmf' AND name IS NOT NULL AND name NOT LIKE '[Unavailable Model%';"
                     ).fetchall()
                 }
-                pending_ids = [mid for mid in clean_ids if mid not in active_ids]
+                pending_ids = [mid for mid in clean_ids if str(mid) not in active_ids]
                 skipped_count = len(clean_ids) - len(pending_ids)
 
                 if not pending_ids:
@@ -993,78 +1017,33 @@ class TaskManager:
                 designer_name = model_row[6]
                 pre_supported = bool(model_row[10])
 
-                primary_image_url = model_row[16]
-                if primary_image_url:
-                    cover_dir = (self.root_dir / "previews" / str(model_id)).resolve()
-                    cover_file = cover_dir / "cover.jpg"
-                    if not cover_file.exists() or cover_file.stat().st_size == 0:
-                        try:
-                            cover_dir.mkdir(parents=True, exist_ok=True)
-                            headers = {
-                                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-                                "Referer": "https://www.myminifactory.com/",
-                                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-                            }
-                            with httpx.Client(headers=headers, timeout=12.0, follow_redirects=True) as client_img:
-                                resp = client_img.get(primary_image_url)
-                                if resp.status_code == 200 and len(resp.content) > 0:
-                                    cover_file.write_bytes(resp.content)
-                                    log_layer("http", logging.DEBUG, f"Model #{model_id}: Cached cover.jpg preview ({len(resp.content)} B)")
-                        except Exception:
-                            pass
-
                 async with db_lock:
                     try:
                         with self._get_db() as conn:
-                            conn.execute("""
-                                INSERT INTO models (
-                                    id, name, url, description, published_at, designer_id,
-                                    designer_name, designer_username, primary_category, parent_category,
-                                    pre_supported, featured, views, likes, price_value,
-                                    price_currency, primary_image_url, raw_backup_path, updated_at
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                                ON CONFLICT(id) DO UPDATE SET
-                                    name = excluded.name,
-                                    url = excluded.url,
-                                    description = excluded.description,
-                                    published_at = excluded.published_at,
-                                    designer_id = excluded.designer_id,
-                                    designer_name = excluded.designer_name,
-                                    designer_username = excluded.designer_username,
-                                    primary_category = excluded.primary_category,
-                                    parent_category = excluded.parent_category,
-                                    pre_supported = excluded.pre_supported,
-                                    featured = excluded.featured,
-                                    views = excluded.views,
-                                    likes = excluded.likes,
-                                    price_value = excluded.price_value,
-                                    price_currency = excluded.price_currency,
-                                    primary_image_url = excluded.primary_image_url,
-                                    raw_backup_path = excluded.raw_backup_path,
-                                    updated_at = CURRENT_TIMESTAMP;
-                            """, model_row)
+                            local_id = identity.save_mmf_model(conn, model_id, model_row[1:])
 
                             archive_dl = data.get("archive_download_url")
                             if archive_dl:
-                                conn.execute("UPDATE models SET archive_download_url = ? WHERE id = ?;", (archive_dl, model_id))
+                                conn.execute("UPDATE models SET archive_download_url = ? WHERE id = ?;", (archive_dl, local_id))
 
-                            conn.execute("DELETE FROM model_tags WHERE model_id = ?;", (model_id,))
+                            conn.execute("DELETE FROM model_tags WHERE model_id = ?;", (local_id,))
                             if tag_rows:
-                                conn.executemany("INSERT OR IGNORE INTO model_tags (model_id, tag) VALUES (?, ?);", tag_rows)
+                                conn.executemany(
+                                    "INSERT OR IGNORE INTO model_tags (model_id, tag) VALUES (?, ?);",
+                                    [(local_id, tag) for _, tag in tag_rows],
+                                )
 
-                            conn.execute("DELETE FROM model_files WHERE model_id = ?;", (model_id,))
-                            if file_rows:
-                                conn.executemany("""
-                                    INSERT OR REPLACE INTO model_files (
-                                        file_id, model_id, filename, size_bytes, download_url, created_at
-                                    ) VALUES (?, ?, ?, ?, ?, ?);
-                                """, file_rows)
+                            identity.save_mmf_files(
+                                conn, local_id, [(row[0], row[2], row[3], row[4], row[5]) for row in file_rows]
+                            )
 
                             if anomalies:
                                 conn.executemany("""
                                     INSERT INTO schema_anomalies (model_id, anomaly_type, details)
                                     VALUES (?, ?, ?);
-                                """, [(model_id, anom[0], anom[1]) for anom in anomalies])
+                                """, [(local_id, anom[0], anom[1]) for anom in anomalies])
+
+                        self._cache_cover(local_id, model_row[16])
 
                         if is_tombstone:
                             tombstone_count += 1

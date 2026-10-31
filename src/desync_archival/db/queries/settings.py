@@ -25,13 +25,10 @@ GET_EXTERNAL_LIBRARIES_1 = """
     """
 
 POST_EXTERNAL_LIBRARY_1 = """
-            INSERT INTO external_libraries (name, path, default_creator)
-            VALUES (?, ?, ?)
-            ON CONFLICT(path) DO UPDATE SET
-                name = excluded.name,
-                default_creator = excluded.default_creator,
-                is_active = 1;
+            UPDATE external_libraries SET name = ?, default_creator = ?, is_active = 1 WHERE path = ?;
         """
+
+POST_EXTERNAL_LIBRARY_1B = "INSERT INTO external_libraries (name, path, default_creator) VALUES (?, ?, ?);"
 
 POST_EXTERNAL_LIBRARY_2 = "SELECT id FROM external_libraries WHERE path = ?;"
 

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from desync_archival import settings as app_config
+from desync_archival.services import identity
 from desync_archival.services.logger import job_logged, log_layer, logger
 from desync_archival.services.paths import sanitize_segment
 
@@ -151,7 +152,8 @@ class DiskAdopter:
                 vals.append(expected_bytes)
 
             placeholders = ", ".join(["?"] * len(fields))
-            conn.execute(f"INSERT OR REPLACE INTO downloaded_files ({', '.join(fields)}) VALUES ({placeholders});", vals)
+            conn.execute("DELETE FROM downloaded_files WHERE file_id = ?;", (file_id,))
+            conn.execute(f"INSERT INTO downloaded_files ({', '.join(fields)}) VALUES ({placeholders});", vals)
 
             conn.execute("""
                 INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, logged_at)
@@ -254,6 +256,7 @@ class DownloadManager:
         conn = sqlite3.connect(str(self.db_path), timeout=45.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout = 45000;")
+        conn.execute("PRAGMA foreign_keys = ON;")
         return conn
 
     def dequeue_models(self, model_ids: List[int]) -> int:
@@ -406,7 +409,8 @@ class DownloadManager:
                             vals.append(file_ext)
 
                         placeholders = ", ".join(["?"] * len(fields))
-                        conn.execute(f"INSERT OR REPLACE INTO downloaded_files ({', '.join(fields)}) VALUES ({placeholders});", vals)
+                        conn.execute("DELETE FROM downloaded_files WHERE file_id = ?;", (file_id,))
+                        conn.execute(f"INSERT INTO downloaded_files ({', '.join(fields)}) VALUES ({placeholders});", vals)
 
                         conn.execute("""
                             INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, logged_at)
@@ -556,7 +560,7 @@ class DownloadManager:
             creator_expr, month_expr, joins = self._get_model_meta_query_parts(conn)
 
             query = f"""
-                SELECT dj.*, m.name AS model_name, {creator_expr}, {month_expr}
+                SELECT dj.*, m.name AS model_name, m.external_key, {creator_expr}, {month_expr}
                 FROM download_jobs dj
                 JOIN models m ON dj.model_id = m.id
                 {joins}
@@ -619,10 +623,11 @@ class DownloadManager:
     @job_logged(lambda self, worker_id, job, *_: f"download-{job['id']}")
     def _process_download_to_staging(self, worker_id: int, job: sqlite3.Row, work_dir: Path):
         model_id = job["model_id"]
+        mmf_id = job["external_key"]
 
         # --- PRE-DOWNLOAD OAUTH REFRESH: Fetch live authenticated URLs ---
-        if self.access_token:
-            api_url = f"https://www.myminifactory.com/api/v2/objects/{model_id}"
+        if self.access_token and mmf_id:
+            api_url = f"https://www.myminifactory.com/api/v2/objects/{mmf_id}"
             auth_headers = {
                 "Authorization": f"Bearer {self.access_token}",
                 "Accept": "application/json",
@@ -658,8 +663,8 @@ class DownloadManager:
                                             UPDATE model_files
                                             SET download_url = ?,
                                                 size_bytes = COALESCE(?, size_bytes)
-                                            WHERE file_id = ?;
-                                        """, (rf_url, rf_size, rf_id))
+                                            WHERE source = 'mmf' AND external_key = ?;
+                                        """, (rf_url, rf_size, str(rf_id)))
                         log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Live URLs updated for Model #{model_id} (ArchiveURL={bool(archive_dl_url)})")
                     elif resp.status_code == 401:
                         self.trip_circuit_breaker("MyMiniFactory OAuth token expired (HTTP 401). Please re-authenticate in Settings.")
@@ -676,15 +681,14 @@ class DownloadManager:
             # Fallback: Adopt archive_download_url as synthetic ZIP file if no separate file items exist
             if not files:
                 m_row = conn.execute("SELECT name, archive_download_url FROM models WHERE id = ?;", (model_id,)).fetchone()
-                if m_row and m_row["archive_download_url"]:
+                if m_row and m_row["archive_download_url"] and mmf_id:
                     clean_m = sanitize_segment(m_row["name"] or f"Model_{model_id}")
-                    archive_filename = f"{model_id}_{clean_m}.zip"
-                    synth_file_id = model_id * 1000 + 1
+                    archive_filename = f"{mmf_id}_{clean_m}.zip"
                     with conn:
                         conn.execute("""
-                            INSERT OR REPLACE INTO model_files (file_id, model_id, filename, size_bytes, download_url, created_at)
-                            VALUES (?, ?, ?, 0, ?, CURRENT_TIMESTAMP);
-                        """, (synth_file_id, model_id, archive_filename, m_row["archive_download_url"]))
+                            INSERT INTO model_files (source, external_key, model_id, filename, size_bytes, download_url, created_at)
+                            VALUES (?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP);
+                        """, ("mmf", identity.archive_file_key(mmf_id), model_id, archive_filename, m_row["archive_download_url"]))
                     files = conn.execute("""
                         SELECT mf.file_id, mf.filename, mf.download_url, mf.size_bytes
                         FROM model_files mf WHERE mf.model_id = ?;
@@ -828,7 +832,7 @@ class DownloadManager:
                 clean_creator = sanitize_segment(job["creator_name"])
                 rel_month = sanitize_segment(job["release_month"])
                 m_name = job["model_name"] or f"Model_{model_id}"
-                clean_model_folder = f"{model_id}_{sanitize_segment(m_name)}"
+                clean_model_folder = f"{job['external_key'] or model_id}_{sanitize_segment(m_name)}"
 
                 nas_rel_path = str(Path(clean_creator) / rel_month / clean_model_folder / "files" / cleaned_name)
 
@@ -847,19 +851,20 @@ class DownloadManager:
         with self._get_db() as conn:
             with conn:
                 for s in staged_files_info:
+                    updated = conn.execute("""
+                        UPDATE downloaded_files
+                        SET storage_tier = 'local', staging_path = ?, local_relative_path = ?,
+                            actual_bytes = ?, sha256 = ?, downloaded_at = CURRENT_TIMESTAMP
+                        WHERE file_id = ?;
+                    """, (s["staging_path"], s["local_relative_path"], s["actual_bytes"], s["sha256"], s["file_id"]))
+                    if updated.rowcount:
+                        continue
                     conn.execute("""
                         INSERT INTO downloaded_files (
                             file_id, model_id, original_filename, cleaned_filename,
                             local_relative_path, expected_bytes, actual_bytes,
                             file_extension, storage_tier, staging_path, sha256, downloaded_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'local', ?, ?, CURRENT_TIMESTAMP)
-                        ON CONFLICT(file_id) DO UPDATE SET
-                            storage_tier = 'local',
-                            staging_path = excluded.staging_path,
-                            local_relative_path = excluded.local_relative_path,
-                            actual_bytes = excluded.actual_bytes,
-                            sha256 = excluded.sha256,
-                            downloaded_at = CURRENT_TIMESTAMP;
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'local', ?, ?, CURRENT_TIMESTAMP);
                     """, (
                         s["file_id"], model_id, s["original_filename"], s["cleaned_filename"],
                         s["local_relative_path"], s["expected_bytes"], s["actual_bytes"],
@@ -895,7 +900,7 @@ class DownloadManager:
         with self._get_db() as conn:
             creator_expr, month_expr, joins = self._get_model_meta_query_parts(conn)
             row = conn.execute(f"""
-                SELECT dj.*, m.name as model_name, {creator_expr}, {month_expr}
+                SELECT dj.*, m.name as model_name, m.external_key, {creator_expr}, {month_expr}
                 FROM download_jobs dj
                 JOIN models m ON dj.model_id = m.id
                 {joins}
@@ -969,8 +974,8 @@ class DownloadManager:
                     raw_payload = None
 
         if not raw_payload:
-            fallback = app_config.metadata_dir() / f"model_{model_id}.json"
-            if fallback.exists() and fallback.is_file():
+            fallback = app_config.metadata_dir() / f"model_{model_row['external_key']}.json" if model_row else Path()
+            if fallback.is_file():
                 try:
                     raw_payload = json.loads(fallback.read_text(encoding="utf-8"))
                 except Exception:
@@ -990,7 +995,7 @@ class DownloadManager:
         clean_creator = sanitize_segment(job["creator_name"])
         rel_month = sanitize_segment(job["release_month"])
         m_name = job["model_name"] or f"Model_{model_id}"
-        clean_model_folder = f"{model_id}_{sanitize_segment(m_name)}"
+        clean_model_folder = f"{job['external_key'] or model_id}_{sanitize_segment(m_name)}"
 
         model_dest_dir = nas_root / clean_creator / rel_month / clean_model_folder
         files_dest_dir = model_dest_dir / "files"

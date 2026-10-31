@@ -104,7 +104,8 @@ def handle_post_downloads_queue(
             total_files = file_stats[0] or 0
             total_bytes = file_stats[1] or 0
 
-            conn.execute(queries.POST_DOWNLOADS_QUEUE_3, (mid_int, total_files, total_bytes))
+            if not conn.execute(queries.POST_DOWNLOADS_QUEUE_3, (total_files, total_bytes, mid_int)).rowcount:
+                conn.execute(queries.POST_DOWNLOADS_QUEUE_4, (mid_int, total_files, total_bytes))
             queued_count += 1
 
     # Add to the bottom of handle_post_downloads_queue right before return:

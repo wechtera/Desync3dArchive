@@ -114,7 +114,7 @@ Unlinking a library flags its contents inactive and deletes nothing. A flagged s
 
 Turn on `foreign_keys` in the indexer. This stands alone, so it doesn't wait for the schema work.
 
-### Phase 3: Add the new columns, with no behavior change
+### Phase 3: Add the new columns, with no behavior change (done)
 
 Migration 0005:
 
@@ -125,7 +125,7 @@ Migration 0005:
 
 **Exit check:** every MMF row has a key, every external row has NULL, and row counts are unchanged.
 
-### Phase 4: Move the code to the right key
+### Phase 4: Move the code to the right key (done)
 
 Work through the usage table. Remove every "2 billion" check and the `SYNTHETIC_ID_OFFSET` allocators. Replace the upserts and `INSERT OR REPLACE` with one shared lookup-then-write helper for each table, inside `BEGIN IMMEDIATE`. Add `external_key` to API responses.
 
@@ -172,6 +172,10 @@ Add migrations 0005 and 0006 to the rehearsal, and update `CUTOVER.md` when it's
 ## Rule added during phase 2
 
 A missing mount limits features and never invalidates data. Browsing, metadata and adding to stashes read the catalog and work with the NAS or a library offline. Export, render and download need the files, so they stop with a clear error. Reconcile skips offline libraries and reports `skipped_offline`, so their files can't be reported missing and reset. Every later phase must follow this, including the duplicate triggers, which must not touch the disk.
+
+## Cutover rule from the user, 2026-10-30
+
+The migration and cutover must be well tested. A small sample set goes first and is inspected before the rest proceeds, and rollback scripts must be ready and tested before anything touches production.
 
 ## Risks
 

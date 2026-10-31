@@ -415,7 +415,7 @@ export async function openModelDetailModal(modelId) {
 
     const localCoverSrc = `/previews/${data.id}/cover.jpg`;
     const remoteCoverFallback = data.primary_image_url || '';
-    const isExternal = data.source === 'external' || data.id >= 2_000_000_000;
+    const isExternal = data.source === 'external';
 
     render(html`
       <div class="detail-split-layout">

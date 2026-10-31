@@ -1,6 +1,6 @@
 """
 tests/test_external_indexer.py - Automated safety & integrity tests for in-place library indexing.
-Validates synthetic ID allocation, read-only invariants, artwork cascading, and zero data loss on unlinking.
+Validates ID allocation, read-only invariants, artwork cascading, and zero data loss on unlinking.
 """
 
 import hashlib
@@ -22,10 +22,7 @@ for p in (ROOT_DIR, UI_DIR):
 from db_helper import init_persistent_tables
 
 from desync_archival.services.db import get_db_connection
-from desync_archival.services.external_indexer import (
-    SYNTHETIC_ID_OFFSET,
-    ExternalLibraryIndexer,
-)
+from desync_archival.services.external_indexer import ExternalLibraryIndexer
 
 
 class TestExternalIndexer(unittest.TestCase):
@@ -213,25 +210,13 @@ class TestExternalIndexer(unittest.TestCase):
         self.assertTrue(len(models) >= 4)
 
         for m in models:
-            self.assertGreaterEqual(
-                m["id"],
-                SYNTHETIC_ID_OFFSET,
-                f"Model #{m['id']} '{m['name']}' violates synthetic ID floor ({SYNTHETIC_ID_OFFSET}).",
-            )
             self.assertEqual(m["source"], "external")
 
-        files = conn.execute(
-            "SELECT file_id, model_id, cleaned_filename, storage_tier FROM downloaded_files WHERE storage_tier = 'nas' AND model_id >= ?;",
-            (SYNTHETIC_ID_OFFSET,)
-        ).fetchall()
+        files = conn.execute("""
+            SELECT df.file_id FROM downloaded_files df JOIN models m ON m.id = df.model_id
+            WHERE m.source = 'external';
+        """).fetchall()
         self.assertTrue(len(files) >= 5)
-
-        for f in files:
-            self.assertGreaterEqual(
-                f["file_id"],
-                SYNTHETIC_ID_OFFSET,
-                f"File #{f['file_id']} '{f['cleaned_filename']}' violates synthetic ID floor.",
-            )
 
         mmf_model = conn.execute("SELECT id, name, source FROM models WHERE id = 839284;").fetchone()
         self.assertIsNotNone(mmf_model)
@@ -250,9 +235,9 @@ class TestExternalIndexer(unittest.TestCase):
         conn = self._get_db()
         files = conn.execute("""
             SELECT df.file_id, df.cleaned_filename, df.storage_tier, df.vault_path, df.actual_bytes
-            FROM downloaded_files df
-            WHERE df.model_id >= ?;
-        """, (SYNTHETIC_ID_OFFSET,)).fetchall()
+            FROM downloaded_files df JOIN models m ON m.id = df.model_id
+            WHERE m.source = 'external';
+        """).fetchall()
 
         self.assertGreater(len(files), 0)
         for f in files:
@@ -350,13 +335,13 @@ class TestExternalIndexer(unittest.TestCase):
 
         conn = self._get_db()
         models_run1 = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM models WHERE source = 'external';").fetchall()}
-        files_count1 = conn.execute("SELECT COUNT(*) FROM downloaded_files WHERE model_id >= ?;", (SYNTHETIC_ID_OFFSET,)).fetchone()[0]
+        files_count1 = conn.execute("SELECT COUNT(*) FROM downloaded_files;").fetchone()[0]
 
         res2 = indexer.scan_and_index_library(1)
         self.assertTrue(res2.get("success"))
 
         models_run2 = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM models WHERE source = 'external';").fetchall()}
-        files_count2 = conn.execute("SELECT COUNT(*) FROM downloaded_files WHERE model_id >= ?;", (SYNTHETIC_ID_OFFSET,)).fetchone()[0]
+        files_count2 = conn.execute("SELECT COUNT(*) FROM downloaded_files;").fetchone()[0]
 
         self.assertEqual(models_run1, models_run2, "Model IDs were churned or modified across re-scans.")
         self.assertEqual(files_count1, files_count2, "Duplicate file rows created across re-scans.")

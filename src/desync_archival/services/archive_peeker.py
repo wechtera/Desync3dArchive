@@ -326,7 +326,9 @@ class ArchivePeeker:
                 url = row["primary_image_url"]
 
         if not url:
-            meta_path = app_config.metadata_dir() / f"model_{model_id}.json"
+            with self._get_db() as conn:
+                key = conn.execute("SELECT external_key FROM models WHERE id = ?;", (model_id,)).fetchone()
+            meta_path = app_config.metadata_dir() / f"model_{key[0] if key else None}.json"
             if meta_path.exists():
                 try:
                     data = json.loads(meta_path.read_text(encoding="utf-8"))

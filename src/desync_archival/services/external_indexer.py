@@ -28,7 +28,6 @@ try:
 except ImportError:
     ArchivePeeker = None
 
-SYNTHETIC_ID_OFFSET = 2_000_000_000
 SUPPORTED_FILE_EXTENSIONS = {".stl", ".lys", ".ctb", ".chitubox", ".zip", ".rar", ".7z"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -51,13 +50,9 @@ def sanitize_title(name: str) -> str:
     return clean or name
 
 
-def deactivate_library(conn: sqlite3.Connection, library_id: int, lib_path: str) -> list[int]:
+def deactivate_library(conn: sqlite3.Connection, library_id: int) -> list[int]:
     """Flags a library and its contents inactive and deletes nothing. Relinking reactivates them."""
-    prefix = f"{lib_path}/"
-    model_ids = [row[0] for row in conn.execute("""
-        SELECT id FROM models
-        WHERE source = 'external' AND (vault_path = ? OR substr(vault_path, 1, ?) = ?);
-    """, (lib_path, len(prefix), prefix)).fetchall()]
+    model_ids = [row[0] for row in conn.execute("SELECT id FROM models WHERE library_id = ?;", (library_id,)).fetchall()]
 
     with conn:
         conn.executemany("UPDATE models SET is_active = 0 WHERE id = ?;", [(mid,) for mid in model_ids])
@@ -79,8 +74,6 @@ class ExternalLibraryIndexer:
         self.previews_root = app_config.previews_dir().resolve()
         self.previews_root.mkdir(parents=True, exist_ok=True)
         self.mesh_renderer = MeshRenderer()
-        self._next_model_id: Optional[int] = None
-        self._next_file_id: Optional[int] = None
 
     def _get_db(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), timeout=45.0)
@@ -88,28 +81,6 @@ class ExternalLibraryIndexer:
         conn.execute("PRAGMA busy_timeout = 45000;")
         conn.execute("PRAGMA foreign_keys = ON;")
         return conn
-
-    def _alloc_model_id(self, conn: sqlite3.Connection) -> int:
-        if self._next_model_id is None:
-            cur = conn.execute(
-                "SELECT COALESCE(MAX(id), ?) FROM models WHERE id >= ?;",
-                (SYNTHETIC_ID_OFFSET - 1, SYNTHETIC_ID_OFFSET)
-            )
-            self._next_model_id = max(cur.fetchone()[0] + 1, SYNTHETIC_ID_OFFSET)
-        alloc = self._next_model_id
-        self._next_model_id += 1
-        return alloc
-
-    def _alloc_file_id(self, conn: sqlite3.Connection) -> int:
-        if self._next_file_id is None:
-            cur = conn.execute(
-                "SELECT COALESCE(MAX(file_id), ?) FROM model_files WHERE file_id >= ?;",
-                (SYNTHETIC_ID_OFFSET - 1, SYNTHETIC_ID_OFFSET)
-            )
-            self._next_file_id = max(cur.fetchone()[0] + 1, SYNTHETIC_ID_OFFSET)
-        alloc = self._next_file_id
-        self._next_file_id += 1
-        return alloc
 
     def _find_model_directories(self, release_dir: Path) -> List[Tuple[Path, str]]:
         try:
@@ -285,7 +256,7 @@ class ExternalLibraryIndexer:
                 # 1. Idempotent Model ID Resolution
                 with self._get_db() as conn:
                     existing_model = conn.execute(
-                        "SELECT id FROM models WHERE vault_path = ?;", (str(m_dir),)
+                        "SELECT id FROM models WHERE source = 'external' AND vault_path = ?;", (str(m_dir),)
                     ).fetchone()
 
                     if existing_model:
@@ -294,19 +265,19 @@ class ExternalLibraryIndexer:
                             conn.execute("""
                                 UPDATE models
                                 SET name = ?, designer_name = ?, primary_category = ?,
-                                    pre_supported = ?, release_month = ?, is_active = 1,
+                                    pre_supported = ?, release_month = ?, is_active = 1, library_id = ?,
                                     updated_at = CURRENT_TIMESTAMP
                                 WHERE id = ?;
-                            """, (model_name, default_creator, m_category, has_presupported, release_month, model_id))
+                            """, (model_name, default_creator, m_category, has_presupported, release_month, library_id, model_id))
                     else:
-                        model_id = self._alloc_model_id(conn)
                         with conn:
-                            conn.execute("""
+                            cursor = conn.execute("""
                                 INSERT INTO models (
-                                    id, name, designer_name, designer_username, primary_category,
+                                    library_id, name, designer_name, designer_username, primary_category,
                                     pre_supported, release_month, vault_path, source, raw_backup_path, updated_at
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'external', '', CURRENT_TIMESTAMP);
-                            """, (model_id, model_name, default_creator, default_creator, m_category, has_presupported, release_month, str(m_dir)))
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'external', '', CURRENT_TIMESTAMP)
+                            """, (library_id, model_name, default_creator, default_creator, m_category, has_presupported, release_month, str(m_dir)))
+                        model_id = cursor.lastrowid
 
                 # 2. Populate Model Tags
                 tags_to_insert = {default_creator.lower(), sanitize_title(release_name).lower(), m_category.lower(), "external"}
@@ -386,12 +357,12 @@ class ExternalLibraryIndexer:
                                     WHERE file_id = ?;
                                 """, (sz, sz, file_id))
                         else:
-                            file_id = self._alloc_file_id(conn)
                             with conn:
-                                conn.execute("""
-                                    INSERT INTO model_files (file_id, model_id, filename, size_bytes, download_url, created_at)
-                                    VALUES (?, ?, ?, ?, '', CURRENT_TIMESTAMP);
-                                """, (file_id, model_id, df.name, sz))
+                                cursor = conn.execute("""
+                                    INSERT INTO model_files (model_id, filename, size_bytes, download_url, created_at, source)
+                                    VALUES (?, ?, ?, '', CURRENT_TIMESTAMP, 'external');
+                                """, (model_id, df.name, sz))
+                                file_id = cursor.lastrowid
 
                                 conn.execute("""
                                     INSERT INTO downloaded_files (
@@ -444,18 +415,22 @@ class ExternalLibraryIndexer:
                 tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()}
                 if "releases" in tables:
                     with conn:
-                        conn.execute("""
-                            INSERT INTO releases (
-                                id, designer_name, designer_id, release_month,
-                                model_count, total_files, total_size_bytes
-                            ) VALUES (?, ?, 0, ?, ?, 0, 0)
-                            ON CONFLICT(id) DO UPDATE SET
-                                model_count = model_count + excluded.model_count,
-                                is_active = 1;
-                        """, (
-                            f"external_{default_creator}_{release_month}",
-                            default_creator, release_month, len(model_dirs),
-                        ))
+                        # Counted, not added, so a rescan can't inflate it.
+                        model_count = conn.execute("""
+                            SELECT COUNT(*) FROM models
+                            WHERE source = 'external' AND is_active = 1 AND designer_name = ? AND release_month = ?;
+                        """, (default_creator, release_month)).fetchone()[0]
+                        release_id = f"external_{default_creator}_{release_month}"
+                        updated = conn.execute(
+                            "UPDATE releases SET model_count = ?, is_active = 1 WHERE id = ?;", (model_count, release_id)
+                        )
+                        if not updated.rowcount:
+                            conn.execute("""
+                                INSERT INTO releases (
+                                    id, designer_name, designer_id, release_month,
+                                    model_count, total_files, total_size_bytes
+                                ) VALUES (?, ?, 0, ?, ?, 0, 0);
+                            """, (release_id, default_creator, release_month, model_count))
 
         # 8. Update External Library Telemetry in SQLite
         with self._get_db() as conn:
@@ -499,7 +474,7 @@ class ExternalLibraryIndexer:
             lib_name = lib_row["name"]
             lib_path = lib_row["path"]
 
-            model_ids = deactivate_library(conn, library_id, lib_path)
+            model_ids = deactivate_library(conn, library_id)
 
         log_layer("storage", logging.INFO, f"Unlinked library #{library_id} ('{lib_name}'): Flagged inactive {len(model_ids)} SQLite models. Source NAS files untouched.")
         return {

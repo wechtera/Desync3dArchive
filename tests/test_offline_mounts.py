@@ -42,6 +42,7 @@ class OfflineCase(unittest.TestCase):
             " VALUES (4, 3, 9, 'a/arm.stl', 'arm.stl', 5)"
         )
         self.conn.execute("INSERT INTO external_libraries (id, name, path) VALUES (1, 'Lib', ?)", (str(self.offline),))
+        self.conn.execute("UPDATE models SET library_id = 1 WHERE id = 100")
         self.conn.execute("INSERT INTO stashes (id, name) VALUES (7, 'Print soon')")
         self.conn.commit()
         self.client = TestClient(server.create_app(manage_workers=False), base_url="http://localhost")
