@@ -8,7 +8,8 @@ import {
   fetchScrapesList,
   startIngest
 } from '../api.js';
-import { escapeHtml, formatLocalDateTime } from '../utils.js';
+import { formatLocalDateTime } from '../utils.js';
+import { html, render } from '../template.js';
 
 export async function renderTasksView() {
   try {
@@ -67,34 +68,9 @@ export async function renderTasksView() {
 
     const tbody = document.getElementById('task-history-tbody');
     if (tbody) {
-      if (recents.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="td-empty">No recent tasks recorded.</td></tr>';
-      } else {
-        tbody.innerHTML = recents.map(t => {
-          const badgeClass = getStatusBadgeClass(t.status);
-          const typeName = t.task_type === 'library_scrape'
-            ? 'Library Scrape'
-            : (t.task_type === 'metadata_ingest' ? 'Metadata Ingest' : t.task_type);
-
-          const started = t.started_at ? formatTime(t.started_at) : '-';
-          const completed = t.completed_at ? formatTime(t.completed_at) : (t.status === 'running' ? 'In Progress' : '-');
-          const pct = Math.round(t.progress_pct || 0);
-
-          return `
-            <tr>
-              <td class="font-mono"><strong>#${t.id}</strong></td>
-              <td>${typeName}</td>
-              <td><span class="status-badge ${badgeClass}">${(t.status || '').toUpperCase()}</span></td>
-              <td class="font-mono">${pct}%</td>
-              <td class="cell-label-truncate font-mono font-xs">
-                ${escapeHtml(t.progress_label || '-')}
-              </td>
-              <td class="font-mono text-dim font-sm">${started}</td>
-              <td class="font-mono text-dim font-sm">${completed}</td>
-            </tr>
-          `;
-        }).join('');
-      }
+      render(recents.length === 0
+        ? html`<tr><td colspan="7" class="td-empty">No recent tasks recorded.</td></tr>`
+        : recents.map(taskRow), tbody);
     }
 
     return active;
@@ -102,6 +78,26 @@ export async function renderTasksView() {
     console.error('Failed to render tasks view:', err);
     return null;
   }
+}
+
+function taskRow(t) {
+  const typeName = t.task_type === 'library_scrape'
+    ? 'Library Scrape'
+    : (t.task_type === 'metadata_ingest' ? 'Metadata Ingest' : t.task_type);
+  const started = t.started_at ? formatTime(t.started_at) : '-';
+  const completed = t.completed_at ? formatTime(t.completed_at) : (t.status === 'running' ? 'In Progress' : '-');
+
+  return html`
+    <tr>
+      <td class="font-mono"><strong>#${t.id}</strong></td>
+      <td>${typeName}</td>
+      <td><span class="status-badge ${getStatusBadgeClass(t.status)}">${(t.status || '').toUpperCase()}</span></td>
+      <td class="font-mono">${Math.round(t.progress_pct || 0)}%</td>
+      <td class="cell-label-truncate font-mono font-xs">${t.progress_label || '-'}</td>
+      <td class="font-mono text-dim font-sm">${started}</td>
+      <td class="font-mono text-dim font-sm">${completed}</td>
+    </tr>
+  `;
 }
 
 export async function openScraperModal() {
@@ -195,23 +191,19 @@ export async function loadRecentScrapesForIngest() {
   const select = document.getElementById('ingest-scrape-folder-select');
   if (!select) return;
 
-  select.innerHTML = '<option value="">Loading available scrape runs...</option>';
+  render(html`<option value="">Loading available scrape runs...</option>`, select);
 
   try {
     const data = await fetchScrapesList();
     const scrapes = data.scrapes || [];
 
-    if (scrapes.length === 0) {
-      select.innerHTML = '<option value="">No scrape runs found on disk (run Scraper first)</option>';
-      return;
-    }
-
-    select.innerHTML = scrapes.map(s => {
-      const countLabel = s.model_count ? `${s.model_count} models` : 'empty';
-      return `<option value="${s.folder}">${s.folder} (${countLabel})</option>`;
-    }).join('');
+    render(scrapes.length === 0
+      ? html`<option value="">No scrape runs found on disk (run Scraper first)</option>`
+      : scrapes.map(s => html`
+          <option value=${s.folder}>${s.folder} (${s.model_count ? `${s.model_count} models` : 'empty'})</option>
+        `), select);
   } catch (err) {
-    select.innerHTML = `<option value="">Error loading scrapes: ${err.message}</option>`;
+    render(html`<option value="">Error loading scrapes: ${err.message}</option>`, select);
   }
 }
 
@@ -302,10 +294,9 @@ export function renderIngestReport(summary = {}) {
     const creators = summary.creators || {};
     const creatorNames = Object.keys(creators);
 
-    if (creatorNames.length === 0) {
-      creatorsContainer.innerHTML = '<div class="text-dim font-xs mt-2">No new creators or models to breakdown.</div>';
-    } else {
-      creatorsContainer.innerHTML = `
+    render(creatorNames.length === 0
+      ? html`<div class="text-dim font-xs mt-2">No new creators or models to breakdown.</div>`
+      : html`
         <div class="report-breakdown-wrap">
           <div class="report-breakdown-title">
             Creator Ingestion Breakdown
@@ -319,21 +310,17 @@ export function renderIngestReport(summary = {}) {
               </tr>
             </thead>
             <tbody>
-              ${creatorNames.map(name => {
-                const c = creators[name];
-                return `
-                  <tr>
-                    <td class="cell-creator-accent">${escapeHtml(name)}</td>
-                    <td class="font-mono">${c.count || 0}</td>
-                    <td class="font-mono">${c.pre_supported || 0}</td>
-                  </tr>
-                `;
-              }).join('')}
+              ${creatorNames.map(name => html`
+                <tr>
+                  <td class="cell-creator-accent">${name}</td>
+                  <td class="font-mono">${creators[name].count || 0}</td>
+                  <td class="font-mono">${creators[name].pre_supported || 0}</td>
+                </tr>
+              `)}
             </tbody>
           </table>
         </div>
-      `;
-    }
+      `, creatorsContainer);
   }
 }
 

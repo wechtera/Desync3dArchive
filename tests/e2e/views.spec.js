@@ -154,3 +154,137 @@ test.describe('releases', () => {
     await expect(page.locator('#releases-grid img')).toHaveCount(0);
   });
 });
+
+test.describe('tasks', () => {
+  const task = (overrides) => ({
+    id: 5, task_type: 'library_scrape', status: 'completed', progress_pct: 100, progress_label: 'Done',
+    started_at: '2026-05-01 12:00:00', completed_at: '2026-05-01 12:01:00', ...overrides,
+  });
+
+  async function open(page, status) {
+    await mock(page, '/api/tasks/status', status);
+    await page.goto('/#settings');
+  }
+
+  test('history lists tasks, with hostile labels as text', async ({ page }) => {
+    await open(page, { active_task: null, recent_tasks: [task({}), task({ id: 6, task_type: 'metadata_ingest', status: 'failed', progress_label: HOSTILE })] });
+    const rows = page.locator('#task-history-tbody tr');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.first()).toContainText('Library Scrape');
+    await expect(rows.first()).toContainText('COMPLETED');
+    await expect(rows.nth(1)).toContainText('Metadata Ingest');
+    await expect(rows.nth(1).locator('.cell-label-truncate')).toHaveText(HOSTILE);
+    await expect(rows.nth(1).locator('.status-failed')).toHaveCount(1);
+    await expect(page.locator('#task-history-tbody img')).toHaveCount(0);
+  });
+
+  test('an empty history says so, and later fills in', async ({ page }) => {
+    await open(page, { active_task: null, recent_tasks: [] });
+    await expect(page.locator('#task-history-tbody')).toContainText('No recent tasks recorded.');
+    await page.unroute('**/api/tasks/status*');
+    await mock(page, '/api/tasks/status', { active_task: null, recent_tasks: [task({})] });
+    await page.evaluate(() => window.renderTasksView());
+    await expect(page.locator('#task-history-tbody tr')).toHaveCount(1);
+    await expect(page.locator('#task-history-tbody')).not.toContainText('No recent tasks recorded.');
+  });
+
+  test('scrape folders list in the ingest dialog, with hostile names as text', async ({ page }) => {
+    await mock(page, '/api/scrapes/list', { scrapes: [{ folder: HOSTILE, model_count: 3 }, { folder: 'scrape_2', model_count: 0 }] });
+    await open(page, { active_task: null, recent_tasks: [] });
+    await page.evaluate(() => window.openIngestModal());
+    const options = page.locator('#ingest-scrape-folder-select option');
+    await expect(options).toHaveCount(2);
+    await expect(options.first()).toHaveAttribute('value', HOSTILE);
+    await expect(options.nth(1)).toHaveText('scrape_2 (empty)');
+  });
+
+  test('no scrape folders says so', async ({ page }) => {
+    await mock(page, '/api/scrapes/list', { scrapes: [] });
+    await open(page, { active_task: null, recent_tasks: [] });
+    await page.evaluate(() => window.openIngestModal());
+    await expect(page.locator('#ingest-scrape-folder-select')).toContainText('No scrape runs found');
+  });
+
+  test('the ingest report breaks down creators', async ({ page }) => {
+    await open(page, { active_task: null, recent_tasks: [] });
+    await page.evaluate((name) => window.renderIngestReport({
+      submitted: 3, ingested: 2, creators: { [name]: { count: 2, pre_supported: 1 } },
+    }), HOSTILE);
+    await expect(page.locator('#report-ingested')).toHaveText('2');
+    await expect(page.locator('.cell-creator-accent')).toHaveText(HOSTILE);
+    await page.evaluate(() => window.renderIngestReport({ creators: {} }));
+    await expect(page.locator('#report-creators-container')).toContainText('No new creators');
+  });
+});
+
+test.describe('add to stash', () => {
+  const active = { id: 3, name: HOSTILE, item_count: 2, is_active: 1 };
+  const stashes = [active, { id: 4, name: 'Second', item_count: 1, is_active: 0 }];
+  const item = { item_type: 'model', model_id: 10, title: HOSTILE };
+
+  async function open(page, list = stashes, current = active) {
+    await mock(page, '/api/stashes', { stashes: list });
+    await mock(page, '/api/stashes/active', { active_stash: current });
+    await page.goto('/');
+    await page.evaluate((context) => window.openAddToStashModal(context), item);
+  }
+
+  test('with no stashes it points to the stash manager', async ({ page }) => {
+    await open(page, [], null);
+    await expect(page.locator('.stash-modal-zero-gate')).toBeVisible();
+    await page.getByRole('button', { name: /Go to Stash Manager/ }).click();
+    await expect(page).toHaveURL(/#stashes$/);
+    await expect(page.locator('#modal-add-to-stash-backdrop')).toBeHidden();
+  });
+
+  test('hostile stash names render as text, with the active one selected', async ({ page }) => {
+    await open(page);
+    await expect(page.locator('#stash-modal-item-title')).toHaveText(HOSTILE);
+    await expect(page.locator('#btn-quick-add-stash')).toContainText(HOSTILE);
+    await expect(page.locator('#stash-modal-select')).toHaveValue('3');
+    await expect(page.locator('#modal-add-to-stash-backdrop img')).toHaveCount(0);
+  });
+
+  test('quick add posts the item and confirms', async ({ page }) => {
+    let body;
+    await page.route('**/api/stashes/3/items', async (route) => {
+      body = route.request().postDataJSON();
+      await route.fulfill({ status: 201, json: { success: true } });
+    });
+    await open(page);
+    await page.locator('#btn-quick-add-stash').click();
+    await expect(page.locator('#stash-modal-feedback')).toContainText('Added to');
+    await expect(page.locator('#stash-modal-feedback')).toContainText(HOSTILE);
+    expect(body).toMatchObject({ item_type: 'model', model_id: 10 });
+  });
+
+  test('a duplicate gives a friendly notice', async ({ page }) => {
+    await page.route('**/api/stashes/4/items', (route) => route.fulfill({ status: 201, json: { already_exists: true, stash_name: 'Second' } }));
+    await open(page);
+    await page.locator('#stash-modal-select').selectOption('4');
+    await page.getByRole('button', { name: 'Add to Stash' }).click();
+    await expect(page.locator('#stash-modal-feedback')).toContainText('Already pending paint');
+    await expect(page.locator('#stash-modal-feedback')).toHaveClass(/feedback-warn/);
+  });
+
+  test('creating a stash needs a name', async ({ page }) => {
+    await open(page);
+    await page.getByRole('button', { name: 'Create & Add', exact: true }).click();
+    await expect(page.locator('#stash-modal-feedback')).toContainText('Please enter a name');
+  });
+
+  test('create and add makes the stash, then adds to it', async ({ page }) => {
+    let created;
+    await open(page);
+    await page.route('**/api/stashes', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      created = route.request().postDataJSON();
+      return route.fulfill({ status: 201, json: { stash: { id: 9, name: 'New' } } });
+    });
+    await page.route('**/api/stashes/9/items', (route) => route.fulfill({ status: 201, json: {} }));
+    await page.locator('#stash-modal-new-name').fill('New');
+    await page.getByRole('button', { name: /Make Current/ }).click();
+    await expect(page.locator('#stash-modal-feedback')).toContainText('Added to');
+    expect(created).toMatchObject({ name: 'New', make_active: true });
+  });
+});

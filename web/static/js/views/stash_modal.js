@@ -13,7 +13,7 @@ import {
   setActiveStash
 } from '../api.js';
 import { updateHeaderStashWidget } from './stashes.js';
-import { escapeHtml } from '../utils.js';
+import { html, nothing, render } from '../template.js';
 
 let currentItemContext = null;
 let onStashSuccessCallback = null;
@@ -41,7 +41,7 @@ export async function openAddToStashModal(itemContext, onSuccess = null) {
   const badgeEl = document.getElementById('stash-modal-tier-badge');
 
   backdrop.style.display = 'flex';
-  body.innerHTML = '<div class="loading-placeholder">Checking stash manifests...</div>';
+  render(html`<div class="loading-placeholder">Checking stash manifests...</div>`, body);
 
   const tierLabels = {
     model: 'MODEL BUNDLE',
@@ -76,7 +76,7 @@ export async function openAddToStashModal(itemContext, onSuccess = null) {
     // --- RENDER 3-SECTION STASH SELECTION FORM ---
     renderStashSelectionForm(body, stashes, activeStash);
   } catch (err) {
-    body.innerHTML = `<div class="browse-item-alert" style="padding:16px;">Failed loading stashes: ${escapeHtml(err.message)}</div>`;
+    render(html`<div class="browse-item-alert" style="padding:16px;">Failed loading stashes: ${err.message}</div>`, body);
   }
 }
 
@@ -84,18 +84,18 @@ export async function openAddToStashModal(itemContext, onSuccess = null) {
  * Renders the Zero-Stash Gate informative view with CTA.
  */
 function renderZeroStashGate(container) {
-  container.innerHTML = `
+  render(html`
     <div class="stash-modal-zero-gate">
       <div class="stash-zero-icon">&boxbox;</div>
       <h3 class="text-main font-bold font-lg mb-2">No Stash Manifests Found</h3>
       <p class="text-dim font-sm mb-4" style="max-width: 400px; margin: 0 auto 16px auto; line-height: 1.5;">
         You haven't created any stash manifests yet. Stashes allow you to stage and curate 3D models, components, and raw bits into organized print batches (&ldquo;A pile of gray&rdquo;).
       </p>
-      <button type="button" class="btn-pill btn-action-primary" onclick="window.goToStashManager()">
+      <button type="button" class="btn-pill btn-action-primary" @click=${goToStashManager}>
         Go to Stash Manager &rarr;
       </button>
     </div>
-  `;
+  `, container);
 }
 
 /**
@@ -104,41 +104,40 @@ function renderZeroStashGate(container) {
 function renderStashSelectionForm(container, stashes, activeStash) {
   const hasActive = Boolean(activeStash && activeStash.id);
 
-  container.innerHTML = `
+  render(html`
     <div id="stash-modal-feedback" class="stash-modal-feedback" style="display:none;"></div>
 
-    <!-- Section 1: Quick Add to Active Stash -->
     <div class="stash-modal-section">
       <div class="stash-modal-section-title">1. Quick Add to Active Stash</div>
-      ${hasActive ? `
+      ${hasActive ? html`
         <div class="stash-quick-add-box">
           <div>
-            <div class="font-semibold text-main">${escapeHtml(activeStash.name)}</div>
+            <div class="font-semibold text-main">${activeStash.name}</div>
             <div class="text-dim font-xs mt-1">Currently holds ${(activeStash.item_count || 0).toLocaleString()} item${activeStash.item_count === 1 ? '' : 's'}</div>
           </div>
-          <button type="button" class="btn-pill btn-action-primary" id="btn-quick-add-stash" onclick="window.executeAddToStash(${activeStash.id}, '${escapeHtml(activeStash.name).replace(/'/g, "\\'")}')">
-            Quick Add to ${escapeHtml(activeStash.name)}
+          <button type="button" class="btn-pill btn-action-primary" id="btn-quick-add-stash"
+                  @click=${() => executeAddToStash(activeStash.id, activeStash.name)}>
+            Quick Add to ${activeStash.name}
           </button>
         </div>
-      ` : `
+      ` : html`
         <div class="text-dim font-xs" style="padding: 10px; background: rgba(0,0,0,0.2);">
           No active stash currently designated. Select one below or set an active stash.
         </div>
       `}
     </div>
 
-    <!-- Section 2: Pick Existing Stash -->
     <div class="stash-modal-section">
       <div class="stash-modal-section-title">2. Choose Stash Manifest</div>
       <div class="stash-picker-row">
         <select id="stash-modal-select" class="search-box" style="flex:1;">
-          ${stashes.map(s => `
-            <option value="${s.id}" ${activeStash && s.id === activeStash.id ? 'selected' : ''}>
-              ${escapeHtml(s.name)} (${s.item_count || 0} items)${s.is_active ? ' [Active]' : ''}
+          ${stashes.map(s => html`
+            <option value=${s.id} ?selected=${Boolean(activeStash && s.id === activeStash.id)}>
+              ${s.name} (${s.item_count || 0} items)${s.is_active ? ' [Active]' : nothing}
             </option>
-          `).join('')}
+          `)}
         </select>
-        <button type="button" class="btn-pill btn-action-queue" onclick="window.handleDropdownAddToStash()">
+        <button type="button" class="btn-pill btn-action-queue" @click=${handleDropdownAddToStash}>
           Add to Stash
         </button>
       </div>
@@ -147,20 +146,19 @@ function renderStashSelectionForm(container, stashes, activeStash) {
       </label>
     </div>
 
-    <!-- Section 3: Inline Creation -->
     <div class="stash-modal-section">
       <div class="stash-modal-section-title">3. Create New Stash &amp; Add</div>
       <input type="text" id="stash-modal-new-name" class="search-box select-full mb-2" placeholder="New stash name (e.g. October Resin Run)..." spellcheck="false">
       <div class="flex gap-2 justify-end">
-        <button type="button" class="btn-pill" onclick="window.handleInlineCreateAndAdd(false)">
+        <button type="button" class="btn-pill" @click=${() => handleInlineCreateAndAdd(false)}>
           Create &amp; Add
         </button>
-        <button type="button" class="btn-pill btn-action-primary" onclick="window.handleInlineCreateAndAdd(true)">
+        <button type="button" class="btn-pill btn-action-primary" @click=${() => handleInlineCreateAndAdd(true)}>
           Create, Make Current &amp; Add
         </button>
       </div>
     </div>
-  `;
+  `, container);
 }
 
 /**
@@ -223,7 +221,7 @@ export async function executeAddToStash(stashId, stashName) {
       const modelIds = currentItemContext.model_ids || [];
       const res = await bulkAddStashModels(stashId, modelIds);
 
-      let msg = `Added ${res.added} model${res.added === 1 ? '' : 's'} to "${escapeHtml(stashName)}".`;
+      let msg = `Added ${res.added} model${res.added === 1 ? '' : 's'} to "${stashName}".`;
       if (res.duplicates > 0) {
         msg += ` (${res.duplicates} already pending paint in stash).`;
       }
@@ -248,12 +246,12 @@ export async function executeAddToStash(stashId, stashName) {
     const res = await addStashItem(stashId, payload);
 
     if (res.duplicate || res.already_exists) {
-      showFeedback(`Already pending paint in &lsquo;${escapeHtml(res.stash_name || stashName)}&rsquo;.`, 'warn');
+      showFeedback(`Already pending paint in \u2018${res.stash_name || stashName}\u2019.`, 'warn');
       setButtonsDisabled(false);
       return;
     }
 
-    showFeedback(`Added to &lsquo;${escapeHtml(stashName)}&rsquo;!`, 'success');
+    showFeedback(`Added to \u2018${stashName}\u2019!`, 'success');
     syncActiveWidget();
     if (onStashSuccessCallback) onStashSuccessCallback(res);
     setTimeout(closeAddToStashModal, 800);
@@ -290,7 +288,7 @@ function showFeedback(msg, type = 'success') {
   const el = document.getElementById('stash-modal-feedback');
   if (!el) return;
   el.className = `stash-modal-feedback feedback-${type}`;
-  el.innerHTML = msg;
+  el.textContent = msg;
   el.style.display = 'block';
 }
 
@@ -318,7 +316,7 @@ function ensureModalContainer() {
   const div = document.createElement('div');
   div.id = 'modal-add-to-stash-backdrop';
   div.className = 'modal-backdrop stash-modal-backdrop';
-  div.innerHTML = `
+  render(html`
     <div class="modal modal-md stash-modal-content">
       <div class="modal-header">
         <div>
@@ -328,11 +326,11 @@ function ensureModalContainer() {
           </div>
           <div class="modal-subtitle" id="stash-modal-item-title">Loading item...</div>
         </div>
-        <button type="button" class="tab-btn btn-modal-close" onclick="window.closeAddToStashModal()">Close</button>
+        <button type="button" class="tab-btn btn-modal-close" @click=${closeAddToStashModal}>Close</button>
       </div>
       <div class="modal-body modal-body-stack" id="stash-modal-dynamic-body"></div>
     </div>
-  `;
+  `, div);
   document.body.appendChild(div);
 }
 
