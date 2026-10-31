@@ -88,6 +88,10 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 - **Cookie fields:** Settings has a field for each of `cf_clearance`, `PHPSESSID`, `REMEMBERME`, `__cf_bm`, `_cfuvid` and `__cflb`. Each is a hidden secret and merges into `cookies_json` under its own domain, so nobody has to maintain the JSON by hand.
 
+- **First real scrape:** headless, 8 seconds, 4,869 models: all 4,868 in the catalog plus 1 new purchase, Master Wendigo (276218). The fixed 4,868 target would have stopped short of it. The JSON came from `/api/data-library/objectPreviews`, one API batch of 12,485 items. No secrets reached the logs.
+- **Scraped IDs:** every ID arrived as `object-99104`, breaking the numeric ID rule in archeology 2.3. Ingest from a scrape folder was already safe, because it strips non-digits, but the files were wrong. `normalizeId` in `scrape.js` now stores plain digits and drops anything else.
+- **Download claim race (V16):** two workers could claim one job, because the claim read a row and then updated it. In a real run, one worker moved a finished file while the other was validating it, and the job failed. The old app has the same race. Download and offload claims are now atomic. `JobClaimTests` races 8 threads over 30 jobs, and fails on the old code.
+
 **Contract:** `downloads_status` and `downloads_queue_get` gain `reconnect_required`, and `settings` gains flags for the four new cookie fields.
 
 **Tool syntax verified against real binaries:** 7-Zip treated `-oevil.stl` as an option without `--`, and extracted it as a file with `--`. unrar also uses `--`: a bare `-` fails with "Unknown option", which `test_real_unrar_accepts_the_stop_marker` guards. No real RAR archive has been extracted through the adapter yet, so that is part of the Step 5 exit check.

@@ -24,6 +24,12 @@ function stop(message) {
   process.exitCode = 1;
 }
 
+// MMF sometimes prefixes IDs with "object-", and those 404 on its API. IDs must be plain digits.
+function normalizeId(raw) {
+  const match = String(raw).match(/^(?:object-)?(\d+)$/);
+  return match ? match[1] : '';
+}
+
 async function isLoginPage(page) {
   return /\/(login|signin)\b|auth\.myminifactory\.com/i.test(page.url())
     || (await page.$('input[type="password"]')) !== null;
@@ -104,7 +110,7 @@ async function isLoginPage(page) {
           emit('api_batch', { path: new URL(response.url()).pathname, count: items.length });
 
           for (const item of items) {
-            const modelId = String(
+            const modelId = normalizeId(
               item.object_id || 
               (item.object && item.object.id) || 
               item.id || 

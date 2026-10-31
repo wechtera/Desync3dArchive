@@ -593,12 +593,12 @@ class DownloadManager:
             """
             row = conn.execute(query).fetchone()
 
-            if row:
-                conn.execute("""
-                    UPDATE download_jobs
-                    SET status = 'downloading', started_at = CURRENT_TIMESTAMP
-                    WHERE id = ?;
-                """, (row["id"],))
+            # The status check makes this atomic: if two workers read one row, only one updates it.
+            if row and conn.execute("""
+                UPDATE download_jobs
+                SET status = 'downloading', started_at = CURRENT_TIMESTAMP
+                WHERE id = ? AND status = 'pending';
+            """, (row["id"],)).rowcount == 1:
                 return row
         return None
 
@@ -936,8 +936,10 @@ class DownloadManager:
                 ORDER BY dj.enqueued_at ASC LIMIT 1;
             """).fetchone()
 
-            if row:
-                conn.execute("UPDATE download_jobs SET status = 'offloading' WHERE id = ?;", (row["id"],))
+            if row and conn.execute(
+                "UPDATE download_jobs SET status = 'offloading' WHERE id = ? AND status = 'staging_complete';",
+                (row["id"],),
+            ).rowcount == 1:
                 return row
         return None
 

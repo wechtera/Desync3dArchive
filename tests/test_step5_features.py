@@ -1,9 +1,13 @@
 """Scraper events, resumable downloads, scheduled backups and the pause before token expiry."""
 
 import hashlib
+import json
 import os
+import re
+import shutil
 import sqlite3
 import stat
+import subprocess
 import tempfile
 import threading
 import time
@@ -105,6 +109,73 @@ class ScrapeEventTests(TempDb):
         self.assertNotIn("4868", source)
         self.assertNotIn("response.url()}", source)
         self.assertIn(".pathname", source)
+
+
+class ScrapedIdTests(unittest.TestCase):
+    """Runs the scraper's real normalizeId, because the API 404s on prefixed IDs."""
+
+    def normalize(self, value):
+        source = (REPO_ROOT / "scraper" / "scrape.js").read_text(encoding="utf-8")
+        function = re.search(r"function normalizeId\(raw\) \{.*?\n\}", source, re.DOTALL).group(0)
+        script = f"{function}\nconsole.log(JSON.stringify(normalizeId({json.dumps(value)})));"
+        return json.loads(subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True).stdout)
+
+    @unittest.skipUnless(shutil.which("node"), "needs node")
+    def test_ids_become_plain_digits(self):
+        self.assertEqual(self.normalize("object-99104"), "99104")
+        self.assertEqual(self.normalize("99104"), "99104")
+        self.assertEqual(self.normalize(99104), "99104")
+
+    @unittest.skipUnless(shutil.which("node"), "needs node")
+    def test_anything_else_is_dropped(self):
+        for value in ("", "purchase-12", "abc", "object-12x", "12 34"):
+            self.assertEqual(self.normalize(value), "", value)
+
+
+class JobClaimTests(TempDb):
+    """Many workers race for jobs on a real database file, as the download workers do."""
+
+    def race(self, status, claim_name):
+        conn = sqlite3.connect(self.db)
+        conn.execute("PRAGMA foreign_keys = OFF")
+        for model_id in range(1, 31):
+            conn.execute("INSERT INTO models (id, name, url, raw_backup_path) VALUES (?, 'M', '', '')", (model_id,))
+            conn.execute("INSERT INTO download_jobs (model_id, status) VALUES (?, ?)", (model_id, status))
+        conn.commit()
+        conn.close()
+
+        manager = object.__new__(DownloadManager)
+        manager.db_path = self.db
+        claimed = []
+        lock = threading.Lock()
+        barrier = threading.Barrier(8)
+
+        def worker():
+            barrier.wait(timeout=10)
+            misses = 0
+            while misses < 20:
+                job = getattr(manager, claim_name)()
+                if job is None:
+                    misses += 1
+                    continue
+                misses = 0
+                with lock:
+                    claimed.append(job["model_id"])
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+        return claimed
+
+    def test_each_download_job_goes_to_exactly_one_worker(self):
+        claimed = self.race("pending", "_claim_next_download_job")
+        self.assertEqual(sorted(claimed), list(range(1, 31)))
+
+    def test_each_offload_job_goes_to_exactly_one_worker(self):
+        claimed = self.race("staging_complete", "_claim_next_offload_job")
+        self.assertEqual(sorted(claimed), list(range(1, 31)))
 
 
 class CanResumeTests(unittest.TestCase):
