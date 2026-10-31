@@ -48,3 +48,14 @@ class DownloadValidationTests(RouteCase):
 
     def test_bad_control_action_is_refused(self):
         self.refused("/api/downloads/control", {"action": 5})
+
+
+class StashValidationTests(RouteCase):
+    def test_bad_stash_bodies_are_refused(self):
+        self.refused("/api/stashes", {"make_active": "maybe"})
+        self.refused("/api/stashes/1/items", {"item_type": "model", "model_id": "x"})
+        self.refused("/api/stashes/1/bulk-models", {"model_ids": "all"})
+        self.refused("/api/stashes/1/export", {"sync": "maybe"})
+
+    def test_trailing_slashes_still_work(self):
+        self.assertEqual(self.client.get("/api/stashes/active/").status_code, self.client.get("/api/stashes/active").status_code)

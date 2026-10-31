@@ -4,6 +4,7 @@ Handles staging manifests, polymorphic item curation, active pointer persistence
 download validation guardrails, batch model additions, and background slicer materialization.
 """
 
+from desync_archival.db.queries import stashes as queries
 from pathlib import Path
 import re
 import sqlite3
@@ -235,13 +236,13 @@ def handle_post_export_stash(
     If task_manager is provided (live server), runs asynchronously (HTTP 202).
     If task_manager is None (unit tests), runs synchronously (HTTP 200).
     """
-    stash = conn.execute("SELECT id, name, description FROM stashes WHERE id = ?;", (stash_id,)).fetchone()
+    stash = conn.execute(queries.POST_EXPORT_STASH_1, (stash_id,)).fetchone()
     if not stash:
         return {"error": f"Stash #{stash_id} not found."}, 404
 
     stash_name = stash["name"]
 
-    items = conn.execute("SELECT * FROM stash_items WHERE stash_id = ?;", (stash_id,)).fetchall()
+    items = conn.execute(queries.POST_EXPORT_STASH_2, (stash_id,)).fetchall()
     if not items:
         return {"error": f"Stash '{stash_name}' (ID #{stash_id}) is empty. Add items before exporting."}, 400
 
