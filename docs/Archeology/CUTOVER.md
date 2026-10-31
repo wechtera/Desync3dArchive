@@ -4,6 +4,12 @@
 
 **Rule:** a small sample goes first and is inspected before the rest. Rollback is tested before anything touches production.
 
+## Decisions from the user, 2026-10-31
+
+- **Production runs on this Mac for now.** If it moves, an export tool will be built first (E21).
+- **Production backups go to `/Users/adamwechter/Programming/test_stl_shelf/DESYNC_Backups`,** on the local drive, outside the data folder. This replaces the Step 9 prompt's "different disk" requirement. Set `DESYNC_BACKUP_DIR` to it at cutover.
+- **Known risk:** that folder is on the same disk as `~/DESYNC_Data`, so backups protect against bad migrations and mistakes, not against losing the drive.
+
 ## What moves and what stays
 
 | Data | Before | After | On rollback |

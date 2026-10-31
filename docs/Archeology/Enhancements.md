@@ -21,3 +21,4 @@ Ideas found during migration. None are scheduled unless a step or the user asks 
 | E19 | Save refreshed Cloudflare cookies from a scrape back to settings | The scraper writes new cookies to its run folder, and nothing reads them | Step 5 |
 | E6 | Accessibility and responsive layout review | Neither has been assessed | Archeology section 9 |
 | E20 | Import channel for single files | Add a loose STL or archive from anywhere, such as a Google Drive download, into the catalog. These files get a SHA-256 so duplicates can be found. Linked libraries are not hashed | Key decoupling plan |
+| E21 | Export tool for moving off this Mac | Production stays on this Mac for now. If it moves, a tool should package the database, metadata, previews, secrets and settings, and rewrite stored paths for the new machine | User decision, 2026-10-31 |
