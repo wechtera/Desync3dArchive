@@ -17,6 +17,7 @@ The peek stored raw facts (`file_archive_members`) and an interpretation (`file_
 
 - **One model, many collections.** A bundle and the same item sold alone share one model. Files and collections stay separate. Automatic only when printable filenames and exact sizes all match. Anything close is flagged for a human. An unpeeked collection stays a placeholder until peeked, then joins, and its old ID redirects so stashes hold.
 - **Archives get human review,** on the same screen as Loot, worst first.
+- **Every artifact must be searchable,** loose or inside an archive, by name. This matters more than perfect grouping: a wrong group can be fixed later, but an artifact that can't be found is lost.
 - **Busts join their character's group.** Groups never span collections automatically. Tags do that.
 
 ## Stages
