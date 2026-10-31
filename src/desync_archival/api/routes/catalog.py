@@ -193,10 +193,16 @@ def handle_get_models(
         count_query += tag_clause
         args.extend([clean_tag, f"%{clean_tag}%"])
     if search:
-        search_clause = " AND (m.name LIKE ? OR m.designer_name LIKE ? OR m.id IN (SELECT model_id FROM model_tags WHERE tag LIKE ?))"
+        # Tags are joined in the index, so a match there is re-checked one tag at a time.
+        search_clause = """ AND m.id IN (
+            SELECT rowid FROM catalog_search WHERE name LIKE ?
+            UNION SELECT rowid FROM catalog_search WHERE designer_name LIKE ?
+            UNION SELECT model_id FROM model_tags WHERE tag LIKE ?
+                AND model_id IN (SELECT rowid FROM catalog_search WHERE tags LIKE ?)
+        )"""
         query += search_clause
         count_query += search_clause
-        args.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+        args.extend([f"%{search}%"] * 4)
 
     if hide_completed:
         completed_filter = """

@@ -35,6 +35,9 @@ SECRET_KEYS = (
 PERFORMANCE_REQUESTS = {
     "catalog_first_page": "/api/models?limit=24",
     "catalog_search": "/api/models?limit=24&search=dragon",
+    "catalog_search_no_match": "/api/models?limit=24&search=zzzqqq",
+    "catalog_search_short": "/api/models?limit=24&search=dr",
+    "catalog_search_common": "/api/models?limit=24&search=the",
     "catalog_deep_page": "/api/models?limit=24&offset=4800",
     "metrics": "/api/metrics",
     "creators": "/api/creators",
@@ -352,15 +355,15 @@ def record_run(dest: Path, code: str = "old") -> tuple[dict[str, Any], float, li
     return snapshots, startup, cases
 
 
-def record_performance(dest: Path) -> dict[str, Any]:
+def record_performance(dest: Path, code: str = "old") -> dict[str, Any]:
     results: dict[str, Any] = {}
     startups = []
     for _ in range(5):
-        with Harness(dest) as harness:
+        with Harness(dest, code) as harness:
             startups.append(harness.startup_ms)
     results["startup_ms"] = {"median": round(statistics.median(startups), 1), "max": round(max(startups), 1)}
 
-    with Harness(dest) as harness:
+    with Harness(dest, code) as harness:
         for name, path in PERFORMANCE_REQUESTS.items():
             times = []
             for _ in range(PERFORMANCE_REPEATS):
@@ -461,11 +464,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compare", action="store_true", help="Compare the migrated app to the snapshots")
     parser.add_argument("--accept", nargs="+", default=[], help="Rewrite only these snapshots from the current app")
+    parser.add_argument("--measure", type=Path, help="Write the migrated app's timings to this file")
     parser.add_argument("--dest", type=Path, default=Path.home() / "DESYNC_Data_dev")
     parser.add_argument("--source-db", type=Path, default=REPO_ROOT.parent / "scrapepage" / "library.db")
     args = parser.parse_args()
     dest = args.dest.resolve()
     with preserved_dev_storage(dest):
+        if args.measure:
+            args.measure.write_text(json.dumps(record_performance(dest, "new"), indent=2) + "\n", encoding="utf-8")
+            return 0
         if args.accept:
             return accept_changes(dest, args.accept)
         if args.compare:

@@ -30,7 +30,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 6 is merged. Step 7 is on `migration/07-lan`, and its exit check needs a login from another computer.
+- **Phase:** Step 7 is merged. Step 8 passed its automated exit check on `migration/08-performance` and needs approval to merge.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** `check.sh` passes at the latest commit: 384 Python tests, 1 skipped, 22 browser tests and 110 contract cases.
 - **Production data:** Untouched. Dev work never reaches it, and `library.db` still has its 15:50 modified time from 2026-10-30. The last full NAS comparison, after Step 4, was clean.
@@ -55,7 +55,9 @@ This directory tracks the state of the app, what has been done, and what comes n
 ## Next
 
 - [ ] User: look over the UI on the dev app, then approve the merge of `migration/06-frontend`
-- [ ] Run Step 7 from `MIGRATION_PROMPTS.md`
+- [x] Step 7 LAN mode: login, TLS, startup refusal
+- [x] Step 8 code: FTS5 catalog search
+- [ ] Merge Step 8 after approval
 
 ## Project decisions
 
@@ -72,6 +74,32 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
 
+## Step 8 results
+
+Measured with `record_contract.py --measure` on the sanitized copy of 4,893 models, the same size as production, with 15 repeats on this Mac. "Before" is the Step 7 code measured the same night, because the Step 0A numbers came from the old app and aren't comparable.
+
+| Measure | Before median ms | After median ms | Before max ms | After max ms |
+|---|---:|---:|---:|---:|
+| Search, no match (`zzzqqq`) | 8.71 | 1.12 | 13.14 | 1.44 |
+| Search, typical (`dragon`) | 8.69 | 6.35 | 9.82 | 7.07 |
+| Search, common (`the`) | 9.25 | 8.01 | 12.43 | 8.51 |
+| Search, two letters (`dr`) | 8.68 | 9.90 | 12.24 | 10.30 |
+| Catalog first page | 2.79 | 2.63 | 44.06 | 40.28 |
+| Catalog deep page, offset 4,800 | 3.94 | 3.82 | 6.55 | 4.08 |
+| Metrics | 17.86 | 13.28 | 25.57 | 13.70 |
+| Creators | 3.53 | 3.34 | 6.88 | 3.64 |
+| Releases | 2.08 | 2.01 | 2.55 | 2.27 |
+| Startup, including migrating a fresh copy | 151.6 | 211.9 | 230.7 | 213.8 |
+
+Only the four search rows changed in code, so differences in the other rows are noise. Search query time alone, without page assembly, averaged 4.0 ms before and 0.48 ms after across the term set below. Startup rises because the harness migrates a fresh copy on every start, and the backfill takes 45 ms. That is a one-time cost, not a cost on every start of a migrated database, though that was reasoned from the harness rather than timed separately.
+
+- **FTS5:** migration 0004 adds `catalog_search`, a trigram index with triggers on `models` and `model_tags`. It adds 3.3 MB. Search still uses `LIKE`: FTS5 picks candidates and SQLite re-checks each one, so substrings, wildcards and case behavior are unchanged. Plain word matching would have lost `ragon` finding `dragon`. Terms under three letters can't use trigrams and take about 1 ms longer.
+- **Same results:** 17,664 terms from the real catalog, including 1 to 9 letter fragments in mixed case, gave 0 differences from the old query. Contract: 110 of 110.
+- **Keyset pagination: not added.** A deep page costs about 1 ms more than the first page, so the baseline shows no real problem, and the prompt says not to optimize without one.
+- **Lazy image loading: no change needed.** Grid, release, stash and submodel images already use `loading="lazy"`. The detail page's main image stays eager because it is the first thing on screen.
+- **Migration, backup and restore** ran on the dev database, and the restored copy passed integrity checks.
+- **Bug fixed along the way:** tests and the harness inherited `DESYNC_HOST` from `.env`, so a LAN setup would have changed what they ran against. They now pin loopback with login off.
+
 ## Step 7 results
 
 - One password: salted scrypt hash in a 0600 file outside the repository and data folder, set with `dbtool set-password`. No users table.
@@ -79,7 +107,8 @@ This directory tracks the state of the app, what has been done, and what comes n
 - Five failures from one address lock it out for 15 minutes.
 - `/api/auth/callback` stays public because Strict cookies are not sent on the redirect back from MMF. The page holds no data, and its `token_callback` POST is same-site, so it still needs a session.
 - Tested: every registered route refuses anonymous requests, and the real server command runs over TLS and refuses a LAN bind when unprotected.
-- Not tested: a login from another computer, and MMF sign-in through a LAN redirect URI.
+- Exit check: passed on 2026-10-30. The user logged in from another computer.
+- Not tested: MMF sign-in through a LAN redirect URI.
 
 ## Step 6 results
 

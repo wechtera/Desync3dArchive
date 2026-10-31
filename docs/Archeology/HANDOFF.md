@@ -78,8 +78,8 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 | 4 | Done | Routers, query modules, dry-run, audit log, V6 |
 | 5 | Done | Job recovery, tools adapter, scraper events, backups. User confirmed a real scrape and download |
 | 6 | Done | Merged to `main` after the user's review |
-| 7 | **Waiting on user test** | Code on `migration/07-lan`. Automated checks are not a substitute: the exit check needs a login from another computer |
-| 8 | To do | Measured performance work |
+| 7 | Done | User logged in from another computer. Merged to `main` |
+| 8 | **Waiting on user review** | Code on `migration/08-performance`. Automated checks pass. Dev database is at schema 4, so `main` needs this branch merged before it can run against it |
 | 9 | To do | Secrets and cutover. The only step that changes production, with approval at each stage |
 
 `MIGRATION_PROMPTS.md` holds each step's prompt. Use the file, not an older pasted copy: the prompts have been rewritten since they were first written.
@@ -101,7 +101,7 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 ## Known limits
 
-- **V1** is closed by Step 7 once the user confirms it. Beyond loopback, the app needs login, a password and TLS, or it refuses to start. `LoginMiddleware.PUBLIC_PATHS` is an exact-match allow list, so a new route is protected by default.
+- **V1** is closed by Step 7. Beyond loopback, the app needs login, a password and TLS, or it refuses to start. `LoginMiddleware.PUBLIC_PATHS` is an exact-match allow list, so a new route is protected by default.
 - **V5:** token injection is closed, but the deprecated implicit grant is still in use because it is the only option.
 - **Untested against real services:** whether MMF's hosts honor `Range`, a Cloudflare check with `--no-sandbox` removed, and the `releases` fix against the real Loot Studios folder. 
 - **Snapshot gaps:** stash export, scrape and ingest record failure paths only.
@@ -121,6 +121,6 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 ## Next action
 
-Have the user look over the UI, then merge `migration/06-frontend` with approval and run Step 7.
+Have the user approve merging `migration/08-performance`, then run Step 9 only with approval at each stage. `.env` holds the user's LAN setup on purpose, and tests and the harness pin themselves to loopback so it can't affect them. Step 9 must run migration 0004 on production through `dbtool migrate --confirm-production`.
 
 **State of dev:** the user is signed in on the dev app with a 7-day token issued 2026-10-30, and session cookies are saved in dev. Cloudflare cookies expire quickly, so expect to paste fresh ones before the next scrape. The dev app was left running on port 8080 and may need restarting. The dev catalog does not have Master Wendigo (276218) yet, because no ingest was run. Job 112 for model 148200 shows `failed` in dev and left files in dev staging, which is harmless.

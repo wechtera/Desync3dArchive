@@ -86,6 +86,10 @@ def run_server(server, data_root: Path, started: float) -> int:
 
 def serve_new(app_root: Path, port: int) -> int:
     os.environ["APP_ENV"] = "development"
+    os.environ["DESYNC_HOST"] = "127.0.0.1"
+    os.environ["DESYNC_REQUIRE_LOGIN"] = ""
+    os.environ["DESYNC_TLS_CERT"] = ""
+    os.environ["DESYNC_TLS_KEY"] = ""
     os.environ["DESYNC_DATA_DIR"] = str(app_root)
     # A neutral working directory shows up any code still relying on the current directory.
     os.chdir(app_root.parent / "baseline")
