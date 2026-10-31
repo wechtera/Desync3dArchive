@@ -30,3 +30,8 @@ export function appendToBody(template) {
   litRender(template, fragment);
   document.body.append(fragment);
 }
+
+/** Only web links can become an href, so a hostile value can't be a javascript: URL. */
+export function safeUrl(url) {
+  return /^https?:\/\//i.test(url || '') ? url : '';
+}

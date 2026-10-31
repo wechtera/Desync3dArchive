@@ -13,7 +13,8 @@ import {
   getEphemeralRenderUrl,
   renderModelView
 } from '../api.js';
-import { formatBytes, getFileExtension, renderStatusBadge, escapeHtml } from '../utils.js';
+import { formatBytes, getFileExtension, statusBadge } from '../utils.js';
+import { appendToBody, html, imageFallback, nothing, render, safeUrl, stopPropagation } from '../template.js';
 
 let currentModelPage = 1;
 const modelPageSize = 24;
@@ -156,14 +157,14 @@ export async function populateCreatorsFilter() {
   const currentSelection = select.value;
   try {
     const creators = await fetchCreators();
-    let optionsHtml = '<option value="">All Creators</option>';
-    optionsHtml += creators.map(c => {
+    const optionsHtmlParts = [htmlhtml`<option value="">All Creators</option>`];
+    optionsHtmlParts.push(creators.map(c => {
       const name = c.designer_name || 'Unknown';
       const count = c.total_models || 0;
-      return `<option value="${name.replace(/"/g, '&quot;')}">${name} (${count})</option>`;
-    }).join('');
+      return html`<option value="${name}">${name} (${count})</option>`;
+    }));
 
-    select.innerHTML = optionsHtml;
+    render(optionsHtmlParts, select);
     if (currentSelection) {
       select.value = currentSelection;
     }
@@ -196,7 +197,7 @@ export async function loadModels(page = currentModelPage) {
   const container = document.getElementById('models-grid');
 
   if (container) {
-    container.innerHTML = '<div class="grid-empty-msg">Loading models...</div>';
+    render(html`<div class="grid-empty-msg">Loading models...</div>`, container);
   }
 
   try {
@@ -214,16 +215,16 @@ export async function loadModels(page = currentModelPage) {
 
     if (container) {
       if (models.length === 0) {
-        container.innerHTML = '<div class="grid-empty-msg">No matching models found in vault.</div>';
+        render(html`<div class="grid-empty-msg">No matching models found in vault.</div>`, container);
       } else {
-        container.innerHTML = models.map(m => renderModelCard(m)).join('');
+        render(models.map(m => renderModelCard(m)), container);
       }
     }
 
     updateModelsPagination(offset, models.length);
   } catch (err) {
     if (container) {
-      container.innerHTML = `<div class="grid-empty-msg text-alert">Failed to load models: ${err.message}</div>`;
+      render(html`<div class="grid-empty-msg text-alert">Failed to load models: ${err.message}</div>`, container);
     }
   }
 }
@@ -270,31 +271,31 @@ function updateModelsPagination(offset, currentCount) {
 export function renderModelCard(m) {
   let actionBtn = '';
   if (m.download_status === 'completed') {
-    actionBtn = `<button type="button" class="btn-pill" disabled>Archived</button>`;
+    actionBtn = html`<button type="button" class="btn-pill" disabled>Archived</button>`;
   } else if (m.download_status === 'queued') {
-    actionBtn = `<button type="button" class="btn-pill btn-action-cancel" onclick="window.dequeueSingleModel(${m.id})">Cancel Queue</button>`;
+    actionBtn = html`<button type="button" class="btn-pill btn-action-cancel" @click=${() => window.dequeueSingleModel(m.id)}>Cancel Queue</button>`;
   } else if (m.download_status === 'partial') {
-    actionBtn = `<button type="button" class="btn-pill btn-action-queue" onclick="window.queueSingleModel(${m.id})">Download Remaining</button>`;
+    actionBtn = html`<button type="button" class="btn-pill btn-action-queue" @click=${() => window.queueSingleModel(m.id)}>Download Remaining</button>`;
   } else {
-    actionBtn = `<button type="button" class="btn-pill btn-action-queue" onclick="window.queueSingleModel(${m.id})">Queue Files</button>`;
+    actionBtn = html`<button type="button" class="btn-pill btn-action-queue" @click=${() => window.queueSingleModel(m.id)}>Queue Files</button>`;
   }
 
   const tags = m.tags || [];
   const tagsHtml = tags.length > 0
-    ? `<div class="tag-list" onclick="event.stopPropagation()">
-        ${tags.slice(0, 5).map(t => `<span class="tag-pill" onclick="window.filterByTag('${t.replace(/'/g, "\\'")}', event)">#${escapeHtml(t)}</span>`).join('')}
-        ${tags.length > 5 ? `<span class="tag-pill tag-more" title="${escapeHtml(tags.slice(5).join(', '))}">+${tags.length - 5}</span>` : ''}
+    ? html`<div class="tag-list" @click=${stopPropagation}>
+        ${tags.slice(0, 5).map(t => html`<span class="tag-pill" @click=${(event) => window.filterByTag(t, event)}>#${t}</span>`)}
+        ${tags.length > 5 ? html`<span class="tag-pill tag-more" title="${tags.slice(5).join(', ')}">+${tags.length - 5}</span>` : ''}
       </div>`
     : '';
 
   const supportBadgeHtml = m.pre_supported
-    ? '<span class="status-badge status-completed font-xs">Pre-Supported</span>'
-    : '<span class="status-badge status-not_downloaded font-xs">Unsupported</span>';
+    ? html`<span class="status-badge status-completed font-xs">Pre-Supported</span>`
+    : html`<span class="status-badge status-not_downloaded font-xs">Unsupported</span>`;
 
-  const targetUrl = m.url || m.mmf_url;
+  const targetUrl = safeUrl(m.url || m.mmf_url);
   const mmfButtonHtml = targetUrl
-    ? `<div class="card-bottom-action" onclick="event.stopPropagation()">
-        <a href="${escapeHtml(targetUrl)}" 
+    ? html`<div class="card-bottom-action" @click=${stopPropagation}>
+        <a href=${safeUrl(targetUrl)} 
            target="_blank" 
            rel="noopener noreferrer" 
            class="btn-mmf-fullwidth" 
@@ -308,31 +309,31 @@ export function renderModelCard(m) {
   const localCoverSrc = `/previews/${m.id}/cover.jpg`;
   const remoteCoverFallback = m.primary_image_url || '';
 
-  return `
-    <div class="card" onclick="window.openModelDetailModal(${m.id})" title="Click to view all metadata">
+  return html`
+    <div class="card" @click=${() => window.openModelDetailModal(m.id)} title="Click to view all metadata">
       <div class="thumb-wrap">
         ${remoteCoverFallback
-          ? `<img src="${localCoverSrc}" onerror="this.onerror=null; this.src='${escapeHtml(remoteCoverFallback)}';" loading="lazy" alt="${escapeHtml(m.name)}">`
-          : `<span class="text-dim">No Preview</span>`
+          ? html`<img src="${localCoverSrc}" @error=${imageFallback(remoteCoverFallback)} loading="lazy" alt="${m.name}">`
+          : html`<span class="text-dim">No Preview</span>`
         }
       </div>
       <div class="card-body">
         <div class="card-header-row">
-          <span class="creator-name" title="${escapeHtml(m.designer_name || 'Unknown')}">${escapeHtml(m.designer_name || 'Unknown')}</span>
+          <span class="creator-name" title="${m.designer_name || 'Unknown'}">${m.designer_name || 'Unknown'}</span>
           <div class="card-badge-row">
-            ${renderStatusBadge(m.download_status)}
-            ${m.is_bonus ? `<span class="badge badge-bonus">Bonus</span>` : ''}
+            ${statusBadge(m.download_status)}
+            ${m.is_bonus ? html`<span class="badge badge-bonus">Bonus</span>` : ''}
           </div>
         </div>
-        <div class="card-title" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</div>
+        <div class="card-title" title="${m.name}">${m.name}</div>
         ${tagsHtml}
-        <div class="card-support-row" onclick="event.stopPropagation()">
+        <div class="card-support-row" @click=${stopPropagation}>
           ${supportBadgeHtml}
         </div>
-        <div class="model-card-actions" onclick="event.stopPropagation()">
-          <button type="button" class="btn-pill" onclick="window.openFilesModal(${m.id})">Files (${m.file_count})</button>
+        <div class="model-card-actions" @click=${stopPropagation}>
+          <button type="button" class="btn-pill" @click=${() => window.openFilesModal(m.id)}>Files (${m.file_count})</button>
           ${actionBtn}
-          <button type="button" class="btn-pill" onclick="window.openAddToStashModal({ item_type: 'model', model_id: ${m.id}, title: '${escapeHtml(m.name).replace(/'/g, "\\'")}', creator: '${escapeHtml(m.designer_name || 'Unknown').replace(/'/g, "\\'")}' })" title="Add Model to Stash">+ Stash</button>
+          <button type="button" class="btn-pill" @click=${() => window.openAddToStashModal({ item_type: 'model', model_id: m.id, title: m.name, creator: m.designer_name || 'Unknown' })} title="Add Model to Stash">+ Stash</button>
         </div>
         ${mmfButtonHtml}
       </div>
@@ -344,19 +345,19 @@ export function renderModelCard(m) {
  * Builds the 6-view "Render ▾" dropdown HTML for any STL component or archive member.
  */
 function renderSTLViewDropdown(sourceType, sourceId, title) {
-  const safeTitle = escapeHtml(title || 'Component').replace(/'/g, "\\'");
-  return `
-    <div class="render-dropdown-wrap" onclick="event.stopPropagation()">
-      <button type="button" class="btn-pill font-xs btn-render-toggle" onclick="window.toggleRenderDropdown(event, this)">
+  const safeTitle = title || 'Component';
+  return html`
+    <div class="render-dropdown-wrap" @click=${stopPropagation}>
+      <button type="button" class="btn-pill font-xs btn-render-toggle" @click=${(event) => window.toggleRenderDropdown(event, event.currentTarget)}>
         <span>Render</span> <span class="font-xs">&blacktriangledown;</span>
       </button>
       <div class="render-dropdown-menu">
-        <button type="button" class="render-dropdown-item" onclick="window.openEphemeralRenderModal('${sourceType}', ${sourceId}, 'front_left', '${safeTitle}')">Front-Left (3/4)</button>
-        <button type="button" class="render-dropdown-item" onclick="window.openEphemeralRenderModal('${sourceType}', ${sourceId}, 'front_right', '${safeTitle}')">Front-Right</button>
-        <button type="button" class="render-dropdown-item" onclick="window.openEphemeralRenderModal('${sourceType}', ${sourceId}, 'back_right', '${safeTitle}')">Back-Right</button>
-        <button type="button" class="render-dropdown-item" onclick="window.openEphemeralRenderModal('${sourceType}', ${sourceId}, 'back_left', '${safeTitle}')">Back-Left</button>
-        <button type="button" class="render-dropdown-item" onclick="window.openEphemeralRenderModal('${sourceType}', ${sourceId}, 'top_down', '${safeTitle}')">Top-Down</button>
-        <button type="button" class="render-dropdown-item" onclick="window.openEphemeralRenderModal('${sourceType}', ${sourceId}, 'bottom_up', '${safeTitle}')">Bottom-Up</button>
+        <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'front_left', safeTitle)}>Front-Left (3/4)</button>
+        <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'front_right', safeTitle)}>Front-Right</button>
+        <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'back_right', safeTitle)}>Back-Right</button>
+        <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'back_left', safeTitle)}>Back-Left</button>
+        <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'top_down', safeTitle)}>Top-Down</button>
+        <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'bottom_up', safeTitle)}>Bottom-Up</button>
       </div>
     </div>
   `;
@@ -371,23 +372,23 @@ export async function openModelDetailModal(modelId) {
   const bodyEl = document.getElementById('model-detail-body');
 
   if (modal) modal.style.display = 'flex';
-  if (bodyEl) bodyEl.innerHTML = `<div class="loading-placeholder-lg">Fetching metadata for Model #${modelId}...</div>`;
+  if (bodyEl) render(html`<div class="loading-placeholder-lg">Fetching metadata for Model #${modelId}...</div>`, bodyEl);
 
   try {
     const data = await fetchModelDetail(modelId);
 
     if (titleEl) {
-      titleEl.innerHTML = `${escapeHtml(data.name)} <span class="font-normal text-dim font-sm">(#${data.id})</span>`;
+      render(html`${data.name} <span class="font-normal text-dim font-sm">(#${data.id})</span>`, titleEl);
     }
     if (subtitleEl) {
-      subtitleEl.innerHTML = `${escapeHtml(data.designer_name || 'Unknown')} &bull; ${data.total_files} file${data.total_files === 1 ? '' : 's'} (${formatBytes(data.total_size_bytes)})`;
+      render(html`${data.designer_name || 'Unknown'} &bull; ${data.total_files} file${data.total_files === 1 ? '' : 's'} (${formatBytes(data.total_size_bytes)})`, subtitleEl);
     }
 
     const priceLabel = data.price_value !== null && data.price_value !== undefined
       ? `${data.price_currency || '$'}${Number(data.price_value).toFixed(2)}`
       : 'Free / Included in Tier';
 
-    const categoryLabel = [data.parent_category, data.primary_category].filter(Boolean).join(' &rarr; ') || 'Uncategorized';
+    const categoryLabel = [data.parent_category, data.primary_category].filter(Boolean).join(' \u2192 ') || 'Uncategorized';
     const tags = data.tags || [];
     const files = data.files || [];
     const rawJsonStr = data.raw_metadata ? JSON.stringify(data.raw_metadata, null, 2) : null;
@@ -403,47 +404,47 @@ export async function openModelDetailModal(modelId) {
 
     let actionBtn = '';
     if (isCompleted) {
-      actionBtn = `<button type="button" class="btn-pill btn-full" disabled>Archived to Vault</button>`;
+      actionBtn = html`<button type="button" class="btn-pill btn-full" disabled>Archived to Vault</button>`;
     } else if (isQueued) {
-      actionBtn = `<button type="button" class="btn-pill btn-action-cancel btn-full" onclick="window.dequeueSingleModel(${data.id}); window.closeModal('model-detail-modal');">Cancel Queue</button>`;
+      actionBtn = html`<button type="button" class="btn-pill btn-action-cancel btn-full" @click=${() => { window.dequeueSingleModel(data.id); window.closeModal('model-detail-modal'); }}>Cancel Queue</button>`;
     } else if (isPartial) {
-      actionBtn = `<button type="button" class="btn-pill btn-action-queue btn-full" onclick="window.queueSingleModel(${data.id}); window.closeModal('model-detail-modal');">Download Remaining</button>`;
+      actionBtn = html`<button type="button" class="btn-pill btn-action-queue btn-full" @click=${() => { window.queueSingleModel(data.id); window.closeModal('model-detail-modal'); }}>Download Remaining</button>`;
     } else {
-      actionBtn = `<button type="button" class="btn-pill btn-action-queue btn-full" onclick="window.queueSingleModel(${data.id}); window.closeModal('model-detail-modal');">Queue Files for Download</button>`;
+      actionBtn = html`<button type="button" class="btn-pill btn-action-queue btn-full" @click=${() => { window.queueSingleModel(data.id); window.closeModal('model-detail-modal'); }}>Queue Files for Download</button>`;
     }
 
     const localCoverSrc = `/previews/${data.id}/cover.jpg`;
     const remoteCoverFallback = data.primary_image_url || '';
     const isExternal = data.source === 'external' || data.id >= 2_000_000_000;
 
-    bodyEl.innerHTML = `
+    render(html`
       <div class="detail-split-layout">
         <div class="detail-col-left">
           <div class="detail-media-card">
             ${remoteCoverFallback
-              ? `<img id="detail-primary-preview-img" src="${localCoverSrc}" onerror="this.onerror=null; this.src='${escapeHtml(remoteCoverFallback)}';" class="detail-full-thumb" alt="${escapeHtml(data.name)}">`
-              : '<div class="text-dim">No Preview Available</div>'
+              ? html`<img id="detail-primary-preview-img" src="${localCoverSrc}" @error=${imageFallback(remoteCoverFallback)} class="detail-full-thumb" alt="${data.name}">`
+              : html`<div class="text-dim">No Preview Available</div>`
             }
-            ${isExternal ? `
+            ${isExternal ? html`
               <div class="model-view-pills-row">
                 <span class="text-dim font-xs mr-1">Views:</span>
-                <button type="button" class="btn-pill font-xs active" onclick="window.switchModelCoverView(${data.id}, 'front_left', this)">Front-L</button>
-                <button type="button" class="btn-pill font-xs" onclick="window.switchModelCoverView(${data.id}, 'front_right', this)">Front-R</button>
-                <button type="button" class="btn-pill font-xs" onclick="window.switchModelCoverView(${data.id}, 'back_right', this)">Back-R</button>
-                <button type="button" class="btn-pill font-xs" onclick="window.switchModelCoverView(${data.id}, 'back_left', this)">Back-L</button>
-                <button type="button" class="btn-pill font-xs" onclick="window.switchModelCoverView(${data.id}, 'top_down', this)">Top</button>
-                <button type="button" class="btn-pill font-xs" onclick="window.switchModelCoverView(${data.id}, 'bottom_up', this)">Bottom</button>
+                <button type="button" class="btn-pill font-xs active" @click=${(event) => window.switchModelCoverView(data.id, 'front_left', event.currentTarget)}>Front-L</button>
+                <button type="button" class="btn-pill font-xs" @click=${(event) => window.switchModelCoverView(data.id, 'front_right', event.currentTarget)}>Front-R</button>
+                <button type="button" class="btn-pill font-xs" @click=${(event) => window.switchModelCoverView(data.id, 'back_right', event.currentTarget)}>Back-R</button>
+                <button type="button" class="btn-pill font-xs" @click=${(event) => window.switchModelCoverView(data.id, 'back_left', event.currentTarget)}>Back-L</button>
+                <button type="button" class="btn-pill font-xs" @click=${(event) => window.switchModelCoverView(data.id, 'top_down', event.currentTarget)}>Top</button>
+                <button type="button" class="btn-pill font-xs" @click=${(event) => window.switchModelCoverView(data.id, 'bottom_up', event.currentTarget)}>Bottom</button>
               </div>
             ` : ''}
           </div>
 
           <div class="detail-actions-card">
             ${actionBtn}
-            <button type="button" class="btn-pill btn-full" onclick="window.openAddToStashModal({ item_type: 'model', model_id: ${data.id}, title: '${escapeHtml(data.name).replace(/'/g, "\\'")}', creator: '${escapeHtml(data.designer_name || 'Unknown').replace(/'/g, "\\'")}' })">
+            <button type="button" class="btn-pill btn-full" @click=${() => window.openAddToStashModal({ item_type: 'model', model_id: data.id, title: data.name, creator: data.designer_name || 'Unknown' })}>
               + Add Model to Stash
             </button>
-            ${data.url ? `
-              <a href="${data.url}" target="_blank" rel="noopener noreferrer" class="btn-pill btn-full">
+            ${data.url ? html`
+              <a href=${safeUrl(data.url)} target="_blank" rel="noopener noreferrer" class="btn-pill btn-full">
                 View on MyMiniFactory &rarr;
               </a>
             ` : ''}
@@ -453,8 +454,8 @@ export async function openModelDetailModal(modelId) {
             <div class="detail-box-heading">Indexed Tags (${tags.length})</div>
             <div class="tag-list">
               ${tags.length > 0
-                ? tags.map(t => `<span class="tag-pill" onclick="window.closeModal('model-detail-modal'); window.filterByTag('${t.replace(/'/g, "\\'")}', event)">#${escapeHtml(t)}</span>`).join('')
-                : '<span class="text-dim font-xs">No tags assigned.</span>'
+                ? tags.map(t => html`<span class="tag-pill" @click=${(event) => { window.closeModal('model-detail-modal'); window.filterByTag(t, event); }}>#${t}</span>`)
+                : html`<span class="text-dim font-xs">No tags assigned.</span>`
               }
             </div>
           </div>
@@ -465,17 +466,17 @@ export async function openModelDetailModal(modelId) {
             <tbody>
               <tr>
                 <td class="meta-label">Vault Status</td>
-                <td>${renderStatusBadge(data.download_status || 'not_downloaded')}</td>
+                <td>${statusBadge(data.download_status || 'not_downloaded')}</td>
               </tr>
               <tr>
                 <td class="meta-label">Model Name</td>
-                <td><strong>${escapeHtml(data.name)}</strong></td>
+                <td><strong>${data.name}</strong></td>
               </tr>
               <tr>
                 <td class="meta-label">Designer / Studio</td>
                 <td>
-                  <span class="text-accent font-semibold">${escapeHtml(data.designer_name || 'Unknown')}</span>
-                  ${data.designer_username ? `<span class="text-dim font-xs"> (@${escapeHtml(data.designer_username)})</span>` : ''}
+                  <span class="text-accent font-semibold">${data.designer_name || 'Unknown'}</span>
+                  ${data.designer_username ? html`<span class="text-dim font-xs"> (@${data.designer_username})</span>` : ''}
                 </td>
               </tr>
               <tr>
@@ -488,8 +489,8 @@ export async function openModelDetailModal(modelId) {
                   <span class="badge ${data.pre_supported ? 'badge-month' : 'badge-ext'}">
                     ${data.pre_supported ? 'Yes (Pre-Supported)' : 'No (Unsupported)'}
                   </span>
-                  ${data.is_bonus ? '<span class="badge badge-bonus ml-1">Bonus Drop</span>' : ''}
-                  ${data.featured ? '<span class="badge badge-bundle ml-1">Featured</span>' : ''}
+                  ${data.is_bonus ? html`<span class="badge badge-bonus ml-1">Bonus Drop</span>` : ''}
+                  ${data.featured ? html`<span class="badge badge-bundle ml-1">Featured</span>` : ''}
                 </td>
               </tr>
               <tr>
@@ -521,10 +522,10 @@ export async function openModelDetailModal(modelId) {
             </tbody>
           </table>
 
-          ${data.description ? `
+          ${data.description ? html`
             <div class="detail-box mb-3">
               <div class="detail-box-heading">Description</div>
-              <div class="detail-description-content">${escapeHtml(data.description)}</div>
+              <div class="detail-description-content">${data.description}</div>
             </div>
           ` : ''}
 
@@ -546,62 +547,62 @@ export async function openModelDetailModal(modelId) {
               <tbody>
                 ${files.length > 0 ? files.map(f => {
                   const tierLabel = f.storage_tier === 'nas'
-                    ? '<span class="status-badge status-completed">NAS Vault</span>'
+                    ? html`<span class="status-badge status-completed">NAS Vault</span>`
                     : (f.storage_tier === 'local'
-                      ? '<span class="status-badge status-partial">Staging</span>'
-                      : '<span class="status-badge status-not_downloaded">Pending</span>');
+                      ? html`<span class="status-badge status-partial">Staging</span>`
+                      : html`<span class="status-badge status-not_downloaded">Pending</span>`);
 
                   const isArchive = isArchiveFilename(f.filename);
                   const isStl = isStlFilename(f.filename);
                   const canInspect = isArchive && (f.storage_tier === 'nas' || f.is_downloaded);
                   const canRender = isStl && (f.storage_tier === 'nas' || f.is_downloaded);
 
-                  return `
+                  return html`
                     <tr>
                       <td><span class="badge-ext">${getFileExtension(f.filename)}</span></td>
-                      <td class="cell-filename">${escapeHtml(f.filename || 'unnamed_file')}</td>
+                      <td class="cell-filename">${f.filename || 'unnamed_file'}</td>
                       <td class="font-mono text-dim font-sm">${formatBytes(f.size_bytes)}</td>
                       <td>${tierLabel}</td>
                       <td>
                         ${f.download_url
-                          ? `<a href="${f.download_url}" target="_blank" rel="noopener noreferrer" class="btn-link">Download &darr;</a>`
-                          : '<span class="text-dim font-xs">No Link</span>'
+                          ? html`<a href=${safeUrl(f.download_url)} target="_blank" rel="noopener noreferrer" class="btn-link">Download &darr;</a>`
+                          : html`<span class="text-dim font-xs">No Link</span>`
                         }
                       </td>
                       <td>
                         ${canInspect
-                          ? `<button type="button" class="btn-pill font-xs btn-inspect-archive" onclick="window.openArchiveViewerModal(${f.file_id})">Inspect Contents</button>`
-                          : (isArchive ? '<span class="text-dim font-xs">Download to Peak</span>' : '<span class="text-dim font-xs">-</span>')
+                          ? html`<button type="button" class="btn-pill font-xs btn-inspect-archive" @click=${() => window.openArchiveViewerModal(f.file_id)}>Inspect Contents</button>`
+                          : (isArchive ? html`<span class="text-dim font-xs">Download to Peak</span>` : html`<span class="text-dim font-xs">-</span>`)
                         }
                       </td>
                       <td>
                         ${canRender
                           ? renderSTLViewDropdown('file', f.file_id, f.filename)
-                          : '<span class="text-dim font-xs">-</span>'
+                          : html`<span class="text-dim font-xs">-</span>`
                         }
                       </td>
                       <td>
-                        <button type="button" class="btn-pill font-xs" onclick="window.openAddToStashModal({ item_type: 'file', model_id: ${data.id}, file_id: ${f.file_id}, title: '${escapeHtml(f.filename || 'unnamed_file').replace(/'/g, "\\'")}' })">+ Stash</button>
+                        <button type="button" class="btn-pill font-xs" @click=${() => window.openAddToStashModal({ item_type: 'file', model_id: data.id, file_id: f.file_id, title: f.filename || 'unnamed_file' })}>+ Stash</button>
                       </td>
                     </tr>
                   `;
-                }).join('') : '<tr><td colspan="8" class="td-empty">No separate files registered for this model.</td></tr>'}
+                }) : html`<tr><td colspan="8" class="td-empty">No separate files registered for this model.</td></tr>`}
               </tbody>
             </table>
           </div>
 
-          ${rawJsonStr ? `
+          ${rawJsonStr ? html`
             <details class="detail-raw-details">
               <summary class="detail-raw-summary">[View Full Raw API Payload JSON]</summary>
-              <pre class="detail-raw-pre">${escapeHtml(rawJsonStr)}</pre>
+              <pre class="detail-raw-pre">${rawJsonStr}</pre>
             </details>
           ` : ''}
         </div>
       </div>
-    `;
+    `, bodyEl);
   } catch (err) {
     if (bodyEl) {
-      bodyEl.innerHTML = `<div class="loading-placeholder-lg text-alert">Failed to load model metadata: ${escapeHtml(err.message)}</div>`;
+      render(html`<div class="loading-placeholder-lg text-alert">Failed to load model metadata: ${err.message}</div>`, bodyEl);
     }
   }
 }
@@ -615,20 +616,20 @@ export async function openFilesModal(modelId) {
   const body = document.getElementById('files-modal-body');
 
   if (modal) modal.style.display = 'flex';
-  if (body) body.innerHTML = `<div class="loading-placeholder">Fetching files for #${modelId}...</div>`;
+  if (body) render(html`<div class="loading-placeholder">Fetching files for #${modelId}...</div>`, body);
 
   try {
     const data = await fetchModelFiles(modelId);
-    if (title) title.innerHTML = `${escapeHtml(data.name)} <span class="text-dim font-sm font-normal">(#${data.id})</span>`;
-    if (subtitle) subtitle.innerHTML = `${escapeHtml(data.designer_name)} &bull; <strong>${data.total_files} file${data.total_files === 1 ? '' : 's'}</strong> (${formatBytes(data.total_size_bytes)})`;
+    if (title) render(html`${data.name} <span class="text-dim font-sm font-normal">(#${data.id})</span>`, title);
+    if (subtitle) render(html`${data.designer_name} &bull; <strong>${data.total_files} file${data.total_files === 1 ? '' : 's'}</strong> (${formatBytes(data.total_size_bytes)})`, subtitle);
 
     if (!data.files || data.files.length === 0) {
-      if (body) body.innerHTML = `<div class="loading-placeholder">No separate file entries found for this model.</div>`;
+      if (body) render(html`<div class="loading-placeholder">No separate file entries found for this model.</div>`, body);
       return;
     }
 
     if (body) {
-      body.innerHTML = `
+      render(html`
         <table>
           <thead>
             <tr>
@@ -649,42 +650,42 @@ export async function openFilesModal(modelId) {
               const canInspect = isArchive && f.is_downloaded;
               const canRender = isStl && f.is_downloaded;
 
-              return `
+              return html`
                 <tr>
                   <td><span class="badge-ext">${getFileExtension(f.filename)}</span></td>
-                  <td class="cell-filename">${escapeHtml(f.filename || 'unnamed_file')}</td>
+                  <td class="cell-filename">${f.filename || 'unnamed_file'}</td>
                   <td class="font-mono text-dim font-sm">${formatBytes(f.size_bytes)}</td>
-                  <td>${f.is_downloaded ? '<span class="text-accent font-bold">Downloaded</span>' : '<span class="text-dim">Pending</span>'}</td>
+                  <td>${f.is_downloaded ? html`<span class="text-accent font-bold">Downloaded</span>` : html`<span class="text-dim">Pending</span>`}</td>
                   <td>
                     ${f.download_url
-                      ? `<a href="${f.download_url}" target="_blank" rel="noopener noreferrer" class="btn-link">Download &darr;</a>`
-                      : `<span class="text-dim font-xs">No Link</span>`
+                      ? html`<a href=${safeUrl(f.download_url)} target="_blank" rel="noopener noreferrer" class="btn-link">Download &darr;</a>`
+                      : html`<span class="text-dim font-xs">No Link</span>`
                     }
                   </td>
                   <td>
                     ${canInspect
-                      ? `<button type="button" class="btn-pill font-xs btn-inspect-archive" onclick="window.openArchiveViewerModal(${f.file_id})">Inspect Contents</button>`
-                      : (isArchive ? '<span class="text-dim font-xs">Download to Peak</span>' : '<span class="text-dim font-xs">-</span>')
+                      ? html`<button type="button" class="btn-pill font-xs btn-inspect-archive" @click=${() => window.openArchiveViewerModal(f.file_id)}>Inspect Contents</button>`
+                      : (isArchive ? html`<span class="text-dim font-xs">Download to Peak</span>` : html`<span class="text-dim font-xs">-</span>`)
                     }
                   </td>
                   <td>
                     ${canRender
                       ? renderSTLViewDropdown('file', f.file_id, f.filename)
-                      : '<span class="text-dim font-xs">-</span>'
+                      : html`<span class="text-dim font-xs">-</span>`
                     }
                   </td>
                   <td>
-                    <button type="button" class="btn-pill font-xs" onclick="window.openAddToStashModal({ item_type: 'file', model_id: ${data.id}, file_id: ${f.file_id}, title: '${escapeHtml(f.filename || 'unnamed_file').replace(/'/g, "\\'")}' })">+ Stash</button>
+                    <button type="button" class="btn-pill font-xs" @click=${() => window.openAddToStashModal({ item_type: 'file', model_id: data.id, file_id: f.file_id, title: f.filename || 'unnamed_file' })}>+ Stash</button>
                   </td>
                 </tr>
               `;
-            }).join('')}
+            })}
           </tbody>
         </table>
-      `;
+      `, body);
     }
   } catch (err) {
-    if (body) body.innerHTML = `<div class="loading-placeholder text-alert">Failed to load files: ${escapeHtml(err.message)}</div>`;
+    if (body) render(html`<div class="loading-placeholder text-alert">Failed to load files: ${err.message}</div>`, body);
   }
 }
 
@@ -710,7 +711,7 @@ export async function openArchiveViewerModal(fileId) {
     btnLogical.classList.add('active');
     btnRaw.classList.remove('active');
   }
-  if (bodyEl) bodyEl.innerHTML = '<div class="loading-placeholder-lg">Dissecting archive contents & loading submodels...</div>';
+  if (bodyEl) render(html`<div class="loading-placeholder-lg">Dissecting archive contents & loading submodels...</div>`, bodyEl);
 
   try {
     const [submodelsData, rawTreeData] = await Promise.all([
@@ -722,20 +723,20 @@ export async function openArchiveViewerModal(fileId) {
     currentArchiveRawTree = rawTreeData;
 
     if (titleEl) {
-      titleEl.innerHTML = `Archive Contents: <span class="text-main">${escapeHtml(submodelsData.filename)}</span>`;
+      render(html`Archive Contents: <span class="text-main">${submodelsData.filename}</span>`, titleEl);
     }
     if (subtitleEl) {
-      subtitleEl.innerHTML = `
+      render(html`
         Archive File #${submodelsData.file_id} &bull; Total Volume: <strong>${formatBytes(submodelsData.size_bytes)}</strong>
         &bull; <strong>${submodelsData.total_submodels} Logical Submodel${submodelsData.total_submodels === 1 ? '' : 's'}</strong>
         &bull; <strong>${rawTreeData.total_entries || 0} Total Archive Members</strong>
-      `;
+      `, subtitleEl);
     }
 
     renderActiveArchiveView();
   } catch (err) {
     if (bodyEl) {
-      bodyEl.innerHTML = `<div class="loading-placeholder-lg text-alert">Failed inspecting archive: ${escapeHtml(err.message)}</div>`;
+      render(html`<div class="loading-placeholder-lg text-alert">Failed inspecting archive: ${err.message}</div>`, bodyEl);
     }
   }
 }
@@ -766,44 +767,44 @@ function renderLogicalSubmodelsView(container, data) {
   const submodels = data.submodels || [];
 
   if (submodels.length === 0) {
-    container.innerHTML = `
+    render(html`
       <div class="results-placeholder text-dim">
         No logical submodels found. The archive may not have been peaked yet or contains no printable 3D models.
       </div>
-    `;
+    `, container);
     return;
   }
 
   const cardsHtml = submodels.map(sm => {
-    let badgesHtml = '';
+    const badgesHtmlParts = [];
 
     const scales = sm.scales || [];
     if (scales.length > 1) {
-      badgesHtml += `<span class="badge badge-bundle font-xs" title="Multiple scales packaged together">Sizes: ${scales.join(' / ')}</span>`;
+      badgesHtmlParts.push(html`<span class="badge badge-bundle font-xs" title="Multiple scales packaged together">Sizes: ${scales.join(' / ')}</span>`);
     }
 
     if (sm.has_presupported) {
-      badgesHtml += '<span class="status-badge status-completed font-xs">Pre-Supported</span>';
+      badgesHtmlParts.push(html`<span class="status-badge status-completed font-xs">Pre-Supported</span>`);
     }
     if (sm.has_unsupported) {
-      badgesHtml += '<span class="status-badge status-not_downloaded font-xs">Unsupported</span>';
+      badgesHtmlParts.push(html`<span class="status-badge status-not_downloaded font-xs">Unsupported</span>`);
     }
     if (sm.has_slicer_project) {
-      badgesHtml += '<span class="status-badge status-queued font-xs">Slicer Project</span>';
+      badgesHtmlParts.push(html`<span class="status-badge status-queued font-xs">Slicer Project</span>`);
     }
 
     (sm.formats || []).forEach(fmt => {
-      badgesHtml += `<span class="badge badge-ext font-xs">${escapeHtml(fmt.toUpperCase())}</span>`;
+      badgesHtmlParts.push(html`<span class="badge badge-ext font-xs">${fmt.toUpperCase()}</span>`);
     });
 
     const members = sm.members || [];
     const membersListHtml = members.map(m => {
       const isStl = (m.file_extension || '').toLowerCase() === '.stl' || (m.filename || '').toLowerCase().endsWith('.stl');
-      return `
+      return html`
         <div class="submodel-member-row flex items-center justify-between gap-2 py-1">
           <div class="flex items-center gap-2 overflow-hidden">
-            <span class="badge badge-ext font-xs">${escapeHtml(m.file_extension ? m.file_extension.replace('.', '').toUpperCase() : 'FILE')}</span>
-            <span class="submodel-member-name font-mono truncate" title="${escapeHtml(m.internal_path)}">${escapeHtml(m.filename)}</span>
+            <span class="badge badge-ext font-xs">${m.file_extension ? m.file_extension.replace('.', '').toUpperCase() : 'FILE'}</span>
+            <span class="submodel-member-name font-mono truncate" title="${m.internal_path}">${m.filename}</span>
           </div>
           <div class="flex items-center gap-2 shrink-0">
             <span class="submodel-member-size font-mono text-dim font-xs">${formatBytes(m.size_bytes)}</span>
@@ -811,7 +812,7 @@ function renderLogicalSubmodelsView(container, data) {
           </div>
         </div>
       `;
-    }).join('');
+    });
 
     const previewSrc = sm.preview_image_path
       ? (sm.preview_image_path.startsWith('http') ? sm.preview_image_path : `/${sm.preview_image_path}`)
@@ -829,34 +830,34 @@ function renderLogicalSubmodelsView(container, data) {
     });
 
     const imgElement = previewSrc
-      ? `<a href="${previewSrc}" target="_blank" rel="noopener noreferrer" class="submodel-thumb-link" title="Click to view full preview">
-           <img src="${previewSrc}" class="submodel-thumb" loading="lazy" alt="${escapeHtml(sm.name)}">
+      ? html`<a href="${previewSrc}" target="_blank" rel="noopener noreferrer" class="submodel-thumb-link" title="Click to view full preview">
+           <img src="${previewSrc}" class="submodel-thumb" loading="lazy" alt="${sm.name}">
          </a>`
-      : `<div class="submodel-no-thumb font-xs text-dim flex flex-col items-center justify-center p-3" id="submodel-thumb-container-${sm.id}">
+      : html`<div class="submodel-no-thumb font-xs text-dim flex flex-col items-center justify-center p-3" id="submodel-thumb-container-${sm.id}">
            <span>No Preview Render</span>
-           ${candidateStlMember ? `
-             <button type="button" class="btn-pill font-xs mt-2 btn-action-primary" onclick="window.triggerSubmodelRender(${sm.id}, ${candidateStlMember.id}, this)">
+           ${candidateStlMember ? html`
+             <button type="button" class="btn-pill font-xs mt-2 btn-action-primary" @click=${(event) => window.triggerSubmodelRender(sm.id, candidateStlMember.id, event.currentTarget)}>
                Render Preview
              </button>
            ` : ''}
          </div>`;
 
-    return `
+    return html`
       <div class="card submodel-card">
         <div class="submodel-thumb-wrapper">
           ${imgElement}
         </div>
         <div class="submodel-content">
           <div class="submodel-header">
-            <div class="submodel-title" title="${escapeHtml(sm.name)}">${escapeHtml(sm.name)}</div>
-            <div class="submodel-badges">${badgesHtml}</div>
+            <div class="submodel-title" title="${sm.name}">${sm.name}</div>
+            <div class="submodel-badges">${badgesHtmlParts}</div>
           </div>
           <div class="submodel-meta font-mono font-xs text-dim">
             <span>Volume: <strong>${formatBytes(sm.total_bytes)}</strong></span> &bull;
             <span>Members: <strong>${sm.total_files || members.length} files</strong></span>
           </div>
-          <div class="submodel-path font-mono font-xs text-dim" title="${escapeHtml(sm.relative_dir || '/')}">
-            Folder: ${escapeHtml(sm.relative_dir || '[Root Directory]')}
+          <div class="submodel-path font-mono font-xs text-dim" title="${sm.relative_dir || '/'}">
+            Folder: ${sm.relative_dir || '[Root Directory]'}
           </div>
           <details class="submodel-members-details">
             <summary class="submodel-members-summary">Inspect ${members.length} File Component${members.length === 1 ? '' : 's'}</summary>
@@ -866,26 +867,26 @@ function renderLogicalSubmodelsView(container, data) {
           </details>
 
           <div class="footer mt-auto" style="padding-top:8px;">
-            <button type="button" class="btn-pill font-xs btn-action-primary btn-full" onclick="window.openAddToStashModal({
+            <button type="button" class="btn-pill font-xs btn-action-primary btn-full" @click=${() => window.openAddToStashModal({
               item_type: 'submodel',
-              model_id: ${data.model_id},
-              file_id: ${data.file_id},
-              submodel_id: ${sm.id || (sm.members && sm.members[0] ? sm.members[0].submodel_id : 0)},
-              title: '${escapeHtml(sm.name).replace(/'/g, "\\'")}'
-            })">
+              model_id: data.model_id,
+              file_id: data.file_id,
+              submodel_id: sm.id || (sm.members && sm.members[0] ? sm.members[0].submodel_id : 0),
+              title: sm.name
+            })}>
               + Add Submodel to Stash
             </button>
           </div>
         </div>
       </div>
     `;
-  }).join('');
+  });
 
-  container.innerHTML = `
+  render(html`
     <div class="submodel-grid">
       ${cardsHtml}
     </div>
-  `;
+  `, container);
 }
 
 function renderRawArchiveTreeView(container, rawData) {
@@ -894,11 +895,11 @@ function renderRawArchiveTreeView(container, rawData) {
   const fileId = currentArchiveData?.file_id || '';
 
   if (entries.length === 0) {
-    container.innerHTML = `
+    render(html`
       <div class="results-placeholder text-dim">
         No archive table of contents entries recorded.
       </div>
-    `;
+    `, container);
     return;
   }
 
@@ -912,57 +913,57 @@ function renderRawArchiveTreeView(container, rawData) {
     const cleanDiskName = (entry.filename || '').replace(/[^\w\-_\.]/g, '_');
     const imagePreviewUrl = `/previews/${modelId}/${fileId}/${cleanDiskName}`;
 
-    let pathDisplay = `<span class="font-mono">${escapeHtml(entry.internal_path)}</span>`;
+    let pathDisplay = html`<span class="font-mono">${entry.internal_path}</span>`;
     if (isImage) {
-      pathDisplay = `
+      pathDisplay = html`
         <a href="${imagePreviewUrl}" target="_blank" rel="noopener noreferrer" class="cell-clickable-title font-mono" title="Click to view extracted preview">
-          ${escapeHtml(entry.internal_path)} <span class="text-accent font-xs">&boxbox;</span>
+          ${entry.internal_path} <span class="text-accent font-xs">&boxbox;</span>
         </a>
       `;
     }
 
-    return `
+    return html`
       <tr>
         <td class="font-mono text-dim font-xs">${idx + 1}</td>
         <td class="cell-filename">${pathDisplay}</td>
         <td class="font-mono text-dim font-sm">${formatBytes(entry.size_bytes)}</td>
         <td>
           <span class="badge ${isImage ? 'badge-bonus' : 'badge-ext'} font-xs">
-            ${escapeHtml(ext ? ext.replace('.', '').toUpperCase() : 'FILE')}
+            ${ext ? ext.replace('.', '').toUpperCase() : 'FILE'}
           </span>
         </td>
         <td>
           ${entry.is_supported
-            ? '<span class="status-badge status-completed font-xs">Supported</span>'
+            ? html`<span class="status-badge status-completed font-xs">Supported</span>`
             : (['.stl', '.lys', '.ctb', '.ags'].includes(ext)
-              ? '<span class="status-badge status-not_downloaded font-xs">Raw</span>'
-              : '<span class="text-dim font-xs">-</span>')
+              ? html`<span class="status-badge status-not_downloaded font-xs">Raw</span>`
+              : html`<span class="text-dim font-xs">-</span>`)
           }
         </td>
         <td class="cell-creator-accent font-xs">
-          ${escapeHtml(entry.submodel_name || '[Asset / Document]')}
+          ${entry.submodel_name || '[Asset / Document]'}
         </td>
         <td>
           ${isStl
             ? renderSTLViewDropdown('archive_member', entry.id, entry.filename)
-            : '<span class="text-dim font-xs">-</span>'
+            : html`<span class="text-dim font-xs">-</span>`
           }
         </td>
         <td>
-          <button type="button" class="btn-pill font-xs" onclick="window.openAddToStashModal({
+          <button type="button" class="btn-pill font-xs" @click=${() => window.openAddToStashModal({
             item_type: 'archive_member',
-            model_id: ${modelId},
-            file_id: ${fileId},
-            submodel_id: ${entry.submodel_id || 'null'},
-            archive_member_id: ${entry.id || entry.archive_member_id || entry.member_id || 0},
-            title: '${escapeHtml(entry.filename).replace(/'/g, "\\'")}'
-          })">+ Stash</button>
+            model_id: modelId,
+            file_id: fileId,
+            submodel_id: entry.submodel_id || 'null',
+            archive_member_id: entry.id || entry.archive_member_id || entry.member_id || 0,
+            title: entry.filename
+          })}>+ Stash</button>
         </td>
       </tr>
     `;
-  }).join('');
+  });
 
-  container.innerHTML = `
+  render(html`
     <div class="archive-tree-container">
       <table>
         <thead>
@@ -982,7 +983,7 @@ function renderRawArchiveTreeView(container, rawData) {
         </tbody>
       </table>
     </div>
-  `;
+  `, container);
 }
 
 // -----------------------------------------------------------------------------
@@ -1035,7 +1036,7 @@ export async function triggerSubmodelRender(smId, memberId, btn) {
     const blob = await res.blob();
     const objectUrl = URL.createObjectURL(blob);
 
-    container.outerHTML = `
+    container.outerHTML = html`
       <a href="${objectUrl}" target="_blank" rel="noopener noreferrer" class="submodel-thumb-link" title="Rendered ephemeral preview">
         <img src="${objectUrl}" class="submodel-thumb" alt="Rendered Submodel">
       </a>
@@ -1091,7 +1092,7 @@ export async function switchModelCoverView(modelId, view, btn) {
 function ensureEphemeralModalExists() {
   if (document.getElementById('modal-ephemeral-render')) return;
 
-  const modalHtml = `
+  const modalHtml = html`
     <div class="modal-backdrop" id="modal-ephemeral-render" style="display:none; z-index:9999;">
       <div class="modal modal-lg" style="max-width:850px;">
         <div class="modal-header">
@@ -1099,16 +1100,16 @@ function ensureEphemeralModalExists() {
             <h2 class="modal-title-accent" id="ephemeral-render-title">Component 3D Render</h2>
             <div class="modal-subtitle font-md" id="ephemeral-render-subtitle">Angle: Front-Left (3/4 Profile)</div>
           </div>
-          <button type="button" class="tab-btn" onclick="window.closeEphemeralRenderModal()">Close</button>
+          <button type="button" class="tab-btn" @click=${() => window.closeEphemeralRenderModal()}>Close</button>
         </div>
         <div class="modal-body">
           <div class="ephemeral-view-pills" id="ephemeral-pills-container">
-            <button type="button" class="btn-pill font-xs pill-view active" data-view="front_left" onclick="window.switchEphemeralView('front_left')">Front-Left (3/4)</button>
-            <button type="button" class="btn-pill font-xs pill-view" data-view="front_right" onclick="window.switchEphemeralView('front_right')">Front-Right</button>
-            <button type="button" class="btn-pill font-xs pill-view" data-view="back_right" onclick="window.switchEphemeralView('back_right')">Back-Right</button>
-            <button type="button" class="btn-pill font-xs pill-view" data-view="back_left" onclick="window.switchEphemeralView('back_left')">Back-Left</button>
-            <button type="button" class="btn-pill font-xs pill-view" data-view="top_down" onclick="window.switchEphemeralView('top_down')">Top-Down</button>
-            <button type="button" class="btn-pill font-xs pill-view" data-view="bottom_up" onclick="window.switchEphemeralView('bottom_up')">Bottom-Up</button>
+            <button type="button" class="btn-pill font-xs pill-view active" data-view="front_left" @click=${() => window.switchEphemeralView('front_left')}>Front-Left (3/4)</button>
+            <button type="button" class="btn-pill font-xs pill-view" data-view="front_right" @click=${() => window.switchEphemeralView('front_right')}>Front-Right</button>
+            <button type="button" class="btn-pill font-xs pill-view" data-view="back_right" @click=${() => window.switchEphemeralView('back_right')}>Back-Right</button>
+            <button type="button" class="btn-pill font-xs pill-view" data-view="back_left" @click=${() => window.switchEphemeralView('back_left')}>Back-Left</button>
+            <button type="button" class="btn-pill font-xs pill-view" data-view="top_down" @click=${() => window.switchEphemeralView('top_down')}>Top-Down</button>
+            <button type="button" class="btn-pill font-xs pill-view" data-view="bottom_up" @click=${() => window.switchEphemeralView('bottom_up')}>Bottom-Up</button>
           </div>
           <div class="ephemeral-image-stage" id="ephemeral-stage">
             <div class="loading-placeholder">Initializing Blender preview stream...</div>
@@ -1117,7 +1118,7 @@ function ensureEphemeralModalExists() {
       </div>
     </div>
   `;
-  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  appendToBody(modalHtml);
 }
 
 /**
@@ -1180,12 +1181,12 @@ export async function switchEphemeralView(viewName) {
   }
 
   if (stage) {
-    stage.innerHTML = `
+    render(html`
       <div class="flex flex-col items-center justify-center gap-3">
         <div class="loading-placeholder">Rendering ${viewLabels[viewName]} in Blender...</div>
         <span class="text-dim font-xs">Extracting geometry into transient memory buffer</span>
       </div>
-    `;
+    `, stage);
   }
 
   try {
@@ -1212,18 +1213,18 @@ export async function switchEphemeralView(viewName) {
     activeEphemeralBlobUrl = URL.createObjectURL(blob);
 
     if (stage) {
-      stage.innerHTML = `
-        <img src="${activeEphemeralBlobUrl}" alt="${escapeHtml(activeEphemeralTitle)} (${viewName})" />
-      `;
+      render(html`
+        <img src="${activeEphemeralBlobUrl}" alt="${activeEphemeralTitle} (${viewName})" />
+      `, stage);
     }
   } catch (err) {
     if (stage) {
-      stage.innerHTML = `
+      render(html`
         <div class="text-alert p-4 text-center">
           <strong>Blender Render Error:</strong><br>
-          <span class="font-xs font-mono">${escapeHtml(err.message)}</span>
+          <span class="font-xs font-mono">${err.message}</span>
         </div>
-      `;
+      `, stage);
     }
   }
 }

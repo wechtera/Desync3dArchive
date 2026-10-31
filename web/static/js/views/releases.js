@@ -299,7 +299,7 @@ export async function openReleaseModal(designer, month) {
 
   const data = await fetchModels({ designer, month, limit: 150 });
   const container = document.getElementById('modal-models-grid');
-  container.innerHTML = data.models.map(m => renderModelCard(m)).join('');
+  render(data.models.map(m => renderModelCard(m)), container);
 }
 
 export async function queueReleasePack(releaseId) {

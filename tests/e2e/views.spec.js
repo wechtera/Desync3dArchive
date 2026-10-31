@@ -384,3 +384,151 @@ test.describe('stashes', () => {
     await expect(page.locator('#stash-export-progress-modal')).toHaveCount(0);
   });
 });
+
+test.describe('settings', () => {
+  test('directories and libraries show hostile names as text', async ({ page }) => {
+    await mock(page, '/api/settings/directories', { directories: [{ key: 'logs', name: HOSTILE, path: HOSTILE, size_bytes: 10, formatted_size: '10 B', file_count: 2 }] });
+    await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: HOSTILE, path: HOSTILE, default_creator: HOSTILE, exists: false, disk_bytes: 5, total_models: 1, total_files: 2, last_scanned_at: null }] });
+    await page.goto('/#settings');
+    await expect(page.locator('#critical-directories-table-container')).toContainText('10 B');
+    await expect(page.getByText(HOSTILE).first()).toBeVisible();
+    await expect(page.locator('body img[src="x"]')).toHaveCount(0);
+    await expect(page.getByText('Never Scanned')).toBeVisible();
+  });
+
+  test('a library can be scanned', async ({ page }) => {
+    await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true, total_models: 1, total_files: 2, disk_bytes: 1 }] });
+    let scanned = false;
+    await page.route('**/api/settings/libraries/2/scan', (route) => { scanned = true; return route.fulfill({ json: { success: true, task_id: 1 } }); });
+    page.on('dialog', (dialog) => dialog.accept());
+    await page.goto('/#settings');
+    await page.getByRole('button', { name: /Scan/ }).first().click();
+    await expect.poll(() => scanned).toBe(true);
+  });
+
+  test('the folder browser lists and navigates, with hostile names as text', async ({ page }) => {
+    const paths = [];
+    await page.route('**/api/system/browse*', (route) => {
+      paths.push(new URL(route.request().url()).searchParams.get('path') || new URL(route.request().url()).searchParams.get('folder'));
+      return route.fulfill({ json: { success: true, current_path: '/a', parent_path: '/', directories: [{ name: HOSTILE, path: `/a/${HOSTILE}` }], dirs: [HOSTILE] } });
+    });
+    await page.goto('/#settings');
+    await page.evaluate(() => window.openDirectoryPicker('setting-work-path'));
+    const items = page.locator('.browse-item');
+    await expect(items).toHaveCount(2);
+    await expect(items.nth(1)).toContainText(HOSTILE);
+    await items.nth(1).click();
+    await expect.poll(() => paths.at(-1)).toBe(`/a/${HOSTILE}`);
+  });
+});
+
+test.describe('downloads', () => {
+  const pending = { models: [{ id: 1, name: HOSTILE, designer_name: HOSTILE, file_count: 2, download_status: 'not_downloaded', published_at: '2026-05-01' }], total: 1 };
+
+  async function open(page, status = {}) {
+    await mock(page, '/api/downloads/status', { active_downloads: [], active_offloads: [], jobs: [], is_running: true, reconnect_required: false, ...status });
+    await mock(page, '/api/downloads/history', { history: [{ id: 1, model_id: 1, model_name: HOSTILE, creator_name: HOSTILE, status: 'failed', error_message: HOSTILE, enqueued_at: '2026-05-01 12:00:00', completed_at: null, total_files: 1, total_bytes: 1 }], total: 1 });
+    await mock(page, '/api/models', pending);
+    await mock(page, '/api/creators', [{ designer_name: HOSTILE, total_models: 1 }]);
+    await page.goto('/#downloads');
+  }
+
+  test('pending models show as text, and queue by id', async ({ page }) => {
+    let body;
+    await open(page);
+    await page.route('**/api/downloads/queue', async (route) => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      body = route.request().postDataJSON();
+      return route.fulfill({ json: { success: true } });
+    });
+    await expect(page.locator('.pending-row-chk').first()).toBeAttached();
+    await expect(page.locator('.cell-clickable-title').first()).toContainText(HOSTILE);
+    await page.locator('tbody .btn-action-queue').first().click();
+    await expect.poll(() => body?.model_ids).toEqual([1]);
+  });
+
+  test('a ticked row stays ticked after a refresh', async ({ page }) => {
+    await open(page);
+    await page.locator('.pending-row-chk').first().check();
+    await page.evaluate(() => window.refreshCurrentView());
+    await expect(page.locator('.pending-row-chk').first()).toBeChecked();
+  });
+
+  test('active downloads and jobs render', async ({ page }) => {
+    await open(page, {
+      active_downloads: [{ model_id: 1, model_name: HOSTILE, creator: HOSTILE, current_file: HOSTILE, status: 'downloading', speed_bps: 1, downloaded_bytes: 1, total_bytes: 2 }],
+      jobs: [{ id: 9, model_id: 1, model_name: HOSTILE, creator_name: HOSTILE, status: 'pending', total_files: 1, total_bytes: 1, enqueued_at: '2026-05-01 12:00:00' }],
+    });
+    await expect(page.getByText(HOSTILE).first()).toBeAttached();
+    await expect(page.locator('body img[src="x"]')).toHaveCount(0);
+  });
+
+});
+
+test.describe('models', () => {
+  const model = (overrides) => ({
+    id: 1, name: HOSTILE, designer_name: HOSTILE, download_status: 'not_downloaded', tags: [HOSTILE, 'plain', 'c', 'd', 'e', 'f'],
+    pre_supported: 1, is_bonus: 1, url: 'javascript:window.xss=1', primary_image_url: 'http://127.0.0.1:8099/static/none.jpg', file_count: 2, ...overrides,
+  });
+
+  async function open(page, models = [model({})]) {
+    await mock(page, '/api/models', { models, total: models.length });
+    await mock(page, '/api/creators', []);
+    await page.goto('/#models');
+    await expect(page.locator('#view-models .card').first()).toBeVisible();
+  }
+
+  test('a card shows its data as text', async ({ page }) => {
+    await open(page);
+    const card = page.locator('#view-models .card').first();
+    await expect(card.locator('.card-title')).toHaveText(HOSTILE);
+    await expect(card.locator('.badge-bonus')).toBeVisible();
+    await expect(card).toContainText('Pre-Supported');
+    await expect(card.locator('.tag-pill')).toHaveCount(6);
+    await expect(card.locator('.tag-more')).toHaveText('+1');
+    await expect(card.locator('img[src="x"]')).toHaveCount(0);
+  });
+
+  test('a javascript URL is never a link', async ({ page }) => {
+    await open(page);
+    await expect(page.locator('a[href^="javascript"]')).toHaveCount(0);
+  });
+
+  test('buttons follow download status', async ({ page }) => {
+    await open(page, [model({ id: 1, download_status: 'completed', url: '' }), model({ id: 2, download_status: 'queued', url: '' }), model({ id: 3, url: 'https://www.myminifactory.com/o/3' })]);
+    await expect(page.getByRole('button', { name: 'Archived' })).toBeDisabled();
+    await expect(page.locator('#view-models .btn-action-cancel')).toHaveCount(1);
+    await expect(page.locator('a.btn-mmf-fullwidth')).toHaveAttribute('href', 'https://www.myminifactory.com/o/3');
+  });
+
+  test('clicking a tag filters without opening the model', async ({ page }) => {
+    await open(page);
+    await page.locator('.tag-pill').first().click();
+    await expect(page.locator('#model-tag-filter')).toHaveValue(HOSTILE);
+  });
+
+  test('add to stash opens from a card with the hostile title', async ({ page }) => {
+    await mock(page, '/api/stashes', { stashes: [] });
+    await mock(page, '/api/stashes/active', { active_stash: null });
+    await open(page);
+    await page.locator('#view-models .model-card-actions button').last().click();
+    await expect(page.locator('#stash-modal-item-title')).toHaveText(HOSTILE);
+  });
+
+  test('the detail modal shows model data as text', async ({ page }) => {
+    await open(page);
+    await mock(page, '/api/models/1', model({ description: HOSTILE, files: [], release_month: '2026-05', views: 1, likes: 2, price_value: 0 }));
+    await page.locator('#view-models .card').first().click();
+    await expect(page.getByText(HOSTILE).first()).toBeVisible();
+    await expect(page.locator('body img[src="x"]')).toHaveCount(0);
+    await expect(page.locator('a[href^="javascript"]')).toHaveCount(0);
+  });
+
+  test('the files modal lists files as text', async ({ page }) => {
+    await open(page);
+    await mock(page, '/api/models/1/files', { id: 1, name: HOSTILE, designer_name: HOSTILE, total_files: 1, files: [{ file_id: 7, filename: HOSTILE, size_bytes: 1024, download_status: 'completed', downloaded: true }] });
+    await page.locator('#view-models .model-card-actions button').first().click();
+    await expect(page.getByText(HOSTILE).first()).toBeVisible();
+    await expect(page.locator('body img[src="x"]')).toHaveCount(0);
+  });
+});

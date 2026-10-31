@@ -4,7 +4,8 @@
  * worker tuning, diagnostic logging, log pruning, and MyMiniFactory authentication.
  */
 
-import { formatBytes, escapeHtml, parseServerTime } from '../utils.js';
+import { formatBytes, parseServerTime } from '../utils.js';
+import { appendToBody, html, imageFallback, nothing, render, safeUrl, stopPropagation } from '../template.js';
 import {
   fetchExternalLibraries,
   addExternalLibrary,
@@ -145,7 +146,7 @@ export async function loadDirectoryUsage() {
   const container = document.getElementById('critical-directories-table-container');
   if (!container) return;
 
-  container.innerHTML = '<div class="table-msg">Scanning directory footprints...</div>';
+  render(html`<div class="table-msg">Scanning directory footprints...</div>`, container);
 
   try {
     const res = await fetch('/api/settings/directories');
@@ -153,11 +154,11 @@ export async function loadDirectoryUsage() {
     const directories = data.directories || data.items || [];
 
     if (!directories.length) {
-      container.innerHTML = '<div class="table-msg">No directory metrics available.</div>';
+      render(html`<div class="table-msg">No directory metrics available.</div>`, container);
       return;
     }
 
-    container.innerHTML = `
+    render(html`
       <table class="table-compact">
         <thead>
           <tr>
@@ -168,19 +169,19 @@ export async function loadDirectoryUsage() {
           </tr>
         </thead>
         <tbody>
-          ${directories.map(d => `
+          ${directories.map(d => html`
             <tr>
-              <td><strong>${escapeHtml(d.name)}</strong></td>
-              <td class="font-mono font-xs text-dim">${escapeHtml(d.path || '-')}</td>
+              <td><strong>${d.name}</strong></td>
+              <td class="font-mono font-xs text-dim">${d.path || '-'}</td>
               <td>${d.file_count !== undefined ? d.file_count.toLocaleString() : '-'}</td>
-              <td class="font-mono">${d.size_bytes !== null && d.size_bytes !== undefined ? formatBytes(d.size_bytes) : '<span class="text-dim">N/A (Database)</span>'}</td>
+              <td class="font-mono">${d.size_bytes !== null && d.size_bytes !== undefined ? formatBytes(d.size_bytes) : html`<span class="text-dim">N/A (Database)</span>`}</td>
             </tr>
-          `).join('')}
+          `)}
         </tbody>
       </table>
-    `;
+    `, container);
   } catch (err) {
-    container.innerHTML = `<div class="table-msg text-alert">Failed scanning directories: ${escapeHtml(err.message)}</div>`;
+    render(html`<div class="table-msg text-alert">Failed scanning directories: ${err.message}</div>`, container);
   }
 }
 
@@ -208,7 +209,7 @@ export async function loadExternalLibraries() {
 
   if (!panel) return;
 
-  panel.innerHTML = `
+  render(html`
     <div class="settings-panel-header">
       <div>
         <h2 class="settings-panel-title">In-Place External Libraries</h2>
@@ -217,7 +218,7 @@ export async function loadExternalLibraries() {
         </div>
       </div>
       <div class="flex gap-2">
-        <button type="button" class="btn-pill" onclick="window.loadExternalLibraries()">Refresh Libraries</button>
+        <button type="button" class="btn-pill" @click=${() => window.loadExternalLibraries()}>Refresh Libraries</button>
       </div>
     </div>
     <div id="external-libraries-table-container">
@@ -230,7 +231,7 @@ export async function loadExternalLibraries() {
           <label for="new-lib-path">Top-Level Storage Directory Path *</label>
           <div class="settings-input-with-button">
             <input type="text" id="new-lib-path" placeholder="/Volumes/STL/Loot Studios" spellcheck="false">
-            <button type="button" class="btn-pill" onclick="window.openDirectoryPicker('new-lib-path')">Browse</button>
+            <button type="button" class="btn-pill" @click=${() => window.openDirectoryPicker('new-lib-path')}>Browse</button>
           </div>
           <span class="form-help-text">Direct path to library root on NAS or local drive (strictly read-only).</span>
         </div>
@@ -247,13 +248,13 @@ export async function loadExternalLibraries() {
           <span class="form-help-text">Assigned to indexed models if not specified in release subfolders.</span>
         </div>
         <div class="settings-field-group flex items-end">
-          <button type="button" class="btn-pill btn-action-primary" onclick="window.handleAddExternalLibrary()">
+          <button type="button" class="btn-pill btn-action-primary" @click=${() => window.handleAddExternalLibrary()}>
             Register In-Place Library
           </button>
         </div>
       </div>
     </div>
-  `;
+  `, panel);
 
   const tableContainer = document.getElementById('external-libraries-table-container');
   try {
@@ -261,15 +262,15 @@ export async function loadExternalLibraries() {
     const libs = res.libraries || [];
 
     if (!libs.length) {
-      tableContainer.innerHTML = `
+      render(html`
         <div class="table-msg text-dim py-4">
           No external libraries registered. Register a directory above to index external collections without moving files.
         </div>
-      `;
+      `, tableContainer);
       return;
     }
 
-    tableContainer.innerHTML = `
+    render(html`
       <table class="table-compact">
         <thead>
           <tr>
@@ -286,42 +287,42 @@ export async function loadExternalLibraries() {
           ${libs.map(lib => {
             const lastScan = lib.last_scanned_at
               ? parseServerTime(lib.last_scanned_at)?.toLocaleString() || '-'
-              : '<span class="text-dim">Never Scanned</span>';
+              : html`<span class="text-dim">Never Scanned</span>`;
             const existsBadge = lib.exists
               ? ''
-              : '<span class="status-badge status-danger font-xs ml-1" title="Directory path not currently mounted">Unmounted</span>';
+              : html`<span class="status-badge status-danger font-xs ml-1" title="Directory path not currently mounted">Unmounted</span>`;
 
-            return `
+            return html`
               <tr>
                 <td>
-                  <strong>${escapeHtml(lib.name)}</strong>
-                  <div class="text-dim font-xs">${escapeHtml(lib.default_creator || lib.name)}</div>
+                  <strong>${lib.name}</strong>
+                  <div class="text-dim font-xs">${lib.default_creator || lib.name}</div>
                 </td>
                 <td class="font-mono font-xs text-dim">
-                  ${escapeHtml(lib.path)} ${existsBadge}
+                  ${lib.path} ${existsBadge}
                 </td>
-                <td class="font-mono">${escapeHtml(lib.disk_formatted || '0 B')}</td>
+                <td class="font-mono">${lib.disk_formatted || '0 B'}</td>
                 <td class="font-mono">${(lib.total_models || 0).toLocaleString()}</td>
                 <td class="font-mono">${(lib.total_files || 0).toLocaleString()}</td>
                 <td class="font-sm">${lastScan}</td>
                 <td>
                   <div class="flex gap-1">
-                    <button type="button" class="btn-pill font-xs btn-action-primary" onclick="window.handleScanExternalLibrary(${lib.id}, '${escapeHtml(lib.name).replace(/'/g, "\\'")}')" title="Scan and reconcile external models into library">
+                    <button type="button" class="btn-pill font-xs btn-action-primary" @click=${() => window.handleScanExternalLibrary(lib.id, lib.name)} title="Scan and reconcile external models into library">
                       Scan Library
                     </button>
-                    <button type="button" class="btn-pill font-xs btn-action-cancel" onclick="window.handleDeleteExternalLibrary(${lib.id}, '${escapeHtml(lib.name).replace(/'/g, "\\'")}')" title="Unlink library from database (preserves source NAS files)">
+                    <button type="button" class="btn-pill font-xs btn-action-cancel" @click=${() => window.handleDeleteExternalLibrary(lib.id, lib.name)} title="Unlink library from database (preserves source NAS files)">
                       Remove
                     </button>
                   </div>
                 </td>
               </tr>
             `;
-          }).join('')}
+          })}
         </tbody>
       </table>
-    `;
+    `, tableContainer);
   } catch (err) {
-    tableContainer.innerHTML = `<div class="table-msg text-alert">Failed loading external libraries: ${escapeHtml(err.message)}</div>`;
+    render(html`<div class="table-msg text-alert">Failed loading external libraries: ${err.message}</div>`, tableContainer);
   }
 }
 
@@ -686,28 +687,28 @@ export async function navigateBrowseFolder(folderPath) {
     const list = document.getElementById('browse-dir-list');
     if (!list) return;
 
-    let html = '';
+    const htmlParts = [];
     if (data.parent_path) {
-      html += `
-        <li class="browse-item cursor-pointer" onclick="window.navigateBrowseFolder('${data.parent_path.replace(/'/g, "\\'")}')">
+      htmlParts.push(html`
+        <li class="browse-item cursor-pointer" @click=${() => window.navigateBrowseFolder(data.parent_path)}>
           <span class="text-dim font-mono">[..]</span> <span class="font-semibold text-accent">Parent Folder</span>
         </li>
-      `;
+      `);
     }
 
     const dirs = data.directories || [];
     if (!dirs.length) {
-      html += `<li class="browse-item text-dim">No subdirectories found.</li>`;
+      htmlParts.push(html`<li class="browse-item text-dim">No subdirectories found.</li>`);
     } else {
       dirs.forEach(d => {
-        html += `
-          <li class="browse-item cursor-pointer" onclick="window.navigateBrowseFolder('${d.path.replace(/'/g, "\\'")}')">
-            <span class="text-accent font-mono">[DIR]</span> ${escapeHtml(d.name)}
+        htmlParts.push(html`
+          <li class="browse-item cursor-pointer" @click=${() => window.navigateBrowseFolder(d.path)}>
+            <span class="text-accent font-mono">[DIR]</span> ${d.name}
           </li>
-        `;
+        `);
       });
     }
-    list.innerHTML = html;
+    render(htmlParts, list);
   } catch (err) {
     console.error('Directory browser navigation error:', err);
   }

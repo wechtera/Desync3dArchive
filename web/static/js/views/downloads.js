@@ -19,7 +19,8 @@ import {
   triggerArchivePeekBackfill,
   triggerCatalogPreviewBackfill
 } from '../api.js';
-import { formatBytes, formatLocalDate, formatLocalDateTime, renderStatusBadge } from '../utils.js';
+import { formatBytes, formatLocalDate, formatLocalDateTime, statusBadge } from '../utils.js';
+import { appendToBody, html, imageFallback, nothing, render, safeUrl, stopPropagation } from '../template.js';
 
 let currentPendingPage = 1;
 const pendingPageSize = 25;
@@ -40,16 +41,6 @@ let currentPathDrifts = [];
 let selectedScanMode = 'fast';
 
 const formatDate = formatLocalDate;
-
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
 
 export function setReconcileMode(mode) {
   selectedScanMode = mode;
@@ -137,14 +128,14 @@ export async function populatePendingCreatorsFilter() {
   const currentSelection = select.value;
   try {
     const creators = await fetchCreators();
-    let optionsHtml = '<option value="">All Creators</option>';
-    optionsHtml += creators.map(c => {
+    const optionsHtmlParts = [htmlhtml`<option value="">All Creators</option>`];
+    optionsHtmlParts.push(creators.map(c => {
       const name = c.designer_name || 'Unknown';
       const count = c.total_models || 0;
-      return `<option value="${escapeHtml(name)}">${escapeHtml(name)} (${count})</option>`;
-    }).join('');
+      return html`<option value="${name}">${name} (${count})</option>`;
+    }));
 
-    select.innerHTML = optionsHtml;
+    render(optionsHtmlParts, select);
     if (currentSelection) select.value = currentSelection;
     pendingCreatorsLoaded = true;
   } catch (err) {
@@ -172,7 +163,7 @@ export async function loadPendingModels(page = currentPendingPage) {
   const offset = (currentPendingPage - 1) * pendingPageSize;
   const tbody = document.getElementById('pending-table-body');
   if (tbody) {
-    tbody.innerHTML = '<tr><td colspan="7" class="table-msg">Loading catalog items...</td></tr>';
+    render(html`<tr><td colspan="7" class="table-msg">Loading catalog items...</td></tr>`, tbody);
   }
 
   try {
@@ -191,42 +182,42 @@ export async function loadPendingModels(page = currentPendingPage) {
     if (!tbody) return;
 
     if (models.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="table-msg">No matching models found.</td></tr>';
+      render(html`<tr><td colspan="7" class="table-msg">No matching models found.</td></tr>`, tbody);
       updatePendingPagination(offset, 0);
       return;
     }
 
-    tbody.innerHTML = models.map(m => {
+    render(models.map(m => {
       const isChecked = selectedPendingIds.has(m.id);
       const isCompleted = m.download_status === 'completed';
       const isQueued = m.download_status === 'queued';
 
       let actionBtn = '';
       if (isCompleted) {
-        actionBtn = '<button type="button" class="btn-pill" disabled>Archived</button>';
+        actionBtn = html`<button type="button" class="btn-pill" disabled>Archived</button>`;
       } else if (isQueued) {
-        actionBtn = `<button type="button" class="btn-pill btn-action-cancel" onclick="window.dequeueSingleModel(${m.id})">Cancel</button>`;
+        actionBtn = html`<button type="button" class="btn-pill btn-action-cancel" @click=${() => window.dequeueSingleModel(m.id)}>Cancel</button>`;
       } else {
-        actionBtn = `<button type="button" class="btn-pill btn-action-queue" onclick="window.queueSingleModel(${m.id})">Queue</button>`;
+        actionBtn = html`<button type="button" class="btn-pill btn-action-queue" @click=${() => window.queueSingleModel(m.id)}>Queue</button>`;
       }
 
       const creator = m.designer_name || m.creator_name || m.creator || 'Unknown';
       const fileCount = m.file_count ?? m.total_files ?? m.files ?? 0;
       const dateStr = formatDate(m.published_at || m.date_added);
 
-      return `
+      return html`
         <tr>
           <td class="col-checkbox">
-            <input type="checkbox" class="pending-row-chk" value="${m.id}" ${isChecked ? 'checked' : ''} onchange="window.toggleSelectPending(${m.id}, this.checked)">
+            <input type="checkbox" class="pending-row-chk" value="${m.id}" ?checked=${isChecked} @change=${(event) => window.toggleSelectPending(m.id, event.target.checked)}>
           </td>
           <td>
-            <div class="cell-clickable-title" onclick="window.openModelDetailModal(${m.id})" title="View Metadata">
-              ${escapeHtml(m.name)}
+            <div class="cell-clickable-title" @click=${() => window.openModelDetailModal(m.id)} title="View Metadata">
+              ${m.name}
             </div>
             <span class="font-mono text-dim font-xs">#${m.id}</span>
           </td>
           <td>
-            <span class="cell-creator-accent">${escapeHtml(creator)}</span>
+            <span class="cell-creator-accent">${creator}</span>
           </td>
           <td>
             <span class="font-semibold font-mono">${fileCount}</span>
@@ -234,17 +225,17 @@ export async function loadPendingModels(page = currentPendingPage) {
           <td>
             <span class="font-mono text-dim font-sm">${dateStr}</span>
           </td>
-          <td>${renderStatusBadge(m.download_status || 'not_downloaded')}</td>
+          <td>${statusBadge(m.download_status || 'not_downloaded')}</td>
           <td>${actionBtn}</td>
         </tr>
       `;
-    }).join('');
+    }), tbody);
 
     updatePendingPagination(offset, models.length);
     updateSelectAllCheckbox(models);
   } catch (err) {
     if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="7" class="table-msg text-alert">Failed loading models: ${escapeHtml(err.message)}</td></tr>`;
+      render(html`<tr><td colspan="7" class="table-msg text-alert">Failed loading models: ${err.message}</td></tr>`, tbody);
     }
   }
 }
@@ -404,25 +395,25 @@ export async function renderActiveTransfers() {
     if (dlBox) {
       const activeDownloads = data.active_downloads || [];
       if (activeDownloads.length === 0) {
-        dlBox.innerHTML = '<div class="empty-state-notice">No active downloads in flight.</div>';
+        render(html`<div class="empty-state-notice">No active downloads in flight.</div>`, dlBox);
       } else {
-        dlBox.innerHTML = activeDownloads.map(w => {
+        render(activeDownloads.map(w => {
           const pct = w.total_bytes > 0 ? Math.min(100, Math.round((w.downloaded_bytes / w.total_bytes) * 100)) : 0;
-          return `
+          return html`
             <div class="progress-box">
               <div class="progress-box-top">
-                <span><strong>${escapeHtml(w.model_name)}</strong> &bull; ${escapeHtml(w.current_file || '')}</span>
+                <span><strong>${w.model_name}</strong> &bull; ${w.current_file || ''}</span>
                 <span class="font-mono">${formatBytes(w.downloaded_bytes)} / ${formatBytes(w.total_bytes)} (${pct}%)</span>
               </div>
               <div class="progress-bar-bg progress-bar-flush">
                 <div class="progress-bar-fill" style="width:${pct}%"></div>
               </div>
               <div class="progress-box-meta font-mono">
-                Speed: ${formatBytes(w.speed_bps || 0)}/s &bull; Creator: ${escapeHtml(w.creator || 'Unknown')}
+                Speed: ${formatBytes(w.speed_bps || 0)}/s &bull; Creator: ${w.creator || 'Unknown'}
               </div>
             </div>
           `;
-        }).join('');
+        }), dlBox);
       }
     }
 
@@ -430,14 +421,14 @@ export async function renderActiveTransfers() {
     if (offBox) {
       const activeOffloads = data.active_offloads || [];
       if (activeOffloads.length === 0) {
-        offBox.innerHTML = '<div class="empty-state-notice">No offload migrations in progress.</div>';
+        render(html`<div class="empty-state-notice">No offload migrations in progress.</div>`, offBox);
       } else {
-        offBox.innerHTML = activeOffloads.map(w => {
+        render(activeOffloads.map(w => {
           const pct = w.total_bytes > 0 ? Math.min(100, Math.round((w.transferred_bytes / w.total_bytes) * 100)) : 0;
-          return `
+          return html`
             <div class="progress-box">
               <div class="progress-box-top">
-                <span><strong>${escapeHtml(w.model_name)}</strong> &bull; ${escapeHtml(w.current_file || '')}</span>
+                <span><strong>${w.model_name}</strong> &bull; ${w.current_file || ''}</span>
                 <span class="font-mono">${formatBytes(w.transferred_bytes)} / ${formatBytes(w.total_bytes)} (${pct}%)</span>
               </div>
               <div class="progress-bar-bg progress-bar-flush">
@@ -448,7 +439,7 @@ export async function renderActiveTransfers() {
               </div>
             </div>
           `;
-        }).join('');
+        }), offBox);
       }
     }
 
@@ -456,22 +447,22 @@ export async function renderActiveTransfers() {
     if (activeTbody) {
       const jobs = data.queued_jobs || [];
       if (jobs.length === 0) {
-        activeTbody.innerHTML = '<tr><td colspan="8" class="td-empty">No jobs currently queued.</td></tr>';
+        render(html`<tr><td colspan="8" class="td-empty">No jobs currently queued.</td></tr>`, activeTbody);
       } else {
-        activeTbody.innerHTML = jobs.map(j => `
+        render(jobs.map(j => html`
           <tr>
             <td class="font-mono">${j.model_id}</td>
-            <td><strong>${escapeHtml(j.model_name || `Model #${j.model_id}`)}</strong></td>
-            <td>${escapeHtml(j.creator_name || 'Unknown')}</td>
+            <td><strong>${j.model_name || `Model #${j.model_id}`}</strong></td>
+            <td>${j.creator_name || 'Unknown'}</td>
             <td class="font-mono">${j.total_files || 0}</td>
             <td class="font-mono">${formatBytes(j.total_bytes || 0)}</td>
             <td class="font-mono text-dim font-sm">${formatDate(j.enqueued_at)}</td>
-            <td>${renderStatusBadge(j.status)}</td>
+            <td>${statusBadge(j.status)}</td>
             <td>
-              <button type="button" class="btn-pill btn-action-cancel" onclick="window.dequeueSingleModel(${j.model_id})">Cancel</button>
+              <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.dequeueSingleModel(j.model_id)}>Cancel</button>
             </td>
           </tr>
-        `).join('');
+        `), activeTbody);
       }
     }
 
@@ -504,7 +495,7 @@ export async function loadDownloadHistory(page = currentHistoryPage) {
   const tbody = document.getElementById('history-table-body');
 
   if (tbody) {
-    tbody.innerHTML = '<tr><td colspan="8" class="table-msg">Loading audit logs...</td></tr>';
+    render(html`<tr><td colspan="8" class="table-msg">Loading audit logs...</td></tr>`, tbody);
   }
 
   try {
@@ -521,42 +512,42 @@ export async function loadDownloadHistory(page = currentHistoryPage) {
     if (!tbody) return;
 
     if (jobs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="table-msg">No historical jobs recorded.</td></tr>';
+      render(html`<tr><td colspan="8" class="table-msg">No historical jobs recorded.</td></tr>`, tbody);
       updateHistoryPagination(offset, 0);
       return;
     }
 
-    tbody.innerHTML = jobs.map(j => {
+    render(jobs.map(j => {
       const creator = j.creator_name || j.designer_name || 'Unknown';
-      return `
+      return html`
         <tr>
           <td class="font-mono text-dim font-sm">${formatDate(j.enqueued_at)}</td>
           <td class="font-mono text-dim font-sm">${formatDate(j.completed_at)}</td>
           <td>
-            <div class="cell-clickable-title" onclick="window.openModelDetailModal(${j.model_id})">
-              ${escapeHtml(j.model_name || `Model #${j.model_id}`)}
+            <div class="cell-clickable-title" @click=${() => window.openModelDetailModal(j.model_id)}>
+              ${j.model_name || `Model #${j.model_id}`}
             </div>
           </td>
-          <td>${escapeHtml(creator)}</td>
-          <td>${renderStatusBadge(j.status)}</td>
+          <td>${creator}</td>
+          <td>${statusBadge(j.status)}</td>
           <td class="font-mono">${j.retry_count || 0}</td>
-          <td class="cell-label-truncate font-mono font-xs" title="${escapeHtml(j.error_message || '')}">
-            ${escapeHtml(j.error_message || '-')}
+          <td class="cell-label-truncate font-mono font-xs" title="${j.error_message || ''}">
+            ${j.error_message || '-'}
           </td>
           <td>
             ${j.status === 'failed'
-              ? `<button type="button" class="btn-pill btn-action-queue" onclick="window.queueSingleModel(${j.model_id})">Retry</button>`
-              : '<span class="text-dim font-sm">None</span>'
+              ? html`<button type="button" class="btn-pill btn-action-queue" @click=${() => window.queueSingleModel(j.model_id)}>Retry</button>`
+              : html`<span class="text-dim font-sm">None</span>`
             }
           </td>
         </tr>
       `;
-    }).join('');
+    }), tbody);
 
     updateHistoryPagination(offset, jobs.length);
   } catch (err) {
     if (tbody) {
-      tbody.innerHTML = `<tr><td colspan="8" class="table-msg text-alert">Failed to load history: ${escapeHtml(err.message)}</td></tr>`;
+      render(html`<tr><td colspan="8" class="table-msg text-alert">Failed to load history: ${err.message}</td></tr>`, tbody);
     }
   }
 }
@@ -777,73 +768,73 @@ export async function cancelReconcile() {
 
 function renderReverseOrphanSection(container, orphans, untracked) {
   if (orphans.length === 0 && untracked.length === 0) {
-    container.innerHTML = '';
+    render('', container);
     return;
   }
 
-  let html = '';
+  const htmlParts = [];
   if (orphans.length > 0) {
-    html += `
+    htmlParts.push(html`
       <div class="orphan-header-row">
         <div class="orphan-header-title">
           Reverse Audit: Orphan Directories on Disk (${orphans.length})
         </div>
-        <button type="button" class="btn-pill btn-action-cancel" onclick="window.deleteAllOrphans()">
+        <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.deleteAllOrphans()}>
           Delete All Orphan Folders (${orphans.length})
         </button>
       </div>
-    `;
-    html += orphans.map(o => `
+    `);
+    htmlParts.push(orphans.map(o => html`
       <div class="card reconcile-card card-orphan">
         <div class="reconcile-card-header">
           <div>
-            <div class="model-title">${escapeHtml(o.folder_name)}</div>
-            <div class="font-mono text-dim path-text">${escapeHtml(o.directory_path)}</div>
+            <div class="model-title">${o.folder_name}</div>
+            <div class="font-mono text-dim path-text">${o.directory_path}</div>
           </div>
           <div class="footer-actions">
             <span class="font-mono text-dim font-sm">${formatBytes(o.size_bytes)}</span>
-            <button type="button" class="btn-pill btn-action-cancel" onclick="window.deleteSingleOrphan('${escapeHtml(o.directory_path).replace(/'/g, "\\'")}')">
+            <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.deleteSingleOrphan(o.directory_path)}>
               Delete Directory
             </button>
           </div>
         </div>
-        <div class="defect-detail text-alert">${escapeHtml(o.detail)}</div>
+        <div class="defect-detail text-alert">${o.detail}</div>
       </div>
-    `).join('');
+    `));
   }
 
   if (untracked.length > 0) {
-    html += `
+    htmlParts.push(html`
       <div class="orphan-header-row">
         <div class="untracked-header-title">
           Reverse Audit: Untracked Files Inside Valid Models (${untracked.length})
         </div>
-        <button type="button" class="btn-pill btn-action-primary" onclick="window.ingestAllUntracked()">
+        <button type="button" class="btn-pill btn-action-primary" @click=${() => window.ingestAllUntracked()}>
           Auto-Ingest All Untracked Files (${untracked.length})
         </button>
       </div>
-    `;
-    html += untracked.map(u => `
+    `);
+    htmlParts.push(untracked.map(u => html`
       <div class="card reconcile-card card-untracked">
         <div class="reconcile-card-header">
           <div>
-            <div class="cell-clickable-title" onclick="window.openModelDetailModal(${u.model_id})">
-              ${escapeHtml(u.model_name)} <span class="font-mono text-dim font-xs">(#${u.model_id})</span>
+            <div class="cell-clickable-title" @click=${() => window.openModelDetailModal(u.model_id)}>
+              ${u.model_name} <span class="font-mono text-dim font-xs">(#${u.model_id})</span>
             </div>
             <div class="model-subtitle">
-              File: <strong class="text-main">${escapeHtml(u.filename)}</strong> (${formatBytes(u.size_bytes)})
+              File: <strong class="text-main">${u.filename}</strong> (${formatBytes(u.size_bytes)})
             </div>
           </div>
-          <button type="button" class="btn-pill btn-action-primary" onclick="window.ingestSingleUntracked(${u.model_id}, '${escapeHtml(u.file_path).replace(/'/g, "\\'")}')">
+          <button type="button" class="btn-pill btn-action-primary" @click=${() => window.ingestSingleUntracked(u.model_id, u.file_path)}>
             Auto-Ingest to DB
           </button>
         </div>
-        <div class="defect-detail text-accent">${escapeHtml(u.detail)}</div>
+        <div class="defect-detail text-accent">${u.detail}</div>
       </div>
-    `).join('');
+    `));
   }
 
-  container.innerHTML = html;
+  render(htmlParts, container);
 }
 
 function renderReconcileDiscrepancies(items) {
@@ -851,42 +842,42 @@ function renderReconcileDiscrepancies(items) {
   if (!container) return;
 
   if (!items || items.length === 0) {
-    container.innerHTML = `
+    render(html`
       <div class="results-placeholder text-accent">
         100% Integrity Confirmed: All audited models have valid directories, expected files, matching sizes, and uncorrupted archive checksums.
       </div>
-    `;
+    `, container);
     return;
   }
 
-  container.innerHTML = items.map(m => {
-    const issuesHtml = m.issues.map(iss => `
+  render(items.map(m => {
+    const issuesHtml = m.issues.map(iss => html`
       <div class="reconcile-issue-row">
         <div class="issue-top">
-          <span class="reconcile-defect-pill">${escapeHtml(iss.defect)}</span>
-          <span class="font-mono text-dim font-xs">${escapeHtml(iss.filename || 'Directory Defect')}</span>
+          <span class="reconcile-defect-pill">${iss.defect}</span>
+          <span class="font-mono text-dim font-xs">${iss.filename || 'Directory Defect'}</span>
         </div>
         <div class="defect-detail text-alert font-sm">
-          ${escapeHtml(iss.detail)}
+          ${iss.detail}
         </div>
         <div class="font-mono text-dim font-xs">
-          Expected: ${escapeHtml(iss.expected_path)}
+          Expected: ${iss.expected_path}
         </div>
       </div>
-    `).join('');
+    `);
 
-    return `
+    return html`
       <div class="card reconcile-card">
         <div class="reconcile-card-header">
           <div>
-            <div class="cell-clickable-title" onclick="window.openModelDetailModal(${m.model_id})">
-              ${escapeHtml(m.model_name)} <span class="font-mono text-dim font-xs">(#${m.model_id})</span>
+            <div class="cell-clickable-title" @click=${() => window.openModelDetailModal(m.model_id)}>
+              ${m.model_name} <span class="font-mono text-dim font-xs">(#${m.model_id})</span>
             </div>
             <div class="model-subtitle">
-              Creator: ${escapeHtml(m.creator_name)}
+              Creator: ${m.creator_name}
             </div>
           </div>
-          <button type="button" class="btn-pill btn-action-cancel" onclick="window.resetSingleReconcileModel(${m.model_id})">
+          <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.resetSingleReconcileModel(m.model_id)}>
             Reset for Retry
           </button>
         </div>
@@ -895,7 +886,7 @@ function renderReconcileDiscrepancies(items) {
         </div>
       </div>
     `;
-  }).join('');
+  }), container);
 }
 
 export async function resetSingleReconcileModel(modelId) {
@@ -1002,7 +993,7 @@ export async function ingestAllUntracked() {
 export async function triggerStagingSweep() {
   const container = document.getElementById('reconcile-results-container');
   if (container) {
-    container.innerHTML = '<div class="table-msg">Scanning local scratch staging directory (.work/in_flight & .work/staged)...</div>';
+    render(html`<div class="table-msg">Scanning local scratch staging directory (.work/in_flight & .work/staged)...</div>`, container);
   }
   try {
     const res = await fetchStagingGarbage();
@@ -1019,45 +1010,45 @@ function renderStagingGarbageResults(totalBytes, items) {
   if (!container) return;
 
   if (items.length === 0) {
-    container.innerHTML = `
+    render(html`
       <div class="results-placeholder text-accent">
         Staging Clean: Zero abandoned .part files or orphaned staged model folders found.
       </div>
-    `;
+    `, container);
     return;
   }
 
-  let html = `
+  const htmlParts = [html`
     <div class="orphan-header-row">
       <div>
         <span class="findings-title-alert">Staging Garbage Discovered (${items.length} items)</span>
         <span class="font-sm text-dim ml-2">Total Reclaimable: <strong>${formatBytes(totalBytes)}</strong></span>
       </div>
-      <button type="button" class="btn-pill btn-action-cancel" onclick="window.purgeAllStagingGarbage()">
+      <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.purgeAllStagingGarbage()}>
         Purge All Staging Garbage (${formatBytes(totalBytes)})
       </button>
     </div>
-  `;
+  `];
 
-  html += items.map(it => `
+  htmlParts.push(items.map(it => html`
     <div class="card reconcile-card card-orphan">
       <div class="reconcile-card-header">
         <div>
           <div class="model-title">
-            ${it.type === 'in_flight_part' ? 'In-Flight .part File' : 'Staged Model Folder'}: ${escapeHtml(it.name)}
+            ${it.type === 'in_flight_part' ? 'In-Flight .part File' : 'Staged Model Folder'}: ${it.name}
           </div>
-          <div class="font-mono text-dim path-text">${escapeHtml(it.path)}</div>
+          <div class="font-mono text-dim path-text">${it.path}</div>
         </div>
         <div class="footer-actions">
           <span class="font-mono text-dim font-sm">${formatBytes(it.size_bytes)}</span>
-          <button type="button" class="btn-pill btn-action-cancel" onclick="window.purgeSingleStagingGarbage('${escapeHtml(it.path).replace(/'/g, "\\'")}')">Purge</button>
+          <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.purgeSingleStagingGarbage(it.path)}>Purge</button>
         </div>
       </div>
-      <div class="defect-detail text-alert">${escapeHtml(it.reason)}</div>
+      <div class="defect-detail text-alert">${it.reason}</div>
     </div>
-  `).join('');
+  `));
 
-  container.innerHTML = html;
+  render(htmlParts, container);
 }
 
 export async function purgeSingleStagingGarbage(path) {
@@ -1091,7 +1082,7 @@ export async function purgeAllStagingGarbage() {
 export async function triggerPathDriftScan() {
   const container = document.getElementById('reconcile-results-container');
   if (container) {
-    container.innerHTML = '<div class="table-msg">Scanning for legacy naming schemes and path drift across vault...</div>';
+    render(html`<div class="table-msg">Scanning for legacy naming schemes and path drift across vault...</div>`, container);
   }
   try {
     const res = await fetchPathDrift();
@@ -1108,45 +1099,45 @@ function renderPathDriftResults(items) {
   if (!container) return;
 
   if (items.length === 0) {
-    container.innerHTML = `
+    render(html`
       <div class="results-placeholder text-accent">
         Zero Path Drift: All archived models conform to canonical naming standards.
       </div>
-    `;
+    `, container);
     return;
   }
 
-  let html = `
+  const htmlParts = [html`
     <div class="orphan-header-row">
       <div>
         <span class="findings-title-drift">Legacy Path Drift Detected (${items.length} models)</span>
         <div class="font-sm text-dim">Folders with brackets, unescaped whitespace, or obsolete creator paths.</div>
       </div>
-      <button type="button" class="btn-pill btn-action-primary" onclick="window.realignAllPaths()">
+      <button type="button" class="btn-pill btn-action-primary" @click=${() => window.realignAllPaths()}>
         Realign All Models (${items.length})
       </button>
     </div>
-  `;
+  `];
 
-  html += items.map(it => `
+  htmlParts.push(items.map(it => html`
     <div class="card reconcile-card card-drift">
       <div class="reconcile-card-header">
         <div>
-          <div class="cell-clickable-title" onclick="window.openModelDetailModal(${it.model_id})">
-            ${escapeHtml(it.model_name)} <span class="font-mono text-dim font-xs">(#${it.model_id})</span>
+          <div class="cell-clickable-title" @click=${() => window.openModelDetailModal(it.model_id)}>
+            ${it.model_name} <span class="font-mono text-dim font-xs">(#${it.model_id})</span>
           </div>
-          <div class="model-subtitle font-mono">${it.reasons.join(' &bull; ')}</div>
+          <div class="model-subtitle font-mono">${it.reasons.join(' \u2022 ')}</div>
         </div>
-        <button type="button" class="btn-pill btn-action-primary" onclick="window.realignSinglePath(${it.model_id})">Realign Path</button>
+        <button type="button" class="btn-pill btn-action-primary" @click=${() => window.realignSinglePath(it.model_id)}>Realign Path</button>
       </div>
       <div>
-        <div class="path-text-current font-mono"><strong>Current:</strong> ${escapeHtml(it.current_path)}</div>
-        <div class="path-text-canonical font-mono"><strong>Canonical:</strong> ${escapeHtml(it.canonical_path)}</div>
+        <div class="path-text-current font-mono"><strong>Current:</strong> ${it.current_path}</div>
+        <div class="path-text-canonical font-mono"><strong>Canonical:</strong> ${it.canonical_path}</div>
       </div>
     </div>
-  `).join('');
+  `));
 
-  container.innerHTML = html;
+  render(htmlParts, container);
 }
 
 export async function realignSinglePath(modelId) {
