@@ -22,3 +22,5 @@ Ideas found during migration. None are scheduled unless a step or the user asks 
 | E6 | Accessibility and responsive layout review | Neither has been assessed | Archeology section 9 |
 | E20 | Import channel for single files | Add a loose STL or archive from anywhere, such as a Google Drive download, into the catalog. These files get a SHA-256 so duplicates can be found. Linked libraries are not hashed | Key decoupling plan |
 | E21 | Export tool for moving off this Mac | Production stays on this Mac for now. If it moves, a tool should package the database, metadata, previews, secrets and settings, and rewrite stored paths for the new machine | User decision, 2026-10-31 |
+| E22 | Rename detection for linked libraries | Match a renamed folder to its inactive model by file names and sizes, and suggest linking them. It needs the user's confirmation. Until then a rename is a new model, and the old one goes inactive. |
+| E23 | Covers for archive-only linked models | The image worker renders loose STLs only. Extract the best mesh from the archive, as the on-demand renderer already can, so these models get a cover. |

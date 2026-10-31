@@ -38,7 +38,7 @@ CATEGORY_DIR_TOKENS = {
 }
 
 
-# More of a library than this going missing at once points at the mount, not at real deletions.
+# Nobody deletes a fifth of a library by hand. That many missing means a flaky mount, so hold it.
 MASS_MISSING_MIN = 10
 MASS_MISSING_SHARE = 0.2
 
@@ -61,7 +61,7 @@ EMPTY = "empty"
 
 
 class ScanReadError(RuntimeError):
-    """Storage could not be read. The scan stops, and nothing is concluded from the failed read."""
+    """A failed read proves nothing about the files, so the scan stops instead of guessing."""
 
 
 def _read_failed(error: OSError) -> None:
@@ -69,7 +69,7 @@ def _read_failed(error: OSError) -> None:
 
 
 def list_dirs(path: Path) -> list[Path]:
-    """Visible subfolders. A read error raises, so a mount drop never looks like an empty folder."""
+    # Not Path.iterdir in a try/except: a dropped mount must never read as an empty folder.
     try:
         with os.scandir(path) as entries:
             return sorted(
@@ -82,7 +82,7 @@ def list_dirs(path: Path) -> list[Path]:
 
 
 def walk_files(root: Path) -> Iterator[tuple[Path, int, int]]:
-    """Every visible file under a folder, with its size and modified time."""
+    # NOTE: rglob swallows OSError, which is how the old scan retagged models during a drop.
     for current, dirnames, filenames in os.walk(root, onerror=_read_failed):
         dirnames.sort()
         for name in sorted(filenames):
@@ -98,7 +98,7 @@ def walk_files(root: Path) -> Iterator[tuple[Path, int, int]]:
 
 
 def has_model_files(path: Path, loose_only: bool = False) -> bool:
-    """Stops at the first match, because listing a whole model over SMB is the slow part."""
+    # Bail on the first hit. Listing a full model over SMB is the slow part of a preview.
     wanted = (".stl",) if loose_only else (".stl", ".zip")
     for _, _, filenames in os.walk(path, onerror=_read_failed):
         if any(name.lower().endswith(wanted) and not name.startswith(".") for name in filenames):
@@ -111,6 +111,7 @@ def release_month_of(release_name: str) -> str:
     return match.group(1).replace("_", "-") if match else "Unassigned"
 
 
+# Library ID is in the key because two libraries can have the same folder name.
 def key_for(library_id: int, rel_path: str) -> str:
     return f"{library_id}/{rel_path}"
 
@@ -244,14 +245,14 @@ class ExternalLibraryIndexer:
         return conn.execute("SELECT * FROM external_libraries WHERE id = ? AND is_active = 1;", (library_id,)).fetchone()
 
     def _check_root(self, root: Path) -> list[Path]:
-        """Proves the mount is really there. An empty root is treated as an unmounted one."""
+        # An unmounted share can list as an empty folder, and that must not look like deleted models.
         releases = list_dirs(root)
         if not releases:
             raise ScanReadError(f"{root} has no folders, so the mount may be missing")
         return releases
 
     def _adopt_keyless_models(self, conn: sqlite3.Connection, library_id: int, root: Path) -> None:
-        """Gives rows from before keys existed their key, so they are matched and not added again."""
+        # Without a key these would show up as new and hit the duplicate path trigger.
         rows = conn.execute(
             "SELECT id, vault_path FROM models WHERE source = 'external' AND library_id = ? AND external_key IS NULL;",
             (library_id,),
@@ -264,7 +265,7 @@ class ExternalLibraryIndexer:
                     conn.execute("UPDATE models SET external_key = ? WHERE id = ?;", (key, row["id"]))
 
     def _open_run(self, conn: sqlite3.Connection, library_id: int, mode: str) -> int:
-        """Resumes an unfinished run of this mode, so finished work isn't repeated."""
+        # Reusing the row is what makes resume work: models stamped with this run ID get skipped.
         last = conn.execute(
             "SELECT id, status FROM library_scan_runs WHERE library_id = ? AND mode = ? ORDER BY id DESC LIMIT 1;",
             (library_id, mode),
@@ -302,7 +303,7 @@ class ExternalLibraryIndexer:
             """, (release_id, default_creator, release_month, model_count))
 
     def _refresh_library_totals(self, conn: sqlite3.Connection, library_id: int, full_scan: bool) -> None:
-        """Counted from the catalog. Only a finished full rescan may claim the library was scanned."""
+        # Stopped or partial runs used to stamp last_scanned_at and overwrite totals with partial counts.
         models, files, size = conn.execute("""
             SELECT COUNT(DISTINCT m.id), COUNT(df.file_id), COALESCE(SUM(df.actual_bytes), 0)
             FROM models m LEFT JOIN downloaded_files df ON df.model_id = m.id
@@ -326,7 +327,7 @@ class ExternalLibraryIndexer:
         category: str,
         run_id: int,
     ) -> tuple[int, bool]:
-        """Brings one model in line with its folder and writes only what changed."""
+        # Unchanged models write only the run stamp. Rewrites here hit the search triggers, so skip them.
         library_id = library["id"]
         default_creator = library["default_creator"] or library["name"]
         model_dir = root / rel_path
@@ -469,6 +470,7 @@ class ExternalLibraryIndexer:
                     conn, inactive_log.FILE, row["file_id"], row["filename"], inactive_log.LIBRARY_SCAN,
                     inactive_log.FILE_MISSING, f"Not found in {model_name}: {row['vault_path']}",
                 )
+                # FIXME: stays true on every rescan until the file returns, so models_changed reads high.
                 changed = True
         return changed
 
@@ -499,7 +501,7 @@ class ExternalLibraryIndexer:
         progress: Callable[[float, str], None] = lambda _pct, _lbl: None,
         is_cancelled: Callable[[], bool] = lambda: False,
     ) -> dict[str, Any]:
-        """Sorts each release's folders. Known folders stay as they are and are never reclassified."""
+        # Known folders win over the classifier. One new "32mm" folder can flip a release to a single model.
         known_rel = {key.split("/", 1)[1] for key in known_keys}
         release_dirs = self._check_root(root)
         releases: list[dict[str, Any]] = []
@@ -603,7 +605,6 @@ class ExternalLibraryIndexer:
         return {"success": True, "run_id": run_id, **totals}
 
     def approve_candidates(self, conn: sqlite3.Connection, library_id: int, skip_releases: list[str]) -> dict[str, int]:
-        """Approves what the preview proposed. Skipped releases stay out until a later approval."""
         marks = ",".join("?" * len(skip_releases))
         with conn:
             skipped = conn.execute(
@@ -627,7 +628,7 @@ class ExternalLibraryIndexer:
         log_cb: Callable[[str], None] | None = None,
         cancel_cb: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
-        """Adds approved folders one at a time, each committed alone, so stopping loses nothing."""
+        # Each folder commits alone, so a stop or crash loses at most the one in progress.
         progress = progress_cb or (lambda _pct, _lbl: None)
         log = log_cb or (lambda _: None)
         is_cancelled = cancel_cb or (lambda: False)
@@ -698,11 +699,7 @@ class ExternalLibraryIndexer:
         log_cb: Callable[[str], None] | None = None,
         cancel_cb: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
-        """Checks every known model against storage, skipping those this run already finished.
-
-        It never creates a model: new folders come in through a preview. A missing folder on a
-        healthy mount is flagged inactive. Too many at once is held for review, not applied.
-        """
+        # Never creates a model. New folders only come in through an approved preview.
         progress = progress_cb or (lambda _pct, _lbl: None)
         log = log_cb or (lambda _: None)
         is_cancelled = cancel_cb or (lambda: False)
@@ -792,7 +789,7 @@ class ExternalLibraryIndexer:
         self._refresh_library_totals(conn, library_id, full_scan)
 
     def scan_and_index_library(self, library_id: int, **callbacks: Any) -> dict[str, Any]:
-        """Preview, approve everything, add and rescan in one call, for scripts and tests."""
+        # Skips the human approval step, so keep this to scripts and tests.
         preview = self.preview_library(library_id, **callbacks)
         if not preview.get("success"):
             return preview

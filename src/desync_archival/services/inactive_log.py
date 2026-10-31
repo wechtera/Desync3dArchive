@@ -1,7 +1,6 @@
-"""One record of what went inactive or failed, from any process, for the Inactive tab.
+"""Backs the Inactive tab. Rows are never deleted: a returning item gets resolved_at instead.
 
-Rows are never deleted. An item that comes back is resolved, so its history stays visible. These
-functions don't commit, so the record lands in the same transaction as the change it describes.
+Nothing here commits, so a record lands in the same transaction as the change it describes.
 """
 
 import sqlite3
@@ -31,7 +30,7 @@ def record(
     conn: sqlite3.Connection, item_type: str, item_id: int, item_name: str | None,
     process: str, reason: str, detail: str | None = None,
 ) -> None:
-    """A repeat of an open record is ignored by a trigger, so reruns add nothing."""
+    # Safe to call on every rescan: a trigger drops repeats of an open row.
     conn.execute(
         "INSERT INTO inactive_log (item_type, item_id, item_name, process, reason, detail) VALUES (?, ?, ?, ?, ?, ?);",
         (item_type, item_id, item_name, process, reason, detail),
@@ -39,7 +38,6 @@ def record(
 
 
 def resolve(conn: sqlite3.Connection, item_type: str, item_id: int, reason: str | None = None) -> int:
-    """Closes an item's open records: one reason, or all of them."""
     sql = "UPDATE inactive_log SET resolved_at = CURRENT_TIMESTAMP WHERE item_type = ? AND item_id = ? AND resolved_at IS NULL"
     args: list[Any] = [item_type, item_id]
     if reason:

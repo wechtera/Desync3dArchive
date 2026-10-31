@@ -1,9 +1,6 @@
-"""Priority 2 for linked libraries: covers and archive peeks, worked through a queue.
+"""Linked library covers and archive peeks. Inventory comes first, so this runs behind it.
 
-Inventory is priority 1, so this waits while a library scan runs. It also waits while storage is
-offline, because a missing mount says nothing about the model. Failures are recorded and left for
-a retry from the UI, so a rescan never repeats them. The queue lives in the database, so the work
-picks up where it stopped after a restart.
+Failed jobs stay failed until someone hits retry. The old scan re-rendered them on every rescan.
 """
 
 import logging
@@ -19,6 +16,7 @@ from desync_archival.services.external_indexer import COVER, ExternalLibraryInde
 from desync_archival.services.logger import log_layer, logger
 from desync_archival.services.mesh_renderer import MeshRenderer
 
+# In app_settings, not on the worker, so a pause survives a restart.
 PAUSED_SETTING = "image_worker_paused"
 IDLE_SECONDS = 5.0
 
@@ -82,7 +80,7 @@ class ImageWorker:
         self._thread.start()
 
     def stop(self) -> None:
-        """A render in progress finishes first, within the renderer's own time limit."""
+        # NOTE: can't interrupt Blender. A render in progress runs out, capped at 120s by the renderer.
         self._stop.set()
         if self._thread:
             self._thread.join(timeout=10)
@@ -106,7 +104,6 @@ class ImageWorker:
         return state
 
     def run_once(self) -> str:
-        """Does at most one job and returns the worker's state."""
         with self._get_db() as conn:
             if is_paused(conn):
                 return self._set_state(PAUSED)
@@ -128,6 +125,7 @@ class ImageWorker:
             if not job:
                 return self._set_state(IDLE)
 
+            # Offline just means wait. It says nothing about the model, so the job stays pending.
             if not Path(job["library_path"]).is_dir():
                 return self._set_state(STORAGE_OFFLINE)
             if not job["is_active"]:
@@ -155,6 +153,7 @@ class ImageWorker:
         self._finish(conn, job, state, detail)
         return WORKING
 
+    # Asked after any failure, so a mount drop mid-job can't be recorded as a bad model.
     def _still_mounted(self, job: sqlite3.Row) -> bool:
         return Path(job["library_path"]).is_dir()
 
@@ -178,6 +177,7 @@ class ImageWorker:
                 if not self._still_mounted(job):
                     return self._set_state(STORAGE_OFFLINE)
                 best_stl = self.renderer.select_best_render_candidate(model_dir)
+                # TODO: E23, archive-only models could render from the archive.
                 if not best_stl:
                     return self._fail(conn, job, "no_source", inactive_log.NO_SOURCE, "No artwork and no loose STL")
                 if not self.renderer.is_available():

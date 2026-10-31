@@ -132,9 +132,14 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 1. Done 2026-10-31: the user signed in to MMF and pasted fresh cookies. Paste cookies as raw JSON, not into the six single fields.
 2. To reach production from other machines: run `scripts/production.sh python -m desync_archival.dbtool set-password`, set `DESYNC_HOST=0.0.0.0`, `DESYNC_ALLOWED_HOSTS` and the TLS paths in `production.env`, and restart.
-3. Finish stage 6 of `CUTOVER.md`: Loot Studios rescan, scheduled backup and a test restore. The real scrape, ingest, download and stash export passed on 2026-10-31.
+3. Finish stage 6 of `CUTOVER.md`: scheduled backup and a test restore. Do not scan Loot Studios with the old scan: the new one is on `feature/library-scan` in the worktree `../DESYNC_scan_work`, and `LIBRARY_SCAN_PLAN.md` has the deploy steps. The real scrape, ingest, download and stash export passed on 2026-10-31.
 4. Merge `migration/09-cutover` when the user approves. Production runs from this branch, so do not switch this checkout to `main` first.
 5. After the user accepts: stage 7, blank the secrets and rotate them. Ask separately before removing anything in `../scrapepage`.
+
+**After merging and validating, in this order:**
+
+1. **Repository cleanup.** Git keeps only the code and a `README.md` for setup. `docs/` stays on disk for local development and leaves git, through `git rm --cached` and `.gitignore`. Ask before rewriting history. There is no remote today, so nothing has been published.
+2. **Comment pass.** Comment the rest of the code to the rule in `CLAUDE.md`. The library scan code already follows it.
 
 Decisions already made: production stays on this Mac (E21 covers moving later), and production backups go to `test_stl_shelf/DESYNC_Backups` on the same disk for now. The user knows that does not protect against losing the drive.
 

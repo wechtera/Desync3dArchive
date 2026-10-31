@@ -98,9 +98,9 @@ Production settings live in `~/.config/desync-archival/production.env`, and `scr
 
 ### 6. After cutover
 
-**Done on 2026-10-31:** real scrape (4,869 models), ingest (1 new model, internal ID 2000000025), download (1 job, 11 files), and stash export (49 files). **Still to do:** the Loot Studios rescan, a scheduled backup, and a test restore.
+**Done on 2026-10-31:** real scrape (4,869 models), ingest (1 new model, internal ID 2000000025), download (1 job, 11 files), and stash export (49 files). **Still to do:** a scheduled backup, a test restore, and the Loot Studios scan.
 
-Rescan Loot Studios, because its totals are blank from the Step 3 indexer bug. Confirm the scheduled backup runs, restore the first one to a new path, and do a real scrape, ingest, download and stash export before sign-off.
+Scan Loot Studios with the new preview flow once `LIBRARY_SCAN_PLAN.md` is deployed, because its totals are blank from the Step 3 indexer bug. Confirm the scheduled backup runs, restore the first one to a new path, and do a real scrape, ingest, download and stash export before sign-off.
 
 ### 7. After the user accepts: separate **Approval**
 

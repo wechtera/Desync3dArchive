@@ -67,6 +67,16 @@ The server does not start by itself after a reboot, so run `start`. Stop the dev
 
 For any other production command, use `scripts/production.sh`, for example `scripts/production.sh python -m desync_archival.dbtool status`.
 
+### Linked libraries
+
+Linked libraries such as Loot Studios are read in place and never changed. In **Settings > Libraries**:
+
+- **Preview New Folders** shows what would be added, and adds nothing. Run it after adding a folder to the library.
+- **Approve and Add** brings in the approved folders. It can stop and resume, and untick a release to leave it out.
+- **Full Rescan** checks known models against storage. It never adds new folders.
+
+Images and archive peeks then run in the background, with pause and resume. **Settings > Inactive** lists missing folders, unlinked models, unavailable models and failed renders.
+
 ## Running
 
 ```bash
