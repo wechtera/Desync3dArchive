@@ -17,6 +17,7 @@ import httpx
 
 from desync_archival import external
 from desync_archival import settings as app_config
+from desync_archival.services import catalog_levels
 from desync_archival.services.logger import log_layer
 
 # Formats recognized as 3D printable models or slicer projects
@@ -667,50 +668,69 @@ class ArchivePeeker:
         submodels: List[DiscoveredSubmodel],
         all_clean_members: List[ArchiveMemberInfo]
     ):
+        # Updates in place. Stash items and artifacts cascade from these rows, so rewriting them with
+        # new IDs used to delete whatever pointed into a re-peeked archive.
         with self._get_db() as conn:
+            # Off by default on this connection, which left artifacts behind for deleted entries.
+            conn.execute("PRAGMA foreign_keys = ON;")
             with conn:
-                old_sub_ids = [r[0] for r in conn.execute(
-                    "SELECT id FROM file_archive_submodels WHERE file_id = ?;", (file_id,)
-                ).fetchall()]
-
-                if old_sub_ids:
-                    placeholders = ",".join("?" for _ in old_sub_ids)
-                    conn.execute(f"DELETE FROM file_archive_members WHERE submodel_id IN ({placeholders});", old_sub_ids)
-                    conn.execute("DELETE FROM file_archive_submodels WHERE file_id = ?;", (file_id,))
-                conn.execute("DELETE FROM file_archive_members WHERE file_id = ?;", (file_id,))
+                old_subs = {
+                    (r[1], r[2]): r[0] for r in conn.execute(
+                        "SELECT id, name, relative_dir FROM file_archive_submodels WHERE file_id = ?;", (file_id,)
+                    ).fetchall()
+                }
+                old_members = dict(conn.execute(
+                    "SELECT internal_path, id FROM file_archive_members WHERE file_id = ?;", (file_id,)
+                ).fetchall())
 
                 member_submodel_map: Dict[str, int] = {}
                 for sm in submodels:
-                    cur = conn.execute("""
-                        INSERT INTO file_archive_submodels (
-                            file_id, model_id, name, relative_dir, preview_image_path,
-                            total_files, total_bytes, has_presupported, has_unsupported,
-                            has_slicer_project, formats_json, scales_json, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
-                    """, (
-                        file_id, model_id, sm.name, sm.relative_dir, sm.preview_image_path,
-                        len(sm.members), sm.total_bytes, sm.has_presupported, sm.has_unsupported,
-                        sm.has_slicer_project, json.dumps(sorted(list(sm.formats))), json.dumps(sorted(list(sm.scales)))
-                    ))
-                    submodel_id = cur.lastrowid
+                    values = (
+                        sm.preview_image_path, len(sm.members), sm.total_bytes, sm.has_presupported, sm.has_unsupported,
+                        sm.has_slicer_project, json.dumps(sorted(list(sm.formats))), json.dumps(sorted(list(sm.scales))),
+                    )
+                    submodel_id = old_subs.pop((sm.name, sm.relative_dir), None)
+                    if submodel_id is not None:
+                        conn.execute("""
+                            UPDATE file_archive_submodels SET preview_image_path = ?, total_files = ?, total_bytes = ?,
+                                has_presupported = ?, has_unsupported = ?, has_slicer_project = ?, formats_json = ?,
+                                scales_json = ?
+                            WHERE id = ?;
+                        """, (*values, submodel_id))
+                    else:
+                        submodel_id = conn.execute("""
+                            INSERT INTO file_archive_submodels (
+                                file_id, model_id, name, relative_dir, preview_image_path,
+                                total_files, total_bytes, has_presupported, has_unsupported,
+                                has_slicer_project, formats_json, scales_json, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
+                        """, (file_id, model_id, sm.name, sm.relative_dir, *values)).lastrowid
                     for m in sm.members:
                         member_submodel_map[m.internal_path] = submodel_id
 
-                all_rows = [
-                    (
-                        member_submodel_map.get(m.internal_path),
-                        file_id,
-                        m.internal_path,
-                        m.filename,
-                        m.size_bytes,
-                        m.is_supported,
-                        m.file_extension
-                    )
-                    for m in all_clean_members
-                ]
-                conn.executemany("""
-                    INSERT INTO file_archive_members (
-                        submodel_id, file_id, internal_path, filename, size_bytes, is_supported, file_extension
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?);
-                """, all_rows)
+                for m in all_clean_members:
+                    member_id = old_members.pop(m.internal_path, None)
+                    row = (member_submodel_map.get(m.internal_path), m.filename, m.size_bytes, m.is_supported, m.file_extension)
+                    if member_id is not None:
+                        conn.execute("""
+                            UPDATE file_archive_members
+                            SET submodel_id = ?, filename = ?, size_bytes = ?, is_supported = ?, file_extension = ?
+                            WHERE id = ?;
+                        """, (*row, member_id))
+                    else:
+                        conn.execute("""
+                            INSERT INTO file_archive_members (
+                                submodel_id, filename, size_bytes, is_supported, file_extension, file_id, internal_path
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                        """, (*row, file_id, m.internal_path))
+
+                # Whatever is left is really gone from the archive.
+                conn.executemany("DELETE FROM file_archive_members WHERE id = ?;", [(i,) for i in old_members.values()])
+                conn.executemany("DELETE FROM file_archive_submodels WHERE id = ?;", [(i,) for i in old_subs.values()])
+
+            # A failure here must not undo a good peek. The next build picks these entries up.
+            try:
+                catalog_levels.build_archive_models(conn, model_id)
+            except sqlite3.Error as e:
+                log_layer("archive", logging.ERROR, f"Catalog levels not updated for File #{file_id}: {e}")
         log_layer("sql", logging.DEBUG, f"Persisted {len(submodels)} submodels and {len(all_clean_members)} archive members for File #{file_id}")

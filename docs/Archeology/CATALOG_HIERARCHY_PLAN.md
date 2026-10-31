@@ -7,7 +7,7 @@
 - 4,869 MMF rows, of which 79 have been downloaded and peeked. The other 4,790 have no known contents.
 - 173 peeked archives, 498 sub-models, 3,883 stored archive entries, 3,215 of them printable. Every peeked archive has its entries stored.
 - 335 sub-models have rendered previews.
-- 8 tables point at `models`. Stash items point at sub-models and archive entries with `ON DELETE CASCADE`, so deleting peek rows silently deletes 2 of the 3 stash items.
+- 8 tables point at `models`. Stash items point at sub-models and archive entries with `ON DELETE CASCADE`, but the peeker's connection doesn't enforce foreign keys, so its old delete-and-rewrite left those items pointing at nothing. A peek now updates rows in place.
 
 ## Decision: rebuild from stored data, don't wipe
 

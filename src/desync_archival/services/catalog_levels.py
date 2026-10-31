@@ -93,8 +93,11 @@ def _store_model(
     return model_id, True
 
 
-def build_archive_models(conn: sqlite3.Connection) -> dict[str, Any]:
-    """Runs again safely: a collection that already has artifacts is left alone."""
+def build_archive_models(conn: sqlite3.Connection, only_collection: int | None = None) -> dict[str, Any]:
+    """Adds whatever a peek stored that has no artifact yet, so it can run any number of times.
+
+    Learning always reads every archive, because one archive is too small to learn from.
+    """
     conn.row_factory = sqlite3.Row
     rows = conn.execute("""
         SELECT a.id, a.file_id, a.internal_path, a.filename, a.size_bytes, f.model_id AS collection_id
@@ -106,19 +109,15 @@ def build_archive_models(conn: sqlite3.Connection) -> dict[str, Any]:
     variants |= model_resolver.PRINT_WORDS
     pieces = model_resolver.learn_piece_words(paths, variants)
 
+    stored = {r[0] for r in conn.execute("SELECT archive_member_id FROM model_artifacts WHERE archive_member_id IS NOT NULL;")}
     by_collection: dict[int, dict[int, list[sqlite3.Row]]] = defaultdict(lambda: defaultdict(list))
     for row in printable:
-        by_collection[row["collection_id"]][row["file_id"]].append(row)
-    done = {r[0] for r in conn.execute("""
-        SELECT DISTINCT c.collection_id FROM catalog_model_collections c
-        JOIN model_artifacts a ON a.catalog_model_id = c.catalog_model_id;
-    """).fetchall()}
+        if row["id"] not in stored and only_collection in (None, row["collection_id"]):
+            by_collection[row["collection_id"]][row["file_id"]].append(row)
 
     known = _known_signatures(conn)
     summary = {"collections": 0, "models": 0, "shared": 0, "groups": 0, "artifacts": 0}
     for collection_id, archives in by_collection.items():
-        if collection_id in done:
-            continue
         placeholder = conn.execute(
             "SELECT state FROM catalog_models WHERE id = ?;", (collection_id,)
         ).fetchone()
