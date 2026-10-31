@@ -130,9 +130,9 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 **Production cut over on 2026-10-31 and is running from `~/DESYNC_Data` at `http://127.0.0.1:8080`,** on code from `migration/09-cutover`. Use `scripts/server.sh start|stop|restart|status` for the server, and `scripts/production.sh` for other production commands. Both read `~/.config/desync-archival/production.env`. The pre-migration backup is `DESYNC_Backups/library-20261031-131839-482898.db`. `../scrapepage` is unchanged and remains the rollback copy.
 
-1. The user signs in to MMF again. The stored token expired on 2026-10-30.
+1. Done 2026-10-31: the user signed in to MMF and pasted fresh cookies. Paste cookies as raw JSON, not into the six single fields.
 2. To reach production from other machines: run `scripts/production.sh python -m desync_archival.dbtool set-password`, set `DESYNC_HOST=0.0.0.0`, `DESYNC_ALLOWED_HOSTS` and the TLS paths in `production.env`, and restart.
-3. Finish stage 6 of `CUTOVER.md`: Loot Studios rescan, scheduled backup and a test restore, then a real scrape, ingest, download and stash export.
+3. Finish stage 6 of `CUTOVER.md`: Loot Studios rescan, scheduled backup and a test restore. The real scrape, ingest, download and stash export passed on 2026-10-31.
 4. Merge `migration/09-cutover` when the user approves. Production runs from this branch, so do not switch this checkout to `main` first.
 5. After the user accepts: stage 7, blank the secrets and rotate them. Ask separately before removing anything in `../scrapepage`.
 

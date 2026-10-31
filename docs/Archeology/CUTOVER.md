@@ -1,6 +1,6 @@
 # Cutover runbook
 
-**Status:** Stages 1 to 5 ran on 2026-10-31 and passed. Production runs from `~/DESYNC_Data`. Stage 6 is next, then stage 7 after the user accepts. The pre-migration backup is `DESYNC_Backups/library-20261031-131839-482898.db`.
+**Status:** Stages 1 to 5 ran on 2026-10-31 and passed. Production runs from `~/DESYNC_Data`. Stage 6 is partly done, then stage 7 after the user accepts. The pre-migration backup is `DESYNC_Backups/library-20261031-131839-482898.db`.
 
 **Rule:** a small sample goes first and is inspected before the rest. Rollback is tested before anything touches production.
 
@@ -97,6 +97,8 @@ Production settings live in `~/.config/desync-archival/production.env`, and `scr
 10. Start the new app with `scripts/production.sh python -m desync_archival.api.server`. Check the catalog, a stash, and a model on each storage tier.
 
 ### 6. After cutover
+
+**Done on 2026-10-31:** real scrape (4,869 models), ingest (1 new model, internal ID 2000000025), download (1 job, 11 files), and stash export (49 files). **Still to do:** the Loot Studios rescan, a scheduled backup, and a test restore.
 
 Rescan Loot Studios, because its totals are blank from the Step 3 indexer bug. Confirm the scheduled backup runs, restore the first one to a new path, and do a real scrape, ingest, download and stash export before sign-off.
 
