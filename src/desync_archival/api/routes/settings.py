@@ -162,6 +162,9 @@ def _merge_cookies(existing_json: str, updates: dict[str, str]) -> str:
         match = next((c for c in cookies if str(c.get("name", "")).lower() == name.lower()), None)
         if match:
             match["value"] = value
+            # The old expiry belongs to the old value. Kept, it can make the scraper drop a fresh cookie.
+            match.pop("expirationDate", None)
+            match.pop("expires", None)
         else:
             cookies.append({
                 "domain": domain, "name": name, "path": "/", "value": value,
@@ -228,6 +231,8 @@ def handle_post_settings(
 
     # Single fields apply on top of the list, including one just pasted as JSON.
     single_cookies = {key: str(data[key]) for key in auth_service.COOKIE_FIELDS if data.get(key)}
+    if len(set(single_cookies.values())) < len(single_cookies):
+        return {"error": "Two cookie fields hold the same value. Each cookie has its own value, so nothing was saved."}, 400
     if single_cookies:
         base = data.get("cookies_json") or auth_service.get_setting(conn, "cookies_json")
         data["cookies_json"] = _merge_cookies(base, single_cookies)

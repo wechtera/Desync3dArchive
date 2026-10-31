@@ -135,6 +135,19 @@ class V2SecretExposureTests(AppCase):
         cookies = {c["name"]: c["value"] for c in json.loads(self.setting("cookies_json"))}
         self.assertEqual(cookies, {"cf_clearance": "fresh-cf", "other": "keep"})
 
+    def test_a_replaced_cookie_loses_its_old_expiry(self):
+        existing = json.dumps([{"name": "__cf_bm", "value": "old", "expirationDate": 1, "expires": 1}, {"name": "x", "expires": 2}])
+        merged = {c["name"]: c for c in json.loads(_merge_cookies(existing, {"cookie_cf_bm": "new"}))}
+        self.assertEqual(merged["__cf_bm"], {"name": "__cf_bm", "value": "new"})
+        self.assertEqual(merged["x"]["expires"], 2)
+
+    def test_the_same_value_in_two_cookie_fields_is_refused(self):
+        before = self.setting("cookies_json")
+        response = self.client.post("/api/settings", json={"cookie_cf_clearance": "same", "cookie_phpsessid": "same"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("same value", response.json()["error"])
+        self.assertEqual(self.setting("cookies_json"), before)
+
     def test_merged_cookies_are_secure_with_the_right_domain(self):
         merged = json.loads(_merge_cookies("", {"cookie_rememberme": "x"}))[0]
         self.assertEqual((merged["name"], merged["domain"]), ("REMEMBERME", "www.myminifactory.com"))
