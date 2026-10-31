@@ -185,7 +185,7 @@ def sample_model_ids(db_path: Path) -> list[int]:
             UNION
             SELECT id FROM (SELECT id FROM models ORDER BY id LIMIT ?)
             UNION
-            SELECT id FROM (SELECT id FROM models WHERE source = 'external' ORDER BY id LIMIT 5)
+            SELECT id FROM models WHERE source = 'external'
             """,
             (SAMPLE_SIZE, SAMPLE_SIZE),
         ).fetchall()

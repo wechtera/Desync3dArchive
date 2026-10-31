@@ -90,6 +90,7 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 - **Frontend rules:** render with `template.js`, never `innerHTML`. Bind events with `@click` in templates and `data-click` in `index.html`, because the CSP blocks inline handlers. Pass API URLs through `safeUrl`. A local variable must never be named `html`.
 - **Only the Client ID is needed to sign in,** because the login page requires it. Session cookies are still required for `scrape.js`, which has no token path.
 - **Do not disguise requests to MMF.** A probe that varied user agents was blocked as bot-check circumvention. If MMF ever refuses the app, surface that to the user.
+- **Never copy from the NAS into dev.** External models show their cached renders from `previews/`. `build_dev_data.py` copies those for every external model, and mesh files stay on the NAS.
 - **Do not run `rar` or bypass Gatekeeper.** macOS blocks that unverified binary and prompts the user. The app only needs `unrar`.
 - **The scraper stays.** MMF's API has no library or purchases endpoint.
 - **The app never migrates its own database.** It refuses to start and names the command. On production, `dbtool migrate` also needs `--confirm-production`.
