@@ -166,6 +166,27 @@ test.describe('tasks', () => {
     await page.goto('/#settings');
   }
 
+  test('the scrape dialog shows a scrape that failed quickly', async ({ page }) => {
+    const label = 'MyMiniFactory asked for a login';
+    let started = false;
+    await page.route('**/api/scraper/start*', (route) => { started = true; return route.fulfill({ json: { task_id: 9 } }); });
+    await page.route('**/api/tasks/status*', (route) => route.fulfill({
+      json: {
+        active_task: null,
+        recent_tasks: started ? [task({ id: 9, status: 'failed', progress_pct: 5, progress_label: label, log_output: 'login page' })] : [],
+      },
+    }));
+    await page.goto('/#downloads');
+    await page.evaluate(() => window.openModal('modal-scraper'));
+    await page.locator('#btn-trigger-scrape').click();
+
+    await expect(page.locator('#scrape-modal-status')).toHaveText('FAILED');
+    await expect(page.locator('#scrape-modal-summary')).toHaveText(label);
+    await expect(page.locator('#scrape-modal-log')).toHaveText('login page');
+    await expect(page.locator('#btn-trigger-scrape')).toBeEnabled();
+    await expect(page.locator('#btn-trigger-scrape')).toHaveText('Start Library Scrape');
+  });
+
   test('history lists tasks, with hostile labels as text', async ({ page }) => {
     await open(page, { active_task: null, recent_tasks: [task({}), task({ id: 6, task_type: 'metadata_ingest', status: 'failed', progress_label: HOSTILE })] });
     const rows = page.locator('#task-history-tbody tr');

@@ -11,11 +11,43 @@ import {
 import { formatLocalDateTime } from '../utils.js';
 import { html, render } from '../template.js';
 
+// The scrape the dialog launched, until its result has been shown.
+let watchedScrapeId = null;
+
+function showFinishedScrape(active, recents) {
+  if (watchedScrapeId === null || (active && active.id === watchedScrapeId)) return;
+  const task = recents.find(t => t.id === watchedScrapeId);
+  if (!task || task.status === 'running') return;
+  watchedScrapeId = null;
+
+  const statusEl = document.getElementById('scrape-modal-status');
+  const summaryEl = document.getElementById('scrape-modal-summary');
+  const progressEl = document.getElementById('scrape-modal-progress');
+  const logEl = document.getElementById('scrape-modal-log');
+  const triggerBtn = document.getElementById('btn-trigger-scrape');
+
+  if (statusEl) {
+    statusEl.textContent = task.status.toUpperCase();
+    statusEl.className = `status-badge ${getStatusBadgeClass(task.status)}`;
+  }
+  if (summaryEl) summaryEl.textContent = task.progress_label || `Scrape ${task.status}.`;
+  if (progressEl) progressEl.style.width = `${task.progress_pct || 0}%`;
+  if (logEl) {
+    logEl.textContent = task.log_output || '';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  if (triggerBtn) {
+    triggerBtn.disabled = false;
+    triggerBtn.textContent = 'Start Library Scrape';
+  }
+}
+
 export async function renderTasksView() {
   try {
     const data = await fetchTasksStatus();
     const active = data.active_task;
     const recents = data.recent_tasks || [];
+    showFinishedScrape(active, recents);
 
     const statusBadge = document.getElementById('task-status-badge');
     const typeBadge = document.getElementById('task-type-badge');
@@ -157,6 +189,7 @@ export async function triggerLibraryScrape() {
 
   try {
     const res = await startScraper();
+    watchedScrapeId = res.task_id;
     if (statusEl) {
       statusEl.textContent = 'RUNNING';
       statusEl.className = 'status-badge status-queued';
