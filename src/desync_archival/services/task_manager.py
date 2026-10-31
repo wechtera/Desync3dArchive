@@ -18,7 +18,8 @@ import logging
 import os
 from pathlib import Path
 from desync_archival import settings as app_config
-from desync_archival.services import auth_service
+from desync_archival.services import auth_service, jobs
+from desync_archival.services.analytics import run_startup_analytics
 import re
 import shutil
 import sqlite3
@@ -26,6 +27,7 @@ import subprocess
 import sys
 import threading
 import traceback
+from collections.abc import Callable
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -44,6 +46,19 @@ KNOWN_TOP_LEVEL_KEYS = {
     "license", "archive_download_url", "is_liked", "user_collections",
     "is_saved", "price", "purchase_url", "is_bought",
 }
+
+
+def parse_cookies(text: str) -> Dict[str, str]:
+    """Reads a Cookie-Editor list or a name-value object into a name-value dict."""
+    try:
+        parsed = json.loads(text) if text else {}
+    except ValueError:
+        return {}
+    if isinstance(parsed, list):
+        return {c["name"]: str(c["value"]) for c in parsed if isinstance(c, dict) and "name" in c and "value" in c}
+    if isinstance(parsed, dict):
+        return {str(k): str(v) for k, v in parsed.items()}
+    return {}
 
 
 def sanitize_segment(name: str) -> str:
@@ -306,6 +321,42 @@ class TaskManager:
             results.append(item)
         return results
 
+    def _rebuild_releases(self, task_id: int) -> None:
+        """Ingest changes the catalog, so releases are rebuilt. A failure here keeps the ingest result."""
+        try:
+            with self._get_db() as conn:
+                run_startup_analytics(conn)
+            self._append_log(task_id, "Monthly release groupings rebuilt.")
+        except Exception:
+            logger.exception("Release rebuild failed after ingest")
+            self._append_log(task_id, "Release rebuild failed. See the application log.")
+
+    def _spawn(self, task_id: int, task_type: str, target: Callable, args: tuple) -> None:
+        """The one place background jobs start, with a time limit and a guard against crashes."""
+        timer = threading.Timer(jobs.time_limit(task_type), self._on_time_limit, args=(task_id, task_type))
+        timer.daemon = True
+
+        def guarded() -> None:
+            try:
+                target(*args)
+            except Exception:
+                logger.exception(f"Task #{task_id} ({task_type}) crashed")
+                self._finalize_task(task_id, jobs.FAILED, "Task crashed. See the application log.", {})
+                with self._lock:
+                    self.active_task_id = None
+            finally:
+                timer.cancel()
+
+        timer.start()
+        threading.Thread(target=guarded, daemon=True).start()
+
+    def _on_time_limit(self, task_id: int, task_type: str) -> None:
+        if self.active_task_id != task_id:
+            return
+        logger.error(f"Task #{task_id} ({task_type}) passed its time limit and is being cancelled")
+        self._append_log(task_id, "Time limit reached. Cancelling.")
+        self.cancel_task(task_id)
+
     def start_task(self, task_type: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Dispatches an arbitrary pipeline task asynchronously."""
         with self._lock:
@@ -338,24 +389,19 @@ class TaskManager:
 
         log_layer("sql", logging.INFO, f"Dispatched background task #{task_id} (Type: {task_type})")
 
-        if task_type == "vault_reconcile":
-            t = threading.Thread(target=self._run_reconcile_worker, args=(task_id, task_params), daemon=True)
-            t.start()
-        elif task_type == "archive_peek_backfill":
-            t = threading.Thread(target=self._run_archive_peek_worker, args=(task_id, task_params), daemon=True)
-            t.start()
-        elif task_type == "library_scrape":
-            t = threading.Thread(target=self._run_scrape_worker, args=(task_id,), daemon=True)
-            t.start()
-        elif task_type == "stash_export":
-            t = threading.Thread(target=self._run_stash_export_worker, args=(task_id, task_params), daemon=True)
-            t.start()
-        elif task_type == "external_library_reconcile":
-            t = threading.Thread(target=self._run_external_indexer_worker, args=(task_id, task_params), daemon=True)
-            t.start()
-        else:
+        workers = {
+            "vault_reconcile": (self._run_reconcile_worker, (task_id, task_params)),
+            "archive_peek_backfill": (self._run_archive_peek_worker, (task_id, task_params)),
+            "library_scrape": (self._run_scrape_worker, (task_id,)),
+            "stash_export": (self._run_stash_export_worker, (task_id, task_params)),
+            "external_library_reconcile": (self._run_external_indexer_worker, (task_id, task_params)),
+        }
+        if task_type not in workers:
             self._finalize_task(task_id, "failed", f"Unsupported task type: {task_type}", {})
             return {"success": False, "error": f"Unknown task_type '{task_type}'"}
+
+        target, args = workers[task_type]
+        self._spawn(task_id, task_type, target, args)
 
         return {"success": True, "task_id": task_id, "task_type": task_type}
 
@@ -494,7 +540,7 @@ class TaskManager:
     def count_clearable_tasks(self) -> int:
         with self._get_db() as conn:
             return conn.execute(
-                "SELECT count(*) FROM pipeline_tasks WHERE status IN ('completed', 'failed', 'cancelled');"
+                "SELECT count(*) FROM pipeline_tasks WHERE status IN ('completed', 'failed', 'cancelled', 'interrupted');"
             ).fetchone()[0]
 
     def clear_task_history(self) -> int:
@@ -502,7 +548,7 @@ class TaskManager:
             with conn:
                 cursor = conn.execute("""
                     DELETE FROM pipeline_tasks
-                    WHERE status IN ('completed', 'failed', 'cancelled');
+                    WHERE status IN ('completed', 'failed', 'cancelled', 'interrupted');
                 """)
                 return cursor.rowcount
 
@@ -721,12 +767,11 @@ class TaskManager:
             self.active_task_id = task_id
             self._cancel_requested = False
 
-        thread = threading.Thread(
-            target=self._run_ingest_worker,
-            args=(task_id, pending_ids, skipped_count, source_label, len(clean_ids)),
-            daemon=True,
+        assert task_id is not None
+        self._spawn(
+            task_id, "metadata_ingest", self._run_ingest_worker,
+            (task_id, pending_ids, skipped_count, source_label, len(clean_ids)),
         )
-        thread.start()
 
         return {
             "success": True,
@@ -777,35 +822,9 @@ class TaskManager:
             "Referer": "https://www.myminifactory.com/library",
         }
 
-        cookies_dict = {}
-        cookies_json_val = self._get_setting("cookies_json", "").strip()
-        if cookies_json_val:
-            try:
-                parsed = json.loads(cookies_json_val)
-                if isinstance(parsed, list):
-                    cookies_dict = {
-                        c["name"]: str(c["value"])
-                        for c in parsed
-                        if isinstance(c, dict) and "name" in c and "value" in c
-                    }
-                elif isinstance(parsed, dict):
-                    cookies_dict = {str(k): str(v) for k, v in parsed.items()}
-            except Exception:
-                pass
-
+        cookies_dict = parse_cookies(self._get_setting("cookies_json", "").strip())
         if not cookies_dict and (self.root_dir / "cookies.json").exists():
-            try:
-                raw = json.loads((self.root_dir / "cookies.json").read_text(encoding="utf-8"))
-                if isinstance(raw, list):
-                    cookies_dict = {
-                        c["name"]: str(c["value"])
-                        for c in raw
-                        if isinstance(c, dict) and "name" in c and "value" in c
-                    }
-                elif isinstance(parsed, dict):
-                    cookies_dict = {str(k): str(v) for k, v in raw.items()}
-            except Exception:
-                pass
+            cookies_dict = parse_cookies((self.root_dir / "cookies.json").read_text(encoding="utf-8"))
 
         auth_token = auth_service.refresh_tokens(self.db_path).strip()
         active_headers = dict(base_headers)
@@ -1060,6 +1079,7 @@ class TaskManager:
                 task_id,
                 f"Ingestion finished! Ingested {ingested_count} models, {tombstone_count} unavailable (tombstoned), {failed_count} failed, {skipped_count} active skipped.",
             )
+            self._rebuild_releases(task_id)
             self._finalize_task(
                 task_id,
                 "completed",

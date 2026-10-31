@@ -22,7 +22,7 @@
     "src/desync_archival/services/reconciler.py": 77,
     "src/desync_archival/services/stash_exporter.py": 40,
     "src/desync_archival/services/stash_service.py": 45,
-    "src/desync_archival/services/task_manager.py": 78,
+    "src/desync_archival/services/task_manager.py": 77,
     "tests/test_analytics.py": 3,
     "tests/test_archive_peeker.py": 3,
     "tests/test_downloader.py": 7,

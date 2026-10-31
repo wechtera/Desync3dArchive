@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from desync_archival import migrations
 from desync_archival import settings as app_config
+from desync_archival.services import jobs
 from desync_archival.services.db import get_db_connection, seed_default_settings
 from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
 from desync_archival.services.logger import log_context, logger
@@ -236,6 +237,7 @@ def start_managers() -> None:
         migrations.require_current(conn)
         seed_default_settings(conn)
         app_config.check_stored_paths(conn)
+        jobs.recover_interrupted(conn)
     finally:
         conn.close()
 

@@ -397,6 +397,7 @@ function getStatusBadgeClass(status) {
       return 'status-queued';
     case 'failed':
       return 'status-failed';
+    case 'interrupted':
     case 'cancelled':
       return 'status-partial';
     default:
