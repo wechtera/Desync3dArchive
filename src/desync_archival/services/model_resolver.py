@@ -282,7 +282,7 @@ def learn_piece_words(paths: list[str], variants: set[str]) -> set[str]:
         words = [w.lower() for w in _stem_words(path, variants)]
         if len(words) > 1:
             names[words[-1]].add(" ".join(words[:-1]))
-    return PIECE_WORDS | {w for w, seen in names.items() if len(seen) >= PIECE_MIN_NAMES and not POSE.match(w)}
+    return set(PIECE_WORDS) | {w for w, seen in names.items() if len(seen) >= PIECE_MIN_NAMES and not POSE.match(w)}
 
 
 def resolve_files(paths: list[str], variants: set[str], pieces: set[str] | None = None) -> list[ResolvedModel]:
