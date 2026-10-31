@@ -4,7 +4,7 @@
  * worker tuning, diagnostic logging, log pruning, and MyMiniFactory authentication.
  */
 
-import { formatBytes, escapeHtml } from '../utils.js';
+import { formatBytes, escapeHtml, parseServerTime } from '../utils.js';
 import {
   fetchExternalLibraries,
   addExternalLibrary,
@@ -267,7 +267,7 @@ export async function loadExternalLibraries() {
         <tbody>
           ${libs.map(lib => {
             const lastScan = lib.last_scanned_at
-              ? new Date(lib.last_scanned_at).toLocaleString()
+              ? parseServerTime(lib.last_scanned_at)?.toLocaleString() || '-'
               : '<span class="text-dim">Never Scanned</span>';
             const existsBadge = lib.exists
               ? ''

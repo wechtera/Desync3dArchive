@@ -101,6 +101,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 - Session cookies: required by `scrape.js`, which has no token path. Ingest and downloads send them too, as a fallback.
 
 **Bugs found and fixed**
+- Times from SQLite are UTC but were shown unconverted, so evening activity in New York showed tomorrow's date. The UI now converts them in the downloads, tasks and library views. Stored data and API responses are unchanged.
 - Running download workers kept the token from startup, so a sign-in didn't reach them until a restart. They now reload on sign-in and disconnect.
 - The profile lookup can fail just after sign-in, which left the username blank. The status route now fills it in.
 - The Connect button could never work: it called `fetch` on a cross-site redirect and read a `login_url` field the API has never returned.

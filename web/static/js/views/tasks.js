@@ -7,7 +7,7 @@ import {
   fetchScrapesList,
   startIngest
 } from '../api.js';
-import { escapeHtml } from '../utils.js';
+import { escapeHtml, formatLocalDateTime } from '../utils.js';
 
 export async function renderTasksView() {
   try {
@@ -402,12 +402,4 @@ function getStatusBadgeClass(status) {
   }
 }
 
-function formatTime(isoStr) {
-  if (!isoStr) return '-';
-  try {
-    const parts = isoStr.replace('T', ' ').split('.')[0].split(' ');
-    return parts.length > 1 ? `${parts[0]} ${parts[1]}` : isoStr;
-  } catch {
-    return isoStr;
-  }
-}
+const formatTime = formatLocalDateTime;

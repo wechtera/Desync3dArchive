@@ -2,6 +2,32 @@
  * ui/static/js/utils.js - Shared UI formatting and sanitization utilities
  */
 
+/**
+ * Parses a time from the server. SQLite's CURRENT_TIMESTAMP gives UTC with a space and no zone.
+ * Python's isoformat() gives local time with a T, which the browser already reads as local.
+ */
+export function parseServerTime(val) {
+  if (!val) return null;
+  const text = String(val);
+  const isSqliteUtc = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/.test(text);
+  const date = new Date(isSqliteUtc ? `${text.replace(' ', 'T')}Z` : text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+const pad = (n) => String(n).padStart(2, '0');
+
+export function formatLocalDate(val) {
+  const d = parseServerTime(val);
+  if (!d) return val || '-';
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function formatLocalDateTime(val) {
+  const d = parseServerTime(val);
+  if (!d) return val || '-';
+  return `${formatLocalDate(val)} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 export function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)

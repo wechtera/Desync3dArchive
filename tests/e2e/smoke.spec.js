@@ -96,3 +96,43 @@ test('static assets and previews load', async ({ page }) => {
   const placeholder = await page.request.get('/previews/none/cover.jpg');
   expect(placeholder.headers()['content-type']).toContain('image/svg+xml');
 });
+
+test.describe('server times in New York', () => {
+  test.use({ timezoneId: 'America/New_York' });
+
+  test('UTC database times show as local, across midnight', async ({ page }) => {
+    await page.goto('/');
+    const result = await page.evaluate(async () => {
+      const { formatLocalDate, formatLocalDateTime } = await import('/static/js/utils.js');
+      return {
+        date: formatLocalDate('2026-10-31 00:02:48'),
+        dateTime: formatLocalDateTime('2026-10-31 00:02:48'),
+        pythonLocal: formatLocalDateTime('2026-10-30T20:02:48.123456'),
+        empty: formatLocalDate(null),
+        unreadable: formatLocalDate('not a date'),
+      };
+    });
+    expect(result).toEqual({
+      date: '2026-10-30',
+      dateTime: '2026-10-30 20:02:48',
+      pythonLocal: '2026-10-30 20:02:48',
+      empty: '-',
+      unreadable: 'not a date',
+    });
+  });
+
+  test('download history shows the local date', async ({ page }) => {
+    await page.route('**/api/downloads/history*', (route) => route.fulfill({
+      json: {
+        history: [{
+          model_id: 1, name: 'Test', model_name: 'Test', creator_name: 'Maker', status: 'completed',
+          enqueued_at: '2026-10-31 00:02:48', completed_at: '2026-10-31 00:02:51',
+        }],
+        total: 1, limit: 50, offset: 0,
+      },
+    }));
+    await page.goto('/#downloads');
+    await expect(page.locator('body')).toContainText('2026-10-30');
+    await expect(page.locator('body')).not.toContainText('2026-10-31');
+  });
+});

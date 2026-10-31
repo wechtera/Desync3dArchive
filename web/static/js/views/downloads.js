@@ -19,7 +19,7 @@ import {
   triggerArchivePeekBackfill,
   triggerCatalogPreviewBackfill
 } from '../api.js';
-import { formatBytes, renderStatusBadge } from '../utils.js';
+import { formatBytes, formatLocalDate, formatLocalDateTime, renderStatusBadge } from '../utils.js';
 
 let currentPendingPage = 1;
 const pendingPageSize = 25;
@@ -39,15 +39,7 @@ let currentStagingGarbage = [];
 let currentPathDrifts = [];
 let selectedScanMode = 'fast';
 
-function formatDate(val) {
-  if (!val) return '-';
-  try {
-    const s = String(val).replace('T', ' ');
-    return s.split(' ')[0] || val;
-  } catch (_) {
-    return val;
-  }
-}
+const formatDate = formatLocalDate;
 
 function escapeHtml(str) {
   if (!str) return '';
@@ -694,7 +686,7 @@ export async function loadReconcileView() {
 
     if (lastScanEl) {
       if (data.timestamp) {
-        const timeStr = data.timestamp.replace('T', ' ').split('.')[0];
+        const timeStr = formatLocalDateTime(data.timestamp);
         let msg = `Last ${(data.scan_mode || 'fast').toUpperCase()} scan finished at ${timeStr}.`;
         if (summary.hashes_baselined > 0) {
           msg += ` Established & stored ${summary.hashes_baselined} new SHA-256 checksums.`;
