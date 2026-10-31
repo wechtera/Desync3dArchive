@@ -252,8 +252,13 @@ current behavior first, then replace innerHTML with lit-html templates. Order: c
 tasks, stash_modal, stashes, settings, downloads, models. Keep vault.css and all behavior.
 Also fix the OAuth callback page's innerHTML use, and add a strict Content-Security-Policy
 with no inline scripts.
-Exit check: no innerHTML remains, an XSS test using hostile model names passes, and every
-view's tests pass.
+Remove the API Key / Secret setting, because the app signs in through the MMF login page and uses
+only the OAuth token. Remove the field from Settings, client_secret from /api/auth/config, the
+authorization code grant, token refresh and mmf_auth_flow, which all depend on it. Keep the
+Client ID, because the login page needs it, and keep the session cookie fields, because the
+scraper needs them. Do not change mmf_client_secret in production: Step 9 blanks it.
+Exit check: no innerHTML remains, an XSS test using hostile model names passes, every view's tests
+pass, and no route or view reads mmf_client_secret.
 ```
 
 ## Step 7: LAN mode

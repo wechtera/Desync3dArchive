@@ -29,7 +29,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 2 code complete on branch `migration/02-security`. Its exit check still needs the user's real sign-in, on the implicit flow, and a test download.
+- **Phase:** Step 2 passed its user test on branch `migration/02-security`, waiting for approval to merge.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -49,7 +49,6 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Next
 
-- [ ] User: real MMF sign-in on the dev instance, then a test download to the dev vault
 - [ ] Merge `migration/02-security` after that and user approval
 - [ ] Run Step 3 from `MIGRATION_PROMPTS.md`
 
@@ -70,7 +69,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Step 2 results
 
-**Exit check:** Not complete. `check.sh` passes, but the user still has to confirm a real sign-in and a test download. Nothing in this step has been tried against the live MMF service. Token handling is tested with mocks built from MMF's documentation.
+**Exit check:** `check.sh` passes. On 2026-10-31 the user signed in through the implicit flow in a fresh browser and downloaded model 638590 to the dev vault. The file's size and SHA-256 match the record, and it stayed off the NAS. The code grant and refresh paths were never exercised against MMF, and Step 6 removes them.
 
 **Findings closed, each with tests in `tests/test_security.py`**
 - **V1:** host and port are settings, defaulting to `127.0.0.1:8080`. The app refuses to bind beyond loopback until LAN mode exists. There is still no login, so V1 fully closes in Step 7.
@@ -94,6 +93,12 @@ This directory tracks the state of the app, what has been done, and what comes n
 **Token duration:** the user chooses it on MMF's login page, and that choice sets `expires_in`. A real sign-in on 2026-10-31 returned a token lasting 168 hours, far more than the 21,600 seconds in MMF's documentation. Only the Client ID in Settings matters for this flow.
 
 **Limitation:** the implicit grant has no refresh tokens, so a 401 after the chosen duration still trips the circuit breaker until the user reconnects. V5 is closed for `state` checking, but the implicit grant itself remains in use.
+
+**What each credential does**
+- Client ID: needed only to open the MMF login page. `handle_get_auth_login` returns 400 without it. Requests made with a token don't use it.
+- API Key / Secret: used only by the code grant and refresh paths, which stay off. Step 6 removes it.
+- OAuth token: used for metadata, ingest and downloads.
+- Session cookies: required by `scrape.js`, which has no token path. Ingest and downloads send them too, as a fallback.
 
 **Bugs found and fixed**
 - Running download workers kept the token from startup, so a sign-in didn't reach them until a restart. They now reload on sign-in and disconnect.
