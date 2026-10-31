@@ -1041,11 +1041,16 @@ export async function triggerSubmodelRender(smId, memberId, btn) {
     const blob = await res.blob();
     const objectUrl = URL.createObjectURL(blob);
 
-    container.outerHTML = html`
-      <a href="${objectUrl}" target="_blank" rel="noopener noreferrer" class="submodel-thumb-link" title="Rendered ephemeral preview">
-        <img src="${objectUrl}" class="submodel-thumb" alt="Rendered Submodel">
-      </a>
-    `;
+    // Plain DOM: lit owns the card around this node, and only a render() call can turn a template
+    // into elements. Assigned to outerHTML, it prints [object Object].
+    const image = document.createElement('img');
+    image.src = objectUrl;
+    image.className = 'submodel-thumb';
+    image.alt = 'Rendered Submodel';
+    const link = document.createElement('a');
+    Object.assign(link, { href: objectUrl, target: '_blank', rel: 'noopener noreferrer', className: 'submodel-thumb-link', title: 'Rendered ephemeral preview' });
+    link.append(image);
+    container.replaceWith(link);
   } catch (err) {
     console.error('Submodel render failed:', err);
     if (btn) {

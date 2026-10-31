@@ -28,3 +28,4 @@ Ideas found during migration. None are scheduled unless a step or the user asks 
 | E25 | Choose variants at stash export | A linked character spans every scale and support type, and export copies every file. Let a stash pick a scale and support type. |
 | E26 | Render covers only from a card's own files | A card that had a folder carved out can still pick an STL from that folder for its cover. |
 | E27 | Tags page | Rules are in `GLOSSARY.md`. A removed tag must stay removed: scans add tags, so record removals or a rescan brings them back. That changes the rule that scanner tags are never deleted. Clean up word-split junk such as `of` and `the` first (4,710 distinct tags, 2,204 used once). |
+| E28 | Review padding and general UX | The new screens were built from tests against mock data, so nobody tuned them on the real catalog. Review padding, spacing and overall feel across Linked Libraries, Archive Review, the review modal and the Models view. |

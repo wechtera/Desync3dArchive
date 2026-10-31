@@ -648,6 +648,20 @@ test.describe('settings', () => {
     expect(saved.cards.find((c) => c.name === 'Ghul B').group).toBe('Undead');
   });
 
+  test('a rendered sub-model preview shows as an image', async ({ page }) => {
+    await page.route('**/api/render/stl', (route) => route.fulfill({ contentType: 'image/jpeg', body: Buffer.from('jpeg') }));
+    await page.goto('/');
+    await page.evaluate(async () => {
+      const box = document.createElement('div');
+      box.innerHTML = '<div id="submodel-thumb-container-1"><button id="render-it">Render</button></div>';
+      document.body.append(box);
+      await window.triggerSubmodelRender(1, 2, document.getElementById('render-it'));
+      window.renderedBox = box;
+    });
+    expect(await page.evaluate(() => window.renderedBox.textContent)).not.toContain('[object');
+    expect(await page.evaluate(() => window.renderedBox.querySelector('img.submodel-thumb').src)).toContain('blob:');
+  });
+
   test('settings shows library disk figures but no library actions', async ({ page }) => {
     await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true, disk_formatted: '4 GB' }], total: 1 });
     await page.goto('/#settings');
