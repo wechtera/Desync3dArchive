@@ -2,7 +2,7 @@
 
 Read this first in a new session. It explains what this project is, where everything lives, what state it is in, and what will catch you out. `README.md` in this folder holds the detailed results for each step.
 
-**Last updated:** 2026-10-30, after Step 5 was merged to `main`.
+**Last updated:** 2026-10-30, after the Step 6 code was finished.
 
 ## What this is
 
@@ -77,8 +77,8 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 | 3 | Done | Migrations, backups, WAL |
 | 4 | Done | Routers, query modules, dry-run, audit log, V6 |
 | 5 | Done | Job recovery, tools adapter, scraper events, backups. User confirmed a real scrape and download |
-| 6 | **Next** | `lit-html` frontend, and remove the API key setting |
-| 7 | To do | LAN mode: login and TLS |
+| 6 | **Waiting on user review** | Code complete on `migration/06-frontend`. Automated checks pass |
+| 7 | Next | LAN mode: login and TLS |
 | 8 | To do | Measured performance work |
 | 9 | To do | Secrets and cutover. The only step that changes production, with approval at each stage |
 
@@ -86,7 +86,8 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 ## Decisions that are easy to get wrong
 
-- **Sign-in is the OAuth implicit flow.** The user chooses the token duration on MMF's login page, and 168 hours has been confirmed. There are no refresh tokens. The value stored as `mmf_client_secret` is an API key, not an OAuth secret, and MMF rejects it at the token endpoint with HTTP 401. The user decided not to use the API key. Step 6 removes that field and the unused code grant.
+- **Sign-in is the OAuth implicit flow.** The user chooses the token duration on MMF's login page, and 168 hours has been confirmed. There are no refresh tokens. The value stored as `mmf_client_secret` is an API key, not an OAuth secret. The user decided not to use it, so Step 6 removed the field and the code grant. Step 9 blanks the stored value.
+- **Frontend rules:** render with `template.js`, never `innerHTML`. Bind events with `@click` in templates and `data-click` in `index.html`, because the CSP blocks inline handlers. Pass API URLs through `safeUrl`. A local variable must never be named `html`.
 - **Only the Client ID is needed to sign in,** because the login page requires it. Session cookies are still required for `scrape.js`, which has no token path.
 - **Do not disguise requests to MMF.** A probe that varied user agents was blocked as bot-check circumvention. If MMF ever refuses the app, surface that to the user.
 - **Do not run `rar` or bypass Gatekeeper.** macOS blocks that unverified binary and prompts the user. The app only needs `unrar`.
@@ -101,7 +102,7 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 - **V1** closes fully in Step 7. The app has no login, so it refuses to bind beyond loopback.
 - **V5:** token injection is closed, but the deprecated implicit grant is still in use because it is the only option.
-- **Untested against real services:** whether MMF's hosts honor `Range`, a Cloudflare check with `--no-sandbox` removed, and the `releases` fix against the real Loot Studios folder. The code grant has never worked here and is being removed.
+- **Untested against real services:** whether MMF's hosts honor `Range`, a Cloudflare check with `--no-sandbox` removed, and the `releases` fix against the real Loot Studios folder. 
 - **Snapshot gaps:** stash export, scrape and ingest record failure paths only.
 - **The old app is exposed** on `0.0.0.0:8080` with secrets readable when it runs. The user stopped it during Step 2. Keep it stopped.
 - **Secrets from V2 need rotating** in Step 9. They were exposed by the old app.
@@ -119,6 +120,6 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 ## Next action
 
-Run Step 6 from `MIGRATION_PROMPTS.md` on `migration/06-frontend`, branching from `main`. Write Playwright tests for each view's current behavior before changing it, and remove the API Key / Secret setting as that prompt describes.
+Have the user look over the UI, then merge `migration/06-frontend` with approval and run Step 7.
 
 **State of dev:** the user is signed in on the dev app with a 7-day token issued 2026-10-30, and session cookies are saved in dev. Cloudflare cookies expire quickly, so expect to paste fresh ones before the next scrape. The dev app was left running on port 8080 and may need restarting. The dev catalog does not have Master Wendigo (276218) yet, because no ingest was run. Job 112 for model 148200 shows `failed` in dev and left files in dev staging, which is harmless.

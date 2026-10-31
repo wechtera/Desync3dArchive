@@ -3,11 +3,8 @@ tests/test_stash_exporter.py - Automated unit tests for Slicer Stash Exporter.
 Verifies NAS immutability, scratch directory cleanup, surgical extraction, and folder hierarchy.
 """
 
-from db_helper import create_database
 import hashlib
 import json
-import os
-from pathlib import Path
 import shutil
 import sqlite3
 import sys
@@ -15,6 +12,9 @@ import tempfile
 import time
 import unittest
 import zipfile
+from pathlib import Path
+
+from db_helper import create_database
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 UI_DIR = ROOT_DIR / "ui"

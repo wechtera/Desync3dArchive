@@ -5,19 +5,17 @@ Supports persistent cover generation and on-demand ephemeral rendering with zero
 """
 
 import logging
-import os
-from pathlib import Path
-from desync_archival import external, settings as app_config
 import shutil
 import sqlite3
 import subprocess
-import sys
 import tempfile
-from typing import Any, Dict, List, Optional, Tuple, Union
 import uuid
 import zipfile
+from pathlib import Path
+from typing import List, Optional, Union
 
-
+from desync_archival import external
+from desync_archival import settings as app_config
 
 SCRIPT_PATH = app_config.blender_script()
 

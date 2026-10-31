@@ -1,3 +1,4 @@
+import { bindActions } from './actions.js';
 import {
   fetchMetrics,
   fetchStorageStatus,
@@ -116,7 +117,6 @@ import {
   saveSettingsForm,
   saveAuthSlug,
   saveAuthCredentials,
-  toggleApiKeyVisibility,
   connectAccount,
   disconnectAccount,
   testAccountConnection
@@ -560,7 +560,6 @@ Object.assign(window, {
   saveSettingsForm,
   saveAuthSlug,
   saveAuthCredentials,
-  toggleApiKeyVisibility,
   connectAccount,
   disconnectAccount,
   testAccountConnection,
@@ -600,6 +599,8 @@ Object.assign(window, {
 // -----------------------------------------------------------------------------
 
 function initApp() {
+  bindActions();
+
   window.addEventListener('click', (event) => {
     if (event.target && event.target.classList && event.target.classList.contains('modal-backdrop')) {
       event.target.style.display = 'none';

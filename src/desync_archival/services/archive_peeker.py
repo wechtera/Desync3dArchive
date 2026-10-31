@@ -3,26 +3,21 @@ services/archive_peeker.py - Bidirectional anchor inspection, submodel discovery
 Instrumented with dynamic topic-based subsystem logging ('archive', 'http', 'sql').
 """
 
-from dataclasses import dataclass, field
 import json
 import logging
-import os
-from pathlib import Path
-from desync_archival import external, settings as app_config
 import re
 import shutil
 import sqlite3
-import subprocess
-import sys
-from typing import Any, Dict, List, Optional, Set, Tuple
-import urllib.parse
 import zipfile
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import httpx
 
-
-
-from desync_archival.services.logger import log_layer, logger
+from desync_archival import external
+from desync_archival import settings as app_config
+from desync_archival.services.logger import log_layer
 
 # Formats recognized as 3D printable models or slicer projects
 MODEL_EXTENSIONS = {".stl", ".obj", ".lys", ".ctb", ".ags", ".3mf", ".chitubox", ".prusa"}

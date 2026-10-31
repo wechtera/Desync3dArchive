@@ -12,12 +12,13 @@ Test Coverage:
 8. Active pointer fallback when an active stash is deleted.
 """
 
-from db_helper import create_database
-from pathlib import Path
 import sqlite3
 import sys
 import tempfile
 import unittest
+from pathlib import Path
+
+from db_helper import create_database
 
 # Ensure repository root is on sys.path
 REPO_ROOT = Path(__file__).resolve().parent.parent

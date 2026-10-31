@@ -3,13 +3,13 @@ services/analytics.py - Library continuity, release grouping, and catalog statis
 Instrumented with dynamic topic-based subsystem logging ('sql').
 """
 
-from datetime import datetime
 import logging
 import math
 import sqlite3
+from datetime import datetime
 from typing import Any, Optional
 
-from desync_archival.services.logger import log_layer, logger
+from desync_archival.services.logger import log_layer
 
 
 def calculate_month_sequence(start_month: str, end_month: str) -> list[str]:

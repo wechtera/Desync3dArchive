@@ -3,13 +3,14 @@ tests/test_stash_guardrails.py - Automated unit tests for stash download guardra
 Verifies that un-downloaded models, files, submodels, and archive members cannot be stashed.
 """
 
-from db_helper import create_database
-from pathlib import Path
 import shutil
 import sqlite3
 import sys
 import tempfile
 import unittest
+from pathlib import Path
+
+from db_helper import create_database
 
 # Ensure project root and ui/ directories are on sys.path
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -28,12 +29,21 @@ except ImportError:
         from desync_archival.services.stash_service import StashService
 
 try:
-    from desync_archival.api.routes.stashes import handle_add_stash_item, handle_bulk_add_models
+    from desync_archival.api.routes.stashes import (
+        handle_add_stash_item,
+        handle_bulk_add_models,
+    )
 except ImportError:
     try:
-        from desync_archival.api.routes.stashes import handle_add_stash_item, handle_bulk_add_models
+        from desync_archival.api.routes.stashes import (
+            handle_add_stash_item,
+            handle_bulk_add_models,
+        )
     except ImportError:
-        from desync_archival.api.routes.stashes import handle_add_stash_item, handle_bulk_add_models
+        from desync_archival.api.routes.stashes import (
+            handle_add_stash_item,
+            handle_bulk_add_models,
+        )
 
 
 class TestStashGuardrails(unittest.TestCase):

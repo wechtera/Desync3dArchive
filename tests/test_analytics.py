@@ -1,7 +1,7 @@
-from datetime import datetime
 import math
 import sqlite3
 import unittest
+from datetime import datetime
 
 
 def init_test_db(conn: sqlite3.Connection):

@@ -21,6 +21,7 @@ from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
 
 from desync_archival import migrations
 from desync_archival import settings as app_config
@@ -99,6 +100,19 @@ def split_host_header(value: str) -> tuple[str, str]:
     return (parts.hostname or "").lower(), port
 
 
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' https: data: blob:; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'none'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+
+
 class SecurityMiddleware:
     """Validates Host, Origin, content type and body size before a request reaches a route.
 
@@ -137,6 +151,8 @@ class SecurityMiddleware:
         async def tracked_send(message: dict) -> None:
             nonlocal started
             started = started or message["type"] == "http.response.start"
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
             await send(message)
 
         try:
@@ -341,6 +357,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     # Run this as the imported module, so the routers and main() share one copy of the managers.
-    from desync_archival.api import server as imported_server
+    from desync_archival.api import server as imported_server  # noqa: PLW0406
 
     imported_server.main()

@@ -30,7 +30,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 5 complete and merged to `main`. Step 6 is next.
+- **Phase:** Step 6 passed its automated exit check on branch `migration/06-frontend`. It needs the user's look at the UI and approval to merge.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** `check.sh` passes at the latest commit: 384 Python tests, 1 skipped, 22 browser tests and 110 contract cases.
 - **Production data:** Untouched. Dev work never reaches it, and `library.db` still has its 15:50 modified time from 2026-10-30. The last full NAS comparison, after Step 4, was clean.
@@ -41,6 +41,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 - [x] Stack proposal drafted and decisions recorded
 - [x] Migration prompts written
 - [x] New project created: git repository, README with setup steps, `.gitignore`, Python and Node dependency manifests, `tools/` linker, and these docs
+- [x] Step 6 code: lit-html views, strict CSP, API key setting removed
 - [x] Step 5: job recovery, external tools adapter, scraper events, download resume, scheduled backups, pause before token expiry
 - [x] Step 4: domain routers with Pydantic bodies, query modules, catch-all removed, dry-run and audit on destructive routes, V6 closed
 - [x] Step 3: numbered migrations, runner, one schema source, verified backup and restore, WAL
@@ -53,7 +54,8 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Next
 
-- [ ] Run Step 6 from `MIGRATION_PROMPTS.md`
+- [ ] User: look over the UI on the dev app, then approve the merge of `migration/06-frontend`
+- [ ] Run Step 7 from `MIGRATION_PROMPTS.md`
 
 ## Project decisions
 
@@ -69,6 +71,28 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Commits.** Commit freely on step branches. Merge to `main` after the exit check and user approval.
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
+
+## Step 6 results
+
+**Exit check:** Automated parts passed. No view uses `innerHTML`, `insertAdjacentHTML` or `escapeHtml`, and no inline handler remains. Browser tests render hostile names through every view, and none run. Only `auth_service.py`, to hide it from the API, and `logger.py`, to redact it, still name `mmf_client_secret`.
+
+**Baselines proved the risk:** tests written against the old views failed before conversion, because a hostile creator name ran as code on the creators page, quote characters broke release and stash buttons, and a `javascript:` URL from the API became a clickable link.
+
+**Templates:** `lit-html` 3.3.1 is vendored in `web/static/vendor/`, with its npm checksum verified and no build step. `web/static/js/template.js` wraps it. Its `render` clears placeholder markup first, because `lit-html` adds to static content where `innerHTML` replaced it. `safeUrl` allows only http and https links from API data.
+
+**CSP:** every response carries a policy with `script-src 'self'`, so inline scripts and handlers can't run. A browser test proves an injected `onerror` is blocked. Inline `style` attributes are allowed with `style-src 'unsafe-inline'`, because the views use them widely. `img-src` allows `https:` for MMF cover images.
+
+**Handlers:** the 110 inline handlers in `index.html` became `data-click`, `data-change` and `data-input`, dispatched by `web/static/js/actions.js`. The 96 in view templates became `@click` bindings.
+
+**Sign-in callback:** the page's inline script moved to `web/static/js/auth_callback.js`.
+
+**API key setting removed:** the Settings field, `client_secret` in `/api/auth/config`, the code grant, token refresh and `mmf_auth_flow` are gone. Sign-in is the implicit flow only. The value stored in `mmf_client_secret` stays hidden until Step 9 blanks it, and `SECRET_SETTING_KEYS` still lists it for that reason.
+
+**Tests removed:** the token refresh and download worker refresh tests went with the code they covered. Token refresh is no longer a feature.
+
+**Contract snapshots changed, all intended:** `auth_status` lost `secret_configured`, `refresh_configured` and `flow`, and `auth_callback` now loads a script file.
+
+**Q12:** `route.fetch` mocks could run past the end of a test because of the app's polling, with a `Response has been disposed` error. All are static now, which is the likely cause of the rare failure, though that isn't proven.
 
 ## Step 5 results
 

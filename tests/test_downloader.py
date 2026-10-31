@@ -2,17 +2,16 @@
 tests/test_downloader.py - Unit and integration tests for DownloadManager OAuth refactoring.
 """
 
-from db_helper import create_database
 import io
-import json
-import os
-from pathlib import Path
 import sqlite3
 import sys
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
 import zipfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from db_helper import create_database
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -22,8 +21,6 @@ from desync_archival.services.downloader import (
     DownloadManager,
     FileValidator,
     PathSanitizer,
-    StorageManager,
-    StorageUnavailableError,
 )
 
 DUMMY_ZIP_BYTES = io.BytesIO()

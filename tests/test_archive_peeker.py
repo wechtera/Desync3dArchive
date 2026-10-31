@@ -17,19 +17,20 @@ Requirements satisfied:
    - Safe HTTP preview fallback downloading via httpx.
 """
 
-from db_helper import create_database
 import json
 import os
-from pathlib import Path
 import shutil
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
 import zipfile
+from pathlib import Path
 from typing import Optional
+from unittest.mock import MagicMock, patch
+
+from db_helper import create_database
 
 # Ensure repository root is on sys.path
 REPO_ROOT = Path(__file__).resolve().parent.parent

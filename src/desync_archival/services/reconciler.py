@@ -4,30 +4,26 @@ archive peeker backfill, and catalog preview caching engine.
 Instrumented with dynamic topic-based subsystem logging ('storage', 'archive', 'sql', 'http').
 """
 
-from datetime import datetime
 import hashlib
 import json
 import logging
 import os
-from pathlib import Path
-from desync_archival import settings as app_config
-from desync_archival.services.paths import sanitize_segment
 import re
 import shutil
 import sqlite3
 import struct
-import sys
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
 import zipfile
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import httpx
 
-
-
+from desync_archival import settings as app_config
 from desync_archival.services.downloader import StorageManager, StorageUnavailableError
-from desync_archival.services.logger import log_layer, logger
+from desync_archival.services.logger import log_layer
+from desync_archival.services.paths import sanitize_segment
 
 try:
     from .archive_peeker import ArchivePeeker

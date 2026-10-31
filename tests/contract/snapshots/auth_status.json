@@ -11,11 +11,8 @@
       "configured": false,
       "connected": false,
       "expires_at": "<VOLATILE>",
-      "flow": "implicit",
       "is_expired": true,
       "redirect_uri": "http://localhost:8080/api/auth/callback",
-      "refresh_configured": false,
-      "secret_configured": false,
       "user_id": "<REDACTED>",
       "username": "<REDACTED>"
     },

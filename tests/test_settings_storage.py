@@ -2,15 +2,16 @@
 tests/test_settings_storage.py - Automated tests for storage settings and print queue metrics.
 """
 
-from db_helper import create_database
 import os
-from pathlib import Path
 import shutil
 import sqlite3
 import sys
 import tempfile
 import time
 import unittest
+from pathlib import Path
+
+from db_helper import create_database
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 UI_DIR = ROOT_DIR / "ui"

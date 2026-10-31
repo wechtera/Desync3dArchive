@@ -211,11 +211,9 @@ class ResumeOverHttpTests(TempDb):
 
     def fetch(self, client, part, resume_from):
         """The same steps as the download worker."""
-        manager = object.__new__(DownloadManager)
-        manager.access_token = ""
         headers = {"Range": f"bytes={resume_from}-"} if resume_from else None
         hasher = hashlib.sha256()
-        with manager._auth_stream(client, "https://files.example/a.zip", headers) as resp:
+        with client.stream("GET", "https://files.example/a.zip", headers=headers) as resp:
             resuming = can_resume(resp.status_code, resp.headers.get("Content-Range"), resume_from)
             if resuming:
                 hasher.update(part.read_bytes())
@@ -259,10 +257,9 @@ class ResumeOverHttpTests(TempDb):
 
 
 class ReconnectTests(unittest.TestCase):
-    def manager(self, token="t", expires_in=3600, can_refresh=False):
+    def manager(self, token="t", expires_in=3600):
         manager = object.__new__(DownloadManager)
         manager.access_token = token
-        manager.can_refresh = can_refresh
         manager.token_expires_at = int(time.time()) + expires_in
         return manager
 
@@ -272,9 +269,6 @@ class ReconnectTests(unittest.TestCase):
     def test_token_near_expiry_pauses(self):
         self.assertTrue(self.manager(expires_in=300).needs_reconnect())
         self.assertTrue(self.manager(expires_in=-300).needs_reconnect())
-
-    def test_refreshable_token_does_not_pause(self):
-        self.assertFalse(self.manager(expires_in=300, can_refresh=True).needs_reconnect())
 
     def test_cookie_mode_does_not_pause(self):
         self.assertFalse(self.manager(token="", expires_in=-5).needs_reconnect())

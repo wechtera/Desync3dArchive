@@ -2,8 +2,8 @@
 services/db.py - Settings defaults and the SQLite connection factory.
 """
 
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 from typing import Union
 
 from desync_archival import settings as app_config
@@ -43,9 +43,7 @@ def seed_default_settings(conn: sqlite3.Connection):
             ("circuit_breaker_reason", ""),
             ("cookies_json", initial_cookies),
             ("mmf_client_id", ""),
-            ("mmf_client_secret", ""),
             ("mmf_access_token", ""),
-            ("mmf_refresh_token", ""),
             ("mmf_token_expires_at", "0"),
             ("mmf_user_id", ""),
             ("mmf_username", ""),

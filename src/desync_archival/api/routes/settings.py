@@ -7,16 +7,16 @@ log pruning, and print queue management.
 import json
 import logging
 import os
-from pathlib import Path
-from desync_archival.db.queries import settings as queries
-from desync_archival import settings as app_config
-from desync_archival.services import audit, auth_service
 import shutil
 import sqlite3
 import threading
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from desync_archival import settings as app_config
+from desync_archival.db.queries import settings as queries
+from desync_archival.services import audit, auth_service
 
 try:
     from desync_archival.services.logger import (

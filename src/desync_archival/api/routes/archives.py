@@ -3,8 +3,8 @@ ui/routes/archives.py - Archive inspection and submodel catalog API routes.
 """
 
 import json
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 from typing import Any, Optional
 
 from desync_archival.db.queries import archives as queries

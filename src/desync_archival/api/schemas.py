@@ -134,10 +134,7 @@ class UntrackedBody(RequestBody):
 
 class AuthConfigBody(RequestBody):
     client_id: str | None = None
-    client_secret: str | None = None
-    api_key: str | None = None
     redirect_uri: str | None = None
-    flow: str | None = None
 
 
 class TokenCallbackBody(RequestBody):

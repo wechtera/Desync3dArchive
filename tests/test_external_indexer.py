@@ -3,18 +3,14 @@ tests/test_external_indexer.py - Automated safety & integrity tests for in-place
 Validates synthetic ID allocation, read-only invariants, artwork cascading, and zero data loss on unlinking.
 """
 
-from datetime import datetime
 import hashlib
 import os
-from pathlib import Path
-import shutil
-import sqlite3
 import sys
 import tempfile
-import time
 import unittest
-from unittest.mock import MagicMock, patch
 import zipfile
+from pathlib import Path
+from unittest.mock import patch
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 UI_DIR = ROOT_DIR / "ui"
@@ -23,9 +19,13 @@ for p in (ROOT_DIR, UI_DIR):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-from desync_archival.services.external_indexer import ExternalLibraryIndexer, SYNTHETIC_ID_OFFSET
 from db_helper import init_persistent_tables
+
 from desync_archival.services.db import get_db_connection
+from desync_archival.services.external_indexer import (
+    SYNTHETIC_ID_OFFSET,
+    ExternalLibraryIndexer,
+)
 
 
 class TestExternalIndexer(unittest.TestCase):

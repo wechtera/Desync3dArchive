@@ -126,7 +126,6 @@ export async function loadSettings() {
     for (const [id, key] of EXTRA_COOKIE_FIELDS) setSecret(id, secrets[key]);
 
     setVal('setting-auth-client-id', data.mmf_client_id || '');
-    setSecret('setting-auth-api-key', secrets.mmf_client_secret);
 
     const headlessEl = document.getElementById('setting-scraper-headless');
     if (headlessEl) headlessEl.checked = data.scraper_headless !== '0';
@@ -585,13 +584,12 @@ export async function saveSettingsForm() {
 
 export async function saveAuthCredentials() {
   const clientId = (document.getElementById('setting-auth-client-id')?.value || '').trim();
-  const apiKey = (document.getElementById('setting-auth-api-key')?.value || '').trim();
 
   try {
     const res = await fetch('/api/auth/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: clientId, client_secret: apiKey })
+      body: JSON.stringify({ client_id: clientId })
     });
     const data = await res.json();
     if (data.success) {
@@ -648,20 +646,6 @@ export async function testAccountConnection() {
     }
   } catch (err) {
     alert(`Test error: ${err.message}`);
-  }
-}
-
-export function toggleApiKeyVisibility() {
-  const el = document.getElementById('setting-auth-api-key');
-  const btn = document.getElementById('btn-toggle-api-key');
-  if (el && btn) {
-    if (el.type === 'password') {
-      el.type = 'text';
-      btn.textContent = 'Hide';
-    } else {
-      el.type = 'password';
-      btn.textContent = 'Show';
-    }
   }
 }
 
@@ -774,7 +758,6 @@ Object.assign(window, {
   connectAccount,
   disconnectAccount,
   testAccountConnection,
-  toggleApiKeyVisibility,
   openDirectoryPicker,
   navigateBrowseFolder,
   selectCurrentBrowseFolder,

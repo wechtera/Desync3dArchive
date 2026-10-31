@@ -2,22 +2,22 @@
 services/logger.py - Centralized rotating file logger with dynamic subsystem layer filtering.
 """
 
+import json
+import logging
+import re
+import sqlite3
+import threading
 from collections import deque
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from functools import wraps
-import json
-import logging
 from logging.handlers import RotatingFileHandler
-import os
 from pathlib import Path
-import re
-from desync_archival import settings as app_config
-import sqlite3
-import threading
 from typing import Any, Dict, List, Set
+
+from desync_archival import settings as app_config
 
 LOGS_DIR = app_config.logs_dir()
 LOGS_DIR.mkdir(parents=True, exist_ok=True)

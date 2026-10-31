@@ -10,6 +10,6 @@ Open questions that do not block the migration. Move each one out when it is ans
 | Q5 | Should the app ever support more than one user or library? | Current plan is single user, with no users table | Step 7 |
 | Q6 | Should storage move behind an adapter for SMB or S3, or stay a mounted path? | Current plan keeps a mounted NAS path | Step 5 |
 | Q7 | Which disk should production backups use? | `DESYNC_BACKUP_DIR` must not share a disk with the data directory | Step 9 |
-| Q12 | What causes the rare browser test failure in `check.sh`? | One test of 22 failed once and then passed 13 runs in a row, including the same sequence. `playwright-last.log` now keeps the output for the next time | When it recurs |
+| Q12 | Is the rare browser test failure gone? | One test failed once. Test mocks that outlived a test are the likely cause and were removed. `playwright-last.log` keeps the output if it recurs | If it recurs |
 | Q10 | Should the stash export success path get a snapshot, using a real small archive in the dev vault? | Only the failure path is recorded today | Step 0B |
 | Q8 | Should the `rnd/` Blender experiments feed better previews? | They stayed in `scrapepage` and were never reviewed | Any time |

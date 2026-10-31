@@ -4,13 +4,11 @@ Manages persistent staging manifests, active pointer persistence, polymorphic li
 duplicate detection, volume aggregation, and download verification guardrails.
 """
 
-import os
-from pathlib import Path
-from desync_archival import settings as app_config
 import sqlite3
-import sys
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from desync_archival import settings as app_config
 
 
 class StashService:

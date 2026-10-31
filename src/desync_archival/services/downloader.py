@@ -13,14 +13,12 @@ import sqlite3
 import threading
 import time
 import zipfile
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
 
 from desync_archival import settings as app_config
-from desync_archival.services import auth_service
 from desync_archival.services.logger import job_logged, log_layer, logger
 from desync_archival.services.paths import sanitize_segment
 
@@ -248,7 +246,6 @@ class DownloadManager:
         self.offload_chunk_size = OFFLOAD_CHUNK_SIZE_DEFAULT
         self.cookies: Dict[str, str] = {}
         self.access_token: str = ""
-        self.can_refresh: bool = False
         self.token_expires_at: int = 0
 
         self._load_settings()
@@ -318,7 +315,7 @@ class DownloadManager:
                 req_headers["Authorization"] = f"Bearer {self.access_token}"
             try:
                 with httpx.Client(headers=req_headers, cookies=cookies, follow_redirects=True, timeout=30.0) as client:
-                    with self._auth_stream(client, download_url) as resp:
+                    with client.stream("GET", download_url) as resp:
                         if resp.status_code in (401, 403):
                             reason = (
                                 f"OAuth authentication failure (HTTP {resp.status_code})"
@@ -435,33 +432,9 @@ class DownloadManager:
 
         return False
 
-    def _refresh_token_if_expiring(self):
-        """Replaces the access token shortly before it expires."""
-        if self.access_token:
-            self.access_token = auth_service.refresh_tokens(self.db_path) or self.access_token
-
-    def _recover_from_401(self) -> bool:
-        """Tries to replace a rejected token. False means the caller's failure path applies."""
-        if not self.access_token:
-            return False
-        rejected = self.access_token
-        self.access_token = auth_service.refresh_tokens(self.db_path, stale_token=rejected) or rejected
-        return self.access_token != rejected
-
-    @contextmanager
-    def _auth_stream(self, client: httpx.Client, url: str, headers: dict | None = None):
-        """Streams a URL, refreshing the token and retrying once after a 401."""
-        with client.stream("GET", url, headers=headers) as resp:
-            if resp.status_code != 401 or not self._recover_from_401():
-                yield resp
-                return
-        client.headers["Authorization"] = f"Bearer {self.access_token}"
-        with client.stream("GET", url, headers=headers) as resp:
-            yield resp
-
     def needs_reconnect(self) -> bool:
-        """True when the token is about to expire and can't be refreshed."""
-        if not self.access_token or self.can_refresh or not self.token_expires_at:
+        """True when the token is about to expire, because only a new sign-in replaces it."""
+        if not self.access_token or not self.token_expires_at:
             return False
         return time.time() >= self.token_expires_at - TOKEN_EXPIRY_MARGIN_SECONDS
 
@@ -482,7 +455,6 @@ class DownloadManager:
             self.offload_chunk_size = max(256 * 1024, int(offload_mb * 1024 * 1024))
 
             self.access_token = settings.get("mmf_access_token", "").strip()
-            self.can_refresh = bool(settings.get("mmf_refresh_token", "").strip())
             try:
                 self.token_expires_at = int(settings.get("mmf_token_expires_at") or 0)
             except ValueError:
@@ -648,8 +620,6 @@ class DownloadManager:
     def _process_download_to_staging(self, worker_id: int, job: sqlite3.Row, work_dir: Path):
         model_id = job["model_id"]
 
-        self._refresh_token_if_expiring()
-
         # --- PRE-DOWNLOAD OAUTH REFRESH: Fetch live authenticated URLs ---
         if self.access_token:
             api_url = f"https://www.myminifactory.com/api/v2/objects/{model_id}"
@@ -662,9 +632,6 @@ class DownloadManager:
                 log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Refreshing live OAuth download URLs for Model #{model_id}")
                 with httpx.Client(timeout=15.0, follow_redirects=True) as meta_client:
                     resp = meta_client.get(api_url, headers=auth_headers)
-                    if resp.status_code == 401 and self._recover_from_401():
-                        auth_headers["Authorization"] = f"Bearer {self.access_token}"
-                        resp = meta_client.get(api_url, headers=auth_headers)
                     if resp.status_code == 200:
                         obj_data = resp.json()
                         archive_dl_url = obj_data.get("archive_download_url")
@@ -770,7 +737,7 @@ class DownloadManager:
 
                 log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Streaming {cleaned_name} ({expected_size} B) for Model #{model_id}")
 
-                with self._auth_stream(client, dl_url, range_headers) as resp:
+                with client.stream("GET", dl_url, headers=range_headers) as resp:
                     if resp.status_code in (401, 403):
                         reason = (
                             f"MyMiniFactory OAuth token expired (HTTP {resp.status_code}) on file {filename}"

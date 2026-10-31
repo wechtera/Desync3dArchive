@@ -10,23 +10,19 @@ Enforces:
 5. SLICER LAYOUT: YYYY-MM-DD_HH-MM-SS_<stash_name>/[Creator] Model/Submodel/preview.jpg + meshes.
 """
 
-from datetime import datetime
-import hashlib
 import json
 import logging
-import os
-from pathlib import Path
-from desync_archival import external, settings as app_config
 import re
 import shutil
 import sqlite3
-import subprocess
-import sys
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 import uuid
 import zipfile
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-
+from desync_archival import external
+from desync_archival import settings as app_config
 
 try:
     from desync_archival.services.logger import log_layer, logger

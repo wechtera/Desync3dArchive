@@ -297,7 +297,6 @@ class TestServerAPI(unittest.TestCase):
         self.assertTrue(data.get("configured"))
         self.assertEqual(data.get("client_id"), "desync-3d-vault")
         self.assertNotIn("client_secret", data)
-        self.assertTrue(data.get("secret_configured"))
 
         status, err_data, _, _ = self._request("POST", "/api/auth/config", data={})
         self.assertEqual(status, 400)
@@ -333,9 +332,8 @@ class TestServerAPI(unittest.TestCase):
         status, _, body, headers = self._request("GET", "/api/auth/callback")
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers.get("content-type", ""))
-        self.assertIn("access_token", body)
-        self.assertIn("window.location.hash", body)
-        self.assertIn("/api/auth/token_callback", body)
+        self.assertIn('src="/static/js/auth_callback.js"', body)
+        self.assertNotIn("window.location", body)
 
     @patch("httpx.Client.get")
     def test_auth_token_callback_success(self, mock_client_get):

@@ -6,20 +6,15 @@ any file or directory on external storage. All persistent previews are written t
 previews/ cache, and all database records are registered in library.db.
 """
 
-from datetime import datetime
-import hashlib
 import logging
-import os
-from pathlib import Path
-from desync_archival import settings as app_config
 import re
 import shutil
 import sqlite3
-import sys
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-
-
+from desync_archival import settings as app_config
 from desync_archival.services.mesh_renderer import MeshRenderer
 
 try:

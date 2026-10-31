@@ -3,15 +3,12 @@ tests/test_mesh_renderer.py - Automated tests for mesh candidate selection and e
 Validates supported vs unsupported mesh filtering, candidate scoring, and transient scratch cleanup.
 """
 
-import os
-from pathlib import Path
-import shutil
-import sqlite3
 import sys
 import tempfile
 import unittest
-from unittest.mock import MagicMock, patch
 import zipfile
+from pathlib import Path
+from unittest.mock import patch
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 UI_DIR = ROOT_DIR / "ui"
@@ -20,10 +17,13 @@ for p in (ROOT_DIR, UI_DIR):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-from desync_archival import settings as app_config
-from desync_archival.services.mesh_renderer import MeshRenderer, VALID_VIEWS, MODEL_PRIORITY_TOKENS, AVOID_TOKENS
 from db_helper import init_persistent_tables
+
+from desync_archival import settings as app_config
 from desync_archival.services.db import get_db_connection
+from desync_archival.services.mesh_renderer import (
+    MeshRenderer,
+)
 
 
 class TestMeshRenderer(unittest.TestCase):

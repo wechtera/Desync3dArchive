@@ -4,6 +4,9 @@ const TABS = ['models', 'releases', 'creators', 'downloads', 'stashes', 'setting
 
 test.beforeEach(async ({ page }) => {
   page.pageErrors = [];
+  page.on('console', (message) => {
+    if (/Content Security Policy/i.test(message.text())) page.pageErrors.push(message.text());
+  });
   page.badResponses = [];
   page.on('pageerror', (error) => page.pageErrors.push(error.message));
   page.on('response', (response) => {
@@ -64,16 +67,13 @@ test('catalog search calls the API and renders results', async ({ page }) => {
 });
 
 test('settings shows that secrets are set without showing them', async ({ page }) => {
-  await page.route('**/api/settings', async (route) => {
-    const response = await route.fetch();
-    const body = await response.json();
-    body.secrets_configured = { mmf_client_secret: true, cookies_json: true, cookie_cf_clearance: true };
-    await route.fulfill({ response, json: body });
-  });
+  await page.route('**/api/settings', (route) => route.fulfill({
+    json: { secrets_configured: { cookies_json: true, cookie_cf_clearance: true } },
+  }));
   await page.goto('/#settings');
-  await expect(page.locator('#setting-auth-api-key')).toHaveAttribute('placeholder', /Configured/);
   await expect(page.locator('#setting-cookie-cf')).toHaveAttribute('placeholder', /Configured/);
-  await expect(page.locator('#setting-auth-api-key')).toHaveValue('');
+  await expect(page.locator('#setting-cookie-cf')).toHaveValue('');
+  await expect(page.locator('#setting-auth-api-key')).toHaveCount(0);
   await expect(page.locator('#setting-cookie-php')).not.toHaveAttribute('placeholder', /Configured/);
 });
 
@@ -167,21 +167,17 @@ test('declining the dialog sends no destructive request', async ({ page }) => {
 });
 
 test('reconnect banner follows the download status', async ({ page }) => {
-  await page.route('**/api/downloads/status', async (route) => {
-    const response = await route.fetch();
-    const body = await response.json();
-    await route.fulfill({ response, json: { ...body, reconnect_required: true } });
-  });
+  await page.route('**/api/downloads/status', (route) => route.fulfill({
+    json: { active_downloads: [], active_offloads: [], jobs: [], reconnect_required: true },
+  }));
   await page.goto('/');
   await expect(page.locator('#banner-reconnect')).toBeVisible();
 });
 
 test('settings shows the last backup', async ({ page }) => {
-  await page.route('**/api/settings', async (route) => {
-    const response = await route.fetch();
-    const body = await response.json();
-    await route.fulfill({ response, json: { ...body, last_backup_at: '2026-10-30 20:00:00', last_backup_result: 'OK: x.db' } });
-  });
+  await page.route('**/api/settings', (route) => route.fulfill({
+    json: { secrets_configured: {}, last_backup_at: '2026-10-30 20:00:00', last_backup_result: 'OK: x.db' },
+  }));
   await page.goto('/#settings');
   await expect(page.locator('#backup-status')).toContainText('2026-10-30 20:00:00');
 });
@@ -196,4 +192,62 @@ test('every session cookie has its own field', async ({ page }) => {
   for (const id of ['cf', 'php', 'rememberme', 'cf-bm', 'cfuvid', 'cflb']) {
     await expect(page.locator(`#setting-cookie-${id}`)).toBeAttached();
   }
+});
+
+test('the page is served with a strict script policy', async ({ page }) => {
+  const response = await page.goto('/');
+  const policy = response.headers()['content-security-policy'];
+  expect(policy).toContain("script-src 'self'");
+  expect(policy).not.toMatch(/script-src[^;]*unsafe/);
+});
+
+test('inline scripts are blocked', async ({ page }) => {
+  const errors = [];
+  await page.goto('/');
+  page.pageErrors = [];
+  page.on('console', (message) => errors.push(message.text()));
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend', '<img src=x onerror="window.ranInline=1">');
+  });
+  await expect.poll(() => errors.some((text) => /Content Security Policy/i.test(text))).toBe(true);
+  expect(await page.evaluate(() => window.ranInline)).toBeUndefined();
+  page.pageErrors = [];
+});
+
+test('no static markup uses an inline handler', async ({ page }) => {
+  await page.goto('/');
+  const inline = await page.evaluate(() => [...document.querySelectorAll('*')]
+    .filter((el) => [...el.attributes].some((a) => /^on/.test(a.name))).length);
+  expect(inline).toBe(0);
+});
+
+test('static buttons work through data attributes', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#nav-tab-settings').click();
+  await expect(page).toHaveURL(/#settings$/);
+  await page.locator('#nav-tab-stashes').click();
+  await expect(page).toHaveURL(/#stashes$/);
+  await page.locator('.brand-title').click();
+  await expect(page).not.toHaveURL(/#stashes$/);
+});
+
+test('the sign-in callback finishes under the policy', async ({ page }) => {
+  let body;
+  await page.route('**/api/auth/token_callback', async (route) => {
+    body = route.request().postDataJSON();
+    await route.fulfill({ json: { success: true, username: '<b>maker</b>' } });
+  });
+  await page.goto('/api/auth/callback#access_token=abc&expires_in=604800&state=s1');
+  await expect(page.locator('#status-desc')).toHaveText('Connected as @<b>maker</b>. Redirecting...');
+  expect(body).toEqual({ access_token: 'abc', expires_in: 604800, state: 's1' });
+});
+
+test('every static handler names a real function', async ({ page }) => {
+  await page.goto('/');
+  const missing = await page.evaluate(() => ['data-click', 'data-change', 'data-input'].flatMap((attribute) => (
+    [...document.querySelectorAll(`[${attribute}]`)]
+      .map((element) => element.getAttribute(attribute))
+      .filter((name) => typeof window[name] !== 'function')
+  )));
+  expect(missing).toEqual([]);
 });

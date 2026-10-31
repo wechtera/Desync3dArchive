@@ -15,7 +15,7 @@
       <span id="banner-storage-msg">Storage paths are unconfigured or drive is unmounted.</span>
     </div>
     <div class="banner-actions">
-      <button class="btn-pill btn-action-primary" onclick="openConfigModal()">Configure Storage Paths</button>
+      <button class="btn-pill btn-action-primary" data-click="openConfigModal">Configure Storage Paths</button>
     </div>
   </div>
 
@@ -24,7 +24,7 @@
       <span>Your MyMiniFactory sign-in is about to expire. Downloads are paused and will resume after you reconnect.</span>
     </div>
     <div class="banner-actions">
-      <button class="btn-pill btn-action-primary" onclick="switchTab('settings')">Reconnect</button>
+      <button class="btn-pill btn-action-primary" data-click="switchTab" data-args='["settings"]'>Reconnect</button>
     </div>
   </div>
   <div class="system-banner banner-danger" id="banner-circuit">
@@ -33,14 +33,14 @@
       <span id="banner-circuit-msg">Cloudflare session expired (HTTP 401/403). Update cookies.json and resume queue.</span>
     </div>
     <div class="banner-actions">
-      <button class="btn-pill btn-action-primary" onclick="controlDownload('reset_circuit_breaker')">Resume Queue</button>
+      <button class="btn-pill btn-action-primary" data-click="controlDownload" data-args='["reset_circuit_breaker"]'>Resume Queue</button>
     </div>
   </div>
 
   <!-- Header with Brand Home Reset, Consolidated Nav & Action Triggers -->
   <header>
     <div class="header-left">
-      <a href="#" class="brand-title" onclick="resetToHome(event)">DESYNC <span>3D VAULT</span></a>
+      <a href="#" class="brand-title" data-click="resetToHome" data-pass-event>DESYNC <span>3D VAULT</span></a>
       
       <div class="nav-tabs">
         <!-- Consolidated Library Dropdown -->
@@ -49,22 +49,22 @@
             View Library <span class="dropdown-caret"></span>
           </button>
           <div class="dropdown-menu" id="menu-library-dropdown">
-            <button type="button" class="dropdown-item" onclick="switchTab('models')">All Models</button>
-            <button type="button" class="dropdown-item" onclick="switchTab('releases')">Monthly Releases</button>
-            <button type="button" class="dropdown-item" onclick="switchTab('creators')">Creators</button>
+            <button type="button" class="dropdown-item" data-click="switchTab" data-args='["models"]'>All Models</button>
+            <button type="button" class="dropdown-item" data-click="switchTab" data-args='["releases"]'>Monthly Releases</button>
+            <button type="button" class="dropdown-item" data-click="switchTab" data-args='["creators"]'>Creators</button>
           </div>
         </div>
 
-        <button class="tab-btn" id="nav-tab-downloads" onclick="switchTab('downloads')">Manage / Retrieve / Reconcile Assets</button>
-        <button class="tab-btn" id="nav-tab-stashes" onclick="switchTab('stashes')">Stashes</button>
-        <button class="tab-btn" id="nav-tab-settings" onclick="switchTab('settings')">Settings</button>
-        <button class="tab-btn" id="nav-tab-help" onclick="switchTab('help')">Help</button>
+        <button class="tab-btn" id="nav-tab-downloads" data-click="switchTab" data-args='["downloads"]'>Manage / Retrieve / Reconcile Assets</button>
+        <button class="tab-btn" id="nav-tab-stashes" data-click="switchTab" data-args='["stashes"]'>Stashes</button>
+        <button class="tab-btn" id="nav-tab-settings" data-click="switchTab" data-args='["settings"]'>Settings</button>
+        <button class="tab-btn" id="nav-tab-help" data-click="switchTab" data-args='["help"]'>Help</button>
       </div>
     </div>
 
     <!-- Header Action Buttons & Active Stash Widget -->
     <div class="header-actions">
-      <button type="button" class="btn-pill btn-stash-widget" id="header-stash-widget" onclick="switchTab('stashes')">
+      <button type="button" class="btn-pill btn-stash-widget" id="header-stash-widget" data-click="switchTab" data-args='["stashes"]'>
         <span class="stash-widget-icon">Stash: </span>
         <span id="header-stash-name">No Active Stash</span>
         <span id="header-stash-count" class="badge-stash-count">0</span>
@@ -120,12 +120,12 @@
     </div>
 
     <div class="controls">
-      <input type="text" id="release-search" class="search-box" placeholder="Search title or keyword..." oninput="resetReleasePageAndLoad()">
-      <select id="release-creator-filter" onchange="resetReleasePageAndLoad()">
+      <input type="text" id="release-search" class="search-box" placeholder="Search title or keyword..." data-input="resetReleasePageAndLoad">
+      <select id="release-creator-filter" data-change="resetReleasePageAndLoad">
         <option value="">All Creators</option>
       </select>
       <label class="control-checkbox-label">
-        <input type="checkbox" id="bundles-only" onchange="resetReleasePageAndLoad()"> Probable Patreon / Tribe Drops Only
+        <input type="checkbox" id="bundles-only" data-change="resetReleasePageAndLoad"> Probable Patreon / Tribe Drops Only
       </label>
     </div>
 
@@ -134,9 +134,9 @@
     <div class="pagination-bar" id="releases-pagination">
       <span id="releases-page-info">Showing 0-0 of 0 drops</span>
       <div class="pagination-controls">
-        <button class="btn-pill" id="releases-prev-btn" onclick="changeReleasePage(-1)">&larr; Previous</button>
+        <button class="btn-pill" id="releases-prev-btn" data-click="changeReleasePage" data-args='[-1]'>&larr; Previous</button>
         <span id="releases-page-num" class="pagination-current-page">Page 1</span>
-        <button class="btn-pill" id="releases-next-btn" onclick="changeReleasePage(1)">Next &rarr;</button>
+        <button class="btn-pill" id="releases-next-btn" data-click="changeReleasePage" data-args='[1]'>Next &rarr;</button>
       </div>
     </div>
   </div>
@@ -145,19 +145,19 @@
   <div id="view-models">
     <div class="controls">
       <input type="text" id="model-search" class="search-box" placeholder="Search title, creator, or keyword...">
-      <select id="model-creator-filter" onchange="resetModelPageAndLoad()"><option value="">All Creators</option></select>
+      <select id="model-creator-filter" data-change="resetModelPageAndLoad"><option value="">All Creators</option></select>
       <input type="text" id="model-tag-filter" class="search-box search-box-tag" placeholder="Filter by tag (e.g. dragon)...">
       <label class="control-checkbox-label">
-        <input type="checkbox" id="bonus-filter" onchange="resetModelPageAndLoad()"> Rewards &amp; Bonuses Only
+        <input type="checkbox" id="bonus-filter" data-change="resetModelPageAndLoad"> Rewards &amp; Bonuses Only
       </label>
     </div>
     <div class="grid" id="models-grid"></div>
     <div class="pagination-bar" id="models-pagination">
       <span id="models-page-info">Showing 0-0 of 0 models</span>
       <div class="pagination-controls">
-        <button class="btn-pill" id="models-prev-btn" onclick="changeModelPage(-1)">&larr; Previous</button>
+        <button class="btn-pill" id="models-prev-btn" data-click="changeModelPage" data-args='[-1]'>&larr; Previous</button>
         <span id="models-page-num" class="pagination-current-page">Page 1</span>
-        <button class="btn-pill" id="models-next-btn" onclick="changeModelPage(1)">Next &rarr;</button>
+        <button class="btn-pill" id="models-next-btn" data-click="changeModelPage" data-args='[1]'>Next &rarr;</button>
       </div>
     </div>
   </div>
@@ -183,35 +183,35 @@
   <!-- View 4: Downloads Management Tab ("Manage / Retrieve / Reconcile Assets") -->
   <div id="view-downloads" style="display:none;">
     <div class="sub-tabs">
-      <button class="sub-btn active" onclick="switchDownloadSubView('pending')">Pending &amp; Queue Explorer</button>
-      <button class="sub-btn" onclick="switchDownloadSubView('active')">Active Transfers</button>
-      <button class="sub-btn" onclick="switchDownloadSubView('history')">History &amp; Audit Log</button>
-      <button class="sub-btn" onclick="switchDownloadSubView('reconcile')">Vault Reconcile</button>
-      <button class="sub-btn" onclick="switchDownloadSubView('sync')">MMF Sync</button>
+      <button class="sub-btn active" data-click="switchDownloadSubView" data-args='["pending"]'>Pending &amp; Queue Explorer</button>
+      <button class="sub-btn" data-click="switchDownloadSubView" data-args='["active"]'>Active Transfers</button>
+      <button class="sub-btn" data-click="switchDownloadSubView" data-args='["history"]'>History &amp; Audit Log</button>
+      <button class="sub-btn" data-click="switchDownloadSubView" data-args='["reconcile"]'>Vault Reconcile</button>
+      <button class="sub-btn" data-click="switchDownloadSubView" data-args='["sync"]'>MMF Sync</button>
     </div>
 
     <!-- Sub-View A: Pending / Bulk Selection -->
     <div id="sub-dl-pending">
       <div class="controls">
         <input type="text" id="pending-search" class="search-box" placeholder="Filter models...">
-        <select id="pending-creator-filter" onchange="resetPendingPageAndLoad()"><option value="">All Creators</option></select>
-        <select id="pending-sort" onchange="resetPendingPageAndLoad()">
+        <select id="pending-creator-filter" data-change="resetPendingPageAndLoad"><option value="">All Creators</option></select>
+        <select id="pending-sort" data-change="resetPendingPageAndLoad">
           <option value="date_desc">MMF Added: Newest First</option>
           <option value="date_asc">MMF Added: Oldest First</option>
           <option value="name_asc">Title: A &rarr; Z</option>
         </select>
         <label class="control-checkbox-label">
-          <input type="checkbox" id="pending-hide-completed" onchange="resetPendingPageAndLoad()" checked> Hide Completed
+          <input type="checkbox" id="pending-hide-completed" data-change="resetPendingPageAndLoad" checked> Hide Completed
         </label>
-        <button class="btn-pill btn-action-queue" onclick="queueSelectedModels()">Queue Selected (<span id="selected-count">0</span>)</button>
-        <button type="button" class="btn-pill btn-action-primary" onclick="window.addSelectedToStash()">Add Selected to Stash</button>
-        <button class="btn-pill btn-action-cancel" onclick="dequeueSelectedModels()">Remove Selected</button>
-        <button class="btn-pill btn-action-cancel" onclick="clearQueueStatus('pending')">Clear Entire Pending Queue</button>
+        <button class="btn-pill btn-action-queue" data-click="queueSelectedModels">Queue Selected (<span id="selected-count">0</span>)</button>
+        <button type="button" class="btn-pill btn-action-primary" data-click="addSelectedToStash">Add Selected to Stash</button>
+        <button class="btn-pill btn-action-cancel" data-click="dequeueSelectedModels">Remove Selected</button>
+        <button class="btn-pill btn-action-cancel" data-click="clearQueueStatus" data-args='["pending"]'>Clear Entire Pending Queue</button>
       </div>
       <table>
         <thead>
           <tr>
-            <th class="col-checkbox"><input type="checkbox" id="select-all-pending" onchange="toggleSelectAllPending(this.checked)"></th>
+            <th class="col-checkbox"><input type="checkbox" id="select-all-pending" data-change="toggleSelectAllPending" data-pass-checked></th>
             <th>Model Title</th>
             <th>Creator</th>
             <th>Files</th>
@@ -225,9 +225,9 @@
       <div class="pagination-bar">
         <span id="pending-page-info">Showing 0-0 of 0 models</span>
         <div class="pagination-controls">
-          <button class="btn-pill" id="pending-prev-btn" onclick="changePendingPage(-1)">&larr; Previous</button>
+          <button class="btn-pill" id="pending-prev-btn" data-click="changePendingPage" data-args='[-1]'>&larr; Previous</button>
           <span id="pending-page-num" class="pagination-current-page">Page 1</span>
-          <button class="btn-pill" id="pending-next-btn" onclick="changePendingPage(1)">Next &rarr;</button>
+          <button class="btn-pill" id="pending-next-btn" data-click="changePendingPage" data-args='[1]'>Next &rarr;</button>
         </div>
       </div>
     </div>
@@ -241,9 +241,9 @@
           <span class="queue-status-text">Awaiting NAS Offload: <strong id="active-queue-staged">0</strong></span>
         </div>
         <div class="btn-group">
-          <button class="btn-pill" onclick="controlDownload('pause')">Pause Engine</button>
-          <button class="btn-pill btn-action-primary" onclick="controlDownload('resume')">Resume Engine</button>
-          <button class="btn-pill btn-action-cancel" onclick="confirmPurgeIncomplete()">Purge Incomplete Queue</button>
+          <button class="btn-pill" data-click="controlDownload" data-args='["pause"]'>Pause Engine</button>
+          <button class="btn-pill btn-action-primary" data-click="controlDownload" data-args='["resume"]'>Resume Engine</button>
+          <button class="btn-pill btn-action-cancel" data-click="confirmPurgeIncomplete">Purge Incomplete Queue</button>
         </div>
       </div>
 
@@ -261,7 +261,7 @@
         <h3 class="section-header-title">Queued Pipeline Items</h3>
         <div class="sort-select-wrap">
           <label class="sort-label">Sort by Added to Queue:</label>
-          <select id="active-sort" class="select-compact" onchange="window.checkHealth()">
+          <select id="active-sort" class="select-compact" data-change="checkHealth">
             <option value="enqueued_asc">Enqueued: Oldest First (FIFO)</option>
             <option value="enqueued_desc">Enqueued: Newest First</option>
           </select>
@@ -288,12 +288,12 @@
     <div id="sub-dl-history" style="display:none;">
       <div class="controls controls-between">
         <div class="filter-group">
-          <select id="history-filter" onchange="resetHistoryPageAndLoad()">
+          <select id="history-filter" data-change="resetHistoryPageAndLoad">
             <option value="">All Finished / Failed</option>
             <option value="completed">Completed Only</option>
             <option value="failed">Failed Only</option>
           </select>
-          <select id="history-sort" onchange="resetHistoryPageAndLoad()">
+          <select id="history-sort" data-change="resetHistoryPageAndLoad">
             <option value="enqueued_desc">Enqueued: Newest First</option>
             <option value="enqueued_asc">Enqueued: Oldest First</option>
             <option value="completed_desc">Finished: Newest First</option>
@@ -301,8 +301,8 @@
           </select>
         </div>
         <div class="btn-group">
-          <button class="btn-pill btn-action-queue" onclick="controlDownload('retry_failed')">Retry All Failed</button>
-          <button class="btn-pill btn-action-cancel" onclick="clearQueueStatus('failed')">Purge Failed Records</button>
+          <button class="btn-pill btn-action-queue" data-click="controlDownload" data-args='["retry_failed"]'>Retry All Failed</button>
+          <button class="btn-pill btn-action-cancel" data-click="clearQueueStatus" data-args='["failed"]'>Purge Failed Records</button>
         </div>
       </div>
       <table>
@@ -323,9 +323,9 @@
       <div class="pagination-bar">
         <span id="history-page-info">Showing 0-0 of 0 jobs</span>
         <div class="pagination-controls">
-          <button class="btn-pill" id="history-prev-btn" onclick="changeHistoryPage(-1)">&larr; Previous</button>
+          <button class="btn-pill" id="history-prev-btn" data-click="changeHistoryPage" data-args='[-1]'>&larr; Previous</button>
           <span id="history-page-num" class="pagination-current-page">Page 1</span>
-          <button class="btn-pill" id="history-next-btn" onclick="changeHistoryPage(1)">Next &rarr;</button>
+          <button class="btn-pill" id="history-next-btn" data-click="changeHistoryPage" data-args='[1]'>Next &rarr;</button>
         </div>
       </div>
     </div>
@@ -335,29 +335,29 @@
       <div class="controls controls-wrap">
         <div class="control-actions-wrap">
           <div class="segmented-control">
-            <button type="button" class="segmented-btn active" id="btn-mode-fast" onclick="setReconcileMode('fast')">
+            <button type="button" class="segmented-btn active" id="btn-mode-fast" data-click="setReconcileMode" data-args='["fast"]'>
               Fast Scan (Stat &amp; Size)
             </button>
-            <button type="button" class="segmented-btn" id="btn-mode-deep" onclick="setReconcileMode('deep')">
+            <button type="button" class="segmented-btn" id="btn-mode-deep" data-click="setReconcileMode" data-args='["deep"]'>
               Deep Scan (CRC, STL &amp; SHA-256)
             </button>
           </div>
-          <button type="button" class="btn-pill btn-action-primary" id="btn-run-reconcile" onclick="triggerReconcileScan()">
+          <button type="button" class="btn-pill btn-action-primary" id="btn-run-reconcile" data-click="triggerReconcileScan">
             Run Forward Reconciliation
           </button>
-          <button type="button" class="btn-pill" id="btn-run-orphan-audit" onclick="triggerOrphanAudit()">
+          <button type="button" class="btn-pill" id="btn-run-orphan-audit" data-click="triggerOrphanAudit">
             Run Reverse Orphan Audit
           </button>
-          <button type="button" class="btn-pill" id="btn-backfill-archives" onclick="triggerArchiveInspectionSweep()">
+          <button type="button" class="btn-pill" id="btn-backfill-archives" data-click="triggerArchiveInspectionSweep">
             Backfill Archive Inspection
           </button>
-          <button type="button" class="btn-pill" id="btn-backfill-previews" onclick="triggerCatalogPreviewSweep()">
+          <button type="button" class="btn-pill" id="btn-backfill-previews" data-click="triggerCatalogPreviewSweep">
             Backfill Model Previews
           </button>
-          <button type="button" class="btn-pill" id="btn-scan-staging" onclick="triggerStagingSweep()">
+          <button type="button" class="btn-pill" id="btn-scan-staging" data-click="triggerStagingSweep">
             Staging Scratch Purge
           </button>
-          <button type="button" class="btn-pill" id="btn-scan-drift" onclick="triggerPathDriftScan()">
+          <button type="button" class="btn-pill" id="btn-scan-drift" data-click="triggerPathDriftScan">
             Check Path Drift
           </button>
         </div>
@@ -372,7 +372,7 @@
             <span class="status-badge status-queued" id="reconcile-status-badge">FAST SCAN</span>
             <span id="reconcile-progress-label" class="progress-header-label">Auditing vault integrity...</span>
           </div>
-          <button type="button" class="btn-pill btn-action-cancel" id="btn-cancel-reconcile" onclick="cancelReconcile()">
+          <button type="button" class="btn-pill btn-action-cancel" id="btn-cancel-reconcile" data-click="cancelReconcile">
             Cancel Scan
           </button>
         </div>
@@ -502,7 +502,7 @@
               <strong>Bypass Protection:</strong> Cloudflare Turnstile bot challenges are handled automatically through stored browser session credentials.
             </div>
             <div class="sync-card-actions">
-              <button type="button" class="btn-pill btn-action-primary btn-lg" onclick="openModal('modal-scraper')">
+              <button type="button" class="btn-pill btn-action-primary btn-lg" data-click="openModal" data-args='["modal-scraper"]'>
                 Launch Library Scraper
               </button>
             </div>
@@ -528,7 +528,7 @@
               <strong>Safe Rate Limiting:</strong> Uses adaptive exponential backoff to respect upstream API rate limits and avoid HTTP 429 throttling.
             </div>
             <div class="sync-card-actions">
-              <button type="button" class="btn-pill btn-action-primary btn-lg" onclick="openModal('modal-ingest')">
+              <button type="button" class="btn-pill btn-action-primary btn-lg" data-click="openModal" data-args='["modal-ingest"]'>
                 Open Metadata Ingestion Pipeline
               </button>
             </div>
@@ -555,7 +555,7 @@
             <label class="control-checkbox-label font-xs">
               <input type="checkbox" id="new-stash-make-active"> Set Active
             </label>
-            <button type="button" class="btn-pill btn-action-primary" onclick="window.handleCreateStash()">
+            <button type="button" class="btn-pill btn-action-primary" data-click="handleCreateStash">
               Create Stash
             </button>
           </div>
@@ -586,13 +586,13 @@
             </div>
           </div>
           <div class="flex gap-2">
-            <button type="button" class="btn-pill btn-action-cancel" onclick="purgeStashExports(14)">
+            <button type="button" class="btn-pill btn-action-cancel" data-click="purgeStashExports" data-args='[14]'>
               Purge Print Stashes (&gt;14 Days)
             </button>
-            <button type="button" class="btn-pill btn-action-cancel" onclick="purgeLogs(14)">
+            <button type="button" class="btn-pill btn-action-cancel" data-click="purgeLogs" data-args='[14]'>
               Purge Logs (&gt;14 Days)
             </button>
-            <button type="button" class="btn-pill" onclick="window.refreshDirectoryUsage()">
+            <button type="button" class="btn-pill" data-click="refreshDirectoryUsage">
               Refresh Disk Stats
             </button>
           </div>
@@ -611,7 +611,7 @@
             </div>
           </div>
           <div class="flex gap-2">
-            <button type="button" class="btn-pill" onclick="window.loadExternalLibraries()">Refresh Libraries</button>
+            <button type="button" class="btn-pill" data-click="loadExternalLibraries">Refresh Libraries</button>
           </div>
         </div>
 
@@ -626,7 +626,7 @@
               <label for="new-lib-path">Top-Level Storage Directory Path *</label>
               <div class="settings-input-with-button">
                 <input type="text" id="new-lib-path" placeholder="/Volumes/STL/Loot Studios" spellcheck="false">
-                <button type="button" class="btn-pill" onclick="window.openDirectoryPicker('new-lib-path')">Browse</button>
+                <button type="button" class="btn-pill" data-click="openDirectoryPicker" data-args='["new-lib-path"]'>Browse</button>
               </div>
               <span class="form-help-text">Direct path to library root on NAS or local drive (strictly read-only).</span>
             </div>
@@ -643,7 +643,7 @@
               <span class="form-help-text">Assigned to indexed models if not specified in release subfolders.</span>
             </div>
             <div class="settings-field-group flex items-end">
-              <button type="button" class="btn-pill btn-action-primary" onclick="window.handleAddExternalLibrary()">
+              <button type="button" class="btn-pill btn-action-primary" data-click="handleAddExternalLibrary">
                 Register In-Place Library
               </button>
             </div>
@@ -671,7 +671,7 @@
             <label for="setting-work-path">1. Local Staging Path (Fast NVMe / Scratch)</label>
             <div class="settings-input-with-button">
               <input type="text" id="setting-work-path" placeholder="/path/to/fast/staging" spellcheck="false">
-              <button type="button" class="btn-pill" onclick="openDirectoryPicker('setting-work-path')">Browse</button>
+              <button type="button" class="btn-pill" data-click="openDirectoryPicker" data-args='["setting-work-path"]'>Browse</button>
             </div>
             <span class="form-help-text">Temporary holding area for in-flight streams, unzipping, and integrity checks.</span>
           </div>
@@ -680,7 +680,7 @@
             <label for="setting-root-path">2. Vault / NAS Target Path (Cold Archive Pool)</label>
             <div class="settings-input-with-button">
               <input type="text" id="setting-root-path" placeholder="/Volumes/STL/DESYNC_Vault" spellcheck="false">
-              <button type="button" class="btn-pill" onclick="openDirectoryPicker('setting-root-path')">Browse</button>
+              <button type="button" class="btn-pill" data-click="openDirectoryPicker" data-args='["setting-root-path"]'>Browse</button>
             </div>
             <span class="form-help-text">Persistent destination directory where validated release structures are offloaded.</span>
           </div>
@@ -691,14 +691,14 @@
             <label for="setting-stash-export-path">3. Slicer Print Queue Path (Local Workstation)</label>
             <div class="settings-input-with-button">
               <input type="text" id="setting-stash-export-path" placeholder="~/Downloads/DESYNC_Print_Queue" spellcheck="false">
-              <button type="button" class="btn-pill" onclick="openDirectoryPicker('setting-stash-export-path')">Browse</button>
+              <button type="button" class="btn-pill" data-click="openDirectoryPicker" data-args='["setting-stash-export-path"]'>Browse</button>
             </div>
             <span class="form-help-text">Local destination directory where curated stash manifests are unpacked with renders for slicer prep.</span>
           </div>
         </div>
 
         <div class="settings-actions-bar">
-          <button type="button" class="btn-pill btn-action-queue" onclick="saveSettingsForm()">
+          <button type="button" class="btn-pill btn-action-queue" data-click="saveSettingsForm">
             Save Storage Paths
           </button>
         </div>
@@ -764,7 +764,7 @@
         </div>
 
         <div class="settings-actions-bar">
-          <button type="button" class="btn-pill btn-action-queue" onclick="saveSettingsForm()">
+          <button type="button" class="btn-pill btn-action-queue" data-click="saveSettingsForm">
             Apply Engine Tuning
           </button>
         </div>
@@ -780,7 +780,7 @@
             </div>
           </div>
           <div class="flex gap-2">
-            <button type="button" class="btn-pill btn-action-primary" onclick="saveLoggingSettings()">
+            <button type="button" class="btn-pill btn-action-primary" data-click="saveLoggingSettings">
               Apply Logging Configuration
             </button>
           </div>
@@ -836,13 +836,6 @@
             <label for="setting-auth-client-id">Application Slug / Client Key</label>
             <input type="text" id="setting-auth-client-id" placeholder="e.g., desync-3d-vault" spellcheck="false">
           </div>
-          <div class="settings-field-group">
-            <label for="setting-auth-api-key">Application API Key / Secret</label>
-            <div class="settings-input-with-button">
-              <input type="password" id="setting-auth-api-key" placeholder="••••••••••••••••••••••••••••••••" spellcheck="false">
-              <button type="button" id="btn-toggle-api-key" class="btn-pill" onclick="toggleApiKeyVisibility()">Show</button>
-            </div>
-          </div>
         </div>
 
         <div id="auth-diagnostics" class="auth-diag-grid" style="display: none;">
@@ -861,10 +854,10 @@
         </div>
 
         <div class="settings-actions-bar">
-          <button type="button" class="btn-pill" onclick="saveAuthCredentials()">Save Credentials</button>
-          <button type="button" id="btn-test-auth" class="btn-pill" onclick="testAccountConnection()" style="display: none;">Test Connection</button>
-          <button type="button" id="btn-disconnect-auth" class="btn-pill btn-action-cancel" onclick="disconnectAccount()" style="display: none;">Disconnect</button>
-          <button type="button" id="btn-connect-auth" class="btn-pill btn-action-primary" onclick="connectAccount()">Connect Account</button>
+          <button type="button" class="btn-pill" data-click="saveAuthCredentials">Save Credentials</button>
+          <button type="button" id="btn-test-auth" class="btn-pill" data-click="testAccountConnection" style="display: none;">Test Connection</button>
+          <button type="button" id="btn-disconnect-auth" class="btn-pill btn-action-cancel" data-click="disconnectAccount" style="display: none;">Disconnect</button>
+          <button type="button" id="btn-connect-auth" class="btn-pill btn-action-primary" data-click="connectAccount">Connect Account</button>
         </div>
       </div>
 
@@ -916,7 +909,7 @@
         </div>
 
         <div class="settings-actions-bar">
-          <button type="button" class="btn-pill btn-action-primary" onclick="saveSettingsForm()">
+          <button type="button" class="btn-pill btn-action-primary" data-click="saveSettingsForm">
             Save Cookies
           </button>
         </div>
@@ -932,7 +925,7 @@
             </div>
           </div>
           <div class="footer-actions">
-            <button type="button" class="btn-pill" id="btn-refresh-tasks" onclick="refreshTasksStatus()">Refresh Tasks</button>
+            <button type="button" class="btn-pill" id="btn-refresh-tasks" data-click="refreshTasksStatus">Refresh Tasks</button>
           </div>
         </div>
 
@@ -943,13 +936,13 @@
               <span class="task-type-label" id="task-type-badge">No background tasks running</span>
             </div>
             <div class="btn-group">
-              <button type="button" class="btn-pill btn-action-cancel" id="btn-cancel-active-task" onclick="cancelActiveTask()" style="display:none;">
+              <button type="button" class="btn-pill btn-action-cancel" id="btn-cancel-active-task" data-click="cancelActiveTask" style="display:none;">
                 Cancel Task
               </button>
-              <button type="button" class="btn-pill btn-action-cancel" id="btn-kill-active-task" onclick="killActiveTask()" style="display:none;" title="Force-terminate stuck runner and release pipeline lock">
+              <button type="button" class="btn-pill btn-action-cancel" id="btn-kill-active-task" data-click="killActiveTask" style="display:none;" title="Force-terminate stuck runner and release pipeline lock">
                 Force Kill
               </button>
-              <button type="button" class="btn-pill" id="btn-clear-task-history" onclick="clearTaskHistory()">
+              <button type="button" class="btn-pill" id="btn-clear-task-history" data-click="clearTaskHistory">
                 Clear History
               </button>
             </div>
@@ -972,7 +965,7 @@
                 <label class="autoscroll-label font-md">
                   <input type="checkbox" id="chk-log-autoscroll" checked> Auto-scroll
                 </label>
-                <button type="button" class="btn-link log-clear-btn" id="btn-clear-log-view" onclick="clearTaskLogView()">Clear Console</button>
+                <button type="button" class="btn-link log-clear-btn" id="btn-clear-log-view" data-click="clearTaskLogView">Clear Console</button>
               </div>
             </div>
             <pre class="task-log-viewer" id="task-live-logs">System ready. Run Scrape Library or Ingest Metadata from MMF Sync to stream live execution output...</pre>
@@ -1140,7 +1133,7 @@
     <div class="modal">
       <div class="modal-header">
         <h2 id="modal-title" class="modal-title-accent">Release Pack</h2>
-        <button class="tab-btn" onclick="closeModal('release-modal')">Close</button>
+        <button class="tab-btn" data-click="closeModal" data-args='["release-modal"]'>Close</button>
       </div>
       <div class="modal-body">
         <div class="grid" id="modal-models-grid"></div>
@@ -1156,7 +1149,7 @@
           <h2 id="files-modal-title" class="modal-title-accent">Model Files</h2>
           <div id="files-modal-subtitle" class="modal-subtitle font-md">-</div>
         </div>
-        <button class="tab-btn" onclick="closeModal('files-modal')">Close</button>
+        <button class="tab-btn" data-click="closeModal" data-args='["files-modal"]'>Close</button>
       </div>
       <div class="modal-body" id="files-modal-body">
         <div class="loading-placeholder">Loading files...</div>
@@ -1169,7 +1162,7 @@
     <div class="modal modal-md">
       <div class="modal-header">
         <h2 class="modal-title-accent">Configure Storage Paths</h2>
-        <button class="tab-btn" onclick="closeModal('config-modal')">Close</button>
+        <button class="tab-btn" data-click="closeModal" data-args='["config-modal"]'>Close</button>
       </div>
       <div class="modal-body modal-body-stack">
         <p class="modal-desc font-md">
@@ -1180,7 +1173,7 @@
           <label>1. Local Staging Path (Fast NVMe / Scratch)</label>
           <div class="input-row">
             <input type="text" id="config-work-input" class="search-box" placeholder="/Volumes/Scratch/vault_staging or ./staging">
-            <button type="button" class="btn-pill" onclick="openDirectoryPicker('config-work-input')">Browse</button>
+            <button type="button" class="btn-pill" data-click="openDirectoryPicker" data-args='["config-work-input"]'>Browse</button>
           </div>
           <span class="form-help-text">
             Holds in-flight chunk transfers and verifies ZIP files before moving to NAS.
@@ -1191,7 +1184,7 @@
           <label>2. Vault / NAS Target Path (Cold Archive)</label>
           <div class="input-row">
             <input type="text" id="config-path-input" class="search-box" placeholder="/Volumes/NAS/3D_Library or /mnt/vault">
-            <button type="button" class="btn-pill" onclick="openDirectoryPicker('config-path-input')">Browse</button>
+            <button type="button" class="btn-pill" data-click="openDirectoryPicker" data-args='["config-path-input"]'>Browse</button>
           </div>
           <span class="form-help-text">
             Target network share or storage array for permanently organized models.
@@ -1199,8 +1192,8 @@
         </div>
 
         <div class="form-actions-right">
-          <button class="btn-pill" onclick="closeModal('config-modal')">Cancel</button>
-          <button class="btn-pill btn-action-primary" onclick="saveStorageConfig()">Save &amp; Mount Paths</button>
+          <button class="btn-pill" data-click="closeModal" data-args='["config-modal"]'>Cancel</button>
+          <button class="btn-pill btn-action-primary" data-click="saveStorageConfig">Save &amp; Mount Paths</button>
         </div>
       </div>
     </div>
@@ -1211,14 +1204,14 @@
     <div class="modal modal-md">
       <div class="modal-header">
         <h2 class="modal-title-accent">Browse Server Directories</h2>
-        <button class="tab-btn" onclick="closeModal('browse-modal')">Close</button>
+        <button class="tab-btn" data-click="closeModal" data-args='["browse-modal"]'>Close</button>
       </div>
       <div class="modal-body">
         <div class="browse-current-box font-md" id="browse-current-path">-</div>
         <ul class="browse-list" id="browse-dir-list"></ul>
         <div class="form-actions-right form-actions-spaced">
-          <button class="btn-pill" onclick="closeModal('browse-modal')">Cancel</button>
-          <button class="btn-pill btn-action-primary" onclick="selectCurrentBrowseFolder()">Select This Folder</button>
+          <button class="btn-pill" data-click="closeModal" data-args='["browse-modal"]'>Cancel</button>
+          <button class="btn-pill btn-action-primary" data-click="selectCurrentBrowseFolder">Select This Folder</button>
         </div>
       </div>
     </div>
@@ -1229,7 +1222,7 @@
     <div class="modal modal-md">
       <div class="modal-header">
         <h2 class="modal-title-accent">Scrape MyMiniFactory Library</h2>
-        <button class="tab-btn" onclick="closeModal('modal-scraper')">Close</button>
+        <button class="tab-btn" data-click="closeModal" data-args='["modal-scraper"]'>Close</button>
       </div>
       <div class="modal-body modal-body-stack">
         <p class="modal-desc font-md">
@@ -1259,8 +1252,8 @@
         </div>
 
         <div class="form-actions-right">
-          <button type="button" class="btn-pill" id="btn-cancel-scrape-modal" onclick="closeModal('modal-scraper')">Close</button>
-          <button type="button" class="btn-pill btn-action-primary" id="btn-trigger-scrape" onclick="triggerLibraryScrape()">Start Library Scrape</button>
+          <button type="button" class="btn-pill" id="btn-cancel-scrape-modal" data-click="closeModal" data-args='["modal-scraper"]'>Close</button>
+          <button type="button" class="btn-pill btn-action-primary" id="btn-trigger-scrape" data-click="triggerLibraryScrape">Start Library Scrape</button>
         </div>
       </div>
     </div>
@@ -1271,7 +1264,7 @@
     <div class="modal modal-lg">
       <div class="modal-header">
         <h2 class="modal-title-accent">Ingest Model Metadata</h2>
-        <button class="tab-btn" onclick="closeModal('modal-ingest')">Close</button>
+        <button class="tab-btn" data-click="closeModal" data-args='["modal-ingest"]'>Close</button>
       </div>
       <div class="modal-body modal-body-stack">
         <p class="modal-desc font-md">
@@ -1279,8 +1272,8 @@
         </p>
 
         <div class="modal-tabs">
-          <button type="button" class="sub-btn active" id="tab-btn-folder" onclick="switchIngestTab('tab-scrape-folder')">Select Scrape Folder</button>
-          <button type="button" class="sub-btn" id="tab-btn-manual" onclick="switchIngestTab('tab-manual-ids')">Paste Model IDs</button>
+          <button type="button" class="sub-btn active" id="tab-btn-folder" data-click="switchIngestTab" data-args='["tab-scrape-folder"]'>Select Scrape Folder</button>
+          <button type="button" class="sub-btn" id="tab-btn-manual" data-click="switchIngestTab" data-args='["tab-manual-ids"]'>Paste Model IDs</button>
         </div>
 
         <div id="tab-scrape-folder">
@@ -1330,8 +1323,8 @@
         </div>
 
         <div class="form-actions-right">
-          <button type="button" class="btn-pill" id="btn-cancel-ingest-modal" onclick="closeModal('modal-ingest')">Close</button>
-          <button type="button" class="btn-pill btn-action-primary" id="btn-trigger-ingest" onclick="triggerMetadataIngest()">Start Metadata Ingest</button>
+          <button type="button" class="btn-pill" id="btn-cancel-ingest-modal" data-click="closeModal" data-args='["modal-ingest"]'>Close</button>
+          <button type="button" class="btn-pill btn-action-primary" id="btn-trigger-ingest" data-click="triggerMetadataIngest">Start Metadata Ingest</button>
         </div>
       </div>
     </div>
@@ -1345,7 +1338,7 @@
           <h2 id="model-detail-title" class="modal-title-accent">Model Metadata</h2>
           <div id="model-detail-subtitle" class="modal-subtitle font-md">Loading object properties...</div>
         </div>
-        <button type="button" class="tab-btn" onclick="closeModal('model-detail-modal')">Close</button>
+        <button type="button" class="tab-btn" data-click="closeModal" data-args='["model-detail-modal"]'>Close</button>
       </div>
       <div class="modal-body" id="model-detail-body">
         <div class="loading-placeholder-lg">Loading model metadata...</div>
@@ -1363,14 +1356,14 @@
         </div>
         <div class="header-actions">
           <div class="segmented-control" id="archive-view-mode-toggle">
-            <button type="button" class="segmented-btn active" id="btn-archive-view-logical" onclick="switchArchiveViewMode('logical')">
+            <button type="button" class="segmented-btn active" id="btn-archive-view-logical" data-click="switchArchiveViewMode" data-args='["logical"]'>
               Logical Models
             </button>
-            <button type="button" class="segmented-btn" id="btn-archive-view-raw" onclick="switchArchiveViewMode('raw')">
+            <button type="button" class="segmented-btn" id="btn-archive-view-raw" data-click="switchArchiveViewMode" data-args='["raw"]'>
               Raw File Tree
             </button>
           </div>
-          <button type="button" class="tab-btn" onclick="closeModal('modal-archive-viewer')">Close</button>
+          <button type="button" class="tab-btn" data-click="closeModal" data-args='["modal-archive-viewer"]'>Close</button>
         </div>
       </div>
       <div class="modal-body" id="archive-viewer-body">
@@ -1387,16 +1380,16 @@
           <h2 class="modal-title-accent" id="ephemeral-render-title">Component 3D Render</h2>
           <div class="modal-subtitle font-md" id="ephemeral-render-subtitle">Angle: Front-Left (3/4 Profile)</div>
         </div>
-        <button type="button" class="tab-btn" onclick="window.closeEphemeralRenderModal()">Close</button>
+        <button type="button" class="tab-btn" data-click="closeEphemeralRenderModal">Close</button>
       </div>
       <div class="modal-body">
         <div class="ephemeral-view-pills" id="ephemeral-pills-container">
-          <button type="button" class="btn-pill font-xs pill-view active" data-view="front_left" onclick="window.switchEphemeralView('front_left')">Front-Left (3/4)</button>
-          <button type="button" class="btn-pill font-xs pill-view" data-view="front_right" onclick="window.switchEphemeralView('front_right')">Front-Right</button>
-          <button type="button" class="btn-pill font-xs pill-view" data-view="back_right" onclick="window.switchEphemeralView('back_right')">Back-Right</button>
-          <button type="button" class="btn-pill font-xs pill-view" data-view="back_left" onclick="window.switchEphemeralView('back_left')">Back-Left</button>
-          <button type="button" class="btn-pill font-xs pill-view" data-view="top_down" onclick="window.switchEphemeralView('top_down')">Top-Down</button>
-          <button type="button" class="btn-pill font-xs pill-view" data-view="bottom_up" onclick="window.switchEphemeralView('bottom_up')">Bottom-Up</button>
+          <button type="button" class="btn-pill font-xs pill-view active" data-view="front_left" data-click="switchEphemeralView" data-args='["front_left"]'>Front-Left (3/4)</button>
+          <button type="button" class="btn-pill font-xs pill-view" data-view="front_right" data-click="switchEphemeralView" data-args='["front_right"]'>Front-Right</button>
+          <button type="button" class="btn-pill font-xs pill-view" data-view="back_right" data-click="switchEphemeralView" data-args='["back_right"]'>Back-Right</button>
+          <button type="button" class="btn-pill font-xs pill-view" data-view="back_left" data-click="switchEphemeralView" data-args='["back_left"]'>Back-Left</button>
+          <button type="button" class="btn-pill font-xs pill-view" data-view="top_down" data-click="switchEphemeralView" data-args='["top_down"]'>Top-Down</button>
+          <button type="button" class="btn-pill font-xs pill-view" data-view="bottom_up" data-click="switchEphemeralView" data-args='["bottom_up"]'>Bottom-Up</button>
         </div>
         <div class="ephemeral-image-stage" id="ephemeral-stage">
           <div class="loading-placeholder">Initializing Blender preview stream...</div>
