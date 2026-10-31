@@ -71,7 +71,7 @@ def run_startup_analytics(conn: sqlite3.Connection):
             FROM models m
             LEFT JOIN model_files f ON m.id = f.model_id
             LEFT JOIN model_tags t ON m.id = t.model_id
-            WHERE m.release_month IS NOT NULL AND m.release_month != ''
+            WHERE m.is_active = 1 AND m.release_month IS NOT NULL AND m.release_month != ''
             GROUP BY m.designer_name, m.release_month;
         """
         clusters = conn.execute(cluster_query).fetchall()
@@ -132,7 +132,7 @@ def compute_catalog_audit(conn: sqlite3.Connection, designer: Optional[str] = No
             ORDER BY release_month ASC;
         """, (designer,)).fetchall()
         bonus_row = conn.execute(
-            "SELECT COUNT(*) FROM models WHERE designer_name = ? AND is_bonus = 1;",
+            "SELECT COUNT(*) FROM models WHERE designer_name = ? AND is_bonus = 1 AND is_active = 1;",
             (designer,)
         ).fetchone()
         total_bonus = bonus_row[0] if bonus_row else 0
@@ -143,7 +143,7 @@ def compute_catalog_audit(conn: sqlite3.Connection, designer: Optional[str] = No
             GROUP BY release_month
             ORDER BY release_month ASC;
         """).fetchall()
-        bonus_row = conn.execute("SELECT COUNT(*) FROM models WHERE is_bonus = 1;").fetchone()
+        bonus_row = conn.execute("SELECT COUNT(*) FROM models WHERE is_bonus = 1 AND is_active = 1;").fetchone()
         total_bonus = bonus_row[0] if bonus_row else 0
 
     if not rows:

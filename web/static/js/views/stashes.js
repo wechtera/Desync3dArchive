@@ -479,6 +479,7 @@ function renderStashItemCard(item) {
 
         <div class="card-badge-row mt-1">
           <span class="badge badge-ext">${item.file_extension || 'FILE'}</span>
+          ${item.is_inactive ? html`<span class="status-badge status-failed font-xs">INACTIVE</span>` : ''}
           ${item.is_supported ? html`<span class="status-badge status-completed font-xs">PRE-SUPPORTED</span>` : ''}
         </div>
 

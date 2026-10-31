@@ -116,7 +116,7 @@ class StoredPathTests(GuardBase):
         super().setUp()
         self.conn = sqlite3.connect(":memory:")
         self.conn.execute("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)")
-        self.conn.execute("CREATE TABLE external_libraries (id INTEGER PRIMARY KEY, path TEXT)")
+        self.conn.execute("CREATE TABLE external_libraries (id INTEGER PRIMARY KEY, path TEXT, is_active INTEGER NOT NULL DEFAULT 1)")
 
     def tearDown(self):
         self.conn.close()
@@ -132,6 +132,10 @@ class StoredPathTests(GuardBase):
         )
         with self.assertRaises(settings.ProductionPathError):
             settings.check_stored_paths(self.conn)
+
+    def test_an_unlinked_library_does_not_block_startup(self):
+        self.conn.execute("INSERT INTO external_libraries (path, is_active) VALUES (?, 0)", (str(self.production / "lib"),))
+        settings.check_stored_paths(self.conn)
 
     def test_external_library_pointing_at_production_is_refused(self):
         self.conn.execute("INSERT INTO external_libraries (path) VALUES (?)", (str(self.production / "lib"),))

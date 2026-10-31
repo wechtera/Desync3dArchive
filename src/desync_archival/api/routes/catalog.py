@@ -22,7 +22,8 @@ from desync_archival.services.mesh_renderer import VALID_VIEWS, MeshRenderer
 
 # Global SQL filters: Exclude tombstones and records with missing designer metadata
 VALID_MODEL_RAW = """
-    name NOT LIKE '[Unavailable Model %]'
+    is_active = 1
+    AND name NOT LIKE '[Unavailable Model %]'
     AND designer_name IS NOT NULL
     AND designer_name != ''
     AND designer_name != 'Unknown Designer'
@@ -30,7 +31,8 @@ VALID_MODEL_RAW = """
 """
 
 VALID_MODEL_M = """
-    m.name NOT LIKE '[Unavailable Model %]'
+    m.is_active = 1
+    AND m.name NOT LIKE '[Unavailable Model %]'
     AND m.designer_name IS NOT NULL
     AND m.designer_name != ''
     AND m.designer_name != 'Unknown Designer'
@@ -38,14 +40,16 @@ VALID_MODEL_M = """
 """
 
 VALID_RELEASE_COND = """
-    designer_name IS NOT NULL
+    is_active = 1
+    AND designer_name IS NOT NULL
     AND designer_name != ''
     AND designer_name != 'Unknown Designer'
     AND designer_name != 'Unknown'
 """
 
 VALID_RELEASE_R = """
-    r.designer_name IS NOT NULL
+    r.is_active = 1
+    AND r.designer_name IS NOT NULL
     AND r.designer_name != ''
     AND r.designer_name != 'Unknown Designer'
     AND r.designer_name != 'Unknown'

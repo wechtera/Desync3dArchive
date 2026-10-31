@@ -224,6 +224,6 @@ def check_stored_paths(conn) -> None:
     stored = [row[0] for row in rows if row[0]]
     table = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'external_libraries'").fetchone()
     if table:
-        stored.extend(row[0] for row in conn.execute("SELECT path FROM external_libraries").fetchall() if row[0])
+        stored.extend(row[0] for row in conn.execute("SELECT path FROM external_libraries WHERE is_active = 1").fetchall() if row[0])
     for value in stored:
         check_path(resolve_data_path(value))

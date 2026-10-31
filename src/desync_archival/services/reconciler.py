@@ -289,7 +289,7 @@ class VaultReconciler:
                                 m.release_month, m.vault_path, dj.destination_path
                 FROM models m
                 LEFT JOIN download_jobs dj ON dj.id = (SELECT MAX(id) FROM download_jobs WHERE model_id = m.id)
-                WHERE dj.status = 'completed' OR m.vault_path IS NOT NULL
+                WHERE m.is_active = 1 AND (dj.status = 'completed' OR m.vault_path IS NOT NULL)
                 ORDER BY m.id DESC;
             """).fetchall()
 
@@ -803,7 +803,7 @@ class VaultReconciler:
             SELECT df.file_id, df.model_id, df.cleaned_filename, df.vault_path, m.name as model_name
             FROM downloaded_files df
             JOIN models m ON df.model_id = m.id
-            WHERE (
+            WHERE m.is_active = 1 AND (
                 LOWER(df.file_extension) IN ('.zip', '.rar', '.7z')
                 OR LOWER(df.cleaned_filename) LIKE '%.zip'
                 OR LOWER(df.cleaned_filename) LIKE '%.rar'
@@ -924,7 +924,7 @@ class VaultReconciler:
         query = """
             SELECT id, name, designer_name, primary_image_url
             FROM models
-            WHERE primary_image_url IS NOT NULL AND primary_image_url != ''
+            WHERE is_active = 1 AND primary_image_url IS NOT NULL AND primary_image_url != ''
         """
         params: List[Any] = []
         if model_ids:

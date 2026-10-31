@@ -143,6 +143,7 @@ class StashExporter:
             total_files_exported = 0
             total_bytes_exported = 0
             manifest_items = []
+            skipped_inactive = 0
 
             try:
                 for idx, item in enumerate(items, start=1):
@@ -152,6 +153,16 @@ class StashExporter:
                     if progress_cb:
                         pct = round(((idx - 1) / total_items) * 90.0, 1)
                         progress_cb(pct, f"Extracting item {idx}/{total_items}...")
+
+                    inactive = c.execute(
+                        "SELECT 1 FROM models WHERE id = ? AND is_active = 0;", (item["model_id"],)
+                    ).fetchone()
+                    if inactive:
+                        skipped_inactive += 1
+                        log_layer("storage", logging.WARNING, f"Stash #{stash_id}: Skipped inactive Model #{item['model_id']}")
+                        if log_cb:
+                            log_cb(f"[{idx}/{total_items}] Skipped Model #{item['model_id']}: its library is unlinked.")
+                        continue
 
                     res = self._export_single_item(
                         conn=c,
@@ -178,6 +189,7 @@ class StashExporter:
                     "filter_mode": filter_mode,
                     "total_files": total_files_exported,
                     "total_bytes": total_bytes_exported,
+                    "skipped_inactive_items": skipped_inactive,
                     "items": manifest_items,
                 }
                 manifest_file = target_export_dir / "manifest.json"

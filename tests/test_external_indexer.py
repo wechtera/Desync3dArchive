@@ -374,8 +374,8 @@ class TestExternalIndexer(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(del_res["success"])
 
-        row = conn.execute("SELECT id FROM external_libraries WHERE id = 1;").fetchone()
-        self.assertIsNone(row)
+        row = conn.execute("SELECT is_active FROM external_libraries WHERE id = 1;").fetchone()
+        self.assertEqual(row[0], 0)
 
         snapshot_after = self._snapshot_directory(self.lib_root)
         self.assertEqual(snapshot_before, snapshot_after, "Physical files on storage were modified or deleted.")

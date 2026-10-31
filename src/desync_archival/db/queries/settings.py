@@ -20,6 +20,7 @@ GET_EXTERNAL_LIBRARIES_1 = """
         SELECT id, name, path, default_creator, disk_bytes, total_models,
                total_files, last_scanned_at, created_at
         FROM external_libraries
+        WHERE is_active = 1
         ORDER BY id ASC;
     """
 
@@ -28,18 +29,17 @@ POST_EXTERNAL_LIBRARY_1 = """
             VALUES (?, ?, ?)
             ON CONFLICT(path) DO UPDATE SET
                 name = excluded.name,
-                default_creator = excluded.default_creator;
+                default_creator = excluded.default_creator,
+                is_active = 1;
         """
 
 POST_EXTERNAL_LIBRARY_2 = "SELECT id FROM external_libraries WHERE path = ?;"
 
 POST_EXTERNAL_LIBRARY_3 = "PRAGMA database_list;"
 
-DELETE_EXTERNAL_LIBRARY_1 = "SELECT id, name, path FROM external_libraries WHERE id = ?;"
+DELETE_EXTERNAL_LIBRARY_1 = "SELECT id, name, path FROM external_libraries WHERE id = ? AND is_active = 1;"
 
-DELETE_EXTERNAL_LIBRARY_2 = "DELETE FROM external_libraries WHERE id = ?;"
-
-POST_EXTERNAL_LIBRARY_SCAN_1 = "SELECT id, name, path, default_creator FROM external_libraries WHERE id = ?;"
+POST_EXTERNAL_LIBRARY_SCAN_1 = "SELECT id, name, path, default_creator FROM external_libraries WHERE id = ? AND is_active = 1;"
 
 GET_DIRECTORY_USAGE_1 = "SELECT key, value FROM app_settings;"
 

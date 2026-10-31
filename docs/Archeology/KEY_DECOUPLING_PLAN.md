@@ -12,20 +12,13 @@ The primary key of a table is an auto-incrementing integer with no outside meani
 
 All numbers come from the sanitized copy, which has the same row counts as production.
 
-### The collision is real today
+### Collision paths
 
-This was reproduced on a throwaway copy, using the app's own `unlink_library` and `_alloc_model_id`:
+**Correction:** the first version of this plan said the collision was live. It reproduced the sequence with `unlink_library`, but nothing calls that method. The Unlink button runs `handle_delete_external_library`, which removed only the library row and left the library's models active in the catalog. Phase 2 fixed that defect. These paths remain:
 
-1. A stash holds an item from an external library.
-2. The library is unlinked. Its 25 models are removed, and the stash row is left behind.
-3. The next external model is allocated `2000000000`, the same ID the removed model had.
-4. The stash now points at an unrelated model. `previews/2000000000/cover.jpg` is also still on disk, so the new model can show the old cover.
-
-Three causes:
-
-- `_alloc_model_id` uses `MAX(id) + 1`, so freed IDs come back ([external_indexer.py:69](../../src/desync_archival/services/external_indexer.py#L69)).
-- `ExternalLibraryIndexer._get_db` never turns on `foreign_keys`, so cascades don't run ([external_indexer.py:63](../../src/desync_archival/services/external_indexer.py#L63)). Only `services/db.py` and `stash_service.py` turn it on.
-- `unlink_library` deletes from a fixed list of tables and misses `stash_items` ([external_indexer.py:464](../../src/desync_archival/services/external_indexer.py#L464)).
+- `_alloc_model_id` and `_alloc_file_id` use `MAX + 1` and start over at the offset when the top rows are gone, so a freed ID comes back ([external_indexer.py:69](../../src/desync_archival/services/external_indexer.py#L69)). Reaching this needs rows to be deleted, which phase 2 stopped doing on unlink.
+- `reconciler.py:625` allocates with `MAX(file_id) + 1` across all sources, for adopted MMF files. Once external files exist, that lands in the external range, while the indexer holds its next ID in memory for a run. A reconcile during a scan can collide.
+- Any future source would need its own number range, which is the root problem this plan removes.
 
 ### Current keys
 
@@ -88,11 +81,11 @@ Classify every reference above as internal ID, MMF ID, or path, in a table added
 
 **Exit check:** no reference left unclassified.
 
-### Phase 2: Fix the live bug first
+### Phase 2: Fix unlink (done)
 
 Unlinking a library flags its contents inactive and deletes nothing. A flagged stash item needs its model row, so the models, files and library row stay and carry `is_active = 0`. Inactive models leave the catalog, search, metrics and queues. Stash items stay visible, marked inactive, and are skipped on export. Relinking the same path reactivates the same rows with the same IDs.
 
-Turn on `foreign_keys` in the indexer and add a test that reproduces the sequence above. This stands alone, so it doesn't wait for the schema work.
+Turn on `foreign_keys` in the indexer. This stands alone, so it doesn't wait for the schema work.
 
 ### Phase 3: Add the new columns, with no behavior change
 

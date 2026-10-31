@@ -47,7 +47,9 @@ class StashService:
         if not self._has_vault_columns(conn):
             return
 
-        row = conn.execute("SELECT id, name, vault_path FROM models WHERE id = ?;", (model_id,)).fetchone()
+        row = conn.execute(
+            "SELECT id, name, vault_path FROM models WHERE id = ? AND is_active = 1;", (model_id,)
+        ).fetchone()
         if not row:
             raise ValueError(f"Model #{model_id} does not exist in library.")
 
@@ -230,6 +232,7 @@ class StashService:
                     si.submodel_id,
                     si.archive_member_id,
                     si.notes,
+                    m.is_active AS model_is_active,
                     si.added_at,
                     -- Parent Model Details
                     m.name AS model_name,
@@ -320,6 +323,7 @@ class StashService:
                     "file_id": row["file_id"],
                     "submodel_id": row["submodel_id"],
                     "archive_member_id": row["archive_member_id"],
+                    "is_inactive": row["model_is_active"] == 0,
                     "notes": row["notes"] or "",
                     "added_at": row["added_at"],
                     "title": title,
@@ -466,7 +470,7 @@ class StashService:
                 raise ValueError(f"Stash #{stash_id} does not exist.")
 
             # Validate foreign reference existence
-            model = c.execute("SELECT id FROM models WHERE id = ?;", (model_id,)).fetchone()
+            model = c.execute("SELECT id FROM models WHERE id = ? AND is_active = 1;", (model_id,)).fetchone()
             if not model:
                 raise ValueError(f"Model #{model_id} does not exist in library.")
 
@@ -616,7 +620,7 @@ class StashService:
             existing_dupes = {r["model_id"] for r in c.execute(dupe_query, [stash_id] + clean_ids).fetchall()}
 
             if has_vault:
-                models_query = f"SELECT id, name, vault_path FROM models WHERE id IN ({placeholders});"
+                models_query = f"SELECT id, name, vault_path FROM models WHERE is_active = 1 AND id IN ({placeholders});"
                 m_rows = {r["id"]: r for r in c.execute(models_query, clean_ids).fetchall()}
 
                 for mid in clean_ids:

@@ -14,7 +14,7 @@ GET_DOWNLOADS_HISTORY_2 = """
         LIMIT ? OFFSET ?;
     """
 
-POST_DOWNLOADS_QUEUE_1 = "SELECT id FROM models WHERE designer_name = ? AND release_month = ?;"
+POST_DOWNLOADS_QUEUE_1 = "SELECT id FROM models WHERE designer_name = ? AND release_month = ? AND is_active = 1;"
 
 POST_DOWNLOADS_QUEUE_2 = "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM model_files WHERE model_id = ?;"
 

@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from desync_archival import settings as app_config
 from desync_archival.db.queries import settings as queries
 from desync_archival.services import audit, auth_service
+from desync_archival.services.external_indexer import deactivate_library
 
 try:
     from desync_archival.services.logger import (
@@ -376,8 +377,7 @@ def handle_delete_external_library(
     lib_name = row["name"]
     lib_path = row["path"]
 
-    with conn:
-        conn.execute(queries.DELETE_EXTERNAL_LIBRARY_2, (library_id,))
+    deactivate_library(conn, library_id, lib_path)
 
     log_layer("storage", logging.INFO, f"Unlinked in-place library #{library_id} ('{lib_name}'). Physical files on NAS left untouched.")
 

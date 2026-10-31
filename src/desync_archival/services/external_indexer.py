@@ -51,6 +51,28 @@ def sanitize_title(name: str) -> str:
     return clean or name
 
 
+def deactivate_library(conn: sqlite3.Connection, library_id: int, lib_path: str) -> list[int]:
+    """Flags a library and its contents inactive and deletes nothing. Relinking reactivates them."""
+    prefix = f"{lib_path}/"
+    model_ids = [row[0] for row in conn.execute("""
+        SELECT id FROM models
+        WHERE source = 'external' AND (vault_path = ? OR substr(vault_path, 1, ?) = ?);
+    """, (lib_path, len(prefix), prefix)).fetchall()]
+
+    with conn:
+        conn.executemany("UPDATE models SET is_active = 0 WHERE id = ?;", [(mid,) for mid in model_ids])
+        conn.execute("UPDATE external_libraries SET is_active = 0 WHERE id = ?;", (library_id,))
+        conn.execute("""
+            UPDATE releases SET is_active = 0
+            WHERE id LIKE 'external\\_%' ESCAPE '\\' AND NOT EXISTS (
+                SELECT 1 FROM models m
+                WHERE m.source = 'external' AND m.is_active = 1
+                  AND m.designer_name = releases.designer_name AND m.release_month = releases.release_month
+            );
+        """)
+    return model_ids
+
+
 class ExternalLibraryIndexer:
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path).resolve()
@@ -64,6 +86,7 @@ class ExternalLibraryIndexer:
         conn = sqlite3.connect(str(self.db_path), timeout=45.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout = 45000;")
+        conn.execute("PRAGMA foreign_keys = ON;")
         return conn
 
     def _alloc_model_id(self, conn: sqlite3.Connection) -> int:
@@ -189,7 +212,7 @@ class ExternalLibraryIndexer:
         is_cancelled = cancel_cb or (lambda: False)
 
         with self._get_db() as conn:
-            lib_row = conn.execute("SELECT * FROM external_libraries WHERE id = ?;", (library_id,)).fetchone()
+            lib_row = conn.execute("SELECT * FROM external_libraries WHERE id = ? AND is_active = 1;", (library_id,)).fetchone()
 
         if not lib_row:
             return {"success": False, "error": f"External library #{library_id} not found."}
@@ -271,7 +294,8 @@ class ExternalLibraryIndexer:
                             conn.execute("""
                                 UPDATE models
                                 SET name = ?, designer_name = ?, primary_category = ?,
-                                    pre_supported = ?, release_month = ?, updated_at = CURRENT_TIMESTAMP
+                                    pre_supported = ?, release_month = ?, is_active = 1,
+                                    updated_at = CURRENT_TIMESTAMP
                                 WHERE id = ?;
                             """, (model_name, default_creator, m_category, has_presupported, release_month, model_id))
                     else:
@@ -426,7 +450,8 @@ class ExternalLibraryIndexer:
                                 model_count, total_files, total_size_bytes
                             ) VALUES (?, ?, 0, ?, ?, 0, 0)
                             ON CONFLICT(id) DO UPDATE SET
-                                model_count = model_count + excluded.model_count;
+                                model_count = model_count + excluded.model_count,
+                                is_active = 1;
                         """, (
                             f"external_{default_creator}_{release_month}",
                             default_creator, release_month, len(model_dirs),
@@ -474,37 +499,15 @@ class ExternalLibraryIndexer:
             lib_name = lib_row["name"]
             lib_path = lib_row["path"]
 
-            models = conn.execute("""
-                SELECT id FROM models
-                WHERE source = 'external'
-                  AND id >= ?
-                  AND (vault_path = ? OR vault_path LIKE ?);
-            """, (SYNTHETIC_ID_OFFSET, lib_path, f"{lib_path}/%")).fetchall()
+            model_ids = deactivate_library(conn, library_id, lib_path)
 
-            model_ids = [m["id"] for m in models]
-
-            with conn:
-                if model_ids:
-                    placeholders = ",".join("?" for _ in model_ids)
-                    conn.execute(f"DELETE FROM model_tags WHERE model_id IN ({placeholders});", model_ids)
-                    conn.execute(f"DELETE FROM model_files WHERE model_id IN ({placeholders});", model_ids)
-                    conn.execute(f"DELETE FROM downloaded_files WHERE model_id IN ({placeholders});", model_ids)
-
-                    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()}
-                    if "download_jobs" in tables:
-                        conn.execute(f"DELETE FROM download_jobs WHERE model_id IN ({placeholders});", model_ids)
-
-                    conn.execute(f"DELETE FROM models WHERE id IN ({placeholders});", model_ids)
-
-                conn.execute("DELETE FROM external_libraries WHERE id = ?;", (library_id,))
-
-        log_layer("storage", logging.INFO, f"Unlinked library #{library_id} ('{lib_name}'): Removed {len(model_ids)} SQLite models. Source NAS files untouched.")
+        log_layer("storage", logging.INFO, f"Unlinked library #{library_id} ('{lib_name}'): Flagged inactive {len(model_ids)} SQLite models. Source NAS files untouched.")
         return {
             "success": True,
             "library_id": library_id,
             "library_name": lib_name,
             "unlinked_models": len(model_ids),
-            "message": f"Library '{lib_name}' unlinked. Cleared {len(model_ids)} catalog records from database. Physical storage left untouched.",
+            "message": f"Library '{lib_name}' unlinked. Flagged {len(model_ids)} catalog records inactive. Physical storage left untouched.",
         }
 
     scan_and_index_library = scan_and_reconcile_library
