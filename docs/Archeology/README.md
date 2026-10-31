@@ -30,7 +30,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 7 is merged. Step 8 passed its automated exit check on `migration/08-performance` and needs approval to merge.
+- **Phase:** Step 8 is merged. Key decoupling (Step 8B) is complete on `migration/08b-keys` and needs approval to merge.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** `check.sh` passes at the latest commit: 384 Python tests, 1 skipped, 22 browser tests and 110 contract cases.
 - **Production data:** Untouched. Dev work never reaches it, and `library.db` still has its 15:50 modified time from 2026-10-30. The last full NAS comparison, after Step 4, was clean.
@@ -57,7 +57,9 @@ This directory tracks the state of the app, what has been done, and what comes n
 - [ ] User: look over the UI on the dev app, then approve the merge of `migration/06-frontend`
 - [x] Step 7 LAN mode: login, TLS, startup refusal
 - [x] Step 8 code: FTS5 catalog search
-- [ ] Merge Step 8 after approval
+- [x] Merge Step 8
+- [x] Step 8B code: key decoupling, duplicate report, cutover tool
+- [ ] Merge Step 8B after approval
 
 ## Project decisions
 

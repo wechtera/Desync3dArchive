@@ -4,7 +4,7 @@ A single-user, local-first archive and asset manager for a MyMiniFactory (MMF) 3
 
 This project replaces `scrapepage`, which stays frozen in the sibling directory for reference and rollback.
 
-**Status:** Migration is through Step 7 of 9 on `main`, with Step 8 (performance) on `migration/08-performance`. The app is usable on dev data, bound to loopback by default, and production has not moved yet. Start with [docs/Archeology/HANDOFF.md](docs/Archeology/HANDOFF.md).
+**Status:** Migration is through Step 8 of 9 on `main`, with key decoupling on `migration/08b-keys`. The app is usable on dev data, bound to loopback by default, and production has not moved yet. Start with [docs/Archeology/HANDOFF.md](docs/Archeology/HANDOFF.md).
 
 ## Prerequisites
 

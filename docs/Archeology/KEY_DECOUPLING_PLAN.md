@@ -1,6 +1,6 @@
 # Key decoupling plan
 
-**Status:** Approved 2026-10-30 and in progress. Runs before Step 9.
+**Status:** All phases done on `migration/08b-keys`, 2026-10-31. Waiting on approval to merge. Runs before Step 9.
 **Branch:** `migration/08b-keys`.
 **Goal:** no source of models, present or future, can collide with another. MMF IDs stop being keys and become data.
 
@@ -156,7 +156,17 @@ Migration 0006 rebuilds tables, using the migration runner's existing no-transac
 - **Model levels:** `duplicate` means all files match. `overlap` means some do, which is the normal case for shared bases.
 - **Output:** a read-only report and a Settings or Reconcile view, with a shared-file allowlist for things like bases and supports. No automatic action.
 
-### Phase 7: Prove it
+### Phase 7: Prove it (done)
+
+Results from 2026-10-31:
+
+- **Real run on dev:** Master Wendigo (MMF 276218) was ingested and downloaded by the real code. It got internal ID 2000000025, and its 3 files, 682 MB, took 102 seconds. It landed in `276218_Master_Wendigo`, with `metadata.json`, previews under the internal ID, and SHA-256 recorded. The forward audit flagged nothing on it, the reverse audit found no orphans, the drift scan was clean, and a stash export wrote 45 files.
+- **Rebuild on the dev database:** every row in the key tables matched the pre-migration backup, with no broken references.
+- **Rehearsal:** sample and full stages passed, 4,893 models in 0.4 seconds. Rollback restored all 16 tables exactly and named the rows added after cutover.
+- **Production:** read-only preflight passed.
+- **Not tested:** the sample and full stages on the production database itself, which are for Step 9 with approval. Linked library rescans with a real mounted library, because the dev library folder is empty.
+
+Planned tests:
 
 - Test fixtures where `id` and `external_key` always differ, so any code mixing them fails. Build the dev test data the same way.
 - A real ingest and download of a model that gets a new high ID, through vault folder, reconcile, preview and stash export.
@@ -165,7 +175,10 @@ Migration 0006 rebuilds tables, using the migration runner's existing no-transac
 - Compare `dbtool backup` and restore on the rebuilt schema, plus row counts and foreign key checks.
 - Contract: only additive changes, each reviewed.
 
-### Phase 8: Feed into Step 9
+### Phase 8: Feed into Step 9 (done)
+
+The staged tool is `scripts/cutover.py`, and the runbook is `CUTOVER.md`.
+
 
 Add migrations 0005 and 0006 to the rehearsal, and update `CUTOVER.md` when it's written. Production changes only at Step 9, and rollback to the old app stays safe because the old database is never modified. The new `~/DESYNC_Data` copy is what changes.
 
