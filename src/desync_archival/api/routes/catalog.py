@@ -136,6 +136,8 @@ def handle_get_releases(
     enriched = []
     for r in rows:
         item = dict(r)
+        # The API's release ID is the designer and month text, which queueing a release parses.
+        item["id"] = item.pop("release_key")
         m_count = item.get("model_count", 0)
         c_jobs = item.get("completed_jobs", 0)
         q_jobs = item.get("queued_jobs", 0)

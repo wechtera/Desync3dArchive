@@ -92,7 +92,7 @@ class SameResultsTests(SearchCase):
 class IndexStaysCurrentTests(SearchCase):
     def test_new_model_with_tags(self):
         self.conn.execute("INSERT INTO models (id, name, raw_backup_path) VALUES (20, 'Wyvern', '')")
-        self.conn.execute("INSERT INTO model_tags VALUES (20, 'beast')")
+        self.conn.execute("INSERT INTO model_tags (model_id, tag) VALUES (20, 'beast')")
         self.assertEqual(self.hits("wyvern"), {20})
         self.assertEqual(self.hits("beast"), {20})
         self.assert_all_same()
@@ -114,7 +114,7 @@ class IndexStaysCurrentTests(SearchCase):
     def test_retagging(self):
         self.conn.execute("DELETE FROM model_tags WHERE model_id = 1")
         self.assertNotIn(1, self.hits("fantasy"))
-        self.conn.execute("INSERT INTO model_tags VALUES (1, 'scifi')")
+        self.conn.execute("INSERT INTO model_tags (model_id, tag) VALUES (1, 'scifi')")
         self.assertIn(1, self.hits("scifi"))
         self.assert_all_same()
 

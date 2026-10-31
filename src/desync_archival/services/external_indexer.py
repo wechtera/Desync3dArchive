@@ -59,7 +59,7 @@ def deactivate_library(conn: sqlite3.Connection, library_id: int) -> list[int]:
         conn.execute("UPDATE external_libraries SET is_active = 0 WHERE id = ?;", (library_id,))
         conn.execute("""
             UPDATE releases SET is_active = 0
-            WHERE id LIKE 'external\\_%' ESCAPE '\\' AND NOT EXISTS (
+            WHERE release_key LIKE 'external\\_%' ESCAPE '\\' AND NOT EXISTS (
                 SELECT 1 FROM models m
                 WHERE m.source = 'external' AND m.is_active = 1
                   AND m.designer_name = releases.designer_name AND m.release_month = releases.release_month
@@ -422,12 +422,12 @@ class ExternalLibraryIndexer:
                         """, (default_creator, release_month)).fetchone()[0]
                         release_id = f"external_{default_creator}_{release_month}"
                         updated = conn.execute(
-                            "UPDATE releases SET model_count = ?, is_active = 1 WHERE id = ?;", (model_count, release_id)
+                            "UPDATE releases SET model_count = ?, is_active = 1 WHERE release_key = ?;", (model_count, release_id)
                         )
                         if not updated.rowcount:
                             conn.execute("""
                                 INSERT INTO releases (
-                                    id, designer_name, designer_id, release_month,
+                                    release_key, designer_name, designer_id, release_month,
                                     model_count, total_files, total_size_bytes
                                 ) VALUES (?, ?, 0, ?, ?, 0, 0);
                             """, (release_id, default_creator, release_month, model_count))

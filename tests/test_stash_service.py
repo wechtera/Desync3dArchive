@@ -158,7 +158,7 @@ class TestStashServiceIsolated(unittest.TestCase):
                 ).fetchall()
             }
             self.assertIn("idx_stashes_active", indices)
-            self.assertIn("idx_stash_items_unique", indices)
+            self.assertIn("idx_stash_items_identity", indices)
 
     def test_stash_creation_defaults_and_active_flag(self):
         """Validates default description 'A pile of gray', naming, and active flag assignment."""

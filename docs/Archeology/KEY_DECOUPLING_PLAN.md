@@ -129,7 +129,7 @@ Migration 0005:
 
 Work through the usage table. Remove every "2 billion" check and the `SYNTHETIC_ID_OFFSET` allocators. Replace the upserts and `INSERT OR REPLACE` with one shared lookup-then-write helper for each table, inside `BEGIN IMMEDIATE`. Add `external_key` to API responses.
 
-### Phase 5: Switch keys to increment columns, and add duplicate triggers
+### Phase 5: Switch keys to increment columns, and add duplicate triggers (done)
 
 Migration 0006 rebuilds tables, using the migration runner's existing no-transaction mode because foreign keys must be off during a rebuild. FTS triggers and indexes are recreated.
 

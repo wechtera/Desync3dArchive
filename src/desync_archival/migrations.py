@@ -75,7 +75,11 @@ def adopt_baseline(conn: sqlite3.Connection) -> None:
 def _apply_file(conn: sqlite3.Connection, version: int, path: Path) -> None:
     sql = path.read_text(encoding="utf-8")
     if sql.lstrip().startswith(NO_TRANSACTION):
-        conn.executescript(sql)
+        try:
+            conn.executescript(sql)
+        except sqlite3.Error:
+            conn.rollback()
+            raise
         conn.execute(f"PRAGMA user_version = {version}")
     else:
         try:
@@ -122,6 +126,9 @@ def migrate_database(db_path: Path, confirm_production: bool = False) -> dict[st
         before_counts = backup.row_counts(db_path)
         backup_path = backup.create_backup(db_path) if before_counts else None
         after_version = apply_pending(conn)
+        broken = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if broken:
+            raise MigrationError(f"{len(broken)} broken references after migration. Backup: {backup_path}")
     finally:
         conn.close()
 

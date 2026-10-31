@@ -47,7 +47,7 @@ class UnlinkCase(unittest.TestCase):
         self.conn.execute("INSERT INTO external_libraries (id, name, path) VALUES (1, 'Lib', ?)", (str(self.library),))
         self.conn.execute("UPDATE models SET library_id = 1 WHERE id = 100")
         self.conn.execute(
-            "INSERT INTO releases (id, designer_name, designer_id, release_month, model_count, total_files, total_size_bytes)"
+            "INSERT INTO releases (release_key, designer_name, designer_id, release_month, model_count, total_files, total_size_bytes)"
             " VALUES ('external_Forge_2024-01', 'Forge', 0, '2024-01', 1, 0, 0)"
         )
         self.conn.execute("INSERT INTO stashes (id, name) VALUES (7, 'Print soon')")

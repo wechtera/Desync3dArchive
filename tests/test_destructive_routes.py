@@ -118,6 +118,7 @@ class ResetTests(DestructiveCase):
         super().setUp()
         conn = get_db_connection(server.DB_PATH)
         conn.execute("INSERT INTO models (id, name, url, raw_backup_path, vault_path) VALUES (9, 'M', '', '', '/v')")
+        conn.execute("INSERT INTO model_files (file_id, model_id, filename) VALUES (1, 9, 'a')")
         conn.execute("""
             INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename,
                                           local_relative_path, actual_bytes)

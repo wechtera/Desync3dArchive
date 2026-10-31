@@ -106,8 +106,8 @@ def run_startup_analytics(conn: sqlite3.Connection):
             ))
 
         conn.executemany("""
-            INSERT OR REPLACE INTO releases (
-                id, designer_name, designer_id, release_month,
+            INSERT INTO releases (
+                release_key, designer_name, designer_id, release_month,
                 model_count, bonus_count, total_files, total_size_bytes,
                 is_likely_bundle, sample_image_url, common_tags
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
