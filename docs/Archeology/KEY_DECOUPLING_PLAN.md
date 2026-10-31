@@ -148,7 +148,7 @@ Migration 0006 rebuilds tables, using the migration runner's existing no-transac
 
 **Trade-off:** a unique index would give this protection with less code, and it's what `ON CONFLICT` needs. Under your rule the triggers do that job instead, and the cost is more schema to maintain plus the helper from phase 4. SQLite has a single writer, so with `BEGIN IMMEDIATE` a lookup followed by an insert can't race.
 
-### Phase 6: Duplicate detection
+### Phase 6: Duplicate detection (done)
 
 - **Hash coverage:** SHA-256 comes from MMF downloads, which already record it, and from files added through the import channel (enhancement E20). Linked libraries such as Loot Studios are never hashed, by the user's decision.
 - **Consequence:** a linked library file can only ever be a `candidate`, so MMF and Loot Studios won't get exact matches. Zero or missing sizes are ignored.

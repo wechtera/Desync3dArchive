@@ -252,6 +252,28 @@ test.describe('unlinked library items', () => {
   });
 });
 
+test.describe('duplicate report', () => {
+  test('lists matches with hostile names as text', async ({ page }) => {
+    await mock(page, '/api/reconcile/duplicates', {
+      success: true,
+      summary: { exact_groups: 1, candidate_groups: 1, duplicate_models: 1, overlapping_models: 0, ignored_names: ['base'] },
+      files: [
+        { kind: 'exact', filename: HOSTILE, size_bytes: 1024, models: [{ model_id: 1, model_name: 'One' }, { model_id: 2, model_name: 'Two' }] },
+        { kind: 'candidate', filename: 'b.stl', size_bytes: 10, models: [{ model_id: 3, model_name: 'Three' }, { model_id: 4, model_name: 'Four' }] },
+      ],
+      models: [{ kind: 'duplicate', shared_files: 2, models: [{ model_id: 1, model_name: 'One' }, { model_id: 2, model_name: 'Two' }] }],
+    });
+    await page.goto('/');
+    await page.evaluate(() => window.triggerDuplicateScan());
+    await expect(page.locator('.duplicate-row')).toHaveCount(3);
+    await expect(page.locator('.duplicate-row').nth(0)).toContainText('DUPLICATE MODEL');
+    await expect(page.locator('.duplicate-row').nth(1)).toContainText('EXACT');
+    await expect(page.locator('.duplicate-row').nth(2)).toContainText('POSSIBLE');
+    expect(await page.evaluate(() => window.xss)).toBeUndefined();
+    expect(page.pageErrors).toEqual([]);
+  });
+});
+
 test.describe('add to stash', () => {
   const active = { id: 3, name: HOSTILE, item_count: 2, is_active: 1 };
   const stashes = [active, { id: 4, name: 'Second', item_count: 1, is_active: 0 }];

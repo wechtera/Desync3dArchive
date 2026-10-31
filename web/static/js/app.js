@@ -90,6 +90,7 @@ import {
 
   // Path Drift & Canonical Re-alignment
   triggerPathDriftScan,
+  triggerDuplicateScan,
   realignSinglePath,
   realignAllPaths,
 
@@ -541,6 +542,7 @@ Object.assign(window, {
 
   // === 12. Downloads: Path Drift & Canonical Re-alignment ===
   triggerPathDriftScan,
+  triggerDuplicateScan,
   realignSinglePath,
   realignAllPaths,
 

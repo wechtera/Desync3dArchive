@@ -19,6 +19,7 @@ add_route(router, "POST", "/api/reconcile/ingest-untracked", plain(handlers.hand
 add_route(router, "GET", ("/api/reconcile/staging", "/api/reconcile/staging-garbage"),
           plain(handlers.handle_get_reconcile_staging_garbage))
 add_route(router, "POST", ("/api/reconcile/staging/purge", "/api/reconcile/staging-purge", "/api/reconcile/staging-sweep"), plain(handlers.handle_post_reconcile_staging_purge), schemas.PathsBody)
+add_route(router, "GET", "/api/reconcile/duplicates", plain(handlers.handle_get_reconcile_duplicates))
 add_route(router, ("GET", "POST"), ("/api/reconcile/drift", "/api/reconcile/path-drift", "/api/reconcile/drift-scan"), plain(handlers.handle_get_reconcile_path_drift))
 add_route(router, "POST", "/api/reconcile/catalog-previews", plain(handlers.handle_post_reconcile_catalog_previews),
           schemas.ModelIdsBody)

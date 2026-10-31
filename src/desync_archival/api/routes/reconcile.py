@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from desync_archival.db.queries import reconcile as queries
-from desync_archival.services import audit
+from desync_archival.services import audit, duplicates
 from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
@@ -160,6 +160,16 @@ def handle_get_reconcile_path_drift(
     reconciler, _ = _get_managers(conn)
     res = reconciler.scan_path_drift()
     return res, 200 if res.get("success") else 500
+
+
+def handle_get_reconcile_duplicates(
+    conn: sqlite3.Connection,
+    download_manager: DownloadManager | None,
+    body: dict,
+    params: dict,
+) -> tuple[dict[str, Any], int]:
+    include_shared = params.get("include_shared", ["0"])[0] == "1"
+    return duplicates.find_duplicates(conn, include_shared=include_shared), 200
 
 
 def handle_post_reconcile_path_realign(

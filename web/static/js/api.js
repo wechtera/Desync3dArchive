@@ -372,6 +372,10 @@ export async function purgeStagingGarbage(paths = null) {
   });
 }
 
+export async function fetchDuplicates(includeShared = false) {
+  return request(`/api/reconcile/duplicates?include_shared=${includeShared ? 1 : 0}`);
+}
+
 export async function fetchPathDrift() {
   return request('/api/reconcile/drift');
 }

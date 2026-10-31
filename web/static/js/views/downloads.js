@@ -15,6 +15,7 @@ import {
   fetchStagingGarbage,
   purgeStagingGarbage,
   fetchPathDrift,
+  fetchDuplicates,
   realignModelPaths,
   triggerArchivePeekBackfill,
   triggerCatalogPreviewBackfill
@@ -1077,6 +1078,53 @@ export async function purgeAllStagingGarbage() {
   } catch (err) {
     alert(`Failed purging staging: ${err.message}`);
   }
+}
+
+export async function triggerDuplicateScan(includeShared = false) {
+  const container = document.getElementById('reconcile-results-container');
+  if (!container) return;
+  render(html`<div class="table-msg">Comparing catalog files...</div>`, container);
+  try {
+    renderDuplicateResults(await fetchDuplicates(includeShared), includeShared);
+  } catch (err) {
+    alert(`Duplicate scan failed: ${err.message}`);
+  }
+}
+
+function renderDuplicateResults(data, includeShared) {
+  const container = document.getElementById('reconcile-results-container');
+  const { summary } = data;
+  render(html`
+    <div class="card" id="duplicate-results">
+      <div class="status-summary-text">
+        ${summary.exact_groups} exact file groups, ${summary.candidate_groups} possible,
+        ${summary.duplicate_models} duplicate model pairs, ${summary.overlapping_models} model pairs sharing files.
+        This is a report only. Nothing is changed.
+      </div>
+      <button type="button" class="btn-pill font-xs" @click=${() => triggerDuplicateScan(!includeShared)}>
+        ${includeShared ? 'Hide shared bases and supports' : 'Include shared bases and supports'}
+      </button>
+      <table class="data-table">
+        <thead><tr><th>Match</th><th>File or models</th><th>Size</th></tr></thead>
+        <tbody>
+          ${data.models.filter((group) => group.kind === 'duplicate').map((group) => html`
+            <tr class="duplicate-row">
+              <td><span class="status-badge status-failed font-xs">DUPLICATE MODEL</span></td>
+              <td>${group.models.map((model) => model.model_name).join(' / ')}</td>
+              <td>${group.shared_files} files</td>
+            </tr>
+          `)}
+          ${data.files.map((group) => html`
+            <tr class="duplicate-row">
+              <td><span class="status-badge ${group.kind === 'exact' ? 'status-completed' : 'status-queued'} font-xs">${group.kind === 'exact' ? 'EXACT' : 'POSSIBLE'}</span></td>
+              <td>${group.filename} (${group.models.map((model) => model.model_name).join(', ')})</td>
+              <td>${formatBytes(group.size_bytes || 0)}</td>
+            </tr>
+          `)}
+        </tbody>
+      </table>
+    </div>
+  `, container);
 }
 
 export async function triggerPathDriftScan() {
