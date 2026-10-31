@@ -21,6 +21,7 @@ from desync_archival.services import (
     auth_service,
     image_worker,
     inactive_log,
+    library_review,
     secret_store,
 )
 from desync_archival.services.external_indexer import (
@@ -470,7 +471,7 @@ def handle_get_library_preview(
         "SELECT status, COUNT(*) FROM library_candidates WHERE library_id = ? GROUP BY status;", (library_id,)
     ).fetchall())
     return {
-        "report": json.loads(run["report_json"]) if run and run["report_json"] else None,
+        "report": library_review.with_reviews(conn, library_id, json.loads(run["report_json"])) if run and run["report_json"] else None,
         "finished_at": run["finished_at"] if run else None,
         "candidates": statuses,
     }, 200
@@ -489,6 +490,42 @@ def handle_post_library_approve(
     result = ExternalLibraryIndexer(app_config.db_path()).approve_candidates(conn, library_id, skip)
     log_layer("storage", logging.INFO, f"Library #{library_id}: approved {result['approved']} folders, skipped {result['skipped']}")
     return {"success": True, **result}, 200
+
+
+def handle_get_library_release(
+    conn: sqlite3.Connection,
+    library_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    """GET /api/settings/libraries/:id/preview/release?name=: the saved tree and its cards."""
+    try:
+        return library_review.release_view(conn, library_id, ((params or {}).get("name") or [""])[0]), 200
+    except library_review.ReviewError as e:
+        return {"success": False, "error": str(e)}, 409
+
+
+def handle_post_library_review(
+    conn: sqlite3.Connection,
+    library_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    """POST /api/settings/libraries/:id/preview/review: a human's cards beat the resolver's."""
+    data = body or {}
+    release = str(data.get("release") or "")
+    try:
+        if data.get("reset"):
+            result = library_review.reset(conn, library_id, release)
+        else:
+            result = library_review.save(conn, library_id, release, data.get("cards") or [], bool(data.get("reviewed")))
+    except library_review.ReviewError as e:
+        log_layer("storage", logging.WARNING, f"Library #{library_id}: review of {release} refused: {e}")
+        return {"success": False, "error": str(e)}, 409
+    log_layer("storage", logging.INFO, f"Library #{library_id}: {release} review saved: {result}")
+    return result, 200
 
 
 def handle_get_image_queue(

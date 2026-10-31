@@ -34,6 +34,10 @@ add_route(router, "GET", "/api/settings/libraries/{library_id:int}/preview",
           with_path_id(handlers.handle_get_library_preview, "library_id"))
 add_route(router, "POST", "/api/settings/libraries/{library_id:int}/preview/approve",
           with_path_id(handlers.handle_post_library_approve, "library_id"), schemas.LibraryApproveBody)
+add_route(router, "GET", "/api/settings/libraries/{library_id:int}/preview/release",
+          with_path_id(handlers.handle_get_library_release, "library_id"))
+add_route(router, "POST", "/api/settings/libraries/{library_id:int}/preview/review",
+          with_path_id(handlers.handle_post_library_review, "library_id"), schemas.LibraryReviewBody)
 add_route(router, "GET", "/api/library-images", plain(handlers.handle_get_image_queue))
 add_route(router, "POST", "/api/library-images", plain(handlers.handle_post_image_queue), schemas.ImageQueueBody)
 add_route(router, "GET", "/api/inactive", plain(handlers.handle_get_inactive))

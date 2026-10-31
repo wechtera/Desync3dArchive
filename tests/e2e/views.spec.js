@@ -472,7 +472,7 @@ test.describe('settings', () => {
     await expect(page.getByText(HOSTILE).first()).toBeVisible();
     await expect(page.locator('body img[src="x"]')).toHaveCount(0);
     await page.locator('[data-settings-tab-btn="libraries"]').click();
-    await expect(page.getByText('Never Scanned')).toBeVisible();
+    await expect(page.locator('#library-usage-table')).toContainText('Never Scanned');
   });
 
   const previewReport = {
@@ -500,8 +500,8 @@ test.describe('settings', () => {
       mode = route.request().postDataJSON().mode;
       return route.fulfill({ json: { success: true, task_id: 4 } });
     });
-    await page.goto('/#settings');
-    await page.locator('[data-settings-tab-btn="libraries"]').click();
+    await page.goto('/#downloads');
+    await page.locator('#sub-btn-libraries').click();
 
     await expect(page.locator('#library-preview-summary')).toContainText('2 new, 1 already known, 1 overlapping');
     await expect(page.getByText(HOSTILE)).toBeVisible();
@@ -511,6 +511,96 @@ test.describe('settings', () => {
     await page.locator('#btn-approve-preview').click();
     await expect.poll(() => mode).toBe('add');
     expect(approved).toEqual({ skip_releases: ['Odd Release'] });
+  });
+
+  const reviewRelease = {
+    release: 'Drop',
+    folders: ['Drop/Busts', 'Drop/Busts/Lidda', 'Drop/Voxshax', 'Drop/Voxshax/Tomb'],
+    files: ['Drop/Busts/Bases.zip', 'Drop/Busts/Lidda/a.stl', 'Drop/Voxshax/b.stl', 'Drop/Voxshax/Tomb/c.stl'],
+    cards: [
+      { key: 'voxshax', name: 'Voxshax', category: 'Heroes', members: ['Drop/Voxshax'], skip: false, flags: ['Holds other named items: Tomb'] },
+      { key: 'lidda', name: 'Lidda', category: 'Busts', members: ['Drop/Busts/Lidda'], skip: false, flags: [] },
+    ],
+    reviewed: false, changed: false, locked: [], settled: [],
+  };
+  const reviewReport = {
+    finished_at: '2026-05-01 12:00:00',
+    candidates: { proposed: 2 },
+    report: {
+      totals: { new: 2, known: 0, overlaps: 0, empty: 0, low_confidence: 0 },
+      releases: [
+        { name: 'Calm', new: [{ rel_path: 'Calm/x', name: 'Quiet', folders: ['Calm/x'], flags: [] }], known: 0, overlaps: [], empty: [], low_confidence: [] },
+        { name: 'Drop', new: [
+          { rel_path: 'Drop/voxshax', name: 'Voxshax', folders: ['Drop/Voxshax'], flags: ['Holds other named items: Tomb'] },
+          { rel_path: 'Drop/lidda', name: 'Lidda', folders: ['Drop/Busts/Lidda'], flags: [] },
+        ], known: 0, overlaps: [], empty: [], low_confidence: [] },
+      ],
+    },
+  };
+
+  async function openReviewScreen(page) {
+    await mock(page, '/api/settings/libraries/2/preview', reviewReport);
+    await page.route('**/api/settings/libraries/2/preview/release*', (route) => route.fulfill({ json: reviewRelease }));
+    await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true }], total: 1 });
+    await page.goto('/#downloads');
+    await page.locator('#sub-btn-libraries').click();
+  }
+
+  test('flagged releases come first and models can be read in the list', async ({ page }) => {
+    await openReviewScreen(page);
+    await expect(page.locator('.preview-release-open').first()).toHaveText('Drop');
+    await page.locator('.preview-models summary').first().click();
+    await expect(page.locator('.preview-model-flagged')).toHaveText('Voxshax');
+  });
+
+  test('a card keeps the code guess until a human moves something', async ({ page }) => {
+    await openReviewScreen(page);
+    let saved = null;
+    await page.route('**/api/settings/libraries/2/preview/review', (route) => {
+      saved = route.request().postDataJSON();
+      return route.fulfill({ json: { success: true, cards: 2 } });
+    });
+    await page.locator('.preview-release-open').first().click();
+    await expect(page.locator('#library-review-modal')).toBeVisible();
+
+    // The flagged card's folder starts open, so its contents show with the code's label.
+    await expect(page.locator('.review-row[data-path="Drop/Voxshax"] .review-label')).toHaveText('Voxshax');
+    await page.locator('.review-row[data-path="Drop/Voxshax/Tomb"] .review-select').check();
+    await page.locator('#btn-review-new').click();
+    await expect(page.locator('.review-row[data-path="Drop/Voxshax/Tomb"] .review-label')).toHaveText('Tomb');
+
+    await page.locator('#btn-review-save').click();
+    await expect.poll(() => saved).not.toBeNull();
+    expect(saved.release).toBe('Drop');
+    expect(saved.cards.find((c) => c.name === 'Tomb').members).toEqual(['Drop/Voxshax/Tomb']);
+    expect(saved.cards.find((c) => c.name === 'Voxshax').members).toEqual(['Drop/Voxshax']);
+  });
+
+  test('a single file can become a card, and a card can be skipped', async ({ page }) => {
+    await openReviewScreen(page);
+    let saved = null;
+    await page.route('**/api/settings/libraries/2/preview/review', (route) => {
+      saved = route.request().postDataJSON();
+      return route.fulfill({ json: { success: true, cards: 2 } });
+    });
+    await page.locator('.preview-release-open').first().click();
+    await page.locator('.review-row[data-path="Drop/Busts"] .review-twisty').click();
+    await page.locator('.review-row[data-path="Drop/Busts/Bases.zip"] .review-select').check();
+    await page.locator('#btn-review-new').click();
+    await page.locator('.review-card[data-card="Bases"] .review-skip').check();
+    await page.locator('#btn-review-save').click();
+    await expect.poll(() => saved).not.toBeNull();
+    const card = saved.cards.find((c) => c.name === 'Bases');
+    expect(card.members).toEqual(['Drop/Busts/Bases.zip']);
+    expect(card.skip).toBe(true);
+  });
+
+  test('settings shows library disk figures but no library actions', async ({ page }) => {
+    await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true, disk_formatted: '4 GB' }], total: 1 });
+    await page.goto('/#settings');
+    await page.locator('[data-settings-tab-btn="libraries"]').click();
+    await expect(page.locator('#library-usage-table')).toContainText('4 GB');
+    await expect(page.getByRole('button', { name: 'Preview New Folders' })).toHaveCount(0);
   });
 
   test('the image queue reports its state and can be paused', async ({ page }) => {
@@ -523,8 +613,8 @@ test.describe('settings', () => {
       }
       return route.fulfill({ json: { paused: false, state: 'storage_offline', counts: { pending: 3, done: 1, failed: 2, no_source: 4, skipped: 0 } } });
     });
-    await page.goto('/#settings');
-    await page.locator('[data-settings-tab-btn="libraries"]').click();
+    await page.goto('/#downloads');
+    await page.locator('#sub-btn-libraries').click();
 
     await expect(page.locator('#image-queue-summary')).toContainText('Waiting for storage to come back. 3 waiting, 1 done');
     await page.locator('#btn-image-queue-toggle').click();
@@ -552,8 +642,8 @@ test.describe('settings', () => {
     let scanned = false;
     await page.route('**/api/settings/libraries/2/scan', (route) => { scanned = true; return route.fulfill({ json: { success: true, task_id: 1 } }); });
     page.on('dialog', (dialog) => dialog.accept());
-    await page.goto('/#settings');
-    await page.locator('[data-settings-tab-btn="libraries"]').click();
+    await page.goto('/#downloads');
+    await page.locator('#sub-btn-libraries').click();
     await page.getByRole('button', { name: 'Full Rescan' }).first().click();
     await expect.poll(() => scanned).toBe(true);
   });

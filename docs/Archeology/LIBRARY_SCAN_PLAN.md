@@ -1,6 +1,6 @@
 # Linked library scan plan
 
-**Status:** Built on `feature/library-scan`, passing `check.sh`, not merged or deployed. Production still has the old scan, so do not run a Loot Studios scan there until this ships.
+**Status:** Scan deployed to production on 2026-10-31. Human review is on `feature/library-review`, not merged or deployed. Do not approve the preview until review ships.
 
 ## Why
 
@@ -74,3 +74,17 @@ The user chose one model per character across scales and support types, with bus
 
 - Models that only hold archives get no cover. They are recorded as `no_source`, because the worker renders loose STLs only.
 - A file that stays missing counts as a change on each rescan, so `models_changed` can read high.
+
+## Human review, decided 2026-10-31
+
+The preview flagged 1 of 2,516 models, while real mistakes went unflagged: `Throne` named `Objects`, `Busts/` taken as one model, `GraveyardMausoleum` inside `Voxshax`. So a human resolves models and the code only sorts the queue.
+
+- **Cards:** a card owns folders or single files. The deepest claim wins, and the card above it records the carved path in `library_model_folders.excluded`, so rescans keep it out.
+- **Saved apart from previews:** `library_release_reviews` holds a release's cards whole. A new preview keeps them. A new folder or a vanished path reopens the release, and a new file in a card's folder joins quietly.
+- **Snapshot:** `library_release_trees` holds the tree, so editing never touches the NAS.
+- **Walk:** a folder holding only an archive no longer ends the walk. The walk continues below a model for the snapshot, but those folders stay out of learning, so the guesses for other models don't change.
+- **Signals:** `flag_models` never changes a model. On the saved tree it flags 95 of 2,545.
+- **Scope:** preview only. An approved release is read-only here.
+- **Location:** managing a library moved to Manage / Retrieve / Reconcile Assets. Settings keeps disk figures.
+
+A file-only card's `vault_path` is the file itself, because `vault_path` must be unique among linked models. Art search, renders and stash checks allow for that.

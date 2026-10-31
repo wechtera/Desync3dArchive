@@ -1,6 +1,6 @@
 /**
  * ui/static/js/views/settings.js - Settings workspace controller.
- * Manages storage configuration, directory usage metrics, in-place external libraries,
+ * Manages storage configuration, directory usage metrics, library disk usage,
  * worker tuning, diagnostic logging, log pruning, and MyMiniFactory authentication.
  */
 
@@ -8,20 +8,13 @@ import { formatBytes, parseServerTime } from '../utils.js';
 import { appendToBody, html, imageFallback, nothing, render, safeUrl, stopPropagation } from '../template.js';
 import {
   fetchExternalLibraries,
-  addExternalLibrary,
-  deleteExternalLibrary,
-  scanExternalLibrary,
-  fetchLibraryPreview,
-  approveLibraryPreview,
-  fetchImageQueue,
-  postImageQueue,
   fetchInactive
 } from '../api.js';
 
 let currentBrowsePath = '';
 let targetInputId = '';
 
-function showToast(message) {
+export function showToast(message) {
   const toast = document.getElementById('settings-toast');
   if (toast) {
     toast.textContent = message;
@@ -81,7 +74,7 @@ export async function loadSettingsView() {
   await Promise.all([
     loadSettings(),
     loadDirectoryUsage(),
-    loadExternalLibraries(),
+    loadLibraryUsage(),
     loadAuthStatus(),
     loadSessionStatus(),
     loadLoggingSettings()
@@ -196,7 +189,7 @@ export async function loadDirectoryUsage() {
 
 export function switchSettingsTab(tab) {
   if (tab === 'inactive') loadInactive();
-  if (tab === 'libraries') loadImageQueue().catch(() => {});
+  if (tab === 'libraries') loadLibraryUsage().catch(() => {});
   // Panels stay in the page while hidden, so a save still reads every field.
   document.querySelectorAll('[data-settings-tab]').forEach(panel => {
     panel.hidden = panel.dataset.settingsTab !== tab;
@@ -208,316 +201,31 @@ export function switchSettingsTab(tab) {
   });
 }
 
-export async function loadExternalLibraries() {
-  let panel = document.getElementById('external-libraries-panel');
-
-  // Auto-scaffold panel into settings-grid if not already in index.html
-  if (!panel) {
-    const grid = document.querySelector('.settings-grid');
-    if (grid) {
-      panel = document.createElement('div');
-      panel.id = 'external-libraries-panel';
-      panel.className = 'settings-panel';
-      panel.dataset.settingsTab = 'libraries';
-      panel.hidden = !document.querySelector('[data-settings-tab-btn="libraries"].active');
-      if (grid.children.length > 1) {
-        grid.insertBefore(panel, grid.children[1]);
-      } else {
-        grid.appendChild(panel);
-      }
-    }
-  }
-
-  if (!panel) return;
-
-  render(html`
-    <div class="settings-panel-header">
-      <div>
-        <h2 class="settings-panel-title">In-Place External Libraries</h2>
-        <div class="settings-panel-subtitle">
-          Manage local &amp; network storage collections (e.g., Loot Studios) indexed zero-copy in strictly read-only mode.
-        </div>
-      </div>
-      <div class="flex gap-2">
-        <button type="button" class="btn-pill" @click=${() => window.loadExternalLibraries()}>Refresh Libraries</button>
-      </div>
-    </div>
-    <div id="external-libraries-table-container">
-      <div class="table-msg">Loading registered libraries...</div>
-    </div>
-    <div id="library-preview-container"></div>
-    <div id="library-image-queue" class="mt-3"></div>
-    <div class="mt-4 pt-3" style="border-top: 1px solid #262635;">
-      <h3 class="font-bold font-md mb-2 text-accent">Register New In-Place Library</h3>
-      <div class="settings-form-row two-col">
-        <div class="settings-field-group">
-          <label for="new-lib-path">Top-Level Storage Directory Path *</label>
-          <div class="settings-input-with-button">
-            <input type="text" id="new-lib-path" placeholder="/Volumes/STL/Loot Studios" spellcheck="false">
-            <button type="button" class="btn-pill" @click=${() => window.openDirectoryPicker('new-lib-path')}>Browse</button>
-          </div>
-          <span class="form-help-text">Direct path to library root on NAS or local drive (strictly read-only).</span>
-        </div>
-        <div class="settings-field-group">
-          <label for="new-lib-name">Display Name (Optional)</label>
-          <input type="text" id="new-lib-name" placeholder="Defaults to folder name" spellcheck="false">
-          <span class="form-help-text">Label shown in catalog and monthly releases.</span>
-        </div>
-      </div>
-      <div class="settings-form-row two-col mt-2">
-        <div class="settings-field-group">
-          <label for="new-lib-creator">Default Creator / Studio (Optional)</label>
-          <input type="text" id="new-lib-creator" placeholder="e.g. Loot Studios" spellcheck="false">
-          <span class="form-help-text">Assigned to indexed models if not specified in release subfolders.</span>
-        </div>
-        <div class="settings-field-group flex items-end">
-          <button type="button" class="btn-pill btn-action-primary" @click=${() => window.handleAddExternalLibrary()}>
-            Register In-Place Library
-          </button>
-        </div>
-      </div>
-    </div>
-  `, panel);
-
-  const tableContainer = document.getElementById('external-libraries-table-container');
+export async function loadLibraryUsage() {
+  const container = document.getElementById('library-usage-table');
+  if (!container) return;
   try {
-    const res = await fetchExternalLibraries();
-    const libs = res.libraries || [];
-
-    if (!libs.length) {
-      render(html`
-        <div class="table-msg text-dim py-4">
-          No external libraries registered. Register a directory above to index external collections without moving files.
-        </div>
-      `, tableContainer);
-      return;
-    }
-
-    render(html`
+    const { libraries = [] } = await fetchExternalLibraries();
+    render(libraries.length ? html`
       <table class="table-compact">
-        <thead>
-          <tr>
-            <th>Name / Studio</th>
-            <th>Storage Path</th>
-            <th>Disk Footprint</th>
-            <th>Models</th>
-            <th>Total Files</th>
-            <th>Last Scanned</th>
-            <th style="width: 300px;">Actions</th>
-          </tr>
-        </thead>
+        <thead><tr><th>Name</th><th>Storage Path</th><th>Disk Footprint</th><th>Models</th><th>Total Files</th><th>Last Scanned</th></tr></thead>
         <tbody>
-          ${libs.map(lib => {
-            const lastScan = lib.last_scanned_at
-              ? parseServerTime(lib.last_scanned_at)?.toLocaleString() || '-'
-              : html`<span class="text-dim">Never Scanned</span>`;
-            const existsBadge = lib.exists
-              ? ''
-              : html`<span class="status-badge status-danger font-xs ml-1" title="Directory path not currently mounted">Unmounted</span>`;
-
-            return html`
-              <tr>
-                <td>
-                  <strong>${lib.name}</strong>
-                  <div class="text-dim font-xs">${lib.default_creator || lib.name}</div>
-                </td>
-                <td class="font-mono font-xs text-dim">
-                  ${lib.path} ${existsBadge}
-                </td>
-                <td class="font-mono">${lib.disk_formatted || '0 B'}</td>
-                <td class="font-mono">${(lib.total_models || 0).toLocaleString()}</td>
-                <td class="font-mono">${(lib.total_files || 0).toLocaleString()}</td>
-                <td class="font-sm">${lastScan}</td>
-                <td>
-                  <div class="flex gap-1">
-                    <button type="button" class="btn-pill font-xs btn-action-primary" @click=${() => startLibraryPass(lib, 'preview')}
-                      title="Finds new folders and shows them for approval. Adds nothing.">
-                      Preview New Folders
-                    </button>
-                    <button type="button" class="btn-pill font-xs" @click=${() => startLibraryPass(lib, 'full')}
-                      title="Checks known models against storage. Never adds new folders.">
-                      Full Rescan
-                    </button>
-                    <button type="button" class="btn-pill font-xs btn-action-cancel" @click=${() => window.handleDeleteExternalLibrary(lib.id, lib.name)} title="Unlink library from database (preserves source NAS files)">
-                      Remove
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            `;
-          })}
+          ${libraries.map(lib => html`
+            <tr>
+              <td>${lib.name}</td>
+              <td class="font-mono font-xs text-dim">${lib.path}</td>
+              <td class="font-mono">${lib.disk_formatted || '0 B'}</td>
+              <td class="font-mono">${(lib.total_models || 0).toLocaleString()}</td>
+              <td class="font-mono">${(lib.total_files || 0).toLocaleString()}</td>
+              <td class="font-sm">${lib.last_scanned_at ? parseServerTime(lib.last_scanned_at)?.toLocaleString() || '-' : 'Never Scanned'}</td>
+            </tr>
+          `)}
         </tbody>
       </table>
-    `, tableContainer);
-    await Promise.all([loadLibraryPreview(libs[0]), loadImageQueue()]);
+    ` : html`<div class="table-msg text-dim">No linked libraries yet.</div>`, container);
   } catch (err) {
-    render(html`<div class="table-msg text-alert">Failed loading external libraries: ${err.message}</div>`, tableContainer);
+    render(html`<div class="table-msg text-alert">Failed loading libraries: ${err.message}</div>`, container);
   }
-}
-
-export async function handleAddExternalLibrary(event) {
-  if (event) event.preventDefault();
-  const pathInput = document.getElementById('new-lib-path');
-  const nameInput = document.getElementById('new-lib-name');
-  const creatorInput = document.getElementById('new-lib-creator');
-
-  const path = pathInput ? pathInput.value.trim() : '';
-  const name = nameInput ? nameInput.value.trim() : '';
-  const default_creator = creatorInput ? creatorInput.value.trim() : '';
-
-  if (!path) {
-    alert('Please specify a directory path for the in-place library.');
-    return;
-  }
-
-  try {
-    const res = await addExternalLibrary({ path, name, default_creator });
-    if (res.success) {
-      showToast(res.message || `In-place library '${res.library.name}' registered.`);
-      if (pathInput) pathInput.value = '';
-      if (nameInput) nameInput.value = '';
-      if (creatorInput) creatorInput.value = '';
-      await loadExternalLibraries();
-    } else {
-      alert(`Failed to add library: ${res.error}`);
-    }
-  } catch (err) {
-    alert(`Registration error: ${err.message}`);
-  }
-}
-
-export async function handleScanExternalLibrary(libraryId, libraryName) {
-  try {
-    const res = await scanExternalLibrary(libraryId);
-    if (res.success) {
-      showToast(`Scan started for '${libraryName}' (Task #${res.task_id}).`);
-      if (window.refreshTasksStatus) {
-        window.refreshTasksStatus();
-      }
-    } else {
-      alert(`Failed to start scan: ${res.error}`);
-    }
-  } catch (err) {
-    alert(`Scan error: ${err.message}`);
-  }
-}
-
-async function startLibraryPass(lib, mode) {
-  try {
-    const res = await scanExternalLibrary(lib.id, mode);
-    showToast(`Started for '${lib.name}' (Task #${res.task_id}). Follow it on the Tasks tab.`);
-    window.checkHealth?.();
-  } catch (err) {
-    alert(`Could not start: ${err.message}`);
-  }
-}
-
-async function approveAndAdd(lib) {
-  const skipped = [...document.querySelectorAll('.preview-release-check')]
-    .filter(box => !box.checked)
-    .map(box => box.dataset.release);
-  try {
-    const res = await approveLibraryPreview(lib.id, skipped);
-    showToast(`Approved ${res.approved} folders.`);
-    await startLibraryPass(lib, 'add');
-    await loadLibraryPreview(lib);
-  } catch (err) {
-    alert(`Approval failed: ${err.message}`);
-  }
-}
-
-function previewFolderList(label, folders) {
-  if (!folders.length) return nothing;
-  return html`<div class="text-dim font-xs mt-1">${label}: ${folders.join(', ')}</div>`;
-}
-
-async function loadLibraryPreview(lib) {
-  const container = document.getElementById('library-preview-container');
-  if (!container || !lib) return;
-  const data = await fetchLibraryPreview(lib.id);
-  const candidates = data.candidates || {};
-  const waiting = candidates.proposed || 0;
-  const approved = candidates.approved || 0;
-  const report = data.report;
-  if (!report && !approved) {
-    render(nothing, container);
-    return;
-  }
-
-  const releases = (report?.releases || []).filter(r => r.new.length || r.overlaps.length || r.empty.length || r.low_confidence.length);
-  render(html`
-    <div class="mt-4 pt-3" style="border-top: 1px solid #262635;">
-      <h3 class="font-bold font-md mb-2 text-accent">Preview for ${lib.name}</h3>
-      ${report ? html`
-        <p class="text-dim font-sm" id="library-preview-summary">
-          ${report.totals.new} new, ${report.totals.known} already known, ${report.totals.overlaps} overlapping,
-          ${report.totals.empty} empty, ${report.totals.low_confidence} to check.
-          Overlapping and empty folders are never added.
-        </p>
-        <table class="table-compact">
-          <thead><tr><th style="width: 60px;">Add</th><th>Release</th><th>New</th><th>Known</th><th>Needs a look</th></tr></thead>
-          <tbody>
-            ${releases.map(r => html`
-              <tr>
-                <td>${r.new.length ? html`<input type="checkbox" class="preview-release-check" data-release=${r.name} ?checked=${!r.low_confidence.length}>` : nothing}</td>
-                <td>${r.name}</td>
-                <td class="font-mono">${r.new.length}</td>
-                <td class="font-mono">${r.known}</td>
-                <td>
-                  ${previewFolderList('Check', r.low_confidence)}
-                  ${previewFolderList('Overlaps', r.overlaps)}
-                  ${previewFolderList('Empty', r.empty)}
-                </td>
-              </tr>
-            `)}
-          </tbody>
-        </table>
-      ` : nothing}
-      <div class="flex gap-2 mt-2">
-        ${waiting ? html`<button type="button" class="btn-pill btn-action-primary" id="btn-approve-preview" @click=${() => approveAndAdd(lib)}>Approve and Add ${waiting} Folders</button>` : nothing}
-        ${approved ? html`<button type="button" class="btn-pill" @click=${() => startLibraryPass(lib, 'add')}>Resume Adding ${approved} Folders</button>` : nothing}
-      </div>
-    </div>
-  `, container);
-}
-
-const IMAGE_STATES = {
-  paused: 'Paused',
-  waiting_for_inventory: 'Waiting for the library scan to finish',
-  storage_offline: 'Waiting for storage to come back',
-  blender_unavailable: 'Waiting for Blender',
-  idle: 'Nothing to do',
-  working: 'Working',
-  stopped: 'Not running',
-};
-
-async function changeImageQueue(action) {
-  try {
-    await postImageQueue(action);
-    await loadImageQueue();
-  } catch (err) {
-    alert(`Image queue: ${err.message}`);
-  }
-}
-
-export async function loadImageQueue() {
-  const container = document.getElementById('library-image-queue');
-  if (!container) return;
-  const data = await fetchImageQueue();
-  const counts = data.counts;
-  render(html`
-    <div class="mt-4 pt-3" style="border-top: 1px solid #262635;">
-      <h3 class="font-bold font-md mb-2 text-accent">Background Images</h3>
-      <p class="text-dim font-sm" id="image-queue-summary">
-        ${IMAGE_STATES[data.state] || data.state}. ${counts.pending} waiting, ${counts.done} done,
-        ${counts.failed} failed, ${counts.no_source} with nothing to render.
-      </p>
-      <div class="flex gap-2 mt-2">
-        <button type="button" class="btn-pill" id="btn-image-queue-toggle" @click=${() => changeImageQueue(data.paused ? 'resume' : 'pause')}>${data.paused ? 'Resume' : 'Pause'}</button>
-        ${counts.failed ? html`<button type="button" class="btn-pill" @click=${() => changeImageQueue('retry')}>Retry ${counts.failed} Failed</button>` : nothing}
-      </div>
-    </div>
-  `, container);
 }
 
 export async function loadInactive() {
@@ -558,23 +266,6 @@ export async function loadInactive() {
       `, container);
   } catch (err) {
     render(html`<div class="table-msg text-alert">Failed loading inactive items: ${err.message}</div>`, container);
-  }
-}
-
-export async function handleDeleteExternalLibrary(libraryId, libraryName) {
-  if (!confirm(`Are you sure you want to unlink '${libraryName}'?\n\nNOTE: No physical files or directories on your storage will be touched or deleted.`)) {
-    return;
-  }
-  try {
-    const res = await deleteExternalLibrary(libraryId);
-    if (res.success) {
-      showToast(res.message || `Library '${libraryName}' unlinked.`);
-      await loadExternalLibraries();
-    } else {
-      alert(`Failed to remove library: ${res.error}`);
-    }
-  } catch (err) {
-    alert(`Remove error: ${err.message}`);
   }
 }
 
@@ -952,10 +643,7 @@ Object.assign(window, {
   loadSettings,
   refreshDirectoryUsage,
   loadDirectoryUsage,
-  loadExternalLibraries,
-  handleAddExternalLibrary,
-  handleScanExternalLibrary,
-  handleDeleteExternalLibrary,
+  loadLibraryUsage,
   loadInactive,
   loadAuthStatus,
   loadLoggingSettings,

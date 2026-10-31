@@ -3046,3 +3046,28 @@ pre, .task-log-viewer, .console-output {
 .btn-pill[hidden] {
   display: none;
 }
+
+/* Linked library review */
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent, inherit); cursor: pointer; font: inherit; text-decoration: underline; text-align: left; }
+.preview-row-flagged td:first-child { border-left: 2px solid var(--warning, #c9a227); }
+.preview-models summary { cursor: pointer; font-size: 0.75rem; opacity: 0.7; }
+.preview-model { background: none; border: 1px solid var(--border); color: inherit; margin: 2px; padding: 1px 6px; cursor: pointer; font-size: 0.75rem; }
+.preview-model-flagged { border-color: var(--warning, #c9a227); }
+.review-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+.review-tree, .review-card-list { max-height: 62vh; overflow-y: auto; }
+.review-row { display: flex; align-items: center; gap: 6px; padding-top: 1px; padding-bottom: 1px; font-size: 0.8rem; white-space: nowrap; }
+.review-twisty { width: 18px; flex: none; background: none; border: 0; color: inherit; cursor: pointer; }
+.review-name { overflow: hidden; text-overflow: ellipsis; }
+.review-label { margin-left: auto; flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; padding: 0 6px; border: 1px solid var(--border); font-size: 0.7rem; opacity: 0.8; }
+.review-label-focus { border-color: var(--accent, #c9a227); opacity: 1; }
+.review-label-skip { text-decoration: line-through; }
+.review-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.review-actions select { max-width: 180px; }
+.review-card { border: 1px solid var(--border); padding: 6px 8px; margin-bottom: 6px; }
+.review-card-focus { border-color: var(--accent, #c9a227); }
+.review-card-skip { opacity: 0.5; }
+.review-card-name { flex: 2; min-width: 0; }
+.review-card-category { flex: 1; min-width: 0; }
+.review-card-actions { display: flex; justify-content: space-between; margin-top: 4px; }
+.review-flag { color: var(--warning, #c9a227); margin-top: 2px; }
+@media (max-width: 800px) { .review-layout { grid-template-columns: minmax(0, 1fr); } }

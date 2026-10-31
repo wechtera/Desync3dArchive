@@ -95,6 +95,13 @@ class LibraryApproveBody(RequestBody):
     skip_releases: list[str] | None = None
 
 
+class LibraryReviewBody(RequestBody):
+    release: str
+    cards: list[dict[str, Any]] | None = None
+    reviewed: bool | None = None
+    reset: bool | None = None
+
+
 class ImageQueueBody(RequestBody):
     action: str = ""
 

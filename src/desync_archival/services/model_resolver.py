@@ -9,7 +9,8 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
-from itertools import pairwise
+from itertools import combinations, pairwise
+from statistics import median
 
 PRINTABLE = (".stl", ".lys", ".ctb", ".chitubox", ".obj", ".3mf")
 ARCHIVE = (".zip", ".rar", ".7z")
@@ -32,6 +33,13 @@ MIN_TYPO_LENGTH = 5
 # A name repeated under this many unrelated parents is a part (Base, Body), not a subject.
 PART_MIN_PARENTS = 3
 
+# Review signals. They only sort a human's queue, so a false alarm costs one glance.
+SIMILAR_NAME = 0.86  # Same bar as typos: CanGolderProp beside CanHolderProp.
+MIN_SIMILAR_LENGTH = 6
+CONTAINER_MIN_MODELS = 3  # A name that also parents this many other models is a grouping folder.
+OUTLIER_MIN_FOLDERS = 6
+OUTLIER_SHARE = 2.5
+
 SPLIT = re.compile(r"[_\s\-.(),&]+")
 CAMEL = re.compile(r"(?<=[a-z])(?=[A-Z])")
 
@@ -45,6 +53,14 @@ class ResolvedModel:
     folders: list[str] = field(default_factory=list)
     confidence: str = "high"
     reason: str = ""
+    flags: list[str] = field(default_factory=list)
+
+
+def primary_folder_rank(rel_path: str) -> tuple[int, int, str]:
+    """The folder a character is shown from. Unsupported 32mm renders cleanest."""
+    low = rel_path.lower()
+    unsupported = "unsupported" in low or "nosupports" in low.replace(" ", "")
+    return (0 if unsupported else 1, 0 if "32mm" in low else 1, rel_path)
 
 
 def words_in(folder: str) -> list[str]:
@@ -153,3 +169,75 @@ def resolve(
         ))
         entry.folders.append(folder)
     return list(models.values())
+
+
+def _plain_words(folder: str) -> list[str]:
+    return [w for w in words_in(folder) if w.lower() not in PRINT_WORDS and not SCALE.match(w.lower())]
+
+
+def _real_words(folder: str) -> list[str]:
+    # Sollid and Suppoted are print words spelled badly, not names lost to the variant list.
+    return [
+        w for w in _plain_words(folder)
+        if not any(SequenceMatcher(None, w.lower(), known).ratio() >= 0.8 for known in PRINT_WORDS)
+    ]
+
+
+def _slug(model: ResolvedModel) -> str:
+    return model.key.removesuffix(f"-{model.form}") if model.form else model.key
+
+
+def flag_models(
+    models: list[ResolvedModel],
+    variants: set[str],
+    parts: set[str],
+    nested: dict[str, list[str]] | None = None,
+) -> None:
+    """Notes what a human should look at. Never changes a model: a guess stays a guess.
+
+    models must come from one scope. nested maps a model's folder to the folders below it that
+    hold printable files, which is the only way to see an item swallowed by its parent.
+    """
+    nested = nested or {}
+    below: dict[str, set[str]] = defaultdict(set)
+    for model in models:
+        for folder in model.folders:
+            for part in folder.split("/")[:-1]:
+                if slug := slug_of(_plain_words(part)):
+                    below[slug].add(model.key)
+
+    typical = median(len(m.folders) for m in models) if models else 0
+    for model in models:
+        # The leaf was thrown away as a variant, so the name came from a parent. Throne ends up
+        # called Objects this way, because Throne sits beside too many other words in the library.
+        dropped = {
+            " ".join(words) for f in model.folders
+            if (leaf := f.rpartition("/")[2]) and (words := _real_words(leaf)) and not subject_words(leaf, variants)
+        }
+        if dropped:
+            model.flags.append(f"Named from a parent folder, but its folder says {', '.join(sorted(dropped)[:3])}")
+        # Busts are excluded because a release's bust pack shares the release's name by design.
+        if not model.form and len(below[_slug(model)] - {model.key}) >= CONTAINER_MIN_MODELS:
+            model.flags.append(f"{model.name} is also a folder grouping other models")
+
+        inside = {
+            " ".join(words) for folder in model.folders for child in nested.get(folder, [])
+            if (words := subject_words(child[len(folder) + 1:].rpartition("/")[2], variants))
+            and slug_of(words) not in parts and slug_of(words) != _slug(model)
+        }
+        if inside:
+            model.flags.append(f"Holds other named items: {', '.join(sorted(inside)[:3])}")
+        if len(model.folders) >= OUTLIER_MIN_FOLDERS and len(model.folders) >= typical * OUTLIER_SHARE:
+            model.flags.append(f"Spans {len(model.folders)} folders, most models here span {typical:g}")
+
+    for one, other in combinations(models, 2):
+        a, b = _slug(one), _slug(other)
+        # Shadow1 and Shadow2 are a set, and Hammer beside HammerProp or Male beside Female is a
+        # real pair. A typo keeps the length, which is what removed most false alarms on Loot.
+        if min(len(a), len(b)) < MIN_SIMILAR_LENGTH or a.rstrip("0123456789") == b.rstrip("0123456789"):
+            continue
+        if abs(len(a) - len(b)) > 1 or one.form != other.form:
+            continue
+        if SequenceMatcher(None, a, b).ratio() >= SIMILAR_NAME:
+            one.flags.append(f"Very close to {other.name}, possibly the same thing")
+            other.flags.append(f"Very close to {one.name}, possibly the same thing")

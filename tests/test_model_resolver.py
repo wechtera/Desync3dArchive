@@ -55,3 +55,42 @@ class ResolverTests(unittest.TestCase):
     def test_the_category_survives_learning(self):
         model = resolver.resolve(["Raiders_32mm_Supported/Ogre_32mm_Supported"])[0]
         self.assertEqual(model.category, "Raiders")
+
+
+class FlagTests(unittest.TestCase):
+    def flagged(self, folders, nested=None, variants=frozenset({"throne", "32mm"})):
+        variants = set(variants) | resolver.PRINT_WORDS
+        models = resolver.resolve(folders, variants=variants, parts=set())
+        resolver.flag_models(models, variants, set(), nested)
+        return {m.name: m.flags for m in models}
+
+    def test_a_guess_stays_a_guess(self):
+        folders = ["Objects/Throne_32mm", "Objects/Chest"]
+        before = [(m.key, m.folders) for m in resolver.resolve(folders, variants={"throne"}, parts=set())]
+        self.flagged(folders)
+        self.assertEqual(before, [(m.key, m.folders) for m in resolver.resolve(folders, variants={"throne"}, parts=set())])
+
+    def test_a_leaf_lost_to_the_variant_list_is_flagged(self):
+        flags = self.flagged(["Objects/Throne_32mm", "Objects/Chest"])
+        self.assertIn("Throne", " ".join(flags["Objects"]))
+
+    def test_a_misspelled_print_word_is_not_a_lost_name(self):
+        flags = self.flagged(["Golem/Sollid", "Imp/Solid"], variants={"sollid"})
+        self.assertEqual(flags["Golem"], [])
+
+    def test_a_typo_pair_is_flagged_on_both(self):
+        flags = self.flagged(["Green Hag/a", "Gree Hag/a"], variants=set("a"))
+        self.assertIn("Gree Hag", " ".join(flags["Green Hag"]))
+        self.assertIn("Green Hag", " ".join(flags["Gree Hag"]))
+
+    def test_numbered_sets_and_prop_versions_are_not_typos(self):
+        flags = self.flagged(["Shadow1", "Shadow2", "PhoenixHammer", "PhoenixHammer Prop"])
+        self.assertEqual([f for fs in flags.values() for f in fs], [])
+
+    def test_a_named_item_inside_a_model_is_flagged(self):
+        flags = self.flagged(["Voxshax"], {"Voxshax": ["Voxshax/GraveyardMausoleum"]})
+        self.assertIn("GraveyardMausoleum", " ".join(flags["Voxshax"]))
+
+    def test_support_folders_inside_a_model_are_not_flagged(self):
+        flags = self.flagged(["Mummy"], {"Mummy": ["Mummy/Supported", "Mummy/No Supports"]})
+        self.assertEqual(flags["Mummy"], [])

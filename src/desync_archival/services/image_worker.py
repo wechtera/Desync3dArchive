@@ -159,8 +159,13 @@ class ImageWorker:
 
     def _best_stl(self, conn: sqlite3.Connection, job: sqlite3.Row, model_dir: Path) -> Path | None:
         # A character's main folder can be Lychee-only, so try its other scales and variants.
-        rows = conn.execute("SELECT rel_path FROM library_model_folders WHERE model_id = ? ORDER BY id;", (job["model_id"],)).fetchall()
+        rows = conn.execute("SELECT rel_path FROM library_model_folders WHERE model_id = ? AND excluded = 0 ORDER BY id;", (job["model_id"],)).fetchall()
         for folder in [model_dir, *(Path(job["library_path"]) / r[0] for r in rows)]:
+            # A review card can own single files, and rglob finds nothing under a file.
+            if folder.is_file():
+                if folder.suffix.lower() == ".stl":
+                    return folder
+                continue
             best = self.renderer.select_best_render_candidate(folder)
             if best:
                 return best
@@ -174,7 +179,7 @@ class ImageWorker:
         cover.parent.mkdir(parents=True, exist_ok=True)
 
         if not cover.exists() or cover.stat().st_size == 0:
-            artwork = self.indexer._find_model_artwork(model_dir, release_dir)
+            artwork = self.indexer._find_model_artwork(model_dir.parent if model_dir.is_file() else model_dir, release_dir)
             if artwork:
                 try:
                     shutil.copy2(str(artwork), str(cover))

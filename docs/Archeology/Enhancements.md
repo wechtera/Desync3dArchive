@@ -24,3 +24,6 @@ Ideas found during migration. None are scheduled unless a step or the user asks 
 | E21 | Export tool for moving off this Mac | Production stays on this Mac for now. If it moves, a tool should package the database, metadata, previews, secrets and settings, and rewrite stored paths for the new machine | User decision, 2026-10-31 |
 | E22 | Rename detection for linked libraries | Match a renamed folder to its inactive model by file names and sizes, and suggest linking them. It needs the user's confirmation. Until then a rename is a new model, and the old one goes inactive. |
 | E23 | Covers for archive-only linked models | The image worker renders loose STLs only. Extract the best mesh from the archive, as the on-demand renderer already can, so these models get a cover. |
+| E24 | Review models already in the catalog | The review screen covers previews only. Splitting an added model needs a rule for which card keeps the ID, and what happens to stashes holding it. |
+| E25 | Choose variants at stash export | A linked character spans every scale and support type, and export copies every file. Let a stash pick a scale and support type. |
+| E26 | Render covers only from a card's own files | A card that had a folder carved out can still pick an STL from that folder for its cover. |

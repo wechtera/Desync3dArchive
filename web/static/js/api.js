@@ -480,6 +480,18 @@ export async function fetchLibraryPreview(libraryId) {
   return request(`/api/settings/libraries/${libraryId}/preview`);
 }
 
+export async function fetchLibraryRelease(libraryId, release) {
+  return request(`/api/settings/libraries/${libraryId}/preview/release?name=${encodeURIComponent(release)}`);
+}
+
+export async function saveLibraryReview(libraryId, payload) {
+  return request(`/api/settings/libraries/${libraryId}/preview/review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function approveLibraryPreview(libraryId, skipReleases) {
   return request(`/api/settings/libraries/${libraryId}/preview/approve`, {
     method: 'POST',

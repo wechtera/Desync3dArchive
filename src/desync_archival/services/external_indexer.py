@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from desync_archival import settings as app_config
-from desync_archival.services import inactive_log, model_resolver
+from desync_archival.services import inactive_log, library_review, model_resolver
+from desync_archival.services.library_review import ADDED, APPROVED, GONE, PROPOSED, SKIPPED
+from desync_archival.services.model_resolver import primary_folder_rank
 
 try:
     from desync_archival.services.logger import log_layer, logger
@@ -46,11 +48,6 @@ ADD = "add"
 FULL = "full"
 SCAN_MODES = (PREVIEW, ADD, FULL)
 
-PROPOSED = "proposed"
-APPROVED = "approved"
-SKIPPED = "skipped"
-ADDED = "added"
-GONE = "gone"
 EMPTY = "empty"
 
 
@@ -76,6 +73,11 @@ def list_dirs(path: Path) -> list[Path]:
 
 
 def walk_files(root: Path) -> Iterator[tuple[Path, int, int]]:
+    # A review card can own a single file.
+    if root.is_file():
+        info = root.stat()
+        yield root, info.st_size, info.st_mtime_ns
+        return
     # NOTE: rglob swallows OSError, which is how the old scan retagged models during a drop.
     for current, dirnames, filenames in os.walk(root, onerror=_read_failed):
         dirnames.sort()
@@ -105,13 +107,6 @@ def release_month_of(release_name: str) -> str:
 def is_presupported(path_text: str) -> bool:
     # Lookbehind because "unsupported" contains "supported". Lychee and ready-to-slice ship supported.
     return bool(re.search(r"(?<!un)supported|lychee|readytoslice", path_text, re.IGNORECASE))
-
-
-def primary_folder_rank(rel_path: str) -> tuple[int, int, str]:
-    """The folder a character is shown from. Unsupported 32mm renders cleanest."""
-    low = rel_path.lower()
-    unsupported = "unsupported" in low or "nosupports" in low.replace(" ", "")
-    return (0 if unsupported else 1, 0 if "32mm" in low else 1, rel_path)
 
 
 # Library ID is in the key because two libraries can have the same folder name.
@@ -163,22 +158,33 @@ class ExternalLibraryIndexer:
         conn.execute("PRAGMA foreign_keys = ON;")
         return conn
 
-    def _read_release(self, release_dir: Path, root: Path) -> tuple[list[str], list[str]]:
-        """Returns every folder, and the topmost ones holding model files."""
+    def _read_release(self, release_dir: Path, root: Path) -> tuple[list[str], list[str], list[str]]:
+        """Returns the folders to learn from, the topmost ones holding model files, and every model file."""
         folders: list[str] = []
         holding: list[str] = []
+        files: list[str] = []
+        sealed = ""
         for current, dirnames, filenames in os.walk(release_dir, onerror=_read_failed):
             dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
             folder = Path(current)
             rel_path = str(folder.relative_to(root))
+            held = sorted(
+                name for name in filenames
+                if Path(name).suffix.lower() in SUPPORTED_FILE_EXTENSIONS and not name.startswith(".")
+            )
+            files.extend(f"{rel_path}/{name}" for name in held)
+            # Below a model the walk only collects files for the review screen. Learning from these
+            # would change every guess.
+            if sealed and rel_path.startswith(f"{sealed}/"):
+                continue
             folders.append(rel_path)
             # Stat blocks and magazines sit at the top of a release, so that level never counts.
-            if folder != release_dir and any(
-                Path(name).suffix.lower() in SUPPORTED_FILE_EXTENSIONS and not name.startswith(".") for name in filenames
-            ):
+            if folder != release_dir and held:
                 holding.append(rel_path)
-                dirnames[:] = []
-        return folders, holding
+                # A lone zip doesn't make a folder a model: Busts/ holds Bust_Bases.zip beside the busts.
+                if any(Path(name).suffix.lower() not in ARCHIVE_EXTENSIONS for name in held):
+                    sealed = rel_path
+        return folders, holding, files
 
     @staticmethod
     def _within(folder: str, claimed: set[str]) -> bool:
@@ -251,14 +257,18 @@ class ExternalLibraryIndexer:
         held: dict[str, set[str]] = {}
         for row in conn.execute("""
             SELECT m.external_key, f.rel_path FROM library_model_folders f JOIN models m ON m.id = f.model_id
-            WHERE m.library_id = ? AND m.external_key IS NOT NULL;
+            WHERE m.library_id = ? AND m.external_key IS NOT NULL AND f.excluded = 0;
         """, (library_id,)).fetchall():
             held.setdefault(row[0].split("/", 1)[1], set()).add(row[1])
         return held
 
     def _folders_of(self, conn: sqlite3.Connection, model_id: int, rel_path: str) -> list[str]:
-        rows = conn.execute("SELECT rel_path FROM library_model_folders WHERE model_id = ? ORDER BY id;", (model_id,)).fetchall()
+        rows = conn.execute("SELECT rel_path FROM library_model_folders WHERE model_id = ? AND excluded = 0 ORDER BY id;", (model_id,)).fetchall()
         return [r[0] for r in rows] or [rel_path]
+
+    def _excludes_of(self, conn: sqlite3.Connection, model_id: int) -> list[str]:
+        rows = conn.execute("SELECT rel_path FROM library_model_folders WHERE model_id = ? AND excluded = 1;", (model_id,)).fetchall()
+        return [r[0] for r in rows]
 
     def _adopt_keyless_models(self, conn: sqlite3.Connection, library_id: int, root: Path) -> None:
         # Without a key these would show up as new and hit the duplicate path trigger.
@@ -337,6 +347,7 @@ class ExternalLibraryIndexer:
         run_id: int,
         name: str,
         folders: list[str],
+        excludes: list[str] | None = None,
     ) -> tuple[int, bool]:
         # Unchanged models write only the run stamp. Rewrites here hit the search triggers, so skip them.
         library_id = library["id"]
@@ -346,11 +357,13 @@ class ExternalLibraryIndexer:
         release_month = release_month_of(release_name)
 
         # Read everything first. A failed read raises here, before any row changes.
+        excludes = excludes or []
+        carved = set(excludes)
         found = [
             (path, size, modified)
-            for folder in folders if (root / folder).is_dir()
+            for folder in folders if (root / folder).exists()
             for path, size, modified in walk_files(root / folder)
-            if path.suffix.lower() in SUPPORTED_FILE_EXTENSIONS
+            if path.suffix.lower() in SUPPORTED_FILE_EXTENSIONS and not self._within(str(path.relative_to(root)), carved)
         ]
 
         lowered = [str(path.relative_to(root)).lower() for path, _, _ in found]
@@ -389,10 +402,14 @@ class ExternalLibraryIndexer:
                 conn.execute("UPDATE models SET last_scan_run_id = ? WHERE id = ?;", (run_id, model_id))
 
             # A character's key isn't a real folder, so it needs rows even with only one folder.
-            if folders != [rel_path]:
+            if folders != [rel_path] or excludes:
                 conn.executemany(
                     "INSERT INTO library_model_folders (model_id, rel_path) VALUES (?, ?);",
                     [(model_id, folder) for folder in folders],
+                )
+                conn.executemany(
+                    "INSERT INTO library_model_folders (model_id, rel_path, excluded) VALUES (?, ?, 1);",
+                    [(model_id, path) for path in excludes],
                 )
             files_changed = self._sync_files(conn, library_id, root, model_id, name, found)
 
@@ -530,13 +547,17 @@ class ExternalLibraryIndexer:
         # Read the whole tree first: the resolver learns from all of it, so a preview can't be partial.
         all_folders: list[str] = []
         file_folders: dict[str, list[str]] = {}
+        trees: dict[str, dict[str, list[str]]] = {}
         for index, release_dir in enumerate(release_dirs, 1):
             if is_cancelled():
-                return {"releases": [], "complete": False, "totals": {}}
+                return {"releases": [], "complete": False, "totals": {}, "trees": {}}
             progress(index / len(release_dirs) * 95.0, f"[{index}/{len(release_dirs)}] Reading {release_dir.name[:40]}")
-            all_folders_here, holding = self._read_release(release_dir, root)
+            all_folders_here, holding, files = self._read_release(release_dir, root)
             all_folders.extend(all_folders_here)
             file_folders[release_dir.name] = holding
+            # Parents of files, because a sealed model's subfolders aren't in the learning list.
+            shown = set(all_folders_here) | {str(p) for f in files for p in Path(f).parents}
+            trees[release_dir.name] = {"folders": sorted(shown - {release_dir.name, "."}), "files": files}
 
         variants = model_resolver.learn_variant_words(all_folders)
         parts = model_resolver.learn_part_words([f for held in file_folders.values() for f in held], variants)
@@ -553,7 +574,17 @@ class ExternalLibraryIndexer:
             if not holding:
                 entry["empty"].append(release_dir.name)
 
-            for model in model_resolver.resolve([f[len(prefix):] for f in holding], variants=variants, parts=parts):
+            models = model_resolver.resolve([f[len(prefix):] for f in holding], variants=variants, parts=parts)
+            inside = {
+                f[len(prefix):]: sorted(
+                    p[len(prefix):] for p in trees[release_dir.name]["folders"]
+                    if p.startswith(f"{f}/") and p not in holding
+                )
+                for f in holding
+            }
+            model_resolver.flag_models(models, variants, parts, inside)
+            carved = library_review.carve({m.key: [prefix + f for f in m.folders] for m in models}, claimed)
+            for model in models:
                 folders = sorted((prefix + f for f in model.folders), key=primary_folder_rank)
                 rel_path = prefix + model.key
                 # Known folders win, so a model from an earlier scan keeps its identity.
@@ -562,7 +593,7 @@ class ExternalLibraryIndexer:
                     if set(folders) - known_folders[rel_path]:
                         entry["new"].append({
                             "rel_path": rel_path, "name": model.name, "category": model.category or "Miniatures",
-                            "folders": folders, "extends": True,
+                            "folders": folders, "extends": True, "flags": model.flags, "exclude": carved[model.key],
                         })
                     else:
                         entry["known"] += 1
@@ -573,7 +604,7 @@ class ExternalLibraryIndexer:
                 else:
                     entry["new"].append({
                         "rel_path": rel_path, "name": model.name, "category": model.category or "Miniatures",
-                        "folders": folders,
+                        "folders": folders, "flags": model.flags, "exclude": carved[model.key],
                     })
                     if model.confidence == "low":
                         entry["low_confidence"].append(f"{rel_path}: {model.reason}")
@@ -583,6 +614,7 @@ class ExternalLibraryIndexer:
         return {
             "releases": releases,
             "complete": complete,
+            "trees": trees,
             "totals": {
                 "releases": len(releases),
                 "new": sum(len(r["new"]) for r in releases),
@@ -622,18 +654,24 @@ class ExternalLibraryIndexer:
                 self._close_run(conn, run_id, "failed", {"error": str(e)})
                 return {"success": False, "error": f"Storage could not be read: {e}"}
 
+            trees = report.pop("trees")
             if not report["complete"]:
                 self._close_run(conn, run_id, "stopped", report)
                 return {"success": True, "stopped": True, "run_id": run_id, "new": 0}
 
             with conn:
                 conn.execute("DELETE FROM library_candidates WHERE library_id = ? AND status = ?;", (library_id, PROPOSED))
+                for name, tree in trees.items():
+                    library_review.save_tree(conn, library_id, run_id, name, tree)
+                reviewed = library_review.merge_preview(conn, library_id, run_id, report, trees)
                 decided = {
                     r[0] for r in conn.execute(
                         "SELECT rel_path FROM library_candidates WHERE library_id = ?;", (library_id,)
                     ).fetchall()
                 }
                 for release in report["releases"]:
+                    if release["name"] in reviewed:
+                        continue
                     for item in release["new"]:
                         folders = json.dumps(item["folders"])
                         if item["rel_path"] in decided:
@@ -646,8 +684,9 @@ class ExternalLibraryIndexer:
                             continue
                         conn.execute(
                             "INSERT INTO library_candidates (library_id, run_id, rel_path, release_name, name, category,"
-                            " folders_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
-                            (library_id, run_id, item["rel_path"], release["name"], item["name"], item["category"], folders, PROPOSED),
+                            " folders_json, exclude_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                            (library_id, run_id, item["rel_path"], release["name"], item["name"], item["category"], folders,
+                             json.dumps(item.get("exclude") or []), PROPOSED),
                         )
             self._close_run(conn, run_id, "completed", report)
 
@@ -693,7 +732,7 @@ class ExternalLibraryIndexer:
             default_creator = library["default_creator"] or library["name"]
             run_id = self._open_run(conn, library_id, ADD)
             candidates = conn.execute(
-                "SELECT id, rel_path, name, category, folders_json FROM library_candidates"
+                "SELECT id, rel_path, name, category, folders_json, exclude_json FROM library_candidates"
                 " WHERE library_id = ? AND status = ? ORDER BY rel_path;",
                 (library_id, APPROVED),
             ).fetchall()
@@ -711,7 +750,7 @@ class ExternalLibraryIndexer:
                     progress(index / max(1, len(candidates)) * 99.0, f"[{index}/{len(candidates)}] {rel_path[:60]}")
 
                     folders = json.loads(candidate["folders_json"])
-                    if not any((root / folder).is_dir() for folder in folders):
+                    if not any((root / folder).exists() for folder in folders):
                         self._check_root(root)
                         with conn:
                             conn.execute("UPDATE library_candidates SET status = ? WHERE id = ?;", (GONE, candidate["id"]))
@@ -728,6 +767,7 @@ class ExternalLibraryIndexer:
                             conn.execute("UPDATE models SET external_key = ? WHERE id = ?;", (key, existing["id"]))
                     count, _ = self._sync_model(
                         conn, library, root, existing, rel_path, candidate["category"], run_id, candidate["name"], folders,
+                        json.loads(candidate["exclude_json"]),
                     )
                     with conn:
                         conn.execute("UPDATE library_candidates SET status = ? WHERE id = ?;", (ADDED, candidate["id"]))
@@ -790,14 +830,14 @@ class ExternalLibraryIndexer:
                     progress(index / max(1, len(models)) * 99.0, f"[{index}/{len(models)}] {rel_path[:60]}")
 
                     folders = self._folders_of(conn, model["id"], rel_path)
-                    if not any((root / folder).is_dir() for folder in folders):
+                    if not any((root / folder).exists() for folder in folders):
                         self._check_root(root)
                         missing.append(model)
                         continue
 
                     count, was_changed = self._sync_model(
                         conn, library, root, model, rel_path, model["primary_category"] or "Miniatures", run_id,
-                        model["name"], folders,
+                        model["name"], folders, self._excludes_of(conn, model["id"]),
                     )
                     checked += 1
                     files += count

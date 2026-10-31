@@ -188,6 +188,7 @@
       <button class="sub-btn" data-click="switchDownloadSubView" data-args='["history"]'>History &amp; Audit Log</button>
       <button class="sub-btn" data-click="switchDownloadSubView" data-args='["reconcile"]'>Vault Reconcile</button>
       <button class="sub-btn" data-click="switchDownloadSubView" data-args='["sync"]'>MMF Sync</button>
+      <button class="sub-btn" id="sub-btn-libraries" data-click="switchDownloadSubView" data-args='["libraries"]'>Linked Libraries</button>
     </div>
 
     <!-- Sub-View A: Pending / Bulk Selection -->
@@ -473,6 +474,10 @@
     </div>
 
     <!-- Sub-View E: MMF Sync -->
+    <div id="sub-dl-libraries" style="display:none;">
+      <div class="settings-panel" id="external-libraries-panel"></div>
+    </div>
+
     <div id="sub-dl-sync" style="display:none;">
       <div class="audit-panel panel-spaced" style="margin: 16px 24px 20px 24px;">
         <div class="audit-header">
@@ -615,57 +620,19 @@
         <p class="text-dim font-sm" id="backup-status"></p>
       </div>
 
-      <!-- Card 1b: In-Place External Libraries Management -->
-      <div class="settings-panel" id="external-libraries-panel" data-settings-tab="libraries" hidden>
+      <!-- Card 1b: Library disk figures. Managing a library lives under Manage / Retrieve / Reconcile Assets -->
+      <div class="settings-panel" data-settings-tab="libraries" hidden>
         <div class="settings-panel-header">
           <div>
-            <h2 class="settings-panel-title">In-Place External Libraries</h2>
+            <h2 class="settings-panel-title">Linked Library Disk Usage</h2>
             <div class="settings-panel-subtitle">
-              Manage local &amp; network storage collections (e.g., Loot Studios) indexed zero-copy in strictly read-only mode.
-            </div>
-          </div>
-          <div class="flex gap-2">
-            <button type="button" class="btn-pill" data-click="loadExternalLibraries">Refresh Libraries</button>
-          </div>
-        </div>
-
-        <div id="external-libraries-table-container">
-          <div class="table-msg">Loading registered libraries...</div>
-        </div>
-
-        <div class="mt-4 pt-3" style="border-top: 1px solid #262635;">
-          <h3 class="font-bold font-md mb-2 text-accent">Register New In-Place Library</h3>
-          <div class="settings-form-row two-col">
-            <div class="settings-field-group">
-              <label for="new-lib-path">Top-Level Storage Directory Path *</label>
-              <div class="settings-input-with-button">
-                <input type="text" id="new-lib-path" placeholder="/Volumes/STL/Loot Studios" spellcheck="false">
-                <button type="button" class="btn-pill" data-click="openDirectoryPicker" data-args='["new-lib-path"]'>Browse</button>
-              </div>
-              <span class="form-help-text">Direct path to library root on NAS or local drive (strictly read-only).</span>
-            </div>
-            <div class="settings-field-group">
-              <label for="new-lib-name">Display Name (Optional)</label>
-              <input type="text" id="new-lib-name" placeholder="Defaults to folder name" spellcheck="false">
-              <span class="form-help-text">Label shown in catalog and monthly releases.</span>
-            </div>
-          </div>
-          <div class="settings-form-row two-col mt-2">
-            <div class="settings-field-group">
-              <label for="new-lib-creator">Default Creator / Studio (Optional)</label>
-              <input type="text" id="new-lib-creator" placeholder="e.g. Loot Studios" spellcheck="false">
-              <span class="form-help-text">Assigned to indexed models if not specified in release subfolders.</span>
-            </div>
-            <div class="settings-field-group flex items-end">
-              <button type="button" class="btn-pill btn-action-primary" data-click="handleAddExternalLibrary">
-                Register In-Place Library
-              </button>
+              Space used by linked libraries. Add, scan and review them under Manage / Retrieve / Reconcile Assets.
             </div>
           </div>
         </div>
+        <div id="library-usage-table"><div class="table-msg">Loading registered libraries...</div></div>
       </div>
 
-      <!-- Card 2: Storage & Directory Configuration -->
       <div class="settings-panel" data-settings-tab="directories" hidden>
         <div class="settings-panel-header">
           <div>
@@ -1182,6 +1149,16 @@
   </div>
 
   <!-- Object Files Inspection Modal -->
+  <div class="modal-backdrop" id="library-review-modal">
+    <div class="modal modal-xl">
+      <div class="modal-header">
+        <h2 id="library-review-title" class="modal-title-accent">Review Release</h2>
+        <button class="tab-btn" data-click="closeReview">Close</button>
+      </div>
+      <div class="modal-body" id="library-review-body"></div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="files-modal">
     <div class="modal modal-files">
       <div class="modal-header">

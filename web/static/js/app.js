@@ -196,6 +196,7 @@ export function refreshCurrentView() {
     }
     if (isVisible('sub-dl-history')) loadDownloadHistory();
     if (isVisible('sub-dl-reconcile')) loadReconcileView();
+    if (isVisible('sub-dl-libraries')) window.loadExternalLibraries();
   }
   if (isVisible('view-stashes')) loadStashesView();
   if (isVisible('view-settings')) {
@@ -386,6 +387,7 @@ export function resetToHome(event) {
 
   closeModal('release-modal');
   closeModal('files-modal');
+  closeModal('library-review-modal');
   closeModal('config-modal');
   closeModal('browse-modal');
   closeModal('modal-scraper');

@@ -1,3 +1,4 @@
+import { loadExternalLibraries } from './libraries.js';
 import {
   fetchModels,
   fetchCreators,
@@ -93,14 +94,14 @@ export function stopActiveTransfersPolling() {
 }
 
 export function switchDownloadSubView(subview) {
-  ['pending', 'active', 'history', 'reconcile', 'sync'].forEach(sv => {
+  ['pending', 'active', 'history', 'reconcile', 'sync', 'libraries'].forEach(sv => {
     const el = document.getElementById(`sub-dl-${sv}`);
     if (el) el.style.display = (sv === subview) ? 'block' : 'none';
   });
 
   document.querySelectorAll('.sub-tabs .sub-btn').forEach(btn => {
-    const clickAttr = btn.getAttribute('onclick') || '';
-    btn.classList.toggle('active', clickAttr.includes(subview));
+    const clickAttr = btn.getAttribute('data-args') || '';
+    btn.classList.toggle('active', clickAttr.includes(`"${subview}"`));
   });
 
   if (subview === 'pending') {
@@ -117,6 +118,9 @@ export function switchDownloadSubView(subview) {
     loadReconcileView();
   } else if (subview === 'sync') {
     stopActiveTransfersPolling();
+  } else if (subview === 'libraries') {
+    stopActiveTransfersPolling();
+    loadExternalLibraries();
   }
 }
 

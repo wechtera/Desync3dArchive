@@ -116,7 +116,7 @@ class StashService:
         if item["item_type"] == "model":
             row = conn.execute("SELECT vault_path FROM models WHERE id = ?;", (item["model_id"],)).fetchone()
             path = Path(row["vault_path"])
-            if not path.is_dir():
+            if not path.exists():
                 raise ValueError(f"Model #{item['model_id']} vault directory not found on storage: {path}")
             return
 
