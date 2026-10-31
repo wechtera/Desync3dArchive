@@ -47,6 +47,9 @@ PIECE_WORDS = frozenset({
     "base", "bases", "body", "torso", "head", "heads", "arm", "arms", "leg", "legs", "hand", "hands", "weapon",
     "weapons", "sword", "shield", "wing", "wings", "tail", "cape", "cloak", "hair", "helmet", "foot", "feet",
 })
+BASE_WORDS = frozenset({"base", "basesscenic", "basesandscenic", "scenicbase"})
+BASE_GROUP = "Bases"
+BASE_TAG = "base"
 PIECE_MIN_NAMES = 3  # A trailing word seen after this many different names is a piece, not a pose name.
 
 SPLIT = re.compile(r"[_\s\-.(),&]+")
@@ -65,6 +68,7 @@ class ResolvedModel:
     flags: list[str] = field(default_factory=list)
     group: str = ""
     files: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
 
 
 def primary_folder_rank(rel_path: str) -> tuple[int, int, str]:
@@ -309,6 +313,15 @@ def resolve_files(paths: list[str], variants: set[str], pieces: set[str] | None 
 
         # Tithe Tree P1 to P8 in a Tithe Tree folder is one build. Ghul A to E in Ghuls is a set
         # of poses, and the plural folder is what tells them apart.
+        # Each base is its own model, gathered in one group and tagged so they can be filtered out.
+        base_pack = leaf.removesuffix("s") in BASE_WORDS
+        if base_pack:
+            for core, held in cores.items():
+                model = _model_of(_display(list(core)) or BASE_GROUP, place, held)
+                model.group, model.tags = BASE_GROUP, [BASE_TAG]
+                models.append(model)
+            continue
+
         one_build = len(named) <= 1 or (inside_folder and not (pure_poses and leaf.endswith("s")))
         if one_build:
             words = list(named[0]) if len(named) == 1 else _title_of(place, named)

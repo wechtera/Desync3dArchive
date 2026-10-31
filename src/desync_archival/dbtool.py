@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from desync_archival import backup, migrations, settings
-from desync_archival.services import login, secret_store
+from desync_archival.services import catalog_levels, login, secret_store
 
 
 def set_password() -> int:
@@ -49,6 +49,8 @@ def main() -> int:
     commands.add_parser("status")
     migrate = commands.add_parser("migrate")
     migrate.add_argument("--confirm-production", action="store_true")
+    build = commands.add_parser("build-models")
+    build.add_argument("--confirm-production", action="store_true")
     commands.add_parser("backup")
     restore = commands.add_parser("restore")
     restore.add_argument("backup_file", type=Path)
@@ -74,6 +76,15 @@ def main() -> int:
         elif args.command == "migrate":
             result = migrations.migrate_database(db_path, confirm_production=args.confirm_production)
             print(f"migrated from {result['from']} to {result['to']}, backup: {result['backup'] or 'none needed'}")
+        elif args.command == "build-models":
+            if settings.is_production() and not args.confirm_production:
+                raise migrations.MigrationError("Refusing to build models in production without --confirm-production")
+            print(f"backup written: {backup.create_backup(db_path)}")
+            conn = sqlite3.connect(db_path)
+            try:
+                print(catalog_levels.build_archive_models(conn))
+            finally:
+                conn.close()
         elif args.command == "backup":
             print(f"backup written: {backup.create_backup(db_path)}")
         else:

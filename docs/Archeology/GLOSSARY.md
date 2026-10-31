@@ -20,6 +20,7 @@ A file and an artifact are different things. A zip is a file and not an artifact
 - **A variant is a different shape.** Poses are separate models, joined by a model group.
 - **A model can need several artifacts to build.** Base, Torso and Head are artifacts of one model.
 - **Busts are separate models.**
+- **Each base is its own model,** in a model group called Bases, and tagged `base`.
 - **Heroes and Enemies are tags.** They aren't a level.
 - **Busts join their character's model group.** They stay separate models.
 - **A model group never spans collections automatically.** Linking across collections is a tag's job.

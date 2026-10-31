@@ -74,6 +74,7 @@ CREATE TABLE model_artifacts (
     file_id INTEGER NOT NULL,
     archive_member_id INTEGER,
     path TEXT NOT NULL,
+    filename TEXT NOT NULL,
     size_bytes INTEGER,
     scale TEXT,
     supported INTEGER,
@@ -89,6 +90,21 @@ WHEN EXISTS (
     SELECT 1 FROM model_artifacts
     WHERE catalog_model_id = NEW.catalog_model_id AND file_id = NEW.file_id AND path = NEW.path
 )
+BEGIN
+    SELECT RAISE(IGNORE);
+END;
+
+-- Tags on a model, apart from model_tags, which still belongs to collections until the final rename.
+CREATE TABLE catalog_model_tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    catalog_model_id INTEGER NOT NULL,
+    tag TEXT NOT NULL,
+    FOREIGN KEY (catalog_model_id) REFERENCES catalog_models(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_catalog_model_tags_model ON catalog_model_tags(catalog_model_id);
+CREATE INDEX idx_catalog_model_tags_tag ON catalog_model_tags(tag);
+CREATE TRIGGER no_duplicate_catalog_model_tag BEFORE INSERT ON catalog_model_tags
+WHEN EXISTS (SELECT 1 FROM catalog_model_tags WHERE catalog_model_id = NEW.catalog_model_id AND tag = NEW.tag)
 BEGIN
     SELECT RAISE(IGNORE);
 END;
