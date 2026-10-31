@@ -30,7 +30,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 5 code complete on branch `migration/05-jobs-tools`. Its exit check still needs the user's real scrape and test download.
+- **Phase:** Step 5 passed its exit check on branch `migration/05-jobs-tools`, waiting for approval to merge.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -52,8 +52,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Next
 
-- [ ] User: real small scrape and test download for the Step 5 exit check
-- [ ] Merge `migration/05-jobs-tools` after that and user approval
+- [ ] Merge `migration/05-jobs-tools` after user approval
 - [ ] Run Step 6 from `MIGRATION_PROMPTS.md`
 
 ## Project decisions
@@ -71,9 +70,12 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
 
-## Step 5 progress
+## Step 5 results
 
-**Done on the branch**
+**Exit check:** Passed. A killed app recovers, which `tests/test_job_recovery.py` proves with SIGKILL. The user ran a real headless scrape: 4,869 plain numeric IDs, all 4,868 catalog models plus 1 new. Model 729914 downloaded to the dev vault: 2 RAR files, 177 MB, sizes and SHA-256 matching, archive contents indexed, and nothing on the NAS.
+
+**Not yet known:** whether MMF's hosts honor `Range`, because no download has needed to resume. With `--no-sandbox` removed, the scrape passed with no Cloudflare check appearing, so the check itself is untested in that mode.
+
 - **Job runner (item 1):** every background job starts through `TaskManager._spawn`, with a time limit and a crash guard. At startup, `jobs.recover_interrupted` turns tasks left `running` into `interrupted`, and returns `downloading` jobs to `pending` and `offloading` jobs to `staging_complete`. Before this, one crash blocked every future task. `tests/test_job_recovery.py` kills a real server with SIGKILL and restarts it.
 - **Releases (item 2):** ingest now rebuilds `releases`. A failed rebuild logs and keeps the ingest result.
 - **Cookie fallback (item 3):** fixed, through one `parse_cookies` helper.
@@ -94,7 +96,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 **Contract:** `downloads_status` and `downloads_queue_get` gain `reconnect_required`, and `settings` gains flags for the four new cookie fields.
 
-**Tool syntax verified against real binaries:** 7-Zip treated `-oevil.stl` as an option without `--`, and extracted it as a file with `--`. unrar also uses `--`: a bare `-` fails with "Unknown option", which `test_real_unrar_accepts_the_stop_marker` guards. No real RAR archive has been extracted through the adapter yet, so that is part of the Step 5 exit check.
+**Tool syntax verified against real binaries:** 7-Zip treated `-oevil.stl` as an option without `--`, and extracted it as a file with `--`. unrar also uses `--`: a bare `-` fails with "Unknown option", which `test_real_unrar_accepts_the_stop_marker` guards. A real RAR archive passed listing, bulk extraction and single-member extraction through the adapter.
 
 **RAR test is opt-in:** `rar` is unverified by macOS Gatekeeper and prompts the user, so the real RAR fixture test runs only with `DESYNC_TEST_RAR=1`. `unrar` is unaffected. Do not bypass Gatekeeper.
 

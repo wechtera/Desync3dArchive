@@ -2,7 +2,7 @@
 
 Read this first in a new session. It explains what this project is, where everything lives, what state it is in, and what will catch you out. `README.md` in this folder holds the detailed results for each step.
 
-**Last updated:** 2026-10-30, during Step 5.
+**Last updated:** 2026-10-30, after the Step 5 exit check.
 
 ## What this is
 
@@ -76,7 +76,7 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 | 2 | Done | User confirmed real sign-in and a test download |
 | 3 | Done | Migrations, backups, WAL |
 | 4 | Done | Routers, query modules, dry-run, audit log, V6 |
-| 5 | **Waiting on user test** | Code complete on `migration/05-jobs-tools`. Needs a real scrape and test download |
+| 5 | **Awaiting merge approval** | Exit check passed on `migration/05-jobs-tools` |
 | 6 | To do | `lit-html` frontend, and remove the API key setting |
 | 7 | To do | LAN mode: login and TLS |
 | 8 | To do | Measured performance work |
@@ -101,7 +101,7 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 - **V1** closes fully in Step 7. The app has no login, so it refuses to bind beyond loopback.
 - **V5:** token injection is closed, but the deprecated implicit grant is still in use because it is the only option.
-- **Untested against real services:** a real scrape through the migrated code, including with `--no-sandbox` removed; real RAR extraction through the adapter; whether MMF's hosts honor `Range`; and the `releases` fix against the real Loot Studios folder. The code grant has never worked here and is being removed.
+- **Untested against real services:** whether MMF's hosts honor `Range`, a Cloudflare check with `--no-sandbox` removed, and the `releases` fix against the real Loot Studios folder. The code grant has never worked here and is being removed.
 - **Snapshot gaps:** stash export, scrape and ingest record failure paths only.
 - **The old app is exposed** on `0.0.0.0:8080` with secrets readable when it runs. The user stopped it during Step 2. Keep it stopped.
 - **Secrets from V2 need rotating** in Step 9. They were exposed by the old app.
@@ -119,4 +119,4 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 ## Next action
 
-Finish the Step 5 exit check with the user: a real scrape on the dev instance, which needs session cookies pasted into Settings there, and a test download. Then merge `migration/05-jobs-tools` with approval and run Step 6.
+Merge `migration/05-jobs-tools` once the user approves, then run Step 6.
