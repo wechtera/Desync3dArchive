@@ -75,7 +75,7 @@ The app and the old app both use port 8080, so stop one before starting the othe
 By default the app listens on loopback and has no login. To reach it from another computer:
 
 ```bash
-uv run python -m desync_archival.dbtool set-password   # at least 12 characters
+uv run python -m desync_archival.dbtool set-password   # at least 8 characters
 
 brew install mkcert
 mkcert -install

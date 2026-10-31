@@ -63,7 +63,12 @@ class PasswordTests(LanCase):
 
     def test_short_passwords_are_refused(self):
         with self.assertRaises(login.WeakPasswordError):
-            login.set_password("short")
+            login.set_password("x" * (login.MIN_PASSWORD_LENGTH - 1))
+
+    def test_the_minimum_length_is_accepted(self):
+        self.assertEqual(login.MIN_PASSWORD_LENGTH, 8)
+        login.set_password("x" * login.MIN_PASSWORD_LENGTH)
+        self.assertTrue(login.verify_password("x" * login.MIN_PASSWORD_LENGTH))
 
     def test_no_file_means_no_password(self):
         with patch.dict(os.environ, {"DESYNC_SECRETS_FILE": str(self.base / "none.json")}):
