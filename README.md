@@ -4,7 +4,7 @@ A single-user, local-first archive and asset manager for a MyMiniFactory (MMF) 3
 
 This project replaces `scrapepage`, which stays frozen in the sibling directory for reference and rollback.
 
-**Status:** The app runs on FastAPI, bound to loopback, with the Step 2 security fixes and versioned database migrations in place. It has no login yet, so it stays loopback-only until Step 7. Follow [docs/Archeology/README.md](docs/Archeology/README.md) for the current state.
+**Status:** Migration is through Step 5 of 9. Steps 0 to 4 are on `main`, and Step 5 is on `migration/05-jobs-tools`, passed and waiting to merge. The app is usable on dev data, bound to loopback, and production has not moved yet. It has no login, so it stays loopback-only until Step 7. Start with [docs/Archeology/HANDOFF.md](docs/Archeology/HANDOFF.md).
 
 ## Prerequisites
 
@@ -65,6 +65,8 @@ uv run python scripts/baseline/record_contract.py --compare   # compare the API 
 ```
 
 The app never migrates a database by itself. If the schema is behind, it refuses to start and names the command to run. On production, `migrate` also needs `--confirm-production`.
+
+Sign in from Settings with **Connect**, which opens MMF's login page, where you also choose how long the sign-in lasts. Only the Client ID has to be saved first. The library scrape needs session cookies, which go in their own Settings fields, and it runs without a browser window by default. If Cloudflare asks for a check, turn that switch off and scrape in a visible window.
 
 The app and the old app both use port 8080, so stop one before starting the other. `check.sh` runs the browser tests when `~/DESYNC_Data_dev` exists, and they use port 8099.
 

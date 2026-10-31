@@ -2,7 +2,7 @@
 
 Read this first in a new session. It explains what this project is, where everything lives, what state it is in, and what will catch you out. `README.md` in this folder holds the detailed results for each step.
 
-**Last updated:** 2026-10-30, after the Step 5 exit check.
+**Last updated:** 2026-10-30, paused after the Step 5 exit check, with the Step 5 merge not yet approved.
 
 ## What this is
 
@@ -119,4 +119,10 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 ## Next action
 
-Merge `migration/05-jobs-tools` once the user approves, then run Step 6.
+The project is paused at the user's request. On return:
+
+1. Check out `migration/05-jobs-tools`, which is the current work. `main` stops at Step 4.
+2. Get the user's approval, then merge it to `main` with `--ff-only`.
+3. Run Step 6 on `migration/06-frontend`. Write Playwright tests for each view's current behavior before changing it, and remove the API Key / Secret setting as that prompt describes.
+
+**State when paused:** the user is signed in on the dev app with a 7-day token issued 2026-10-30, and session cookies are saved in dev. Cloudflare cookies expire quickly, so expect to paste fresh ones before the next scrape. The dev app was left running on port 8080 and may need restarting. The dev catalog does not have Master Wendigo (276218) yet, because no ingest was run. Job 112 for model 148200 shows `failed` in dev and left files in dev staging, which is harmless.

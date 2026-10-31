@@ -30,10 +30,10 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 5 passed its exit check on branch `migration/05-jobs-tools`, waiting for approval to merge.
+- **Phase:** Paused. Step 5 passed its exit check on branch `migration/05-jobs-tools` and is waiting for approval to merge. `main` is at Step 4. See `HANDOFF.md` to resume.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
-- **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
-- **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
+- **Tests:** `check.sh` passes at the latest commit: 384 Python tests, 1 skipped, 22 browser tests and 110 contract cases.
+- **Production data:** Untouched. Dev work never reaches it, and `library.db` still has its 15:50 modified time from 2026-10-30. The last full NAS comparison, after Step 4, was clean.
 
 ## Done
 
