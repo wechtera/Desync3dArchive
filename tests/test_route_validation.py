@@ -59,3 +59,16 @@ class StashValidationTests(RouteCase):
 
     def test_trailing_slashes_still_work(self):
         self.assertEqual(self.client.get("/api/stashes/active/").status_code, self.client.get("/api/stashes/active").status_code)
+
+
+class SettingsValidationTests(RouteCase):
+    def test_path_fields_must_be_text(self):
+        self.refused("/api/settings", {"download_root_path": 5})
+        self.refused("/api/storage/config", {"path": ["x"]})
+        self.refused("/api/settings/libraries", {"path": 5})
+
+    def test_bad_logging_body_is_refused(self):
+        self.refused("/api/settings/logging", {"layers": "http"})
+
+    def test_settings_keep_open_keys(self):
+        self.assertEqual(self.client.post("/api/settings", json={"batch_size": "5"}).status_code, 200)

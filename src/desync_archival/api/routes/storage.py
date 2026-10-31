@@ -1,4 +1,5 @@
 from pathlib import Path
+from desync_archival.db.queries import storage as queries
 from desync_archival import settings as app_config
 import sqlite3
 from typing import Any, Optional
@@ -60,10 +61,7 @@ def handle_post_storage_config(
 
     with conn:
         for k, v in updates:
-            conn.execute("""
-                INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP;
-            """, (k, v))
+            conn.execute(queries.POST_STORAGE_CONFIG_1, (k, v))
 
     if download_manager:
         download_manager._load_settings()
