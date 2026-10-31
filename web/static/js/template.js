@@ -23,3 +23,10 @@ export function imageFallback(url) {
 }
 
 export const stopPropagation = (event) => event.stopPropagation();
+
+/** Adds a one-shot template, such as a modal, to the end of the page. */
+export function appendToBody(template) {
+  const fragment = new DocumentFragment();
+  litRender(template, fragment);
+  document.body.append(fragment);
+}

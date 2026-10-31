@@ -14,7 +14,8 @@ import {
   removeStashItem,
   exportStash
 } from '../api.js';
-import { formatBytes, escapeHtml } from '../utils.js';
+import { formatBytes } from '../utils.js';
+import { appendToBody, html, nothing, render } from '../template.js';
 
 let currentSelectedStashId = null;
 let currentStashesList = [];
@@ -41,7 +42,7 @@ export function updateHeaderStashWidget(activeStash) {
 export async function loadStashesView() {
   const sidebarContainer = document.getElementById('stashes-sidebar-list');
   if (sidebarContainer) {
-    sidebarContainer.innerHTML = '<div class="table-msg">Loading stashes...</div>';
+    render(html`<div class="table-msg">Loading stashes...</div>`, sidebarContainer);
   }
 
   try {
@@ -75,7 +76,7 @@ export async function loadStashesView() {
   } catch (err) {
     console.error('Failed to load stashes view:', err);
     if (sidebarContainer) {
-      sidebarContainer.innerHTML = `<div class="browse-item-alert" style="padding:16px;">Failed to load stashes: ${escapeHtml(err.message)}</div>`;
+      render(html`<div class="browse-item-alert" style="padding:16px;">Failed to load stashes: ${err.message}</div>`, sidebarContainer);
     }
   }
 }
@@ -85,25 +86,25 @@ function renderStashesSidebar() {
   if (!container) return;
 
   if (currentStashesList.length === 0) {
-    container.innerHTML = `
+    render(html`
       <div class="stash-sidebar-empty">
         <p class="text-dim font-xs">No stashes created yet.</p>
         <p class="text-dim font-xs mt-1">Create one below to begin organizing your pile of gray.</p>
       </div>
-    `;
+    `, container);
     return;
   }
 
-  container.innerHTML = currentStashesList.map(stash => {
+  render(currentStashesList.map(stash => {
     const isSelected = stash.id === currentSelectedStashId;
     const isActive = Boolean(stash.is_active);
 
-    return `
+    return html`
       <div class="stash-nav-card ${isSelected ? 'selected' : ''} ${isActive ? 'is-active' : ''}" 
-           onclick="window.selectStash(${stash.id})">
+           @click=${() => selectStash(stash.id)}>
         <div class="stash-nav-top">
-          <span class="stash-nav-title font-semibold text-main">${escapeHtml(stash.name)}</span>
-          ${isActive ? '<span class="status-badge status-completed font-xs">ACTIVE</span>' : ''}
+          <span class="stash-nav-title font-semibold text-main">${stash.name}</span>
+          ${isActive ? html`<span class="status-badge status-completed font-xs">ACTIVE</span>` : ''}
         </div>
         <div class="stash-nav-meta text-dim font-xs mt-1">
           <span>${(stash.item_count || 0).toLocaleString()} items</span>
@@ -111,11 +112,11 @@ function renderStashesSidebar() {
           <span>${formatBytes(stash.total_bytes || 0)}</span>
         </div>
         <div class="stash-nav-desc text-dim font-xs mt-1" style="font-style:italic;">
-          ${escapeHtml(stash.description || 'A pile of gray')}
+          ${stash.description || 'A pile of gray'}
         </div>
       </div>
     `;
-  }).join('');
+  }), container);
 }
 
 export async function selectStash(stashId) {
@@ -128,7 +129,7 @@ export async function loadStashDetail(stashId) {
   const container = document.getElementById('stash-detail-workspace');
   if (!container) return;
 
-  container.innerHTML = '<div class="loading-placeholder">Resolving stash items and pre-flight sizes...</div>';
+  render(html`<div class="loading-placeholder">Resolving stash items and pre-flight sizes...</div>`, container);
 
   try {
     const res = await fetchStashDetail(stashId);
@@ -141,33 +142,32 @@ export async function loadStashDetail(stashId) {
     const items = stash.items || [];
 
     const activeToggleBtn = stash.is_active
-      ? '<span class="status-badge status-completed" style="font-size:11px; padding:4px 8px;">CURRENT ACTIVE STASH</span>'
-      : `<button type="button" class="btn-pill btn-action-primary" onclick="window.handleSetActiveStash(${stash.id})">Set as Active Stash</button>`;
+      ? html`<span class="status-badge status-completed" style="font-size:11px; padding:4px 8px;">CURRENT ACTIVE STASH</span>`
+      : html`<button type="button" class="btn-pill btn-action-primary" @click=${() => handleSetActiveStash(stash.id)}>Set as Active Stash</button>`;
 
-    container.innerHTML = `
+    render(html`
       <div class="stash-workspace-header">
         <div class="stash-header-info">
           <div class="flex items-center gap-2">
-            <h2 class="stash-title-accent text-main font-bold font-lg">${escapeHtml(stash.name)}</h2>
-            ${stash.is_active ? '<span class="status-badge status-completed font-xs">ACTIVE QUICK-ADD</span>' : ''}
+            <h2 class="stash-title-accent text-main font-bold font-lg">${stash.name}</h2>
+            ${stash.is_active ? html`<span class="status-badge status-completed font-xs">ACTIVE QUICK-ADD</span>` : ''}
           </div>
-          <div class="text-dim font-xs mt-1">${escapeHtml(stash.description || 'A pile of gray')}</div>
+          <div class="text-dim font-xs mt-1">${stash.description || 'A pile of gray'}</div>
         </div>
         <div class="stash-header-actions">
           <button type="button" 
                   class="btn-pill btn-action-primary" 
                   id="btn-export-stash" 
-                  onclick="window.handleExportStash(${stash.id})">
+                  @click=${() => handleExportStash(stash.id)}>
             Prepare for Slicer
           </button>
           ${activeToggleBtn}
-          <button type="button" class="btn-pill btn-action-cancel" onclick="window.handleDeleteStash(${stash.id}, '${escapeHtml(stash.name)}')">
+          <button type="button" class="btn-pill btn-action-cancel" @click=${() => handleDeleteStash(stash.id, stash.name)}>
             Delete Stash
           </button>
         </div>
       </div>
 
-      <!-- Pre-Flight Manifest Metrics -->
       <div class="metrics-grid metrics-grid-reconcile" style="margin: 0 0 20px 0;">
         <div class="stat-card">
           <div class="stat-label">Total Line Items</div>
@@ -191,24 +191,23 @@ export async function loadStashDetail(stashId) {
         </div>
       </div>
 
-      <!-- Staged Items Section -->
       <div class="section-header-row" style="margin: 0 0 14px 0;">
         <h3 class="section-header-title">Staged Manifest Items (${items.length})</h3>
         <div class="text-dim font-xs">Manifest operations only &bull; Original files are preserved</div>
       </div>
 
-      ${items.length === 0 ? `
+      ${items.length === 0 ? html`
         <div class="results-placeholder" style="margin: 0;">
           This stash is empty. Add models, individual files, or submodels from the catalog to build this manifest.
         </div>
-      ` : `
+      ` : html`
         <div class="grid stash-items-grid" style="margin: 0;">
-          ${items.map(item => renderStashItemCard(item)).join('')}
+          ${items.map(item => renderStashItemCard(item))}
         </div>
       `}
-    `;
+    `, container);
   } catch (err) {
-    container.innerHTML = `<div class="browse-item-alert" style="padding:20px;">Failed loading stash details: ${escapeHtml(err.message)}</div>`;
+    render(html`<div class="browse-item-alert" style="padding:20px;">Failed loading stash details: ${err.message}</div>`, container);
   }
 }
 
@@ -219,10 +218,10 @@ export async function handleExportStash(stashId) {
   const exportBtn = document.getElementById('btn-export-stash');
   if (exportBtn) {
     exportBtn.disabled = true;
-    exportBtn.innerHTML = `
+    render(html`
       <span class="spinner-inline" style="display:inline-block; width:12px; height:12px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin 0.6s linear infinite; vertical-align:middle; margin-right:6px;"></span>
       Dispatching Background Task...
-    `;
+    `, exportBtn);
   }
 
   try {
@@ -239,7 +238,7 @@ export async function handleExportStash(stashId) {
   } finally {
     if (exportBtn) {
       exportBtn.disabled = false;
-      exportBtn.innerHTML = 'Prepare for Slicer';
+      render('Prepare for Slicer', exportBtn);
     }
   }
 }
@@ -248,7 +247,7 @@ function showExportProgressModal(taskId, stashName) {
   const existing = document.getElementById('stash-export-progress-modal');
   if (existing) existing.remove();
 
-  const modalHtml = `
+  const modalHtml = html`
     <div id="stash-export-progress-modal" class="modal-backdrop" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.75); display:flex; align-items:center; justify-content:center; z-index:9999;">
       <div class="modal-card" style="background:var(--bg-card, #1e1e24); border:1px solid var(--border-color, #333); border-radius:8px; max-width:540px; width:90%; padding:24px; box-shadow:0 12px 32px rgba(0,0,0,0.5);">
         <div class="flex items-center justify-between mb-2">
@@ -256,10 +255,9 @@ function showExportProgressModal(taskId, stashName) {
           <span class="status-badge status-pending font-xs">TASK #${taskId}</span>
         </div>
         <p class="text-dim font-sm mb-3">
-          Surgically extracting curated items for <strong>${escapeHtml(stashName || 'Stash')}</strong> to local scratch space...
+          Surgically extracting curated items for <strong>${stashName || 'Stash'}</strong> to local scratch space...
         </p>
 
-        <!-- Progress bar container -->
         <div style="background:var(--bg-main, #141418); border-radius:4px; height:12px; overflow:hidden; margin-bottom:8px; border:1px solid var(--border-color, #2b2b36);">
           <div id="export-task-progress-bar" style="background:var(--accent, #6366f1); height:100%; width:5%; transition:width 0.3s ease;"></div>
         </div>
@@ -270,14 +268,14 @@ function showExportProgressModal(taskId, stashName) {
         </div>
 
         <div class="flex justify-end gap-2">
-          <button type="button" class="btn-pill btn-action-cancel" onclick="window.cancelExportTask(${taskId})">
+          <button type="button" class="btn-pill btn-action-cancel" @click=${() => cancelExportTask(taskId)}>
             Cancel Export
           </button>
         </div>
       </div>
     </div>
   `;
-  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  appendToBody(modalHtml);
 }
 
 async function pollExportTaskProgress(taskId) {
@@ -367,23 +365,23 @@ function showExportSuccessModal(exportData) {
   const totalFiles = exportData.total_files || 0;
   const totalBytes = exportData.total_bytes || 0;
 
-  const modalHtml = `
+  const modalHtml = html`
     <div id="stash-export-success-modal" class="modal-backdrop" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.75); display:flex; align-items:center; justify-content:center; z-index:9999;">
       <div class="modal-card" style="background:var(--bg-card, #1e1e24); border:1px solid var(--border-color, #333); border-radius:8px; max-width:640px; width:90%; padding:24px; box-shadow:0 12px 32px rgba(0,0,0,0.5);">
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-main font-bold font-lg" style="margin:0; display:flex; align-items:center; gap:8px;">
             <span style="color:#10b981;">&#10004;</span> Slicer Print Queue Ready
           </h3>
-          <button type="button" class="btn-icon" onclick="window.closeExportSuccessModal()" style="background:transparent; border:none; color:var(--text-dim, #888); font-size:18px; cursor:pointer;">&times;</button>
+          <button type="button" class="btn-icon" @click=${() => closeExportSuccessModal()} style="background:transparent; border:none; color:var(--text-dim, #888); font-size:18px; cursor:pointer;">&times;</button>
         </div>
 
         <p class="text-dim font-sm mb-3">
-          Assets for <strong>${escapeHtml(exportData.stash_name || 'Stash')}</strong> have been surgically unpacked from the vault into your local print directory.
+          Assets for <strong>${exportData.stash_name || 'Stash'}</strong> have been surgically unpacked from the vault into your local print directory.
         </p>
 
         <div style="background:var(--bg-main, #141418); border:1px solid var(--border-color, #2b2b36); border-radius:6px; padding:12px; margin-bottom:16px;">
           <div class="text-dim font-xs mb-1 font-semibold">DESTINATION DIRECTORY</div>
-          <div class="font-mono text-main font-xs" style="word-break:break-all; user-select:all;" id="export-path-text">${escapeHtml(exportPath)}</div>
+          <div class="font-mono text-main font-xs" style="word-break:break-all; user-select:all;" id="export-path-text">${exportPath}</div>
         </div>
 
         <div class="metrics-grid" style="grid-template-columns: 1fr 1fr; margin-bottom:20px;">
@@ -398,10 +396,10 @@ function showExportSuccessModal(exportData) {
         </div>
 
         <div class="flex justify-end gap-2">
-          <button type="button" class="btn-pill" id="btn-copy-export-path" onclick="window.copyExportPath('${escapeHtml(exportPath.replace(/\\/g, '\\\\'))}')">
+          <button type="button" class="btn-pill" id="btn-copy-export-path" @click=${() => copyExportPath(exportPath)}>
             Copy Path
           </button>
-          <button type="button" class="btn-pill btn-action-primary" onclick="window.closeExportSuccessModal()">
+          <button type="button" class="btn-pill btn-action-primary" @click=${() => closeExportSuccessModal()}>
             Done
           </button>
         </div>
@@ -409,7 +407,7 @@ function showExportSuccessModal(exportData) {
     </div>
   `;
 
-  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  appendToBody(modalHtml);
 }
 
 export function closeExportSuccessModal() {
@@ -458,39 +456,39 @@ function renderStashItemCard(item) {
   }[item.item_type] || item.item_type.toUpperCase();
 
   const thumbHtml = item.thumbnail_url
-    ? `<img src="${item.thumbnail_url}" alt="${escapeHtml(item.title)}" loading="lazy">`
-    : `<div class="text-dim font-xs font-mono" style="padding:20px; text-align:center;">NO PREVIEW</div>`;
+    ? html`<img src="${item.thumbnail_url}" alt="${item.title}" loading="lazy">`
+    : html`<div class="text-dim font-xs font-mono" style="padding:20px; text-align:center;">NO PREVIEW</div>`;
 
-  return `
+  return html`
     <div class="card stash-item-card">
       <div class="thumb-wrap">
         ${thumbHtml}
         <span class="badge ${typeBadgeClass} stash-type-pill">${typeLabel}</span>
       </div>
       <div class="card-body">
-        <div class="card-title cell-clickable-title" onclick="window.openModelDetailModal(${item.model_id})">
-          ${escapeHtml(item.title)}
+        <div class="card-title cell-clickable-title" @click=${() => window.openModelDetailModal(item.model_id)}>
+          ${item.title}
         </div>
-        <div class="creator-name">${escapeHtml(item.creator_name)}</div>
+        <div class="creator-name">${item.creator_name}</div>
 
-        ${item.relative_path ? `
+        ${item.relative_path ? html`
           <div class="text-dim font-xs font-mono" style="word-break:break-all;">
-            ${escapeHtml(item.relative_path)}
+            ${item.relative_path}
           </div>
         ` : ''}
 
         <div class="card-badge-row mt-1">
-          <span class="badge badge-ext">${escapeHtml(item.file_extension || 'FILE')}</span>
-          ${item.is_supported ? '<span class="status-badge status-completed font-xs">PRE-SUPPORTED</span>' : ''}
+          <span class="badge badge-ext">${item.file_extension || 'FILE'}</span>
+          ${item.is_supported ? html`<span class="status-badge status-completed font-xs">PRE-SUPPORTED</span>` : ''}
         </div>
 
         <div class="footer mt-auto">
           <span class="font-mono text-main font-semibold">${formatBytes(item.size_bytes || 0)}</span>
           <div class="footer-actions">
-            <button type="button" class="btn-pill font-xs" onclick="window.openModelDetailModal(${item.model_id})">
+            <button type="button" class="btn-pill font-xs" @click=${() => window.openModelDetailModal(item.model_id)}>
               Details
             </button>
-            <button type="button" class="btn-pill btn-action-cancel font-xs" onclick="window.handleRemoveStashItem(${item.id})">
+            <button type="button" class="btn-pill btn-action-cancel font-xs" @click=${() => handleRemoveStashItem(item.id)}>
               Remove
             </button>
           </div>
@@ -504,12 +502,12 @@ function renderEmptyWorkspace() {
   const container = document.getElementById('stash-detail-workspace');
   if (!container) return;
 
-  container.innerHTML = `
+  render(html`
     <div class="results-placeholder" style="margin: 0; padding: 48px 24px;">
       <h3 class="text-main font-bold font-lg mb-2">No Stash Selected</h3>
       <p class="text-dim font-sm">Create a new stash in the sidebar or select an existing stash manifest to review items.</p>
     </div>
-  `;
+  `, container);
 }
 
 export async function handleCreateStash() {

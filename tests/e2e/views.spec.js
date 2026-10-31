@@ -288,3 +288,99 @@ test.describe('add to stash', () => {
     expect(created).toMatchObject({ name: 'New', make_active: true });
   });
 });
+
+test.describe('stashes', () => {
+  const stash = (overrides) => ({ id: 3, name: HOSTILE, description: HOSTILE, item_count: 1, total_bytes: 2048, is_active: 1, ...overrides });
+  const detail = {
+    ...stash({}), total_items: 1, models_count: 1, files_count: 0, submodels_count: 2, archive_members_count: 3,
+    items: [{ id: 21, item_type: 'file', model_id: 10, title: HOSTILE, creator_name: HOSTILE, relative_path: HOSTILE,
+      file_extension: '.stl', is_supported: 1, size_bytes: 1024, thumbnail_url: '' }],
+  };
+
+  async function open(page, list = [stash({}), stash({ id: 4, name: 'Second', is_active: 0 })], item = detail) {
+    await mock(page, '/api/stashes', { stashes: list });
+    await mock(page, '/api/stashes/active', { active_stash: list[0] || null });
+    await mock(page, '/api/stashes/3', { stash: item });
+    await mock(page, '/api/stashes/4', { stash: { ...item, id: 4, name: 'Second', is_active: 0, items: [] } });
+    await page.goto('/#stashes');
+  }
+
+  test('sidebar and workspace show names as text', async ({ page }) => {
+    await open(page);
+    await expect(page.locator('.stash-nav-card')).toHaveCount(2);
+    await expect(page.locator('.stash-nav-title').first()).toHaveText(HOSTILE);
+    await expect(page.locator('.stash-title-accent')).toHaveText(HOSTILE);
+    await expect(page.locator('.stash-item-card .card-title')).toHaveText(HOSTILE);
+    await expect(page.locator('#stash-detail-workspace img[src="x"]')).toHaveCount(0);
+  });
+
+  test('metrics and items show', async ({ page }) => {
+    await open(page);
+    await expect(page.locator('#stash-detail-workspace')).toContainText('Staged Manifest Items (1)');
+    await expect(page.locator('.stash-type-pill')).toHaveText('ARCHIVE FILE');
+    await expect(page.locator('.stash-item-card')).toContainText('PRE-SUPPORTED');
+  });
+
+  test('selecting another stash shows its empty state and an active button', async ({ page }) => {
+    await open(page);
+    await page.locator('.stash-nav-card').nth(1).click();
+    await expect(page.locator('.stash-title-accent')).toHaveText('Second');
+    await expect(page.locator('#stash-detail-workspace')).toContainText('This stash is empty.');
+    await expect(page.getByRole('button', { name: 'Set as Active Stash' })).toBeVisible();
+  });
+
+  test('no stashes shows the empty sidebar and workspace', async ({ page }) => {
+    await open(page, []);
+    await expect(page.locator('.stash-sidebar-empty')).toBeVisible();
+    await expect(page.locator('#stash-detail-workspace')).toContainText('No Stash Selected');
+  });
+
+  test('deleting asks with the name, then calls the API', async ({ page }) => {
+    let method;
+    await open(page);
+    await page.route('**/api/stashes/3', async (route) => {
+      method = route.request().method();
+      if (method !== 'DELETE') return route.fallback();
+      return route.fulfill({ json: { success: true } });
+    });
+    const messages = [];
+    page.on('dialog', (dialog) => { messages.push(dialog.message()); dialog.accept(); });
+    await page.getByRole('button', { name: 'Delete Stash' }).click();
+    await expect.poll(() => messages.length).toBe(1);
+    expect(messages[0]).toContain(HOSTILE);
+    await expect.poll(() => method).toBe('DELETE');
+  });
+
+  test('removing an item calls the API', async ({ page }) => {
+    let removed = false;
+    await open(page);
+    await page.route('**/api/stashes/items/21', (route) => { removed = true; return route.fulfill({ json: { success: true } }); });
+    await page.getByRole('button', { name: 'Remove' }).click();
+    await expect.poll(() => removed).toBe(true);
+  });
+
+  test('a synchronous export shows the result, and Done closes it', async ({ page }) => {
+    await open(page);
+    await page.route('**/api/stashes/3/export', (route) => route.fulfill({
+      json: { export_path: HOSTILE, stash_name: HOSTILE, total_files: 2, total_bytes: 1024 },
+    }));
+    await page.locator('#btn-export-stash').click();
+    await expect(page.locator('#export-path-text')).toHaveText(HOSTILE);
+    await expect(page.locator('#stash-export-success-modal')).toContainText('Slicer Print Queue Ready');
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.locator('#stash-export-success-modal')).toHaveCount(0);
+    await expect(page.locator('#btn-export-stash')).toHaveText('Prepare for Slicer');
+  });
+
+  test('a background export shows progress and can be cancelled', async ({ page }) => {
+    await open(page);
+    await page.route('**/api/stashes/3/export', (route) => route.fulfill({ json: { task_id: 8, stash_name: HOSTILE } }));
+    await mock(page, '/api/tasks/status', { active_task: { id: 8, status: 'running', progress_pct: 40, progress_label: HOSTILE }, recent_tasks: [] });
+    await page.route('**/api/tasks/cancel', (route) => route.fulfill({ json: { success: true } }));
+    await page.locator('#btn-export-stash').click();
+    await expect(page.locator('#export-task-pct')).toHaveText('40%');
+    await expect(page.locator('#export-task-status-label')).toHaveText(HOSTILE);
+    await page.getByRole('button', { name: 'Cancel Export' }).click();
+    await expect(page.locator('#stash-export-progress-modal')).toHaveCount(0);
+  });
+});
