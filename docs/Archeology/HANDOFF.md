@@ -2,7 +2,7 @@
 
 Read this first in a new session. It explains what this project is, where everything lives, what state it is in, and what will catch you out. `README.md` in this folder holds the detailed results for each step.
 
-**Last updated:** 2026-10-30, paused after the Step 5 exit check, with the Step 5 merge not yet approved.
+**Last updated:** 2026-10-30, after Step 5 was merged to `main`.
 
 ## What this is
 
@@ -76,8 +76,8 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 | 2 | Done | User confirmed real sign-in and a test download |
 | 3 | Done | Migrations, backups, WAL |
 | 4 | Done | Routers, query modules, dry-run, audit log, V6 |
-| 5 | **Awaiting merge approval** | Exit check passed on `migration/05-jobs-tools` |
-| 6 | To do | `lit-html` frontend, and remove the API key setting |
+| 5 | Done | Job recovery, tools adapter, scraper events, backups. User confirmed a real scrape and download |
+| 6 | **Next** | `lit-html` frontend, and remove the API key setting |
 | 7 | To do | LAN mode: login and TLS |
 | 8 | To do | Measured performance work |
 | 9 | To do | Secrets and cutover. The only step that changes production, with approval at each stage |
@@ -119,10 +119,6 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 ## Next action
 
-The project is paused at the user's request. On return:
+Run Step 6 from `MIGRATION_PROMPTS.md` on `migration/06-frontend`, branching from `main`. Write Playwright tests for each view's current behavior before changing it, and remove the API Key / Secret setting as that prompt describes.
 
-1. Check out `migration/05-jobs-tools`, which is the current work. `main` stops at Step 4.
-2. Get the user's approval, then merge it to `main` with `--ff-only`.
-3. Run Step 6 on `migration/06-frontend`. Write Playwright tests for each view's current behavior before changing it, and remove the API Key / Secret setting as that prompt describes.
-
-**State when paused:** the user is signed in on the dev app with a 7-day token issued 2026-10-30, and session cookies are saved in dev. Cloudflare cookies expire quickly, so expect to paste fresh ones before the next scrape. The dev app was left running on port 8080 and may need restarting. The dev catalog does not have Master Wendigo (276218) yet, because no ingest was run. Job 112 for model 148200 shows `failed` in dev and left files in dev staging, which is harmless.
+**State of dev:** the user is signed in on the dev app with a 7-day token issued 2026-10-30, and session cookies are saved in dev. Cloudflare cookies expire quickly, so expect to paste fresh ones before the next scrape. The dev app was left running on port 8080 and may need restarting. The dev catalog does not have Master Wendigo (276218) yet, because no ingest was run. Job 112 for model 148200 shows `failed` in dev and left files in dev staging, which is harmless.

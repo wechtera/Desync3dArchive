@@ -30,7 +30,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Paused. Step 5 passed its exit check on branch `migration/05-jobs-tools` and is waiting for approval to merge. `main` is at Step 4. See `HANDOFF.md` to resume.
+- **Phase:** Step 5 complete and merged to `main`. Step 6 is next.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** `check.sh` passes at the latest commit: 384 Python tests, 1 skipped, 22 browser tests and 110 contract cases.
 - **Production data:** Untouched. Dev work never reaches it, and `library.db` still has its 15:50 modified time from 2026-10-30. The last full NAS comparison, after Step 4, was clean.
@@ -41,6 +41,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 - [x] Stack proposal drafted and decisions recorded
 - [x] Migration prompts written
 - [x] New project created: git repository, README with setup steps, `.gitignore`, Python and Node dependency manifests, `tools/` linker, and these docs
+- [x] Step 5: job recovery, external tools adapter, scraper events, download resume, scheduled backups, pause before token expiry
 - [x] Step 4: domain routers with Pydantic bodies, query modules, catch-all removed, dry-run and audit on destructive routes, V6 closed
 - [x] Step 3: numbered migrations, runner, one schema source, verified backup and restore, WAL
 - [x] Step 2 code: V1 to V5 and V9 closed, code grant with refresh, token rotation handling, no secrets in responses
@@ -52,7 +53,6 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Next
 
-- [ ] Merge `migration/05-jobs-tools` after user approval
 - [ ] Run Step 6 from `MIGRATION_PROMPTS.md`
 
 ## Project decisions
