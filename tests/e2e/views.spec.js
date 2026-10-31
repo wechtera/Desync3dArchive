@@ -595,6 +595,59 @@ test.describe('settings', () => {
     expect(card.skip).toBe(true);
   });
 
+  const browseModel = {
+    id: 7, name: 'Ghul A', category: 'Tabletop', state: 'proposed', artifacts: 1, cover_id: 3, image_url: null, designer_name: 'Maker',
+    groups: [{ id: 4, name: 'Ghul' }], collections: [{ id: 3, name: 'Vampire Court' }],
+  };
+
+  test('a model leads to its group, and a variant leads back to a model', async ({ page }) => {
+    const variant = { ...browseModel, id: 8, name: 'Ghul B' };
+    await page.route('**/api/catalog-models?*', (route) => route.fulfill({ json: { models: [browseModel], total: 1, page: 1, page_size: 48 } }));
+    await page.route('**/api/catalog-models/7', (route) => route.fulfill({ json: { ...browseModel, tags: ['undead'], artifacts: [{ id: 1, filename: '32mm_Ghul_A.stl', scale: '32mm', supported: 0, hollow: 0, size_bytes: 10 }] } }));
+    await page.route('**/api/catalog-models/8', (route) => route.fulfill({ json: { ...variant, tags: [], artifacts: [] } }));
+    await page.route('**/api/model-groups/4', (route) => route.fulfill({ json: { id: 4, name: 'Ghul', models: [browseModel, variant] } }));
+    await page.goto('/');
+    await page.evaluate(() => window.switchTab('browse'));
+    await page.locator('.browse-card[data-model="7"]').click();
+    await expect(page.locator('#browse-model-view')).toContainText('32mm_Ghul_A.stl');
+
+    await page.locator('.browse-group-link').click();
+    await expect(page.locator('#browse-group-view .browse-card')).toHaveCount(2);
+
+    await page.locator('#browse-group-view .browse-card[data-model="8"]').click();
+    await expect(page.locator('#model-view-title')).toHaveText('Ghul B');
+    await expect(page.locator('#browse-model-view')).toContainText('Contents unknown');
+  });
+
+  test('an archive can be reviewed and a group set on a card', async ({ page }) => {
+    await page.route('**/api/archive-review', (route) => route.fulfill({ json: { collections: [{ id: 3, name: 'Vampire Court', models: 2, model_groups: 1, artifacts: 2, reviewed: false, suspect: true }] } }));
+    let saved = null;
+    await page.route('**/api/archive-review/3', (route) => {
+      if (route.request().method() === 'POST') {
+        saved = route.request().postDataJSON();
+        return route.fulfill({ json: { success: true, cards: 2 } });
+      }
+      return route.fulfill({ json: {
+        release: '3', title: 'Vampire Court', folders: ['3/a.zip', '3/a.zip/Ghuls'], files: ['3/a.zip/Ghuls/A.stl', '3/a.zip/Ghuls/B.stl'],
+        cards: [
+          { key: '7', name: 'Ghul A', category: '', members: ['3/a.zip/Ghuls/A.stl'], skip: false, flags: [], group: 'Ghul', tags: [] },
+          { key: '8', name: 'Ghul B', category: '', members: ['3/a.zip/Ghuls/B.stl'], skip: false, flags: [], group: 'Ghul', tags: [] },
+        ],
+        reviewed: false, changed: false, locked: [], settled: [],
+      } });
+    });
+    await page.goto('/#downloads');
+    await page.locator('#sub-btn-archives').click();
+    await expect(page.locator('#archive-queue-summary')).toContainText('0 of 1');
+    await page.locator('.archive-review-open').click();
+    await expect(page.locator('#library-review-title')).toHaveText('Vampire Court');
+    await expect(page.locator('#btn-review-reset')).toHaveCount(0);
+    await page.locator('.review-card[data-card="Ghul B"] .review-card-group').fill('Undead');
+    await page.locator('#btn-review-save').click();
+    await expect.poll(() => saved).not.toBeNull();
+    expect(saved.cards.find((c) => c.name === 'Ghul B').group).toBe('Undead');
+  });
+
   test('settings shows library disk figures but no library actions', async ({ page }) => {
     await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true, disk_formatted: '4 GB' }], total: 1 });
     await page.goto('/#settings');

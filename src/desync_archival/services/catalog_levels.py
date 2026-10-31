@@ -7,12 +7,15 @@ items cascade from them and their previews took real render time.
 import re
 import sqlite3
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 from desync_archival.services import model_resolver
 from desync_archival.services.logger import log_layer
 
 PROPOSED = "proposed"
+RESOLVED = "resolved"
+SKIPPED = "skipped"
 MERGED = "merged"
 PLACEHOLDER = "placeholder"
 SCALE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s?mm\b", re.IGNORECASE)
@@ -23,6 +26,52 @@ def _attributes(path: str) -> tuple[str | None, int, int]:
     low = path.lower()
     unsupported = re.search(r"unsupported|nosupports?|no supports?", low)
     return (f"{scale.group(1)}mm" if scale else None, int("support" in low and not unsupported), int("hollow" in low))
+
+
+def sync_loose_artifacts(conn: sqlite3.Connection, model_id: int, name: str, root: Path, found: list[tuple[Path, int, int]]) -> None:
+    """Keeps a linked model's artifacts equal to its printable files. Archives wait for a peek."""
+    conn.execute(
+        "UPDATE catalog_models SET name = ?, state = ? WHERE id = ? AND state = ?;", (name, RESOLVED, model_id, PLACEHOLDER),
+    )
+    file_ids = dict(conn.execute("SELECT filename, file_id FROM model_files WHERE model_id = ?;", (model_id,)).fetchall())
+    by_key = dict(conn.execute("SELECT external_key, file_id FROM model_files WHERE model_id = ?;", (model_id,)).fetchall())
+    seen = set()
+    for path, size, _ in found:
+        if not path.name.lower().endswith(model_resolver.PRINTABLE):
+            continue
+        rel_path = str(path.relative_to(root))
+        key = next((k for k in by_key if k and k.split("/", 1)[1] == rel_path), None)
+        file_id = by_key[key] if key else file_ids.get(path.name)
+        if file_id is None:
+            continue
+        seen.add(file_id)
+        scale, supported, hollow = _attributes(rel_path)
+        conn.execute(
+            "INSERT INTO model_artifacts (catalog_model_id, file_id, path, filename, size_bytes, scale, supported, hollow)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+            (model_id, file_id, rel_path, path.name, size, scale, supported, hollow),
+        )
+    for row in conn.execute(
+        "SELECT id, file_id FROM model_artifacts WHERE catalog_model_id = ? AND archive_member_id IS NULL;", (model_id,)
+    ).fetchall():
+        if row[1] not in seen:
+            conn.execute("DELETE FROM model_artifacts WHERE id = ?;", (row[0],))
+
+
+def file_under_release(
+    conn: sqlite3.Connection, model_id: int, library_id: int, release: str, group: str, tags: list[str],
+) -> None:
+    if group:
+        row = conn.execute(
+            "SELECT id FROM model_groups WHERE library_id = ? AND release_name = ? AND name = ?;", (library_id, release, group),
+        ).fetchone()
+        group_id = row[0] if row else conn.execute(
+            "INSERT INTO model_groups (library_id, release_name, name) VALUES (?, ?, ?);", (library_id, release, group),
+        ).lastrowid
+        conn.execute("INSERT INTO model_group_members (group_id, catalog_model_id) VALUES (?, ?);", (group_id, model_id))
+    conn.executemany(
+        "INSERT INTO catalog_model_tags (catalog_model_id, tag) VALUES (?, ?);", [(model_id, clean_tag(t)) for t in tags],
+    )
 
 
 def _signature(entries: list[sqlite3.Row]) -> frozenset[tuple[str, int]] | None:
@@ -118,6 +167,8 @@ def build_archive_models(conn: sqlite3.Connection, only_collection: int | None =
     known = _known_signatures(conn)
     summary = {"collections": 0, "models": 0, "shared": 0, "groups": 0, "artifacts": 0}
     for collection_id, archives in by_collection.items():
+        # New contents are something a human hasn't seen.
+        conn.execute("UPDATE collection_reviews SET reviewed = 0 WHERE collection_id = ?;", (collection_id,))
         placeholder = conn.execute(
             "SELECT state FROM catalog_models WHERE id = ?;", (collection_id,)
         ).fetchone()

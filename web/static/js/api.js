@@ -492,6 +492,34 @@ export async function saveLibraryReview(libraryId, payload) {
   });
 }
 
+export async function fetchArchiveQueue() {
+  return request('/api/archive-review');
+}
+
+export async function fetchArchiveReview(collectionId) {
+  return request(`/api/archive-review/${collectionId}`);
+}
+
+export async function saveArchiveReview(collectionId, payload) {
+  return request(`/api/archive-review/${collectionId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function fetchCatalogModels(search, page) {
+  return request(`/api/catalog-models?q=${encodeURIComponent(search)}&page=${page}`);
+}
+
+export async function fetchCatalogModel(modelId) {
+  return request(`/api/catalog-models/${modelId}`);
+}
+
+export async function fetchModelGroup(groupId) {
+  return request(`/api/model-groups/${groupId}`);
+}
+
 export async function approveLibraryPreview(libraryId, skipReleases) {
   return request(`/api/settings/libraries/${libraryId}/preview/approve`, {
     method: 'POST',

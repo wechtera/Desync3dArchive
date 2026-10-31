@@ -1,6 +1,6 @@
 # Catalog hierarchy plan
 
-**Status:** Agreed on 2026-10-31. Levels, level search and the archive builder are on `feature/catalog-hierarchy`, not deployed. Archive review and the Loot add are next. Do not approve the Loot Studios add until stage 3, because `models` rows would mean two things.
+**Status:** Agreed on 2026-10-31. Levels, search, the archive builder, archive review, the Loot add and Browse Models are on `feature/catalog-hierarchy`, not deployed. The final rename and tag page are still to do. Do not approve the Loot Studios add until stage 3, because `models` rows would mean two things.
 
 ## Facts from production, 2026-10-31
 
@@ -27,3 +27,9 @@ The peek stored raw facts (`file_archive_members`) and an interpretation (`file_
 3. **Loot add.** Review saves a model group on a card. Then preview, review and add through the new tables.
 4. **UI.** Browse models, group modal, Collections view, and picking scale and support at stash export.
 5. **Retire the old tables.** Only after acceptance, and with separate approval.
+
+## How Loot sits in this until the final rename
+
+Each Loot card keeps its own `models` row, because rescans, the image worker and stash export work per row. It gets a real model under the same ID, and its group is scoped to the library and release. To the user, the release acts as the collection.
+
+Real models get IDs above 1,000,000,000,000. A placeholder shares its collection's ID, and `models` hands out its own IDs, so the two ranges must never meet.

@@ -137,9 +137,10 @@ def write_candidates(
         members = sorted(card["members"], key=lambda p: (p in files, model_resolver.primary_folder_rank(p)))
         conn.execute(
             "INSERT INTO library_candidates (library_id, run_id, rel_path, release_name, name, category, folders_json,"
-            " exclude_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+            " exclude_json, status, group_name, tags_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
             (library_id, run_id, rel_path, release, card["name"], card["category"], json.dumps(members),
-             json.dumps(carved[card["key"]]), SKIPPED if card.get("skip") else PROPOSED),
+             json.dumps(carved[card["key"]]), SKIPPED if card.get("skip") else PROPOSED,
+             card.get("group") or "", json.dumps(card.get("tags") or [])),
         )
 
 
@@ -167,6 +168,7 @@ def _clean(cards: list[dict], paths: set[str], locked: set[str], release: str, t
         clean.append({
             "key": key, "name": name, "category": str(card.get("category") or "").strip() or DEFAULT_CATEGORY,
             "members": members, "skip": bool(card.get("skip")), "flags": [str(f) for f in card.get("flags") or []],
+            "group": str(card.get("group") or "").strip(), "tags": [str(t) for t in card.get("tags") or []],
         })
     return clean
 
@@ -186,7 +188,7 @@ def _code_cards(report: dict[str, Any], release: str) -> list[dict]:
         {
             "key": item["rel_path"].removeprefix(prefix), "name": item.get("name") or item["rel_path"],
             "category": item.get("category") or DEFAULT_CATEGORY, "members": item["folders"], "skip": False,
-            "flags": item.get("flags") or [],
+            "flags": item.get("flags") or [], "group": item.get("group") or "", "tags": item.get("tags") or [],
         }
         for item in (entry or {}).get("new", [])
     ]
@@ -269,7 +271,8 @@ def merge_preview(conn: sqlite3.Connection, library_id: int, run_id: int, report
                 key = _unique_key(item["rel_path"].removeprefix(f"{release}/"), taken)
                 cards.append({
                     "key": key, "name": item["name"], "category": item["category"], "members": fresh,
-                    "skip": False, "flags": [NEW_SINCE_REVIEW],
+                    "skip": False, "flags": [NEW_SINCE_REVIEW], "group": item.get("group") or "",
+                    "tags": item.get("tags") or [],
                 })
                 changed = True
         _store(conn, library_id, release, cards, saved["reviewed"] and not changed)
@@ -289,7 +292,7 @@ def with_reviews(conn: sqlite3.Connection, library_id: int, report: dict[str, An
         keep = [c for c in review["cards"] if not c.get("skip")]
         entry["new"] = [
             {"rel_path": f"{entry['name']}/{c['key']}", "name": c["name"], "category": c["category"],
-             "folders": c["members"], "flags": c.get("flags") or []}
+             "folders": c["members"], "flags": c.get("flags") or [], "group": c.get("group") or ""}
             for c in keep
         ]
         entry["skipped"] = len(review["cards"]) - len(keep)

@@ -3071,3 +3071,11 @@ pre, .task-log-viewer, .console-output {
 .review-card-actions { display: flex; justify-content: space-between; margin-top: 4px; }
 .review-flag { color: var(--warning, #c9a227); margin-top: 2px; }
 @media (max-width: 800px) { .review-layout { grid-template-columns: minmax(0, 1fr); } }
+.review-card-group { width: 100%; }
+.browse-link { background: none; border: 0; padding: 0; color: var(--accent, inherit); cursor: pointer; font: inherit; text-decoration: underline; }
+.browse-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.browse-card { background: var(--surface); border: 1px solid var(--border); color: inherit; padding: 0; text-align: left; cursor: pointer; font: inherit; }
+.browse-card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+.browse-card-title { padding: 6px 8px 0; font-size: 0.85rem; }
+.browse-card-meta { padding: 2px 8px 8px; font-size: 0.7rem; opacity: 0.7; }
+.browse-variants { display: flex; flex-wrap: wrap; gap: 6px; }

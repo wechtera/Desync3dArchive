@@ -49,7 +49,8 @@
             View Library <span class="dropdown-caret"></span>
           </button>
           <div class="dropdown-menu" id="menu-library-dropdown">
-            <button type="button" class="dropdown-item" data-click="switchTab" data-args='["models"]'>All Models</button>
+            <button type="button" class="dropdown-item" data-click="switchTab" data-args='["browse"]' id="nav-browse-models">Models</button>
+            <button type="button" class="dropdown-item" data-click="switchTab" data-args='["models"]'>Collections</button>
             <button type="button" class="dropdown-item" data-click="switchTab" data-args='["releases"]'>Monthly Releases</button>
             <button type="button" class="dropdown-item" data-click="switchTab" data-args='["creators"]'>Creators</button>
           </div>
@@ -142,6 +143,13 @@
   </div>
 
   <!-- View 2: Model Explorer (Default Landing) -->
+  <div id="view-browse" style="display:none;">
+    <div class="controls">
+      <input type="text" id="browse-search" class="search-box" placeholder="Search models, model groups and artifacts..." spellcheck="false">
+    </div>
+    <div id="browse-results"></div>
+  </div>
+
   <div id="view-models">
     <div class="controls">
       <input type="text" id="model-search" class="search-box" placeholder="Search title, creator, or keyword...">
@@ -189,6 +197,7 @@
       <button class="sub-btn" data-click="switchDownloadSubView" data-args='["reconcile"]'>Vault Reconcile</button>
       <button class="sub-btn" data-click="switchDownloadSubView" data-args='["sync"]'>MMF Sync</button>
       <button class="sub-btn" id="sub-btn-libraries" data-click="switchDownloadSubView" data-args='["libraries"]'>Linked Libraries</button>
+      <button class="sub-btn" id="sub-btn-archives" data-click="switchDownloadSubView" data-args='["archives"]'>Archive Review</button>
     </div>
 
     <!-- Sub-View A: Pending / Bulk Selection -->
@@ -476,6 +485,20 @@
     <!-- Sub-View E: MMF Sync -->
     <div id="sub-dl-libraries" style="display:none;">
       <div class="settings-panel" id="external-libraries-panel"></div>
+    </div>
+
+    <div id="sub-dl-archives" style="display:none;">
+      <div class="settings-panel">
+        <div class="settings-panel-header">
+          <div>
+            <h2 class="settings-panel-title">Archive Review</h2>
+            <div class="settings-panel-subtitle">
+              Check how each peeked archive was split into models and groups. Open one to move, merge, rename or skip.
+            </div>
+          </div>
+        </div>
+        <div id="archive-review-queue"><div class="table-msg">Loading collections...</div></div>
+      </div>
     </div>
 
     <div id="sub-dl-sync" style="display:none;">
@@ -1149,6 +1172,16 @@
   </div>
 
   <!-- Object Files Inspection Modal -->
+  <div class="modal-backdrop" id="model-view-modal">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h2 id="model-view-title" class="modal-title-accent">Model</h2>
+        <button class="tab-btn" data-click="closeModal" data-args='["model-view-modal"]'>Close</button>
+      </div>
+      <div class="modal-body" id="model-view-body"></div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="library-review-modal">
     <div class="modal modal-xl">
       <div class="modal-header">

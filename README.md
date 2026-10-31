@@ -78,6 +78,14 @@ Linked libraries such as Loot Studios are read in place and never changed. In **
 
 Images and archive peeks then run in the background, with pause and resume. **Settings > Inactive** lists missing folders, unlinked models, unavailable models and failed renders. **Settings > Libraries** shows disk figures only.
 
+After upgrading, fill the model levels from stored peeks once. It backs up first and can run again safely:
+
+```bash
+scripts/production.sh python -m desync_archival.dbtool build-models --confirm-production
+```
+
+**Archive Review**, beside **Linked Libraries**, works the same way for peeked archives. **View Library > Models** browses models, with search across models, model groups and artifacts.
+
 ## Running
 
 ```bash

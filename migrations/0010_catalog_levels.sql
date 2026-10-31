@@ -34,17 +34,27 @@ BEGIN
     SELECT RAISE(IGNORE);
 END;
 
--- Each group belongs to one collection, so a group can't span collections by accident. A model
--- shared by two collections can sit in a group in each.
+-- Each group has one scope, so it can't span collections by accident: a collection, or a linked
+-- library's release, which is what a collection is there until the final rename. A model shared
+-- by two collections can sit in a group in each.
 CREATE TABLE model_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    collection_id INTEGER NOT NULL,
+    collection_id INTEGER,
+    library_id INTEGER,
+    release_name TEXT,
     name TEXT NOT NULL,
-    FOREIGN KEY (collection_id) REFERENCES models(id) ON DELETE CASCADE
+    FOREIGN KEY (collection_id) REFERENCES models(id) ON DELETE CASCADE,
+    FOREIGN KEY (library_id) REFERENCES external_libraries(id) ON DELETE CASCADE
 );
 CREATE INDEX idx_model_groups_collection ON model_groups(collection_id);
+CREATE INDEX idx_model_groups_release ON model_groups(library_id, release_name);
 CREATE TRIGGER no_duplicate_model_group BEFORE INSERT ON model_groups
-WHEN EXISTS (SELECT 1 FROM model_groups WHERE collection_id = NEW.collection_id AND name = NEW.name)
+WHEN EXISTS (
+    SELECT 1 FROM model_groups WHERE name = NEW.name
+        AND COALESCE(collection_id, -1) = COALESCE(NEW.collection_id, -1)
+        AND COALESCE(library_id, -1) = COALESCE(NEW.library_id, -1)
+        AND COALESCE(release_name, '') = COALESCE(NEW.release_name, '')
+)
 BEGIN
     SELECT RAISE(ABORT, 'duplicate model group');
 END;
@@ -109,6 +119,24 @@ BEGIN
     SELECT RAISE(IGNORE);
 END;
 
+-- Which collections a human has been through. A new peek reopens one.
+CREATE TABLE collection_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    collection_id INTEGER NOT NULL,
+    reviewed INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (collection_id) REFERENCES models(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_collection_reviews ON collection_reviews(collection_id);
+CREATE TRIGGER no_duplicate_collection_review BEFORE INSERT ON collection_reviews
+WHEN EXISTS (SELECT 1 FROM collection_reviews WHERE collection_id = NEW.collection_id)
+BEGIN
+    SELECT RAISE(ABORT, 'duplicate collection review');
+END;
+
+ALTER TABLE library_candidates ADD COLUMN group_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE library_candidates ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';
+
 -- Every collection starts with one placeholder under the same ID, so browsing models shows all of
 -- them from day one, and every ID in a stash or preview path already means the right thing.
 INSERT INTO catalog_models (id, name, category)
@@ -116,6 +144,12 @@ SELECT id, name, primary_category FROM models;
 
 INSERT INTO catalog_model_collections (catalog_model_id, collection_id)
 SELECT id, id FROM models;
+
+-- A placeholder shares its collection's ID, and models hands out its own IDs. Real models start far
+-- above that range, or one would take the ID the next collection needs and swallow its placeholder.
+INSERT INTO sqlite_sequence (name, seq)
+SELECT 'catalog_models', 1000000000000 WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'catalog_models');
+UPDATE sqlite_sequence SET seq = 1000000000000 WHERE name = 'catalog_models';
 
 -- New collections arrive through old code that knows nothing of this. Runs until the final rename.
 -- OR IGNORE because INSERT OR REPLACE on models removes a row without firing its delete trigger.

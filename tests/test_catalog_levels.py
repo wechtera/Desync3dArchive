@@ -7,11 +7,12 @@ from unittest.mock import patch
 
 from db_helper import create_database
 
-from desync_archival.services import catalog_levels
+from desync_archival.services import archive_review, catalog_browse, catalog_levels
 from desync_archival.services.archive_peeker import ArchivePeeker
+from desync_archival.services.library_review import ReviewError
 
 
-class CatalogLevelTests(unittest.TestCase):
+class LevelsCase(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -31,6 +32,8 @@ class CatalogLevelTests(unittest.TestCase):
     def one(self, sql, *args):
         return self.conn.execute(sql, args).fetchone()
 
+
+class CatalogLevelTests(LevelsCase):
     def test_a_new_collection_gets_a_placeholder_with_its_id(self):
         row = self.one("SELECT id, name, category, state FROM catalog_models WHERE id = ?", self.collection)
         self.assertEqual(row, (self.collection, "Vampire Court", "Tabletop", "placeholder"))
@@ -94,7 +97,7 @@ class CatalogLevelTests(unittest.TestCase):
         self.assertEqual(self.one("SELECT COUNT(*) FROM catalog_models WHERE id = 50")[0], 1)
 
 
-class BuildTests(CatalogLevelTests):
+class BuildCase(LevelsCase):
     def archive(self, collection_id, entries):
         with self.conn:
             file_id = self.conn.execute(
@@ -116,6 +119,8 @@ class BuildTests(CatalogLevelTests):
         ("32mm Supported/Ghouls/32mm_Ghoul_A_Supported.stl", 12), ("Bases/Round_25.stl", 13), ("Bases/Round_32.stl", 14),
     )
 
+
+class BuildTests(BuildCase):
     def test_poses_become_grouped_models_and_the_first_keeps_the_id(self):
         self.archive(self.collection, self.GHOULS)
         self.build()
@@ -278,3 +283,127 @@ class PeekTests(unittest.TestCase):
         self.peek(["Ghouls/Ghoul_A.stl"])
         self.assertIsNone(self.artifact("Ghoul_B.stl"))
         self.assertIsNotNone(self.artifact("Ghoul_A.stl"))
+
+
+class ArchiveReviewTests(BuildCase):
+    def setUp(self):
+        super().setUp()
+        self.conn.row_factory = sqlite3.Row
+        self.archive(self.collection, self.GHOULS)
+        self.build()
+
+    def view(self):
+        return archive_review.view(self.conn, self.collection)
+
+    def card(self, cards, name):
+        return next(c for c in cards if c["name"] == name)
+
+    def test_the_view_shows_cards_with_their_groups(self):
+        cards = self.view()["cards"]
+        self.assertEqual(self.card(cards, "Ghoul A")["group"], "Ghoul")
+
+    def test_a_rename_and_a_new_group_are_saved(self):
+        cards = self.view()["cards"]
+        self.card(cards, "Ghoul A")["name"] = "Crouching Ghoul"
+        self.card(cards, "Crouching Ghoul")["group"] = "Undead"
+        archive_review.save(self.conn, self.collection, cards, True)
+        self.assertEqual(self.card(self.view()["cards"], "Crouching Ghoul")["group"], "Undead")
+        self.assertTrue(self.view()["reviewed"])
+
+    def test_two_cards_can_merge_and_the_old_id_redirects(self):
+        cards = self.view()["cards"]
+        a, b = self.card(cards, "Ghoul A"), self.card(cards, "Ghoul B")
+        a["members"] += b["members"]
+        archive_review.save(self.conn, self.collection, [c for c in cards if c is not b], True)
+        self.assertEqual(len(self.card(self.view()["cards"], "Ghoul A")["members"]), 3)
+        row = self.one("SELECT state, merged_into FROM catalog_models WHERE id = ?", int(b["key"]))
+        self.assertEqual(tuple(row), ("merged", int(a["key"])))
+
+    def test_a_file_can_split_into_a_new_model(self):
+        cards = self.view()["cards"]
+        a = self.card(cards, "Ghoul A")
+        moved = a["members"].pop()
+        archive_review.save(self.conn, self.collection, [*cards, {"name": "Split", "members": [moved]}], True)
+        self.assertEqual(self.card(self.view()["cards"], "Split")["members"], [moved])
+
+    def test_a_folder_claim_takes_everything_below_it(self):
+        view = self.view()
+        folder = next(f for f in view["folders"] if f.endswith("/Bases"))
+        cards = [c for c in view["cards"] if not any(m.startswith(folder) for m in c["members"])]
+        archive_review.save(self.conn, self.collection, [*cards, {"name": "All Bases", "members": [folder]}], True)
+        self.assertEqual(len(self.card(self.view()["cards"], "All Bases")["members"]), 2)
+
+    def test_every_artifact_needs_a_card(self):
+        cards = self.view()["cards"]
+        with self.assertRaisesRegex(ReviewError, "no card"):
+            archive_review.save(self.conn, self.collection, cards[1:], True)
+
+    def test_a_skipped_card_keeps_its_artifacts_searchable(self):
+        cards = self.view()["cards"]
+        self.card(cards, "Ghoul A")["skip"] = True
+        archive_review.save(self.conn, self.collection, cards, True)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM catalog_search_artifacts WHERE name LIKE '%Ghoul_A%'")[0], 2)
+        self.assertTrue(self.card(self.view()["cards"], "Ghoul A")["skip"])
+
+    def test_new_contents_reopen_a_reviewed_collection(self):
+        archive_review.save(self.conn, self.collection, self.view()["cards"], True)
+        self.archive(self.collection, [("Ghouls/Ghoul_C.stl", 77)])
+        self.build()
+        self.assertFalse(self.view()["reviewed"])
+
+    def test_the_queue_puts_unreviewed_first(self):
+        other = self.add_collection("Other", "1/z")
+        self.archive(other, [("Oak/Oak.stl", 5)])
+        self.build()
+        archive_review.save(self.conn, self.collection, self.view()["cards"], True)
+        self.assertEqual(archive_review.queue(self.conn)[0]["name"], "Other")
+
+
+class BrowseTests(BuildCase):
+    def setUp(self):
+        super().setUp()
+        self.conn.row_factory = sqlite3.Row
+        self.archive(self.collection, self.GHOULS)
+        self.build()
+
+    def names(self, search=""):
+        return [m["name"] for m in catalog_browse.list_models(self.conn, search)["models"]]
+
+    def test_models_are_what_gets_listed(self):
+        self.assertIn("Ghoul B", self.names())
+
+    def test_a_placeholder_can_still_be_browsed(self):
+        self.add_collection("Unpeeked", "1/u")
+        self.assertIn("Unpeeked", self.names())
+
+    def test_a_real_model_never_takes_the_next_collection_id(self):
+        new = self.add_collection("Next", "1/n")
+        self.assertEqual(self.one("SELECT name FROM catalog_models WHERE id = ?", new)[0], "Next")
+        self.assertGreater(self.one("SELECT MAX(id) FROM catalog_models")[0], 10**12)
+
+    def test_search_reaches_a_model_a_group_and_an_artifact(self):
+        self.assertEqual(self.names("Ghoul B"), ["Ghoul B"])
+        self.assertEqual(sorted(self.names("Bases")), ["Round 25", "Round 32"])
+        self.assertEqual(self.names("32mm_Ghoul_B"), ["Ghoul B"])
+
+    def test_a_skipped_or_merged_model_is_hidden_but_its_old_id_works(self):
+        cards = archive_review.view(self.conn, self.collection)["cards"]
+        a = next(c for c in cards if c["name"] == "Ghoul A")
+        b = next(c for c in cards if c["name"] == "Ghoul B")
+        a["members"] += b["members"]
+        archive_review.save(self.conn, self.collection, [c for c in cards if c is not b], True)
+        self.assertNotIn("Ghoul B", self.names())
+        self.assertEqual(catalog_browse.model_detail(self.conn, int(b["key"]))["id"], int(a["key"]))
+
+    def test_a_model_leads_to_its_group_and_the_group_lists_the_variants(self):
+        model = next(m for m in catalog_browse.list_models(self.conn, "Ghoul A")["models"])
+        detail = catalog_browse.model_detail(self.conn, model["id"])
+        self.assertEqual(detail["groups"][0]["name"], "Ghoul")
+        self.assertEqual(len(detail["artifacts"]), 2)
+        group = catalog_browse.group_detail(self.conn, detail["groups"][0]["id"])
+        self.assertEqual([m["name"] for m in group["models"]], ["Ghoul A", "Ghoul B"])
+
+    def test_an_inactive_collection_hides_its_only_model(self):
+        with self.conn:
+            self.conn.execute("UPDATE models SET is_active = 0 WHERE id = ?", (self.collection,))
+        self.assertEqual(self.names(), [])

@@ -214,6 +214,29 @@ class PreviewAgainTests(ReviewCase):
         self.assertIn("Mausoleum", [m["name"] for m in entry["new"]])
 
 
+class LevelsTests(ReviewCase):
+    def test_a_bust_joins_its_character_and_a_card_group_reaches_the_catalog(self):
+        self.add_model(self.release, "Lidda_32mm")
+        self.indexer.preview_library(1)
+        cards = self.view()["cards"]
+        self.assertEqual(next(c for c in cards if c["name"] == "Lidda")["group"], "Lidda")
+        self.assertEqual(next(c for c in cards if c["name"] == "Lidda Bust")["group"], "Lidda")
+        self.add_all()
+        self.assertEqual(self.count("""
+            SELECT COUNT(*) FROM model_group_members m JOIN model_groups g ON g.id = m.group_id
+            WHERE g.name = 'Lidda' AND g.release_name = ?
+        """, self.release), 2)
+
+    def test_a_loose_file_becomes_a_findable_artifact_and_follows_a_rescan(self):
+        self.add_all()
+        self.assertEqual(self.count("SELECT COUNT(*) FROM catalog_search_artifacts WHERE name LIKE '%ring_a%'"), 1)
+        self.assertEqual(self.rows("SELECT state FROM catalog_models m JOIN models x ON x.id = m.id WHERE x.name = 'Rings'")[0][0], "resolved")
+        (self.root / self.release / "Rings" / "ring_a.stl").unlink()
+        self.indexer.rescan_known(1)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM model_artifacts WHERE filename = 'ring_a.stl'"), 0)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM model_artifacts WHERE filename = 'ring_b.stl'"), 1)
+
+
 class CarveTests(unittest.TestCase):
     def test_the_deepest_claim_wins(self):
         carved = library_review.carve({"a": ["x"], "b": ["x/y"], "c": ["x/y/z"]})

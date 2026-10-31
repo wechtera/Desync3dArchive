@@ -17,8 +17,10 @@ from typing import Any
 from desync_archival import settings as app_config
 from desync_archival.db.queries import settings as queries
 from desync_archival.services import (
+    archive_review,
     audit,
     auth_service,
+    catalog_browse,
     image_worker,
     inactive_log,
     library_review,
@@ -525,6 +527,81 @@ def handle_post_library_review(
         log_layer("storage", logging.WARNING, f"Library #{library_id}: review of {release} refused: {e}")
         return {"success": False, "error": str(e)}, 409
     log_layer("storage", logging.INFO, f"Library #{library_id}: {release} review saved: {result}")
+    return result, 200
+
+
+def handle_get_catalog_models(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    query = params or {}
+    try:
+        page = int((query.get("page") or ["1"])[0])
+    except ValueError:
+        page = 1
+    return catalog_browse.list_models(conn, (query.get("q") or [""])[0].strip(), page), 200
+
+
+def handle_get_catalog_model(
+    conn: sqlite3.Connection,
+    model_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    found = catalog_browse.model_detail(conn, model_id)
+    return (found, 200) if found else ({"success": False, "error": "Model not found."}, 404)
+
+
+def handle_get_model_group(
+    conn: sqlite3.Connection,
+    group_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    found = catalog_browse.group_detail(conn, group_id)
+    return (found, 200) if found else ({"success": False, "error": "Group not found."}, 404)
+
+
+def handle_get_archive_queue(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    return {"collections": archive_review.queue(conn)}, 200
+
+
+def handle_get_archive_review(
+    conn: sqlite3.Connection,
+    collection_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    try:
+        return archive_review.view(conn, collection_id), 200
+    except library_review.ReviewError as e:
+        return {"success": False, "error": str(e)}, 409
+
+
+def handle_post_archive_review(
+    conn: sqlite3.Connection,
+    collection_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    data = body or {}
+    try:
+        result = archive_review.save(conn, collection_id, data.get("cards") or [], bool(data.get("reviewed")))
+    except library_review.ReviewError as e:
+        log_layer("storage", logging.WARNING, f"Collection #{collection_id}: archive review refused: {e}")
+        return {"success": False, "error": str(e)}, 409
+    log_layer("storage", logging.INFO, f"Collection #{collection_id}: archive review saved: {result}")
     return result, 200
 
 

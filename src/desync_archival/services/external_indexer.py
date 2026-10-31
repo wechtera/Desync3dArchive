@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from desync_archival import settings as app_config
-from desync_archival.services import inactive_log, library_review, model_resolver
+from desync_archival.services import catalog_levels, inactive_log, library_review, model_resolver
 from desync_archival.services.library_review import ADDED, APPROVED, GONE, PROPOSED, SKIPPED
 from desync_archival.services.model_resolver import primary_folder_rank
 
@@ -412,6 +412,7 @@ class ExternalLibraryIndexer:
                     [(model_id, path) for path in excludes],
                 )
             files_changed = self._sync_files(conn, library_id, root, model_id, name, found)
+            catalog_levels.sync_loose_artifacts(conn, model_id, name, root, found)
 
             if changed or files_changed:
                 tags = {default_creator.lower(), sanitize_title(release_name).lower(), category.lower(), "external"}
@@ -583,6 +584,7 @@ class ExternalLibraryIndexer:
                 for f in holding
             }
             model_resolver.flag_models(models, variants, parts, inside)
+            model_resolver.group_models(models)
             carved = library_review.carve({m.key: [prefix + f for f in m.folders] for m in models}, claimed)
             for model in models:
                 folders = sorted((prefix + f for f in model.folders), key=primary_folder_rank)
@@ -594,6 +596,7 @@ class ExternalLibraryIndexer:
                         entry["new"].append({
                             "rel_path": rel_path, "name": model.name, "category": model.category or "Miniatures",
                             "folders": folders, "extends": True, "flags": model.flags, "exclude": carved[model.key],
+                            "group": model.group, "tags": model.tags,
                         })
                     else:
                         entry["known"] += 1
@@ -605,6 +608,7 @@ class ExternalLibraryIndexer:
                     entry["new"].append({
                         "rel_path": rel_path, "name": model.name, "category": model.category or "Miniatures",
                         "folders": folders, "flags": model.flags, "exclude": carved[model.key],
+                        "group": model.group, "tags": model.tags,
                     })
                     if model.confidence == "low":
                         entry["low_confidence"].append(f"{rel_path}: {model.reason}")
@@ -684,9 +688,10 @@ class ExternalLibraryIndexer:
                             continue
                         conn.execute(
                             "INSERT INTO library_candidates (library_id, run_id, rel_path, release_name, name, category,"
-                            " folders_json, exclude_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                            " folders_json, exclude_json, status, group_name, tags_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
                             (library_id, run_id, item["rel_path"], release["name"], item["name"], item["category"], folders,
-                             json.dumps(item.get("exclude") or []), PROPOSED),
+                             json.dumps(item.get("exclude") or []), PROPOSED, item.get("group") or "",
+                             json.dumps(item.get("tags") or [])),
                         )
             self._close_run(conn, run_id, "completed", report)
 
@@ -732,7 +737,8 @@ class ExternalLibraryIndexer:
             default_creator = library["default_creator"] or library["name"]
             run_id = self._open_run(conn, library_id, ADD)
             candidates = conn.execute(
-                "SELECT id, rel_path, name, category, folders_json, exclude_json FROM library_candidates"
+                "SELECT id, rel_path, name, category, folders_json, exclude_json, group_name, tags_json, release_name"
+                " FROM library_candidates"
                 " WHERE library_id = ? AND status = ? ORDER BY rel_path;",
                 (library_id, APPROVED),
             ).fetchall()
@@ -769,8 +775,13 @@ class ExternalLibraryIndexer:
                         conn, library, root, existing, rel_path, candidate["category"], run_id, candidate["name"], folders,
                         json.loads(candidate["exclude_json"]),
                     )
+                    model_id = conn.execute("SELECT id FROM models WHERE external_key = ?;", (key,)).fetchone()[0]
                     with conn:
                         conn.execute("UPDATE library_candidates SET status = ? WHERE id = ?;", (ADDED, candidate["id"]))
+                        catalog_levels.file_under_release(
+                            conn, model_id, library_id, candidate["release_name"], candidate["group_name"],
+                            json.loads(candidate["tags_json"]),
+                        )
                     added += 1
                     files += count
                     months.add(release_month_of(Path(rel_path).parts[0]))

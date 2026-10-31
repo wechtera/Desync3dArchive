@@ -1,3 +1,4 @@
+import { loadBrowse } from './views/browse.js';
 import { bindActions } from './actions.js';
 import {
   fetchMetrics,
@@ -213,7 +214,7 @@ export function switchTab(tabName) {
     shouldOpenTasks = true;
   }
 
-  const allViews = ['releases', 'models', 'creators', 'downloads', 'stashes', 'settings', 'help'];
+  const allViews = ['browse', 'releases', 'models', 'creators', 'downloads', 'stashes', 'settings', 'help'];
   allViews.forEach(v => {
     const el = document.getElementById('view-' + v);
     if (el) el.style.display = (v === tabName) ? 'block' : 'none';
@@ -225,7 +226,7 @@ export function switchTab(tabName) {
 
   const libraryBtn = document.getElementById('btn-library-dropdown');
   if (libraryBtn) {
-    if (['releases', 'models', 'creators'].includes(tabName)) {
+    if (['browse', 'releases', 'models', 'creators'].includes(tabName)) {
       libraryBtn.classList.add('active');
     } else {
       libraryBtn.classList.remove('active');
@@ -237,7 +238,10 @@ export function switchTab(tabName) {
     return el && el.style.display !== 'none';
   };
 
-  if (tabName === 'releases') {
+  if (tabName === 'browse') {
+    stopActiveTransfersPolling();
+    loadBrowse();
+  } else if (tabName === 'releases') {
     stopActiveTransfersPolling();
     loadReleases();
   } else if (tabName === 'models') {
@@ -388,6 +392,7 @@ export function resetToHome(event) {
   closeModal('release-modal');
   closeModal('files-modal');
   closeModal('library-review-modal');
+  closeModal('model-view-modal');
   closeModal('config-modal');
   closeModal('browse-modal');
   closeModal('modal-scraper');

@@ -14,6 +14,9 @@ import {
   approveLibraryPreview,
   fetchLibraryRelease,
   saveLibraryReview,
+  fetchArchiveQueue,
+  fetchArchiveReview,
+  saveArchiveReview,
   fetchImageQueue,
   postImageQueue
 } from '../api.js';
@@ -26,6 +29,7 @@ let previewWatch = null;
 let currentLibrary = null;
 let currentReport = null;
 let review = null;
+let archiveQueue = [];
 
 const flagsIn = (release) => release.new.filter(m => (m.flags || []).length).length;
 
@@ -472,7 +476,7 @@ function moveToChosen() {
 function newCard() {
   const first = [...review.selected][0];
   if (!first) return;
-  const card = { key: '', name: leaf(first).replace(/\.[^.]+$/, ''), category: '', members: [], skip: false, flags: [] };
+  const card = { key: '', name: leaf(first).replace(/\.[^.]+$/, ''), category: '', members: [], skip: false, flags: [], group: '', tags: [] };
   card.key = `new-${Date.now()}`;
   review.cards = [card, ...review.cards];
   moveSelected(card);
@@ -495,6 +499,7 @@ function drawCard(card) {
         <input type="text" class="review-card-name" aria-label="Card name" .value=${card.name} @input=${edit('name')} spellcheck="false">
         <input type="text" class="review-card-category" aria-label="Category" .value=${card.category} @input=${edit('category')} spellcheck="false">
       </div>
+      <input type="text" class="review-card-group mt-1" aria-label="Model group" placeholder="Model group" list="review-groups" .value=${card.group || ''} @input=${edit('group')} spellcheck="false">
       <div class="review-card-actions font-xs text-dim">
         <button type="button" class="link-btn" @click=${show}>${card.members.length} ${card.members.length === 1 ? 'path' : 'paths'}</button>
         <label><input type="checkbox" class="review-skip" .checked=${!!card.skip} @change=${edit('skip')}> Skip</label>
@@ -510,7 +515,8 @@ function drawReview() {
   const { data } = review;
   const top = data.folders.filter(f => !f.slice(data.release.length + 1).includes('/'));
   const selected = review.selected.size;
-  document.getElementById('library-review-title').textContent = data.release;
+  document.getElementById('library-review-title').textContent = data.title || data.release;
+  const groupNames = [...new Set(review.cards.map(c => c.group).filter(Boolean))].sort();
   // Flagged cards first. The key tiebreak stops a card jumping while its name is being edited.
   const cards = [...review.cards].sort((a, b) => (b.flags || []).length - (a.flags || []).length || a.key.localeCompare(b.key));
   render(html`
@@ -528,50 +534,105 @@ function drawReview() {
           </select>
           <button type="button" class="btn-pill font-xs" id="btn-review-move" ?disabled=${!selected} @click=${moveToChosen}>Move to Card</button>
         </div>
+        <datalist id="review-groups">${groupNames.map(g => html`<option value=${g}></option>`)}</datalist>
         <div class="review-card-list">${cards.map(drawCard)}</div>
       </div>
     </div>
     <div class="flex gap-2 mt-2">
       <button type="button" class="btn-pill btn-action-primary" id="btn-review-next" ?disabled=${!!data.settled.length} @click=${() => saveReview(true, true)}>Mark Reviewed and Next</button>
       <button type="button" class="btn-pill" id="btn-review-save" ?disabled=${!!data.settled.length} @click=${() => saveReview(data.reviewed, false)}>Save</button>
-      <button type="button" class="btn-pill btn-action-cancel" id="btn-review-reset" ?disabled=${!!data.settled.length || !data.changed} @click=${resetReview}>Reset to Code's Guess</button>
+      ${review.source.reset ? html`
+        <button type="button" class="btn-pill btn-action-cancel" id="btn-review-reset" ?disabled=${!!data.settled.length || !data.changed} @click=${resetReview}>Reset to Code's Guess</button>
+      ` : nothing}
     </div>
   `, body);
 }
 
-async function openReview(lib, release, focusPath = '') {
+async function showReview(source, focusKey = '') {
   if (review?.dirty && !confirm('Discard your unsaved changes to this release?')) return;
   try {
-    const data = await fetchLibraryRelease(lib.id, release);
-    const key = focusPath.slice(release.length + 1);
+    const data = await source.load();
     review = {
-      lib, data, cards: structuredClone(data.cards), selected: new Set(), open: new Set(), dirty: false,
-      focus: data.cards.some(c => c.key === key) ? key : '',
+      source, data, cards: structuredClone(data.cards), selected: new Set(), open: new Set(), dirty: false,
+      focus: data.cards.some(c => c.key === focusKey) ? focusKey : '',
     };
     for (const card of review.cards) if ((card.flags || []).length || card.key === review.focus) openPathsTo(card);
     drawReview();
     window.openModal('library-review-modal');
   } catch (err) {
-    alert(`Could not open ${release}: ${err.message}`);
+    alert(`Could not open it: ${err.message}`);
   }
 }
 
-function nextRelease(current) {
-  const queue = reviewQueue(currentReport).filter(r => r.new.length && r.name !== current && !r.reviewed);
-  return queue[0]?.name;
+// Linked releases and archives share the screen. Only where cards load and save differs.
+function openReview(lib, release, focusPath = '') {
+  return showReview({
+    load: () => fetchLibraryRelease(lib.id, release),
+    save: (cards, reviewed) => saveLibraryReview(lib.id, { release, cards, reviewed }),
+    reset: () => saveLibraryReview(lib.id, { release, reset: true }),
+    refresh: () => loadLibraryPreview(lib),
+    next: () => {
+      const queue = reviewQueue(currentReport).filter(r => r.new.length && r.name !== release && !r.reviewed);
+      return queue[0] ? () => openReview(lib, queue[0].name) : null;
+    },
+    again: () => openReview(lib, release),
+  }, focusPath.slice(release.length + 1));
+}
+
+function openArchiveReview(collectionId) {
+  return showReview({
+    load: () => fetchArchiveReview(collectionId),
+    save: (cards, reviewed) => saveArchiveReview(collectionId, { cards, reviewed }),
+    refresh: loadArchiveQueue,
+    next: () => {
+      const next = archiveQueue.find(c => c.id !== collectionId && !c.reviewed);
+      return next ? () => openArchiveReview(next.id) : null;
+    },
+    again: () => openArchiveReview(collectionId),
+  });
+}
+
+export async function loadArchiveQueue() {
+  const container = document.getElementById('archive-review-queue');
+  if (!container) return;
+  try {
+    archiveQueue = (await fetchArchiveQueue()).collections || [];
+    const reviewed = archiveQueue.filter(c => c.reviewed).length;
+    render(archiveQueue.length ? html`
+      <p class="text-dim font-sm" id="archive-queue-summary">
+        ${reviewed} of ${archiveQueue.length} collections reviewed. Most suspicious first.
+      </p>
+      <table class="table-compact">
+        <thead><tr><th>Collection</th><th>Models</th><th>Groups</th><th>Artifacts</th><th>Status</th></tr></thead>
+        <tbody>
+          ${archiveQueue.map(c => html`
+            <tr class=${c.suspect && !c.reviewed ? 'preview-row-flagged' : ''}>
+              <td><button type="button" class="link-btn archive-review-open" @click=${() => openArchiveReview(c.id)}>${c.name}</button></td>
+              <td class="font-mono">${c.models}</td>
+              <td class="font-mono">${c.model_groups}</td>
+              <td class="font-mono">${c.artifacts}</td>
+              <td>${c.reviewed ? 'Reviewed' : c.suspect ? 'Likely over-split' : ''}</td>
+            </tr>
+          `)}
+        </tbody>
+      </table>
+    ` : html`<div class="table-msg text-dim">No peeked archives yet.</div>`, container);
+  } catch (err) {
+    render(html`<div class="table-msg text-alert">Failed loading archives: ${err.message}</div>`, container);
+  }
 }
 
 async function saveReview(reviewed, advance) {
   try {
-    await saveLibraryReview(review.lib.id, { release: review.data.release, cards: review.cards, reviewed });
-    const { lib, data } = review;
+    const { source, data } = review;
+    await source.save(review.cards, reviewed);
     review.dirty = false;
-    showToast(`Saved ${data.release}.`);
-    await loadLibraryPreview(lib);
-    const next = advance ? nextRelease(data.release) : null;
-    if (next) await openReview(lib, next);
+    showToast(`Saved ${data.title || data.release}.`);
+    await source.refresh();
+    const next = advance ? source.next() : null;
+    if (next) await next();
     else if (advance) closeReview();
-    else await openReview(lib, data.release);
+    else await source.again();
   } catch (err) {
     alert(`Save failed: ${err.message}`);
   }
@@ -580,11 +641,11 @@ async function saveReview(reviewed, advance) {
 async function resetReview() {
   if (!confirm(`Put ${review.data.release} back to the code's guess?`)) return;
   try {
-    const { lib, data } = review;
-    await saveLibraryReview(lib.id, { release: data.release, reset: true });
+    const { source } = review;
+    await source.reset();
     review.dirty = false;
-    await loadLibraryPreview(lib);
-    await openReview(lib, data.release);
+    await source.refresh();
+    await source.again();
   } catch (err) {
     alert(`Reset failed: ${err.message}`);
   }
@@ -602,4 +663,5 @@ Object.assign(window, {
   handleScanExternalLibrary,
   handleDeleteExternalLibrary,
   closeReview,
+  loadArchiveQueue,
 });

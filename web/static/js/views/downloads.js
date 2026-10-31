@@ -1,4 +1,4 @@
-import { loadExternalLibraries } from './libraries.js';
+import { loadArchiveQueue, loadExternalLibraries } from './libraries.js';
 import {
   fetchModels,
   fetchCreators,
@@ -94,7 +94,7 @@ export function stopActiveTransfersPolling() {
 }
 
 export function switchDownloadSubView(subview) {
-  ['pending', 'active', 'history', 'reconcile', 'sync', 'libraries'].forEach(sv => {
+  ['pending', 'active', 'history', 'reconcile', 'sync', 'libraries', 'archives'].forEach(sv => {
     const el = document.getElementById(`sub-dl-${sv}`);
     if (el) el.style.display = (sv === subview) ? 'block' : 'none';
   });
@@ -121,6 +121,9 @@ export function switchDownloadSubView(subview) {
   } else if (subview === 'libraries') {
     stopActiveTransfersPolling();
     loadExternalLibraries();
+  } else if (subview === 'archives') {
+    stopActiveTransfersPolling();
+    loadArchiveQueue();
   }
 }
 

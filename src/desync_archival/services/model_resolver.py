@@ -186,6 +186,17 @@ def resolve(
     return list(models.values())
 
 
+def group_models(models: list[ResolvedModel]) -> None:
+    """Fills in related models within one scope. A bust joins its character, and bases gather up."""
+    by_slug = {_slug(m): m for m in models if not m.form}
+    for model in models:
+        parts = [slug_of(_plain_words(p)).removesuffix("s") for f in model.folders for p in f.split("/")]
+        if any(p in BASE_WORDS for p in parts):
+            model.group, model.tags = BASE_GROUP, [BASE_TAG]
+        elif model.form and (character := by_slug.get(_slug(model))):
+            model.group = character.group = character.name
+
+
 def _plain_words(folder: str) -> list[str]:
     return [w for w in words_in(folder) if w.lower() not in PRINT_WORDS and not SCALE.match(w.lower())]
 

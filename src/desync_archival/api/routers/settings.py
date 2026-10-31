@@ -38,6 +38,14 @@ add_route(router, "GET", "/api/settings/libraries/{library_id:int}/preview/relea
           with_path_id(handlers.handle_get_library_release, "library_id"))
 add_route(router, "POST", "/api/settings/libraries/{library_id:int}/preview/review",
           with_path_id(handlers.handle_post_library_review, "library_id"), schemas.LibraryReviewBody)
+add_route(router, "GET", "/api/catalog-models", plain(handlers.handle_get_catalog_models))
+add_route(router, "GET", "/api/catalog-models/{model_id:int}", with_path_id(handlers.handle_get_catalog_model, "model_id"))
+add_route(router, "GET", "/api/model-groups/{group_id:int}", with_path_id(handlers.handle_get_model_group, "group_id"))
+add_route(router, "GET", "/api/archive-review", plain(handlers.handle_get_archive_queue))
+add_route(router, "GET", "/api/archive-review/{collection_id:int}",
+          with_path_id(handlers.handle_get_archive_review, "collection_id"))
+add_route(router, "POST", "/api/archive-review/{collection_id:int}",
+          with_path_id(handlers.handle_post_archive_review, "collection_id"), schemas.ArchiveReviewBody)
 add_route(router, "GET", "/api/library-images", plain(handlers.handle_get_image_queue))
 add_route(router, "POST", "/api/library-images", plain(handlers.handle_post_image_queue), schemas.ImageQueueBody)
 add_route(router, "GET", "/api/inactive", plain(handlers.handle_get_inactive))

@@ -95,6 +95,11 @@ class LibraryApproveBody(RequestBody):
     skip_releases: list[str] | None = None
 
 
+class ArchiveReviewBody(RequestBody):
+    cards: list[dict[str, Any]] | None = None
+    reviewed: bool | None = None
+
+
 class LibraryReviewBody(RequestBody):
     release: str
     cards: list[dict[str, Any]] | None = None
