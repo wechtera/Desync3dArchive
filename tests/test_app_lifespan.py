@@ -1,6 +1,6 @@
 """Tests the app lifespan, threadpool use, request logging and response building."""
 
-import http.client
+import asyncio
 import json
 import sqlite3
 import threading
@@ -8,13 +8,24 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 
+import httpx
 from db_helper import create_database
+from fastapi import APIRouter
 from fastapi.testclient import TestClient
-from live_server import LiveServer
 
 from desync_archival.api import server
+from desync_archival.api.routing import add_route
 from desync_archival.migrations import MigrationError
 from desync_archival.services import logger as log
+
+
+def app_with_route(call):
+    """An app with one extra route, placed ahead of the not-found fallback."""
+    app = server.create_app(manage_workers=False)
+    router = APIRouter()
+    add_route(router, ("GET", "POST"), "/api/test-route", call)
+    app.router.routes[:0] = router.routes
+    return app
 
 
 class LifespanTests(unittest.TestCase):
@@ -23,11 +34,14 @@ class LifespanTests(unittest.TestCase):
 
     def test_app_refuses_to_start_on_an_old_schema(self):
         conn = sqlite3.connect(server.DB_PATH)
+        current = conn.execute("PRAGMA user_version").fetchone()[0]
         conn.execute("PRAGMA user_version = 1")
-        conn.close()
-        with self.assertRaises(MigrationError), TestClient(server.create_app(), base_url="http://localhost"):
-            pass
-        create_database(server.DB_PATH)
+        try:
+            with self.assertRaises(MigrationError), TestClient(server.create_app(), base_url="http://localhost"):
+                pass
+        finally:
+            conn.execute(f"PRAGMA user_version = {current}")
+            conn.close()
 
     def test_managers_start_and_stop_with_the_app(self):
         manager = MagicMock()
@@ -55,38 +69,29 @@ class ThreadpoolTests(unittest.TestCase):
     def test_slow_route_does_not_stall_others(self):
         release = threading.Event()
         started = threading.Event()
-        original = server.dispatch_route
 
-        def slow(method, path, **kwargs):
-            if path == "/api/slow-test":
-                started.set()
-                release.wait(timeout=10)
-                return {"slow": True}, 200
-            return original(method=method, path=path, **kwargs)
+        def slow(_ctx):
+            started.set()
+            release.wait(timeout=10)
+            return {"slow": True}, 200
 
-        live = LiveServer()
-        port = live.start()
+        app = app_with_route(slow)
         results = {}
 
-        def call_slow():
-            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=15)
-            connection.request("GET", "/api/slow-test")
-            results["slow"] = connection.getresponse().status
-            connection.close()
+        async def run():
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+                first = asyncio.create_task(client.get("/api/test-route"))
+                await asyncio.to_thread(started.wait, 5)
+                begun = time.monotonic()
+                results["other"] = (await client.get("/api/does-not-exist")).status_code
+                results["elapsed"] = time.monotonic() - begun
+                release.set()
+                results["slow"] = (await first).status_code
 
-        with patch.object(server, "dispatch_route", side_effect=slow):
-            thread = threading.Thread(target=call_slow)
-            thread.start()
-            self.assertTrue(started.wait(timeout=5))
-            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-            begun = time.monotonic()
-            connection.request("GET", "/api/does-not-exist")
-            self.assertEqual(connection.getresponse().status, 404)
-            self.assertLess(time.monotonic() - begun, 2)
-            connection.close()
-            release.set()
-            thread.join(timeout=10)
-        live.stop()
+        asyncio.run(run())
+        self.assertEqual(results["other"], 404)
+        self.assertLess(results["elapsed"], 2)
         self.assertEqual(results["slow"], 200)
 
 
@@ -117,50 +122,47 @@ class RequestLoggingTests(unittest.TestCase):
 
 
 class ResponseTests(unittest.TestCase):
-    def setUp(self):
-        self.client = TestClient(server.create_app(manage_workers=False), follow_redirects=False, base_url="http://localhost")
-
     def respond_with(self, value):
-        target = "desync_archival.api.server.dispatch_route"
-        return patch(target, return_value=value)
+        self.call = MagicMock(return_value=value)
+        return TestClient(app_with_route(self.call), follow_redirects=False, base_url="http://localhost")
+
+    @property
+    def client(self):
+        return TestClient(server.create_app(manage_workers=False), follow_redirects=False, base_url="http://localhost")
 
     def test_two_tuple_json(self):
-        with self.respond_with(({"a": 1}, 201)):
-            response = self.client.get("/api/x")
+        response = self.respond_with(({"a": 1}, 201)).get("/api/test-route")
         self.assertEqual((response.status_code, response.json()), (201, {"a": 1}))
 
     def test_three_tuple_bytes_with_headers(self):
-        with self.respond_with((b"\xff\xd8", 200, {"Content-Type": "image/jpeg", "X-Test": "1"})):
-            response = self.client.get("/api/x")
+        response = self.respond_with((b"\xff\xd8", 200, {"Content-Type": "image/jpeg", "X-Test": "1"})).get("/api/test-route")
         self.assertEqual(response.content, b"\xff\xd8")
         self.assertEqual(response.headers["content-type"], "image/jpeg")
         self.assertEqual(response.headers["x-test"], "1")
 
     def test_plain_string_is_html(self):
-        with self.respond_with("<p>hi</p>"):
-            response = self.client.get("/api/x")
+        response = self.respond_with("<p>hi</p>").get("/api/test-route")
         self.assertIn("text/html", response.headers["content-type"])
         self.assertEqual(response.text, "<p>hi</p>")
 
     def test_plain_bytes_are_octet_stream(self):
-        with self.respond_with(b"raw"):
-            response = self.client.get("/api/x")
+        response = self.respond_with(b"raw").get("/api/test-route")
         self.assertEqual(response.headers["content-type"], "application/octet-stream")
 
     def test_redirect_location_comes_from_html_and_dict(self):
-        with self.respond_with(("<meta http-equiv='refresh' content='0;url=https://a.example/b'>", 302)):
-            self.assertEqual(self.client.get("/api/x").headers["location"], "https://a.example/b")
-        with self.respond_with(({"auth_url": "https://a.example/c"}, 302)):
-            self.assertEqual(self.client.get("/api/x").headers["location"], "https://a.example/c")
+        client = self.respond_with(("<meta http-equiv='refresh' content='0;url=https://a.example/b'>", 302))
+        self.assertEqual(client.get("/api/test-route").headers["location"], "https://a.example/b")
+        client = self.respond_with(({"auth_url": "https://a.example/c"}, 302))
+        self.assertEqual(client.get("/api/test-route").headers["location"], "https://a.example/c")
 
     def test_invalid_json_body_becomes_empty_dict(self):
-        with self.respond_with(({}, 200)) as dispatch:
-            self.client.post("/api/x", content=b"{not json", headers={"Content-Type": "application/json"})
-        self.assertEqual(dispatch.call_args.kwargs["body_data"], {})
+        client = self.respond_with(({}, 200))
+        client.post("/api/test-route", content=b"{not json", headers={"Content-Type": "application/json"})
+        self.assertEqual(self.call.call_args.args[0].body, {})
 
     def test_route_exception_returns_generic_500(self):
-        with patch("desync_archival.api.server.dispatch_route", side_effect=ValueError("boom")):
-            response = self.client.get("/api/x")
+        client = TestClient(app_with_route(MagicMock(side_effect=ValueError("boom"))), base_url="http://localhost")
+        response = client.get("/api/test-route")
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.json(), {"error": "Internal server error"})
 

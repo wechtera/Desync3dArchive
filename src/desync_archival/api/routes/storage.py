@@ -1,5 +1,6 @@
 from pathlib import Path
 from desync_archival.db.queries import storage as queries
+from desync_archival.services.logger import logger
 from desync_archival import settings as app_config
 import sqlite3
 from typing import Any, Optional
@@ -34,8 +35,8 @@ def handle_post_storage_config(
     for value in (nas_path, work_path):
         if value:
             try:
-                app_config.check_path(value)
-            except app_config.ProductionPathError as e:
+                app_config.check_settable_path(value)
+            except app_config.SettingsError as e:
                 return {"error": str(e)}, 400
 
     updates = []
@@ -45,7 +46,8 @@ def handle_post_storage_config(
             p_nas.mkdir(parents=True, exist_ok=True)
             updates.append(("download_root_path", str(p_nas)))
         except Exception as e:
-            return {"error": f"Failed to initialize NAS root directory '{nas_path}': {e}"}, 400
+            logger.warning(f"Failed to create NAS root directory {nas_path}: {e}")
+            return {"error": f"Failed to initialize NAS root directory '{nas_path}'"}, 400
     elif "download_root_path" in body or "path" in body:
         updates.append(("download_root_path", ""))
 
@@ -55,7 +57,8 @@ def handle_post_storage_config(
             p_work.mkdir(parents=True, exist_ok=True)
             updates.append(("download_work_path", str(p_work)))
         except Exception as e:
-            return {"error": f"Failed to initialize staging directory '{work_path}': {e}"}, 400
+            logger.warning(f"Failed to create staging directory {work_path}: {e}")
+            return {"error": f"Failed to initialize staging directory '{work_path}'"}, 400
     elif "download_work_path" in body or "work_path" in body:
         updates.append(("download_work_path", ""))
 

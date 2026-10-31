@@ -706,15 +706,18 @@ export const initSettingsView = loadSettingsView;
 export const refreshDirectoryUsage = loadDirectoryUsage;
 
 export async function purgeStashExports(days = 14) {
-  if (!confirm(`Are you sure you want to delete print queue stash folders older than ${days} days?`)) {
-    return;
-  }
+  const purge = (body) => fetch('/api/settings/stashes/purge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
   try {
-    const res = await fetch('/api/settings/stashes/purge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ days })
-    });
+    const preview = await (await purge({ days })).json();
+    const size = formatBytes(preview.reclaimable_bytes || 0);
+    if (!confirm(`Delete ${preview.would_purge} print queue stash folders older than ${days} days (${size})?`)) {
+      return;
+    }
+    const res = await purge({ days, confirm: true });
     const data = await res.json();
     if (data.success) {
       showToast(data.message);

@@ -1,6 +1,8 @@
 """Each domain router rejects bad request bodies, and keeps every URL and alias."""
 
+import sqlite3
 import unittest
+from unittest.mock import patch
 
 from db_helper import create_database
 from fastapi.testclient import TestClient
@@ -93,3 +95,31 @@ class AuthValidationTests(RouteCase):
     def test_bad_auth_bodies_are_refused(self):
         self.refused("/api/auth/token_callback", {"access_token": "x", "expires_in": "soon"})
         self.refused("/api/auth/config", {"client_id": 5})
+
+
+class ErrorPathTests(RouteCase):
+    """Failures are logged and return fixed text, with no exception detail."""
+
+    def test_stash_failures_return_generic_text(self):
+        target = "desync_archival.services.stash_service.StashService.create_stash"
+        with patch(target, side_effect=RuntimeError("private detail")):
+            response = self.client.post("/api/stashes", json={"name": "x"})
+        self.assertEqual(response.status_code, 500)
+        self.assertNotIn("private detail", response.text)
+
+    def test_render_failure_returns_generic_text(self):
+        target = "desync_archival.services.mesh_renderer.MeshRenderer.render_ephemeral"
+        conn = sqlite3.connect(server.DB_PATH)
+        conn.execute("INSERT OR IGNORE INTO models (id, name, url, raw_backup_path) VALUES (77, 'M', '', '')")
+        conn.execute("""
+            INSERT OR REPLACE INTO downloaded_files (
+                file_id, model_id, original_filename, cleaned_filename, local_relative_path, actual_bytes, vault_path
+            ) VALUES (770, 77, 'a.stl', 'a.stl', 'a.stl', 1, '/tmp/a.stl')
+        """)
+        conn.commit()
+        conn.close()
+        with patch(target, side_effect=RuntimeError("private detail")), \
+                patch("desync_archival.services.mesh_renderer.MeshRenderer.is_available", return_value=True):
+            response = self.client.post("/api/render/stl", json={"source_type": "file", "id": 770})
+        self.assertNotIn("private detail", response.text)
+        self.assertIn(response.status_code, (404, 500))

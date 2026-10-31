@@ -1,6 +1,7 @@
 {
   "request": {
     "body": {
+      "confirm": true,
       "model_ids": [
         839284
       ]

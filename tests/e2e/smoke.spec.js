@@ -136,3 +136,32 @@ test.describe('server times in New York', () => {
     await expect(page.locator('body')).not.toContainText('2026-10-31');
   });
 });
+
+test('clearing task history previews, then confirms', async ({ page }) => {
+  const bodies = [];
+  await page.route('**/api/tasks/clear', async (route) => {
+    const body = route.request().postDataJSON();
+    bodies.push(body);
+    await route.fulfill({
+      json: body.confirm ? { success: true, deleted_count: 4 } : { success: true, dry_run: true, would_delete: 4 },
+    });
+  });
+  const messages = [];
+  page.on('dialog', (dialog) => { messages.push(dialog.message()); dialog.accept(); });
+  await page.goto('/#settings');
+  await page.evaluate(() => window.clearTaskHistory());
+  expect(messages[0]).toContain('Clear 4');
+  expect(bodies).toEqual([{}, { confirm: true }]);
+});
+
+test('declining the dialog sends no destructive request', async ({ page }) => {
+  const bodies = [];
+  await page.route('**/api/tasks/clear', async (route) => {
+    bodies.push(route.request().postDataJSON());
+    await route.fulfill({ json: { success: true, dry_run: true, would_delete: 4 } });
+  });
+  page.on('dialog', (dialog) => dialog.dismiss());
+  await page.goto('/#settings');
+  await page.evaluate(() => window.clearTaskHistory());
+  expect(bodies).toEqual([{}]);
+});

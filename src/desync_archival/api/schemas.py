@@ -100,6 +100,10 @@ class ConfirmBody(RequestBody):
     confirm: bool = False
 
 
+class StashPurgeBody(ConfirmBody):
+    days: int | str | None = None
+
+
 class IngestBody(RequestBody):
     scrape_folder: str | None = None
     folder: str | None = None

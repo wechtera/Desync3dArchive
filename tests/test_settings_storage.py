@@ -119,7 +119,7 @@ class TestSettingsStorage(unittest.TestCase):
         recent_folder.mkdir()
         (recent_folder / "test.stl").write_bytes(b"data")
 
-        resp, status = handle_post_stashes_purge(self.conn, body={"days": 14})
+        resp, status = handle_post_stashes_purge(self.conn, body={"days": 14, "confirm": True})
         self.assertEqual(status, 200)
         self.assertTrue(resp["success"])
         self.assertEqual(resp["purged_count"], 1)

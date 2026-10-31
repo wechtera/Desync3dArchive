@@ -1,6 +1,7 @@
 {
   "request": {
     "body": {
+      "confirm": true,
       "paths": [
         "<DEV>/nas/vault/contract_orphan_two"
       ]

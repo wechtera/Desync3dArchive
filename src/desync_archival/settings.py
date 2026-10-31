@@ -26,6 +26,10 @@ class ProductionPathError(SettingsError):
     """A non-production run reached for a production location."""
 
 
+class PathNotAllowedError(SettingsError):
+    """A path is outside DESYNC_ALLOWED_ROOTS."""
+
+
 def _load_env_file(path: Path) -> None:
     if not path.is_file():
         return
@@ -93,6 +97,26 @@ def check_path(path: Path | str) -> None:
         raise ProductionPathError(
             f"Refusing production path outside APP_ENV={PRODUCTION}: {Path(path).expanduser().resolve()}"
         )
+
+
+def allowed_roots() -> list[Path]:
+    """The folders the API can browse or set paths in. Only the server's environment sets these."""
+    _load()
+    configured = os.environ.get("DESYNC_ALLOWED_ROOTS", "")
+    roots = [Path(item).expanduser().resolve() for item in configured.split(":") if item.strip()]
+    return roots or [data_dir()]
+
+
+def is_allowed(path: Path | str) -> bool:
+    resolved = Path(path).expanduser().resolve()
+    return any(resolved == root or root in resolved.parents for root in allowed_roots())
+
+
+def check_settable_path(path: Path | str) -> None:
+    """Refuses a path from an API request that production rules or the allowed roots rule out."""
+    check_path(path)
+    if not is_allowed(path):
+        raise PathNotAllowedError("That path is outside the allowed roots. See DESYNC_ALLOWED_ROOTS.")
 
 
 def _raw_data_dir() -> Path:

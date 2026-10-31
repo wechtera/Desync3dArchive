@@ -41,4 +41,4 @@ add_route(router, "GET", "/api/settings/logging", plain(handlers.handle_get_logg
 add_route(router, "POST", "/api/settings/logging", plain(handlers.handle_post_logging_config), schemas.LoggingBody)
 add_route(router, "POST", "/api/settings/logs/purge", plain(handlers.handle_post_logs_purge), schemas.LogsPurgeBody)
 add_route(router, "POST", ("/api/settings/stashes/purge", "/api/stashes/purge"),
-          plain(handlers.handle_post_stashes_purge), schemas.ConfirmBody)
+          plain(handlers.handle_post_stashes_purge), schemas.StashPurgeBody)

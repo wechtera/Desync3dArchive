@@ -4,7 +4,7 @@ from fastapi import APIRouter
 
 from desync_archival.api import schemas
 from desync_archival.api.routes import stashes as handlers
-from desync_archival.api.routing import add_route, plain, with_path_id, with_tasks
+from desync_archival.api.routing import add_route, plain, with_path_id
 
 router = APIRouter()
 

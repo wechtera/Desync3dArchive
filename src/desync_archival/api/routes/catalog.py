@@ -4,23 +4,21 @@ Filters out 404/tombstone records and models with missing metadata from UI prese
 Preserves 100% of pre-existing catalog exploration and metrics functionality.
 """
 
-from datetime import date, datetime
 import json
-from pathlib import Path
-from desync_archival.db.queries import catalog as queries
-from desync_archival import settings as app_config
 import shutil
 import sqlite3
-import sys
 import tempfile
-from typing import Any, Dict, Optional, Tuple, Union
 import uuid
+from datetime import date, datetime
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, Union
 
-
-
-from desync_archival.services.downloader import DownloadManager
+from desync_archival import settings as app_config
+from desync_archival.db.queries import catalog as queries
 from desync_archival.services.analytics import compute_catalog_audit
-from desync_archival.services.mesh_renderer import MeshRenderer, VALID_VIEWS
+from desync_archival.services.downloader import DownloadManager
+from desync_archival.services.logger import logger
+from desync_archival.services.mesh_renderer import VALID_VIEWS, MeshRenderer
 
 # Global SQL filters: Exclude tombstones and records with missing designer metadata
 VALID_MODEL_RAW = """
@@ -584,4 +582,5 @@ def handle_post_render_stl(
     except ValueError as ve:
         return {"error": str(ve)}, 400
     except Exception as e:
-        return {"error": f"Ephemeral rendering failed: {str(e)}"}, 500
+        logger.warning(f"Ephemeral rendering failed: {e}")
+        return {"error": "Ephemeral rendering failed"}, 500

@@ -1,6 +1,7 @@
 {
   "request": {
     "body": {
+      "confirm": true,
       "paths": []
     },
     "method": "POST",

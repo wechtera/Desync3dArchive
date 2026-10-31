@@ -80,6 +80,10 @@ def redact(text: str) -> str:
     return text
 
 
+def current_request_id() -> str | None:
+    return _REQUEST_ID.get()
+
+
 @contextmanager
 def log_context(request_id: str | None = None, job_id: str | None = None) -> Iterator[None]:
     """Binds correlation IDs to every log line emitted inside the block."""

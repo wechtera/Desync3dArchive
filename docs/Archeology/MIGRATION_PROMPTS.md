@@ -307,8 +307,12 @@ Prepare, but do not run against production without explicit approval at each sta
    row counts (expected at last count: 4,893 models, 23,572 model_files, 496 downloaded_files,
    but use the live numbers at the time).
 4. With approval: stop the old app, take a verified backup, copy production data from
-   ../scrapepage to ~/DESYNC_Data, run the same steps on that copy, verify, and start the new app
-   with APP_ENV=production. Do not change the originals in ../scrapepage. Set DESYNC_BACKUP_DIR
+   ../scrapepage to ~/DESYNC_Data, run the same steps on that copy using
+   `dbtool migrate --confirm-production`, verify, and start the new app with APP_ENV=production.
+   DESYNC_ALLOWED_ROOTS must list the data directory, the NAS vault, staging, the stash export
+   folder and every external library, or Settings will refuse them. Rescan Loot Studios, because
+   its totals are still blank from the indexer bug fixed in Step 3. Do not change the originals
+   in ../scrapepage. Set DESYNC_BACKUP_DIR
    to a different disk from the data directory, confirm the scheduled backup runs, and restore
    the first one to a new path to prove it works. Add the secrets file to the backup.
 5. Keep the old app, its data and the backup available until the user accepts the result.

@@ -63,11 +63,11 @@ def add_route(
     call: Callable[[RouteContext], Any],
     model: type[BaseModel] | None = None,
 ) -> None:
-    from desync_archival.api import server
-
     method_list = [methods] if isinstance(methods, str) else list(methods)
 
     async def endpoint(request: Request) -> Response:
+        from desync_archival.api import server
+
         body = server.parse_body(await request.body()) if request.method != "GET" else {}
         if not isinstance(body, dict):
             return JSONResponse({"error": "Request body must be a JSON object"}, 400)
@@ -92,7 +92,7 @@ def run_call(call: Callable, body: dict, params: dict, path: dict, request: Requ
     try:
         context = RouteContext(conn, server.download_manager, server.task_manager, body, params, path)
         result = call(context)
-    except Exception:
+    except Exception:  # noqa: BLE001
         logger.exception(f"Unhandled error in {request.method} {request.url.path}")
         result = ({"error": GENERIC_ERROR}, 500)
     finally:

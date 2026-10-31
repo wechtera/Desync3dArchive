@@ -538,11 +538,17 @@ class VaultReconciler:
                 "untracked_files": report.get("untracked_files", []),
             }
 
-    def reset_reconciliation_models(self, model_ids: List[int]) -> Dict[str, Any]:
+    def reset_reconciliation_models(self, model_ids: List[int], dry_run: bool = False) -> Dict[str, Any]:
         if not model_ids:
             return {"success": False, "error": "No model IDs provided."}
         clean_ids = [int(m) for m in model_ids if str(m).isdigit()]
         placeholders = ",".join("?" for _ in clean_ids)
+        if dry_run:
+            with self._get_db() as conn:
+                files = conn.execute(
+                    f"SELECT count(*) FROM downloaded_files WHERE model_id IN ({placeholders});", clean_ids
+                ).fetchone()[0]
+            return {"success": True, "dry_run": True, "would_reset": len(clean_ids), "file_records": files}
         with self._get_db() as conn:
             with conn:
                 conn.execute(f"DELETE FROM downloaded_files WHERE model_id IN ({placeholders});", clean_ids)
@@ -560,17 +566,24 @@ class VaultReconciler:
         log_layer("sql", logging.INFO, f"Reset {len(clean_ids)} reconciliation models for re-download: {clean_ids}")
         return {"success": True, "reset_count": len(clean_ids)}
 
-    def delete_orphan_directories(self, paths: List[str]) -> Dict[str, Any]:
+    def delete_orphan_directories(self, paths: List[str], dry_run: bool = False) -> Dict[str, Any]:
         if not paths:
             return {"success": False, "error": "No directory paths provided."}
         nas_root = self.storage.get_root_path().resolve()
         deleted, errors = [], []
+        would_delete: list[str] = []
+        reclaimable = 0
         for p_str in paths:
             try:
                 target = Path(p_str).resolve()
                 if not target.is_relative_to(nas_root) or target == nas_root:
                     errors.append(f"Security: Refusing deletion outside vault root: {target}")
                     log_layer("storage", logging.ERROR, f"Refused orphan deletion outside NAS root: {target}")
+                    continue
+                if dry_run:
+                    if target.is_dir():
+                        would_delete.append(str(target))
+                        reclaimable += sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
                     continue
                 if target.exists() and target.is_dir():
                     shutil.rmtree(target)
@@ -586,6 +599,11 @@ class VaultReconciler:
             except Exception as e:
                 errors.append(f"Failed deleting {p_str}: {e}")
                 log_layer("storage", logging.ERROR, f"Failed deleting orphan {p_str}: {e}")
+        if dry_run:
+            return {
+                "success": True, "dry_run": True, "would_delete": would_delete,
+                "reclaimable_bytes": reclaimable, "errors": errors,
+            }
         return {"success": True, "deleted_count": len(deleted), "errors": errors}
 
     def ingest_untracked_files(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -679,7 +697,7 @@ class VaultReconciler:
         log_layer("storage", logging.DEBUG, f"Staging garbage scan: {len(garbage_items)} items, {total_bytes} bytes reclaimable.")
         return {"success": True, "total_items": len(garbage_items), "total_bytes": total_bytes, "items": garbage_items}
 
-    def purge_staging_garbage(self, target_paths: Optional[List[str]] = None) -> Dict[str, Any]:
+    def purge_staging_garbage(self, target_paths: Optional[List[str]] = None, dry_run: bool = False) -> Dict[str, Any]:
         work_dir = self.storage.get_work_path().resolve()
         in_flight_dir = (work_dir / "in_flight").resolve()
         staged_dir = (work_dir / "staged").resolve()
@@ -693,15 +711,20 @@ class VaultReconciler:
                     continue
                 if target.is_file():
                     reclaimed += target.stat().st_size
-                    target.unlink(missing_ok=True)
+                    if not dry_run:
+                        target.unlink(missing_ok=True)
                     purged += 1
                 elif target.is_dir():
                     reclaimed += sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
-                    shutil.rmtree(target)
+                    if not dry_run:
+                        shutil.rmtree(target)
                     purged += 1
             except Exception as e:
                 errors.append(str(e))
                 log_layer("storage", logging.ERROR, f"Staging purge error on {p_str}: {e}")
+
+        if dry_run:
+            return {"success": True, "dry_run": True, "would_purge": purged, "reclaimable_bytes": reclaimed, "errors": errors}
 
         log_layer("storage", logging.INFO, f"Staging garbage purged: {purged} targets removed, {reclaimed} bytes reclaimed.")
         return {"success": True, "purged_count": purged, "reclaimed_bytes": reclaimed, "errors": errors}

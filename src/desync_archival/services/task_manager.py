@@ -491,6 +491,12 @@ class TaskManager:
                     """)
             return True
 
+    def count_clearable_tasks(self) -> int:
+        with self._get_db() as conn:
+            return conn.execute(
+                "SELECT count(*) FROM pipeline_tasks WHERE status IN ('completed', 'failed', 'cancelled');"
+            ).fetchone()[0]
+
     def clear_task_history(self) -> int:
         with self._get_db() as conn:
             with conn:

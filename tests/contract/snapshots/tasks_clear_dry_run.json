@@ -1,0 +1,17 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/api/tasks/clear"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "dry_run": true,
+      "success": true,
+      "would_delete": 13
+    },
+    "location": null,
+    "status": 200
+  }
+}

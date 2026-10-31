@@ -278,10 +278,19 @@ export async function killTask() {
   });
 }
 
+export async function previewClearTasksHistory() {
+  return request('/api/tasks/clear', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+}
+
 export async function clearTasksHistory() {
   return request('/api/tasks/clear', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: true }),
   });
 }
 
@@ -331,7 +340,7 @@ export async function resetReconcileModels(modelIds) {
   return request('/api/reconcile/reset', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model_ids: modelIds }),
+    body: JSON.stringify({ model_ids: modelIds, confirm: true }),
   });
 }
 
@@ -339,7 +348,7 @@ export async function deleteOrphanDirectories(paths) {
   return request('/api/reconcile/delete-orphans', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ paths }),
+    body: JSON.stringify({ paths, confirm: true }),
   });
 }
 
@@ -359,7 +368,7 @@ export async function purgeStagingGarbage(paths = null) {
   return request('/api/reconcile/staging/purge', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ paths }),
+    body: JSON.stringify({ paths, confirm: true }),
   });
 }
 

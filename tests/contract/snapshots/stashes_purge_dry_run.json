@@ -1,0 +1,20 @@
+{
+  "request": {
+    "body": {},
+    "method": "POST",
+    "path": "/api/stashes/purge"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "days": 14,
+      "dry_run": true,
+      "errors": [],
+      "reclaimable_bytes": 0,
+      "success": true,
+      "would_purge": 0
+    },
+    "location": null,
+    "status": 200
+  }
+}

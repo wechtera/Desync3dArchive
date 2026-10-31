@@ -1,13 +1,12 @@
 {
   "ruff": {
     "scripts/blender_render_mesh.py": 2,
-    "src/desync_archival/api/routes/__init__.py": 14,
     "src/desync_archival/api/routes/archives.py": 6,
-    "src/desync_archival/api/routes/catalog.py": 31,
+    "src/desync_archival/api/routes/catalog.py": 28,
     "src/desync_archival/api/routes/downloads.py": 5,
     "src/desync_archival/api/routes/reconcile.py": 12,
     "src/desync_archival/api/routes/settings.py": 73,
-    "src/desync_archival/api/routes/stashes.py": 59,
+    "src/desync_archival/api/routes/stashes.py": 47,
     "src/desync_archival/api/routes/storage.py": 5,
     "src/desync_archival/api/routes/tasks.py": 16,
     "src/desync_archival/api/server.py": 2,
@@ -27,6 +26,7 @@
     "tests/test_analytics.py": 3,
     "tests/test_archive_peeker.py": 3,
     "tests/test_downloader.py": 7,
+    "tests/test_entry_point.py": 1,
     "tests/test_external_indexer.py": 7,
     "tests/test_mesh_renderer.py": 9,
     "tests/test_server_api.py": 10,
@@ -38,7 +38,6 @@
   },
   "pyright": {
     "scripts/blender_render_mesh.py": 2,
-    "src/desync_archival/api/routes/__init__.py": 1,
     "src/desync_archival/api/routes/settings.py": 2,
     "src/desync_archival/services/archive_peeker.py": 1,
     "src/desync_archival/services/external_indexer.py": 5,

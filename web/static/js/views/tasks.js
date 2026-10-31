@@ -3,6 +3,7 @@ import {
   cancelTask,
   killTask,
   clearTasksHistory,
+  previewClearTasksHistory,
   startScraper,
   fetchScrapesList,
   startIngest
@@ -378,8 +379,9 @@ export async function killActiveTask() {
 }
 
 export async function clearTaskHistory() {
-  if (!confirm('Clear all completed, failed, and cancelled pipeline task history?')) return;
   try {
+    const preview = await previewClearTasksHistory();
+    if (!confirm(`Clear ${preview.would_delete} completed, failed, and cancelled pipeline tasks from history?`)) return;
     await clearTasksHistory();
     await renderTasksView();
   } catch (err) {

@@ -130,7 +130,8 @@ class MigrateDatabaseTests(TempCase):
         result = migrations.migrate_database(self.db)
         self.assertEqual((result["from"], result["to"]), (0, migrations.latest_version()))
         self.assertTrue(Path(result["backup"]).is_file())
-        self.assertEqual(backup.row_counts(self.db), before)
+        after = backup.row_counts(self.db)
+        self.assertEqual({table: after[table] for table in before}, before)
 
     def test_already_current_does_nothing(self):
         self.make_version_zero()

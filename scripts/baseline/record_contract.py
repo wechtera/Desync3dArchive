@@ -180,25 +180,32 @@ def build_cases(db_path: Path, dest: Path) -> list[Case]:
         Case("stash_item_delete", "DELETE", f"/api/stashes/items/{item}"),
         Case("stash_delete", "DELETE", f"/api/stashes/{stash}"),
         Case("reconcile_delete_orphans_empty", "POST", "/api/reconcile/delete-orphans", {"paths": []}),
-        Case("reconcile_delete_orphans", "POST", "/api/reconcile/delete-orphans", {
+        Case("reconcile_delete_orphans_dry_run", "POST", "/api/reconcile/delete-orphans", {
             "paths": [str(vault / "contract_orphan_one")],
         }),
+        Case("reconcile_delete_orphans", "POST", "/api/reconcile/delete-orphans", {
+            "paths": [str(vault / "contract_orphan_one")], "confirm": True,
+        }),
         Case("reconcile_orphan_audit", "POST", "/api/reconcile/orphan-audit", {
-            "paths": [str(vault / "contract_orphan_two")],
+            "paths": [str(vault / "contract_orphan_two")], "confirm": True,
         }),
-        Case("reconcile_staging_purge", "POST", "/api/reconcile/staging/purge", {"paths": []}),
+        Case("reconcile_staging_purge", "POST", "/api/reconcile/staging/purge", {"paths": [], "confirm": True}),
+        Case("reconcile_staging_purge_dry_run", "POST", "/api/reconcile/staging-purge", {"paths": []}),
         Case("reconcile_staging_purge_alias", "POST", "/api/reconcile/staging-purge", {
-            "paths": [str(dest / "staging" / "contract_garbage.part")],
+            "paths": [str(dest / "staging" / "contract_garbage.part")], "confirm": True,
         }),
-        Case("reconcile_staging_sweep", "POST", "/api/reconcile/staging-sweep", {"paths": []}),
+        Case("reconcile_staging_sweep", "POST", "/api/reconcile/staging-sweep", {"paths": [], "confirm": True}),
         Case("reconcile_reset_empty", "POST", "/api/reconcile/reset", {}),
-        Case("reconcile_reset", "POST", "/api/reconcile/reset", {"model_ids": [stored]}),
+        Case("reconcile_reset_dry_run", "POST", "/api/reconcile/reset", {"model_ids": [stored]}),
+        Case("reconcile_reset", "POST", "/api/reconcile/reset", {"model_ids": [stored], "confirm": True}),
         Case("downloads_control_purge", "POST", "/api/downloads/control", {"action": "purge_incomplete"}),
         Case("library_delete", "DELETE", f"/api/settings/libraries/{library}"),
         Case("logs_purge", "POST", "/api/settings/logs/purge", {}),
-        Case("stashes_purge", "POST", "/api/stashes/purge", {}),
-        Case("settings_stashes_purge", "POST", "/api/settings/stashes/purge", {}),
-        Case("tasks_clear", "POST", "/api/tasks/clear", {}),
+        Case("stashes_purge_dry_run", "POST", "/api/stashes/purge", {}),
+        Case("stashes_purge", "POST", "/api/stashes/purge", {"confirm": True}),
+        Case("settings_stashes_purge", "POST", "/api/settings/stashes/purge", {"confirm": True}),
+        Case("tasks_clear_dry_run", "POST", "/api/tasks/clear", {}),
+        Case("tasks_clear", "POST", "/api/tasks/clear", {"confirm": True}),
     ]
 
 
@@ -422,7 +429,12 @@ def compare_new_app(dest: Path) -> int:
     current, _, _ = record_run(dest, "new")
     differences = 0
     for name, snapshot in current.items():
-        stored = json.loads((SNAPSHOT_DIR / f"{name}.json").read_text(encoding="utf-8"))
+        stored_path = SNAPSHOT_DIR / f"{name}.json"
+        if not stored_path.exists():
+            differences += 1
+            print(f"different: {name}: no snapshot yet")
+            continue
+        stored = json.loads(stored_path.read_text(encoding="utf-8"))
         fields = differing_fields(stored, json.loads(json.dumps(snapshot)))
         if fields:
             differences += 1

@@ -1,0 +1,10 @@
+{
+  "scraper": {
+    "minimatch": "Denial of service on glob patterns. Only rimraf reaches it, on a local temp folder, with no untrusted input.",
+    "glob": "Depends on minimatch. Same reachability.",
+    "rimraf": "Depends on glob. Same reachability.",
+    "puppeteer-extra-plugin-user-data-dir": "Depends on rimraf. The only fix is a breaking stealth plugin downgrade, which can't be tested without a real scrape.",
+    "puppeteer-extra-plugin-user-preferences": "Depends on the package above. Same fix."
+  },
+  "tests/e2e": {}
+}

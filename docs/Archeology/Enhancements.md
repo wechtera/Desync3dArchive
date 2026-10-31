@@ -14,7 +14,9 @@ Ideas found during migration. None are scheduled unless a step or the user asks 
 | E9 | Redact task log text before it is written to `pipeline_tasks.log_output` | Task logs bypass the logger's redaction filter | Step 0C |
 | E10 | Replace `fastapi.testclient`'s deprecated `httpx` client path when Starlette's replacement settles | Clears a test warning | Step 1 |
 | E11 | Lower the INFO log volume from UI status polling | Polling fills `vault.log` faster now that every request is logged | Step 1 |
-| E12 | Replace exception text in route error responses with generic messages | 20 handlers still return `{e}` to the client | Step 2 |
 | E13 | Add a health check for refresh token failures in Settings | A failed refresh only shows up in logs today | Step 2 |
 | E15 | Pause workers before token expiry, prompt to reconnect, and resume queued downloads afterward | Stops token expiry from tripping the breaker, and long runs recover with one click | Step 2 |
+| E16 | Add an audit history view in Settings | `audit_log` is only readable with SQL today | Step 4 |
+| E17 | Give query constants descriptive names | Names like `GET_METRICS_1` came from the script that moved them | Step 4 |
+| E18 | Move service-layer SQL into query modules | Step 4 covered route handlers only | Step 4 |
 | E6 | Accessibility and responsive layout review | Neither has been assessed | Archeology section 9 |

@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from desync_archival.db.queries import settings as queries
 from desync_archival import settings as app_config
-from desync_archival.services import auth_service
+from desync_archival.services import audit, auth_service
 import shutil
 import sqlite3
 import threading
@@ -204,8 +204,8 @@ def handle_post_settings(
     for key in app_config.PATH_SETTING_KEYS:
         if data.get(key):
             try:
-                app_config.check_path(app_config.resolve_data_path(str(data[key])))
-            except app_config.ProductionPathError as e:
+                app_config.check_settable_path(app_config.resolve_data_path(str(data[key])))
+            except app_config.SettingsError as e:
                 return {"error": str(e)}, 400
 
     for key in auth_service.AUTH_MANAGED_KEYS:
@@ -294,8 +294,8 @@ def handle_post_external_library(
 
     lib_path = Path(raw_path).expanduser().resolve()
     try:
-        app_config.check_path(lib_path)
-    except app_config.ProductionPathError as e:
+        app_config.check_settable_path(lib_path)
+    except app_config.SettingsError as e:
         return {"error": str(e)}, 400
 
     if not lib_path.exists() or not lib_path.is_dir():
@@ -306,7 +306,8 @@ def handle_post_external_library(
         with os.scandir(str(lib_path)) as it:
             next(it, None)
     except (PermissionError, OSError) as e:
-        return {"error": f"Cannot read directory '{raw_path}': {e}"}, 403
+        logger.warning(f"Cannot read library directory {raw_path}: {e}")
+        return {"error": f"Cannot read directory '{raw_path}'"}, 403
 
     name = str(data.get("name", "")).strip() or lib_path.name
     default_creator = str(data.get("default_creator", "")).strip() or lib_path.name
@@ -535,13 +536,16 @@ def handle_get_system_browse(
     if params:
         folder_val = (params.get("folder", [""])[0] or params.get("path", [""])[0] or "").strip()
 
+    roots = app_config.allowed_roots()
     if folder_val:
         current = Path(folder_val).expanduser().resolve()
+        if not app_config.is_allowed(current):
+            return {"error": "That folder is outside the allowed roots."}, 403
     else:
-        current = Path.home()
+        current = roots[0]
 
     if not current.exists() or not current.is_dir():
-        current = Path.home() if Path.home().exists() else app_config.data_dir()
+        current = roots[0]
 
     dirs = []
     try:
@@ -554,7 +558,7 @@ def handle_get_system_browse(
     except (PermissionError, OSError):
         pass
 
-    parent = str(current.parent) if current.parent != current else None
+    parent = str(current.parent) if current not in roots and app_config.is_allowed(current.parent) else None
 
     return {
         "success": True,
@@ -685,6 +689,7 @@ def handle_post_stashes_purge(
     stash_setting = settings.get("stash_download_path", "")
     stash_path = Path(stash_setting).expanduser().resolve() if stash_setting else Path(DEFAULT_STASH_EXPORT_PATH).resolve()
 
+    dry_run = not data.get("confirm")
     purged_folders = 0
     reclaimed_bytes = 0
     errors = []
@@ -698,13 +703,25 @@ def handle_post_stashes_purge(
                     mtime = item.stat().st_mtime
                     if mtime < cutoff_time:
                         folder_sz = sum(f.stat().st_size for f in item.rglob("*") if f.is_file())
-                        shutil.rmtree(item)
+                        if not dry_run:
+                            shutil.rmtree(item)
                         purged_folders += 1
                         reclaimed_bytes += folder_sz
                 except Exception as e:
                     errors.append(f"{item.name}: {e}")
 
+    if dry_run:
+        result = {
+            "success": True, "dry_run": True, "would_purge": purged_folders,
+            "reclaimable_bytes": reclaimed_bytes, "errors": errors, "days": days,
+        }
+        audit.record(conn, "stashes_purge", True, result)
+        return result, 200
+
     log_layer("storage", logging.INFO, f"Purged {purged_folders} stash export folders older than {days} days ({reclaimed_bytes} bytes reclaimed).")
+    audit.record(conn, "stashes_purge", False, {
+        "purged_count": purged_folders, "reclaimed_bytes": reclaimed_bytes, "days": days, "errors": errors,
+    })
 
     return {
         "success": True,

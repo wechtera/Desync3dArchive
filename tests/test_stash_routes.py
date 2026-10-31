@@ -21,20 +21,12 @@ for p in (ROOT_DIR, UI_DIR):
 
 try:
     from desync_archival.api.routes.stashes import (
-        dispatch_stash_routes,
         handle_post_export_stash,
     )
 except ImportError:
     from desync_archival.api.routes.stashes import (
-        dispatch_stash_routes,
         handle_post_export_stash,
     )
-
-try:
-    from desync_archival.api.routes import dispatch_route
-except ImportError:
-    from desync_archival.api.routes import dispatch_route
-
 
 class TestStashRoutes(unittest.TestCase):
     def setUp(self):
@@ -193,29 +185,6 @@ class TestStashRoutes(unittest.TestCase):
         resp, status = handle_post_export_stash(self.conn, stash_id=999)
         self.assertEqual(status, 404)
         self.assertIn("not found", resp["error"].lower())
-
-    def test_dispatch_stash_routes_matches_export(self):
-        """Verify dispatch_stash_routes routes POST /api/stashes/1/export synchronously when task_manager=None."""
-        res = dispatch_stash_routes(
-            method="POST",
-            path="/api/stashes/1/export",
-            conn=self.conn,
-        )
-        self.assertIsNotNone(res)
-        resp, status = res
-        self.assertEqual(status, 200)
-        self.assertTrue(resp["success"])
-
-    def test_master_dispatch_route_matches_export(self):
-        """Verify master dispatch_route routes POST /api/stashes/1/export cleanly."""
-        resp, status = dispatch_route(
-            method="POST",
-            path="/api/stashes/1/export",
-            conn=self.conn,
-        )
-        self.assertEqual(status, 200)
-        self.assertTrue(resp["success"])
-        self.assertIn("export_path", resp)
 
     def test_export_stash_background_with_task_manager(self):
         """When task_manager is passed, POST /api/stashes/1/export returns 202 Accepted."""

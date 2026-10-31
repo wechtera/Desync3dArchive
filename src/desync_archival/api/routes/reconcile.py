@@ -8,6 +8,7 @@ import threading
 from typing import Any, Optional
 
 from desync_archival.db.queries import reconcile as queries
+from desync_archival.services import audit
 from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
@@ -89,7 +90,9 @@ def handle_post_reconcile_reset(
     if not model_ids:
         return {"error": "Missing model_ids list in request body"}, 400
     reconciler, _ = _get_managers(conn)
-    res = reconciler.reset_reconciliation_models(model_ids)
+    dry_run = not body.get("confirm")
+    res = reconciler.reset_reconciliation_models(model_ids, dry_run=dry_run)
+    audit.record(conn, "reconcile_reset", dry_run, {**res, "model_ids": model_ids})
     return res, 200 if res.get("success") else 400
 
 
@@ -103,7 +106,9 @@ def handle_post_reconcile_delete_orphans(
     if not paths:
         return {"error": "Missing paths list in request body"}, 400
     reconciler, _ = _get_managers(conn)
-    res = reconciler.delete_orphan_directories(paths)
+    dry_run = not body.get("confirm")
+    res = reconciler.delete_orphan_directories(paths, dry_run=dry_run)
+    audit.record(conn, "delete_orphans", dry_run, {**res, "paths": paths})
     return res, 200 if res.get("success") else 400
 
 
@@ -140,7 +145,9 @@ def handle_post_reconcile_staging_purge(
 ) -> tuple[dict[str, Any], int]:
     paths = body.get("paths")
     reconciler, _ = _get_managers(conn)
-    res = reconciler.purge_staging_garbage(target_paths=paths)
+    dry_run = not body.get("confirm")
+    res = reconciler.purge_staging_garbage(target_paths=paths, dry_run=dry_run)
+    audit.record(conn, "staging_purge", dry_run, res)
     return res, 200 if res.get("success") else 400
 
 

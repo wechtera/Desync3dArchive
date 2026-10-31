@@ -1,0 +1,25 @@
+{
+  "request": {
+    "body": {
+      "paths": [
+        "<DEV>/nas/vault/contract_orphan_one"
+      ]
+    },
+    "method": "POST",
+    "path": "/api/reconcile/delete-orphans"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "dry_run": true,
+      "errors": [],
+      "reclaimable_bytes": 0,
+      "success": true,
+      "would_delete": [
+        "<DEV>/nas/vault/contract_orphan_one"
+      ]
+    },
+    "location": null,
+    "status": 200
+  }
+}

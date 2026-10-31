@@ -1,6 +1,7 @@
 {
   "request": {
     "body": {
+      "confirm": true,
       "paths": [
         "<DEV>/staging/contract_garbage.part"
       ]

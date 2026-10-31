@@ -19,6 +19,7 @@ from desync_archival import settings
 from desync_archival.api import server
 from desync_archival.api.routes.settings import _merge_cookies
 from desync_archival.api.routes.tasks import handle_get_scrapes_download
+from desync_archival.api.routing import GENERIC_ERROR
 from desync_archival.services import auth_service
 from desync_archival.services import logger as log
 from desync_archival.services.db import get_db_connection
@@ -561,10 +562,10 @@ class V9RedirectTests(AppCase):
 
 class V11ErrorAndBodyTests(AppCase):
     def test_exception_detail_goes_to_the_log_not_the_client(self):
-        with patch.object(server, "dispatch_route", side_effect=ValueError("private path /secret/place")):
-            response = self.client.get("/api/x")
-        self.assertEqual((response.status_code, response.json()), (500, {"error": server.GENERIC_ERROR}))
-        self.assertIn("private path /secret/place", log.APP_LOG_PATH.read_text(encoding="utf-8"))
+        with patch("desync_archival.api.routes.catalog.queries.GET_METRICS_1", new="SELECT private path /secret/place"):
+            response = self.client.get("/api/metrics")
+        self.assertEqual((response.status_code, response.json()), (500, {"error": GENERIC_ERROR}))
+        self.assertIn("Unhandled error in GET /api/metrics", log.APP_LOG_PATH.read_text(encoding="utf-8"))
 
     def test_oversized_body_is_refused_by_length(self):
         body = b'"' + b"x" * settings.MAX_BODY_BYTES + b'"'

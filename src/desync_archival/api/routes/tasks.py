@@ -5,6 +5,8 @@ import re
 import sqlite3
 from typing import Any, Optional
 
+from desync_archival.services import audit
+from desync_archival.services.logger import logger
 from desync_archival.services.task_manager import TaskManager
 
 
@@ -67,7 +69,8 @@ def handle_get_scrapes_download(
     except UnicodeDecodeError:
         return {"error": "Binary files not supported via text download endpoint"}, 415
     except Exception as e:
-        return {"error": f"Failed reading artifact: {e}"}, 500
+        logger.warning(f"Failed reading scrape artifact {rel_path}: {e}")
+        return {"error": "Failed reading artifact"}, 500
 
 def handle_post_scraper_start(
     conn: sqlite3.Connection,
@@ -126,7 +129,8 @@ def handle_post_ingest_start(
             ]
             source_label = f"Scrape Folder: {folder}"
         except Exception as e:
-            return {"error": f"Failed reading model IDs from folder: {e}"}, 500
+            logger.warning(f"Failed reading model IDs from {folder}: {e}")
+            return {"error": "Failed reading model IDs from folder"}, 500
 
     # Option B: Direct multiline or comma-delimited ID input
     elif "raw_ids" in body and str(body["raw_ids"]).strip():
@@ -170,5 +174,11 @@ def handle_post_tasks_clear(
 ) -> tuple[dict[str, Any], int]:
     if not task_manager:
         return {"error": "TaskManager not initialized"}, 500
-    deleted = task_manager.clear_task_history()
-    return {"success": True, "deleted_count": deleted}, 200
+    if not body.get("confirm"):
+        result = {"success": True, "dry_run": True, "would_delete": task_manager.count_clearable_tasks()}
+        audit.record(conn, "tasks_clear", True, result)
+        return result, 200
+
+    result = {"success": True, "deleted_count": task_manager.clear_task_history()}
+    audit.record(conn, "tasks_clear", False, result)
+    return result, 200

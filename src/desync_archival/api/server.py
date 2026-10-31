@@ -23,7 +23,6 @@ from fastapi.staticfiles import StaticFiles
 
 from desync_archival import migrations
 from desync_archival import settings as app_config
-from desync_archival.api.routes import dispatch_route
 from desync_archival.services.db import get_db_connection, seed_default_settings
 from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
 from desync_archival.services.logger import log_context, logger
@@ -34,7 +33,6 @@ PREVIEWS_DIR = app_config.previews_dir().resolve()
 PREVIEWS_DIR.mkdir(parents=True, exist_ok=True)
 
 REDIRECT_STATUSES = (301, 302, 303, 307, 308)
-GENERIC_ERROR = "Internal server error"
 PREVIEW_CACHE_CONTROL = "public, max-age=604800"
 PREVIEW_CONTENT_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 SVG_PLACEHOLDER = (
@@ -212,34 +210,6 @@ def parse_body(body_bytes: bytes) -> Any:
         return {}
 
 
-def run_route(method: str, path: str, body_data: Any, params: dict) -> Response:
-    """Blocking route work, run in the threadpool."""
-    conn = get_db()
-    try:
-        route_res = dispatch_route(
-            method=method,
-            path=path,
-            conn=conn,
-            download_manager=download_manager,
-            body_data=body_data,
-            query_params=params,
-            task_manager=task_manager,
-        )
-    except Exception:
-        logger.exception(f"Unhandled error in {method} {path}")
-        route_res = ({"error": GENERIC_ERROR}, 500)
-    finally:
-        conn.close()
-
-    if isinstance(route_res, tuple) and len(route_res) == 3:
-        data, status, extra_headers = route_res
-        return build_response(data, status, extra_headers=extra_headers)
-    if isinstance(route_res, tuple) and len(route_res) == 2:
-        data, status = route_res
-        return build_response(data, status)
-    return build_response(route_res, 200)
-
-
 def serve_preview(rel_path: str) -> Response:
     file_path = (app_config.data_dir() / "previews" / rel_path).resolve()
 
@@ -307,12 +277,8 @@ def create_app(manage_workers: bool = True) -> FastAPI:
         app.include_router(router)
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "DELETE"])
-    async def api_catch_all(request: Request) -> Response:
-        # raw_path keeps the percent-encoding that dispatch_route has always received.
-        path = request.scope["raw_path"].decode("latin-1").split("?", 1)[0]
-        params = urllib.parse.parse_qs(request.url.query)
-        body_data = parse_body(await request.body()) if request.method != "GET" else {}
-        return await run_in_threadpool(run_route, request.method, path, body_data, params)
+    def api_not_found(request: Request) -> Response:
+        return JSONResponse({"error": f"Route not found: {request.method} {request.url.path}"}, 404)
 
     @app.get("/previews/{rel_path:path}")
     def previews(rel_path: str) -> Response:
@@ -357,4 +323,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # Run this as the imported module, so the routers and main() share one copy of the managers.
+    from desync_archival.api import server as imported_server
+
+    imported_server.main()

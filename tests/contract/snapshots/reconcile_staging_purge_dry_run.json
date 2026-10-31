@@ -1,0 +1,21 @@
+{
+  "request": {
+    "body": {
+      "paths": []
+    },
+    "method": "POST",
+    "path": "/api/reconcile/staging-purge"
+  },
+  "response": {
+    "content_type": "application/json",
+    "json": {
+      "dry_run": true,
+      "errors": [],
+      "reclaimable_bytes": 0,
+      "success": true,
+      "would_purge": 0
+    },
+    "location": null,
+    "status": 200
+  }
+}

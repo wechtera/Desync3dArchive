@@ -1,6 +1,8 @@
 {
   "request": {
-    "body": {},
+    "body": {
+      "confirm": true
+    },
     "method": "POST",
     "path": "/api/stashes/purge"
   },

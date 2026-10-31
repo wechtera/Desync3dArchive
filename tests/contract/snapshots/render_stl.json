@@ -11,7 +11,7 @@
   "response": {
     "content_type": "application/json",
     "json": {
-      "error": "Ephemeral rendering failed: File is not a zip file"
+      "error": "Ephemeral rendering failed"
     },
     "location": null,
     "status": 500

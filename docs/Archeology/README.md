@@ -29,7 +29,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 3 complete on branch `migration/03-migrations`, waiting for approval to merge.
+- **Phase:** Step 4 complete and merged to `main`. Step 5 is next.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -40,6 +40,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 - [x] Stack proposal drafted and decisions recorded
 - [x] Migration prompts written
 - [x] New project created: git repository, README with setup steps, `.gitignore`, Python and Node dependency manifests, `tools/` linker, and these docs
+- [x] Step 4: domain routers with Pydantic bodies, query modules, catch-all removed, dry-run and audit on destructive routes, V6 closed
 - [x] Step 3: numbered migrations, runner, one schema source, verified backup and restore, WAL
 - [x] Step 2 code: V1 to V5 and V9 closed, code grant with refresh, token rotation handling, no secrets in responses
 - [x] Step 1: FastAPI and uvicorn shell, lifespan, threadpool, request logging, Playwright smoke test
@@ -50,8 +51,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Next
 
-- [ ] Merge `migration/03-migrations` after user approval
-- [ ] Run Step 4 from `MIGRATION_PROMPTS.md`
+- [ ] Run Step 5 from `MIGRATION_PROMPTS.md`
 
 ## Project decisions
 
@@ -67,6 +67,33 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Commits.** Commit freely on step branches. Merge to `main` after the exit check and user approval.
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
+
+## Step 4 results
+
+**Exit check:** Passed. The catch-all and `dispatch_route` are gone, and all 110 contract cases pass through the routers. Each of the 8 domains moved in its own commit, with tests and the contract green after each one.
+
+**Routers:** every URL and alias is declared in `src/desync_archival/api/routers/`, with Pydantic bodies in `api/schemas.py`. Bad bodies return 400. Unknown routes and wrong methods keep the old JSON 404. Shared plumbing is in `api/routing.py`.
+
+**Query modules:** handler SQL moved unchanged into `src/desync_archival/db/queries/`, 57 statements in all. It was lifted by script, not retyped. Query names follow the handler and a number, and they are worth renaming when each area is next changed. Services still hold their own SQL: this step covered route handlers only.
+
+**V12:** delete-orphans, staging purge, reconcile reset, tasks clear and stashes purge now dry-run by default and report what they would do. Only `"confirm": true` acts. Every call, dry or real, writes a row to the new `audit_log` table with the request ID. The UI sends `confirm` only after its dialog is accepted, and the task clear and stash purge dialogs now show counts from a dry run.
+
+**V6 closed:** `DESYNC_ALLOWED_ROOTS` in `.env` limits `/api/system/browse`, `/api/storage/config`, path fields in `POST /api/settings` and `/api/settings/libraries`. It can't be changed over the network, and it defaults to the data directory. Symlinks and relative paths are resolved before the check.
+
+**V11 and E12:** route error responses no longer return exception text. Detail goes to the log.
+
+**Contract snapshots changed, 15 of 110, all intended**
+- New dry-run cases: `reconcile_delete_orphans_dry_run`, `reconcile_staging_purge_dry_run`, `reconcile_reset_dry_run`, `stashes_purge_dry_run`, `tasks_clear_dry_run`.
+- Request gained `confirm`, with identical responses: `reconcile_delete_orphans`, `reconcile_orphan_audit`, `reconcile_staging_purge`, `reconcile_staging_purge_alias`, `reconcile_staging_sweep`, `reconcile_reset`, `stashes_purge`, `settings_stashes_purge`, `tasks_clear`.
+- `render_stl`: the error is now generic.
+
+**Tests removed:** two tests in `test_stash_routes.py` called the removed dispatcher directly. The routers and contract cover that path now. Tests that patched `dispatch_route` now add a small test route.
+
+**Bugs found**
+- `create_stash` returned raw exception text as a 400 for any failure. Only `ValueError` does now. A new test exposed it.
+- Running `python -m desync_archival.api.server` crashed on a circular import after the routers were added, and would have left routes with no managers. In-process tests could not see it, so `tests/test_entry_point.py` now starts the real command.
+
+**npm audit:** a new advisory put 5 moderate findings under `puppeteer-extra-plugin-stealth`: a denial of service in `minimatch`, reached only by `rimraf` on a local temp folder. The only fix is a breaking stealth plugin downgrade, which can't be tested without a real scrape. `npm_audit_allowed.json` lists those packages with reasons, and any other moderate or higher finding still fails `check.sh`.
 
 ## Step 3 results
 

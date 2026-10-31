@@ -4,14 +4,11 @@ Handles staging manifests, polymorphic item curation, active pointer persistence
 download validation guardrails, batch model additions, and background slicer materialization.
 """
 
-from desync_archival.db.queries import stashes as queries
-from pathlib import Path
-import re
 import sqlite3
-import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
-
+from desync_archival.db.queries import stashes as queries
+from desync_archival.services.logger import logger
 
 try:
     from desync_archival.services.stash_service import StashService
@@ -63,8 +60,11 @@ def handle_create_stash(
             conn=conn,
         )
         return {"success": True, "stash": new_stash}, 201
-    except Exception as e:
+    except ValueError as e:
         return {"error": str(e)}, 400
+    except Exception:
+        logger.exception("Stash route failed")
+        return {"error": "Stash operation failed"}, 500
 
 
 def handle_get_active_stash(
@@ -91,8 +91,9 @@ def handle_set_active_stash(
         return {"success": True, "active_stash": updated}, 200
     except ValueError as e:
         return {"error": str(e)}, 404
-    except Exception as e:
-        return {"error": str(e)}, 500
+    except Exception:
+        logger.exception("Stash route failed")
+        return {"error": "Stash operation failed"}, 500
 
 
 def handle_get_stash_detail(
@@ -178,8 +179,9 @@ def handle_add_stash_item(
         msg = str(e)
         status_code = 404 if "does not exist" in msg else 400
         return {"error": msg}, status_code
-    except Exception as e:
-        return {"error": str(e)}, 500
+    except Exception:
+        logger.exception("Stash route failed")
+        return {"error": "Stash operation failed"}, 500
 
 
 def handle_remove_stash_item(
@@ -219,8 +221,9 @@ def handle_bulk_add_models(
     except ValueError as e:
         status_code = 404 if "does not exist" in str(e) else 400
         return {"error": str(e)}, status_code
-    except Exception as e:
-        return {"error": str(e)}, 500
+    except Exception:
+        logger.exception("Stash route failed")
+        return {"error": "Stash operation failed"}, 500
 
 
 def handle_post_export_stash(
@@ -304,66 +307,6 @@ def handle_post_export_stash(
         }, 200
     except ValueError as ve:
         return {"error": str(ve)}, 400
-    except Exception as e:
-        return {"error": f"Stash export failed: {str(e)}"}, 500
-
-
-def dispatch_stash_routes(
-    method: str,
-    path: str,
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-    task_manager: Any = None,
-) -> Optional[Tuple[Dict[str, Any], int]]:
-    """Sub-dispatcher matching all /api/stashes routes."""
-    if path in ("/api/stashes", "/api/stashes/"):
-        if method == "GET":
-            return handle_get_stashes(conn, download_manager, body, params)
-        if method == "POST":
-            return handle_create_stash(conn, download_manager, body, params)
-
-    if path in ("/api/stashes/active", "/api/stashes/active/"):
-        if method == "GET":
-            return handle_get_active_stash(conn, download_manager, body, params)
-
-    item_match = re.match(r"^/api/stashes/items/(\d+)/?$", path)
-    if item_match:
-        item_id = int(item_match.group(1))
-        if method == "DELETE":
-            return handle_remove_stash_item(conn, item_id, download_manager, body, params)
-
-    active_match = re.match(r"^/api/stashes/(\d+)/active/?$", path)
-    if active_match:
-        stash_id = int(active_match.group(1))
-        if method == "POST":
-            return handle_set_active_stash(conn, stash_id, download_manager, body, params)
-
-    items_match = re.match(r"^/api/stashes/(\d+)/items/?$", path)
-    if items_match:
-        stash_id = int(items_match.group(1))
-        if method == "POST":
-            return handle_add_stash_item(conn, stash_id, download_manager, body, params)
-
-    bulk_match = re.match(r"^/api/stashes/(\d+)/bulk-models/?$", path)
-    if bulk_match:
-        stash_id = int(bulk_match.group(1))
-        if method == "POST":
-            return handle_bulk_add_models(conn, stash_id, download_manager, body, params)
-
-    export_match = re.match(r"^/api/stashes/(\d+)/export/?$", path)
-    if export_match:
-        stash_id = int(export_match.group(1))
-        if method == "POST":
-            return handle_post_export_stash(conn, stash_id, download_manager, body, params, task_manager=task_manager)
-
-    detail_match = re.match(r"^/api/stashes/(\d+)/?$", path)
-    if detail_match:
-        stash_id = int(detail_match.group(1))
-        if method == "GET":
-            return handle_get_stash_detail(conn, stash_id, download_manager, body, params)
-        if method == "DELETE":
-            return handle_delete_stash(conn, stash_id, download_manager, body, params)
-
-    return None
+    except Exception:
+        logger.exception("Stash export failed")
+        return {"error": "Stash export failed"}, 500
