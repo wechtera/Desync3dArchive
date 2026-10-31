@@ -94,3 +94,32 @@ class FlagTests(unittest.TestCase):
     def test_support_folders_inside_a_model_are_not_flagged(self):
         flags = self.flagged(["Mummy"], {"Mummy": ["Mummy/Supported", "Mummy/No Supports"]})
         self.assertEqual(flags["Mummy"], [])
+
+
+class FileResolutionTests(unittest.TestCase):
+    def resolved(self, paths):
+        variants = set(resolver.PRINT_WORDS)
+        return {m.name: m for m in resolver.resolve_files(paths, variants, resolver.learn_piece_words(paths, variants))}
+
+    def test_poses_are_models_in_a_group(self):
+        models = self.resolved(["32mm/Ghouls/32mm_Ghoul_A.stl", "32mm/Ghouls/32mm_Ghoul_B.stl"])
+        self.assertEqual(sorted(models), ["Ghoul A", "Ghoul B"])
+        self.assertEqual({m.group for m in models.values()}, {"Ghoul"})
+
+    def test_sizes_and_support_are_one_model(self):
+        paths = [
+            "28mm Supported/Ghouls/28mm_Ghoul_A_Supported.stl", "28mm Unsupported/Ghouls/28mm_Ghoul_A.stl",
+            "32mm Unsupported/Ghouls/32mm_Ghoul_A.stl", "32mm Unsupported/Ghouls/32mm_Ghoul_B.stl",
+        ]
+        self.assertEqual(len(self.resolved(paths)["Ghoul A"].files), 3)
+
+    def test_pieces_build_one_model_wherever_the_word_sits(self):
+        models = self.resolved(["Baron/Baron.stl", "Baron/Baron_Base.stl", "Baron/Base_Baron.stl", "Baron/Baron_Head.stl"])
+        self.assertEqual(list(models), ["Baron"])
+        self.assertEqual(models["Baron"].group, "")
+
+    def test_numbered_pieces_in_a_named_folder_are_one_build(self):
+        self.assertEqual(list(self.resolved(["Oak/Oak_P1.stl", "Oak/Oak_P2.stl"])), ["Oak"])
+
+    def test_format_words_do_not_split_a_model(self):
+        self.assertEqual(len(self.resolved(["Baron/LYS_Baron.lys", "Baron/Baron.stl"])), 1)

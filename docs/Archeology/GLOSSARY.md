@@ -21,6 +21,8 @@ A file and an artifact are different things. A zip is a file and not an artifact
 - **A model can need several artifacts to build.** Base, Torso and Head are artifacts of one model.
 - **Busts are separate models.**
 - **Heroes and Enemies are tags.** They aren't a level.
+- **Busts join their character's model group.** They stay separate models.
+- **A model group never spans collections automatically.** Linking across collections is a tag's job.
 - **The user browses models.** Opening one shows its group. Clicking the group opens a modal of the group's models, and clicking one goes to that model.
 
 ## Other words
@@ -34,6 +36,16 @@ A file and an artifact are different things. A zip is a file and not an artifact
 | **Path** | A folder or file a review card claims. The deepest claim wins. Replaces `members` in the review code |
 | **Bonus** | A collection that came as a reward |
 | **Stash item** | Something placed in a stash |
+
+## Tags
+
+Rules agreed on 2026-10-31. Built as E27, separate from stashes.
+
+- Imports create and add tags automatically. An import that brings an existing tag rolls into that tag.
+- Tags can also be created by hand, and added to or removed from models and model groups.
+- Tags are managed on their own page, a sub-page under Stashes.
+- Adding a tag to something only selects an existing tag, with hints while typing, which limits sprawl.
+- A tag is one word. Whitespace from a source becomes a dash.
 
 ## Old word to new word
 

@@ -20,7 +20,7 @@ ARCHIVE = (".zip", ".rar", ".7z")
 PRINT_WORDS = frozenset({
     "fdm", "resin", "stl", "stls", "lychee", "chitubox", "slicer", "supported", "unsupported", "presupported",
     "nosupports", "supports", "support", "hollow", "hollowed", "solid", "files", "all", "readytoslice", "models",
-    "scale", "no",
+    "scale", "no", "lys", "ctb",
 })
 SCALE = re.compile(r"^(fdm)?[\d.]*\d+mm$")
 # Forms that are separate prints of the same subject, so they stay separate models.
@@ -40,6 +40,15 @@ CONTAINER_MIN_MODELS = 3  # A name that also parents this many other models is a
 OUTLIER_MIN_FOLDERS = 6
 OUTLIER_SHARE = 2.5
 
+# A lone letter or number after a shared name is a pose: Ghul_A, Ghul_B.
+POSE = re.compile(r"^(?:[a-z]|p?\d{1,2})$")
+# Pieces that mean the same thing everywhere. Learning covers the rest, but one archive is too small.
+PIECE_WORDS = frozenset({
+    "base", "bases", "body", "torso", "head", "heads", "arm", "arms", "leg", "legs", "hand", "hands", "weapon",
+    "weapons", "sword", "shield", "wing", "wings", "tail", "cape", "cloak", "hair", "helmet", "foot", "feet",
+})
+PIECE_MIN_NAMES = 3  # A trailing word seen after this many different names is a piece, not a pose name.
+
 SPLIT = re.compile(r"[_\s\-.(),&]+")
 CAMEL = re.compile(r"(?<=[a-z])(?=[A-Z])")
 
@@ -54,6 +63,8 @@ class ResolvedModel:
     confidence: str = "high"
     reason: str = ""
     flags: list[str] = field(default_factory=list)
+    group: str = ""
+    files: list[str] = field(default_factory=list)
 
 
 def primary_folder_rank(rel_path: str) -> tuple[int, int, str]:
@@ -241,3 +252,94 @@ def flag_models(
         if SequenceMatcher(None, a, b).ratio() >= SIMILAR_NAME:
             one.flags.append(f"Very close to {other.name}, possibly the same thing")
             other.flags.append(f"Very close to {one.name}, possibly the same thing")
+
+
+def _stem_words(path: str, variants: set[str]) -> tuple[str, ...]:
+    stem = path.rpartition("/")[2].rpartition(".")[0]
+    words = [w for raw in words_in(stem) for w in CAMEL.sub(" ", raw).split()]
+    return tuple(w for w in words if not _is_variant(w, variants))
+
+
+def _subject_of(path: str, variants: set[str]) -> str:
+    # Scale and support folders vanish, so 28mm Supported/Ghuls and 32mm Unsupported/Ghuls are one place.
+    folders = path.split("/")[:-1]
+    return "/".join(slug for part in folders if (slug := slug_of(subject_words(part, variants))))
+
+
+def _shared_start(stems: list[tuple[str, ...]]) -> tuple[str, ...]:
+    shared: list[str] = []
+    for words in zip(*stems, strict=False):
+        if len({w.lower() for w in words}) > 1:
+            break
+        shared.append(words[0])
+    return tuple(shared)
+
+
+def learn_piece_words(paths: list[str], variants: set[str]) -> set[str]:
+    """Trailing words shared by many differently named files, like Tentacle or Staff."""
+    names = defaultdict(set)
+    for path in paths:
+        words = [w.lower() for w in _stem_words(path, variants)]
+        if len(words) > 1:
+            names[words[-1]].add(" ".join(words[:-1]))
+    return PIECE_WORDS | {w for w, seen in names.items() if len(seen) >= PIECE_MIN_NAMES and not POSE.match(w)}
+
+
+def resolve_files(paths: list[str], variants: set[str], pieces: set[str] | None = None) -> list[ResolvedModel]:
+    """Models inside one scope of printable files, usually one archive.
+
+    Folders alone can't do this: 32mm_Ghul_A and 32mm_Ghul_B share a folder and are two models,
+    while Ziadtroks and Ziadtroks_Tentacle_A share one and are a single model. Same shape, same
+    model, so scale and support words are ignored and one model keeps every size.
+    """
+    pieces = pieces if pieces is not None else learn_piece_words(paths, variants)
+    places: dict[str, dict[tuple[str, ...], list[str]]] = defaultdict(lambda: defaultdict(list))
+    for path in paths:
+        places[_subject_of(path, variants)][_stem_words(path, variants)].append(path)
+
+    models: list[ResolvedModel] = []
+    for place, stems in places.items():
+        leaf = place.rpartition("/")[2]
+        cores: dict[tuple[str, ...], list[str]] = defaultdict(list)
+        for stem, held in stems.items():
+            cores[_core_of(stem, pieces)].extend(held)
+        named = [c for c in cores if c]
+        pure_poses = len(named) > 1 and all(POSE.match(c[-1].lower()) for c in named) and len(_shared_start(named)) > 0
+        inside_folder = leaf and all(leaf.removesuffix("s") in slug_of(list(c)) for c in named)
+
+        # Tithe Tree P1 to P8 in a Tithe Tree folder is one build. Ghul A to E in Ghuls is a set
+        # of poses, and the plural folder is what tells them apart.
+        one_build = len(named) <= 1 or (inside_folder and not (pure_poses and leaf.endswith("s")))
+        if one_build:
+            words = list(named[0]) if len(named) == 1 else _title_of(place, named)
+            models.append(_model_of(_display(words) or "Untitled", place, [p for held in cores.values() for p in held]))
+            continue
+
+        shared = _shared_start(named)
+        group = _display(list(shared)) if shared else _display([place.rpartition("/")[2]]) if leaf else ""
+        for core, held in cores.items():
+            model = _model_of(_display(list(core)) or group or "Untitled", place, held)
+            model.group = group
+            models.append(model)
+    return models
+
+
+def _core_of(stem: tuple[str, ...], pieces: set[str]) -> tuple[str, ...]:
+    # Pieces go wherever they sit: Base_Archibald and Archibald_Base are the same model. A pose
+    # ends the name, because Hussar_01_Rider and Hussar_01_Wolf build one Hussar 01.
+    core: list[str] = []
+    for word in stem:
+        if word.lower() in pieces:
+            continue
+        core.append(word)
+        if len(core) > 1 and POSE.match(word.lower()):
+            break
+    return tuple(core)
+
+
+def _title_of(place: str, named: list[tuple[str, ...]]) -> list[str]:
+    return list(_shared_start(named)) or [place.rpartition("/")[2]]
+
+
+def _model_of(name: str, place: str, files: list[str]) -> ResolvedModel:
+    return ResolvedModel(key=f"{place}/{slug_of([name])}".strip("/"), name=name, files=sorted(files))
