@@ -78,3 +78,12 @@ class TaskValidationTests(RouteCase):
     def test_bad_ingest_bodies_are_refused(self):
         self.refused("/api/ingest/start", {"raw_ids": 5})
         self.refused("/api/tasks/ingest", {"model_ids": "all"})
+
+
+class ReconcileValidationTests(RouteCase):
+    def test_bad_reconcile_bodies_are_refused(self):
+        self.refused("/api/reconcile/reset", {"model_ids": ["x"]})
+        self.refused("/api/reconcile/delete-orphans", {"paths": "/"})
+        self.refused("/api/reconcile/staging/purge", {"paths": 5})
+        self.refused("/api/reconcile/ingest-untracked", {"items": ["x"]})
+        self.refused("/api/reconcile/scan", {"scan_mode": 5})

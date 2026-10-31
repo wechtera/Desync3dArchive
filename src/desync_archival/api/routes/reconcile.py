@@ -7,13 +7,14 @@ import sqlite3
 import threading
 from typing import Any, Optional
 
+from desync_archival.db.queries import reconcile as queries
 from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
 
 
 def _get_managers(conn: sqlite3.Connection) -> tuple[VaultReconciler, TaskManager]:
-    db_path = Path(conn.execute("PRAGMA database_list;").fetchone()[2])
+    db_path = Path(conn.execute(queries.GET_MANAGERS_1).fetchone()[2])
     return VaultReconciler(db_path), TaskManager(db_path)
 
 
