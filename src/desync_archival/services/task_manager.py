@@ -18,6 +18,7 @@ import logging
 import os
 from pathlib import Path
 from desync_archival import settings as app_config
+from desync_archival.services.paths import sanitize_segment
 from desync_archival.services import auth_service, jobs
 from desync_archival.services.analytics import run_startup_analytics
 import re
@@ -59,14 +60,6 @@ def parse_cookies(text: str) -> Dict[str, str]:
     if isinstance(parsed, dict):
         return {str(k): str(v) for k, v in parsed.items()}
     return {}
-
-
-def sanitize_segment(name: str) -> str:
-    if not name:
-        return "unknown"
-    clean = re.sub(r"[^a-zA-Z0-9_\-]+", "_", str(name))
-    clean = re.sub(r"_+", "_", clean)
-    return clean.strip("_") or "unknown"
 
 
 def inspect_schema_drift(model_id: int, data: dict) -> list[tuple[str, str]]:

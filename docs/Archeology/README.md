@@ -30,7 +30,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 4 complete and merged to `main`. Step 5 is next.
+- **Phase:** Step 5 in progress on branch `migration/05-jobs-tools`. Items 1 to 4 are done.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -52,7 +52,8 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Next
 
-- [ ] Run Step 5 from `MIGRATION_PROMPTS.md`
+- [ ] Finish Step 5: item 5 (scraper JSON lines), item 6 (Range resume), item 7 (scheduled backups), item 8 (pause before token expiry)
+- [ ] User: real small scrape and test download for the Step 5 exit check
 
 ## Project decisions
 
@@ -68,6 +69,18 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Commits.** Commit freely on step branches. Merge to `main` after the exit check and user approval.
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
+
+## Step 5 progress
+
+**Done on the branch**
+- **Job runner (item 1):** every background job starts through `TaskManager._spawn`, with a time limit and a crash guard. At startup, `jobs.recover_interrupted` turns tasks left `running` into `interrupted`, and returns `downloading` jobs to `pending` and `offloading` jobs to `staging_complete`. Before this, one crash blocked every future task. `tests/test_job_recovery.py` kills a real server with SIGKILL and restarts it.
+- **Releases (item 2):** ingest now rebuilds `releases`. A failed rebuild logs and keeps the ingest result.
+- **Cookie fallback (item 3):** fixed, through one `parse_cookies` helper.
+- **External tools (item 4):** all unrar, 7-Zip and Blender calls go through `src/desync_archival/external/`, closing V7. Lookup order is `tools/` symlinks, PATH, a setting, then common folders. Calls have timeouts, stdin closed, and lenient decoding. Bulk extraction checks paths, file count and size before unpacking, then checks again afterward and removes symlinks. `sanitize_segment` has one home in `services/paths.py`.
+
+**Tool syntax verified against real binaries:** 7-Zip treated `-oevil.stl` as an option without `--`, and extracted it as a file with `--`. unrar also uses `--`: a bare `-` fails with "Unknown option", which `test_real_unrar_accepts_the_stop_marker` guards. No real RAR archive has been extracted through the adapter yet, so that is part of the Step 5 exit check.
+
+**RAR test is opt-in:** `rar` is unverified by macOS Gatekeeper and prompts the user, so the real RAR fixture test runs only with `DESYNC_TEST_RAR=1`. `unrar` is unaffected. Do not bypass Gatekeeper.
 
 ## Step 4 results
 

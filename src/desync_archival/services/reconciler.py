@@ -11,6 +11,7 @@ import logging
 import os
 from pathlib import Path
 from desync_archival import settings as app_config
+from desync_archival.services.paths import sanitize_segment
 import re
 import shutil
 import sqlite3
@@ -38,14 +39,6 @@ except ImportError:
             from desync_archival.services.archive_peeker import ArchivePeeker
         except ImportError:
             ArchivePeeker = None
-
-
-def sanitize_segment(name: str) -> str:
-    if not name:
-        return "unknown"
-    clean = re.sub(r"[^a-zA-Z0-9_\-]+", "_", str(name))
-    clean = re.sub(r"_+", "_", clean)
-    return clean.strip("_") or "unknown"
 
 
 def validate_stl_file(file_path: Path) -> Tuple[bool, Optional[str]]:

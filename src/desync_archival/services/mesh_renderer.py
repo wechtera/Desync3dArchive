@@ -7,7 +7,7 @@ Supports persistent cover generation and on-demand ephemeral rendering with zero
 import logging
 import os
 from pathlib import Path
-from desync_archival import settings as app_config
+from desync_archival import external, settings as app_config
 import shutil
 import sqlite3
 import subprocess
@@ -36,37 +36,12 @@ class MeshRenderer:
     def __init__(self, blender_bin: Optional[str] = None):
         self.blender_bin = blender_bin or self.detect_blender_binary()
 
-        self._bin_unrar = (
-            shutil.which("unrar")
-            or ("/opt/homebrew/bin/unrar" if Path("/opt/homebrew/bin/unrar").exists() else None)
-            or ("/usr/local/bin/unrar" if Path("/usr/local/bin/unrar").exists() else None)
-        )
-
-        self._bin_7z = (
-            shutil.which("7zz")
-            or shutil.which("7z")
-            or shutil.which("7za")
-            or ("/opt/homebrew/bin/7zz" if Path("/opt/homebrew/bin/7zz").exists() else None)
-            or ("/opt/homebrew/bin/7z" if Path("/opt/homebrew/bin/7z").exists() else None)
-        )
+        self._bin_unrar = external.find_unrar()
+        self._bin_7z = external.find_7zip()
 
     @staticmethod
     def detect_blender_binary() -> Optional[str]:
-        candidates = [
-            shutil.which("blender"),
-            "/Applications/Blender.app/Contents/MacOS/Blender",
-            "/Applications/Blender 4.3.app/Contents/MacOS/Blender",
-            "/Applications/Blender 4.2.app/Contents/MacOS/Blender",
-            "/Applications/Blender 4.1.app/Contents/MacOS/Blender",
-            "/Applications/Blender 4.0.app/Contents/MacOS/Blender",
-            "/usr/bin/blender",
-            "/usr/local/bin/blender",
-            "/opt/homebrew/bin/blender",
-        ]
-        for c in candidates:
-            if c and Path(c).exists() and os.access(c, os.X_OK):
-                return str(Path(c).resolve())
-        return None
+        return external.find_blender()
 
     def is_available(self) -> bool:
         return self.blender_bin is not None and Path(self.blender_bin).exists()
@@ -172,7 +147,7 @@ class MeshRenderer:
 
         try:
             log_layer("storage", logging.DEBUG, f"Blender rendering view '{view_clean}' for {stl.name} -> {out.name}")
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120.0)
+            proc = external.run(cmd, 120.0)
             if proc.returncode == 0 and out.exists() and out.stat().st_size > 0:
                 log_layer("storage", logging.INFO, f"Generated view '{view_clean}' for {stl.name}")
                 return True
@@ -469,24 +444,14 @@ class MeshRenderer:
             extracted = False
             last_err = ""
 
-            candidates = []
-            if ext == ".rar" and bin_unrar and Path(bin_unrar).exists():
-                candidates.append([str(bin_unrar), "e", "-y", "-r", str(archive_path), f"*{filename_only}", f"{pass_dir}/"])
-                candidates.append([str(bin_unrar), "e", "-y", "-r", str(archive_path), filename_only, f"{pass_dir}/"])
-                candidates.append([str(bin_unrar), "e", "-y", str(archive_path), internal_path.replace("/", "\\"), f"{pass_dir}/"])
-
-            if bin_7z and Path(bin_7z).exists():
-                candidates.append([str(bin_7z), "e", str(archive_path), f"-o{pass_dir}", f"*{filename_only}", "-r", "-y"])
-                candidates.append([str(bin_7z), "e", str(archive_path), f"-o{pass_dir}", internal_path, "-y"])
-                candidates.append([str(bin_7z), "e", str(archive_path), f"-o{pass_dir}", internal_path.replace("/", "\\"), "-y"])
-
-            if bin_unrar and Path(bin_unrar).exists() and not any(cmd[0] == str(bin_unrar) for cmd in candidates):
-                candidates.append([str(bin_unrar), "e", "-y", "-r", str(archive_path), f"*{filename_only}", f"{pass_dir}/"])
+            candidates = external.member_commands(
+                ext, bin_unrar, bin_7z, archive_path, internal_path, filename_only, pass_dir
+            )
 
             for cmd in candidates:
                 try:
-                    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60.0)
-                    found = [f for f in pass_dir.rglob("*") if f.is_file() and f.name.lower() == filename_only.lower()]
+                    proc = external.run(cmd, external.MEMBER_TIMEOUT)
+                    found = [f for f in external.regular_files(pass_dir) if f.name.lower() == filename_only.lower()]
                     if found and found[0].stat().st_size > 0:
                         shutil.move(str(found[0]), str(temp_scratch_file))
                         extracted = True

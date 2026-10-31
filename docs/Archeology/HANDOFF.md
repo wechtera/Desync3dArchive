@@ -2,7 +2,7 @@
 
 Read this first in a new session. It explains what this project is, where everything lives, what state it is in, and what will catch you out. `README.md` in this folder holds the detailed results for each step.
 
-**Last updated:** 2026-10-30, after Step 4 was merged to `main`.
+**Last updated:** 2026-10-30, during Step 5.
 
 ## What this is
 
@@ -76,7 +76,7 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 | 2 | Done | User confirmed real sign-in and a test download |
 | 3 | Done | Migrations, backups, WAL |
 | 4 | Done | Routers, query modules, dry-run, audit log, V6 |
-| 5 | **Next** | Job runner and external tools |
+| 5 | **In progress** | Items 1 to 4 done on `migration/05-jobs-tools`. Items 5 to 8 remain |
 | 6 | To do | `lit-html` frontend, and remove the API key setting |
 | 7 | To do | LAN mode: login and TLS |
 | 8 | To do | Measured performance work |
@@ -89,6 +89,7 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 - **Sign-in is the OAuth implicit flow.** The user chooses the token duration on MMF's login page, and 168 hours has been confirmed. There are no refresh tokens. The value stored as `mmf_client_secret` is an API key, not an OAuth secret, and MMF rejects it at the token endpoint with HTTP 401. The user decided not to use the API key. Step 6 removes that field and the unused code grant.
 - **Only the Client ID is needed to sign in,** because the login page requires it. Session cookies are still required for `scrape.js`, which has no token path.
 - **Do not disguise requests to MMF.** A probe that varied user agents was blocked as bot-check circumvention. If MMF ever refuses the app, surface that to the user.
+- **Do not run `rar` or bypass Gatekeeper.** macOS blocks that unverified binary and prompts the user. The app only needs `unrar`.
 - **The scraper stays.** MMF's API has no library or purchases endpoint.
 - **The app never migrates its own database.** It refuses to start and names the command. On production, `dbtool migrate` also needs `--confirm-production`.
 - **Destructive routes dry-run unless the body has `"confirm": true`.** All of them write to `audit_log`.
@@ -119,4 +120,4 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 ## Next action
 
-Run Step 5 from `MIGRATION_PROMPTS.md` on branch `migration/05-jobs-tools`. It also picks up E15: pause workers before token expiry and resume after reconnecting.
+Continue Step 5 on branch `migration/05-jobs-tools` with items 5 to 8 from `MIGRATION_PROMPTS.md`. Progress is in `README.md`.

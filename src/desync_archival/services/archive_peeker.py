@@ -8,7 +8,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from desync_archival import settings as app_config
+from desync_archival import external, settings as app_config
 import re
 import shutil
 import sqlite3
@@ -80,17 +80,8 @@ class ArchivePeeker:
         self.previews_root = Path(previews_root).resolve() if previews_root else app_config.previews_dir().resolve()
         self.previews_root.mkdir(parents=True, exist_ok=True)
 
-        self._bin_unrar = (
-            shutil.which("unrar")
-            or ("/opt/homebrew/bin/unrar" if Path("/opt/homebrew/bin/unrar").exists() else None)
-        )
-        self._bin_7z = (
-            shutil.which("7zz")
-            or shutil.which("7z")
-            or shutil.which("7za")
-            or ("/opt/homebrew/bin/7zz" if Path("/opt/homebrew/bin/7zz").exists() else None)
-            or ("/opt/homebrew/bin/7z" if Path("/opt/homebrew/bin/7z").exists() else None)
-        )
+        self._bin_unrar = external.find_unrar()
+        self._bin_7z = external.find_7zip()
 
 
     def _get_db(self) -> sqlite3.Connection:
@@ -209,8 +200,7 @@ class ArchivePeeker:
     def _inspect_rar(self, path: Path) -> List[ArchiveMemberInfo]:
         members = []
         if self._bin_7z and Path(self._bin_7z).exists():
-            cmd = [str(self._bin_7z), "l", "-slt", str(path)]
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = external.run([str(self._bin_7z), "l", "-slt", "--", str(path)], external.LIST_TIMEOUT)
             if res.returncode == 0:
                 for block in res.stdout.split("\n\n"):
                     path_match = re.search(r"^Path = (.+)$", block, re.MULTILINE)
@@ -235,8 +225,7 @@ class ArchivePeeker:
                     return members
 
         if self._bin_unrar and Path(self._bin_unrar).exists():
-            cmd = [str(self._bin_unrar), "v", str(path)]
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = external.run([str(self._bin_unrar), "v", "--", str(path)], external.LIST_TIMEOUT)
             if res.returncode == 0:
                 lines = res.stdout.splitlines()
                 for line in lines:
@@ -307,8 +296,8 @@ class ArchivePeeker:
             for img_path in filtered_targets:
                 try:
                     clean_name = re.sub(r"[^\w\-_\.]", "_", Path(img_path).name)
-                    cmd = [str(self._bin_7z), "e", str(archive_path), f"-o{dest_dir}", img_path, "-y"]
-                    subprocess.run(cmd, capture_output=True, check=True)
+                    cmd = external.seven_zip_extract_member(str(self._bin_7z), archive_path, img_path, dest_dir)
+                    external.run(cmd, external.MEMBER_TIMEOUT, check=True)
                     target_file = dest_dir / Path(img_path).name
                     if target_file.exists():
                         final_file = dest_dir / clean_name
@@ -321,8 +310,8 @@ class ArchivePeeker:
             for img_path in filtered_targets:
                 try:
                     clean_name = re.sub(r"[^\w\-_\.]", "_", Path(img_path).name)
-                    cmd = [str(self._bin_unrar), "e", "-y", str(archive_path), img_path, str(dest_dir) + "/"]
-                    subprocess.run(cmd, capture_output=True, check=True)
+                    cmd = external.unrar_extract_member(str(self._bin_unrar), archive_path, img_path, dest_dir)
+                    external.run(cmd, external.MEMBER_TIMEOUT, check=True)
                     target_file = dest_dir / Path(img_path).name
                     if target_file.exists():
                         final_file = dest_dir / clean_name

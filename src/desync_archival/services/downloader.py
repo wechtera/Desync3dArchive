@@ -13,6 +13,7 @@ from pathlib import Path
 from contextlib import contextmanager
 
 from desync_archival import settings as app_config
+from desync_archival.services.paths import sanitize_segment
 from desync_archival.services import auth_service
 import re
 import shutil
@@ -38,15 +39,6 @@ except ImportError:
 
 STREAM_CHUNK_SIZE_DEFAULT = 1024 * 1024       # 1 MB download buffer
 OFFLOAD_CHUNK_SIZE_DEFAULT = 4 * 1024 * 1024  # 4 MB network transfer buffer
-
-
-def sanitize_segment(name: str) -> str:
-    """Replaces spaces and special characters with single underscores."""
-    if not name:
-        return "unknown"
-    clean = re.sub(r"[^a-zA-Z0-9_\-]+", "_", str(name))
-    clean = re.sub(r"_+", "_", clean)
-    return clean.strip("_") or "unknown"
 
 
 class StorageUnavailableError(Exception):

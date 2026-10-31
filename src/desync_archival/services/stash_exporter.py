@@ -16,7 +16,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from desync_archival import settings as app_config
+from desync_archival import external, settings as app_config
 import re
 import shutil
 import sqlite3
@@ -69,19 +69,8 @@ class StashExporter:
         self._custom_work_path = Path(work_path).resolve() if work_path else None
         self._previews_root = Path(previews_root).resolve() if previews_root else app_config.previews_dir().resolve()
 
-        self._bin_unrar = (
-            shutil.which("unrar")
-            or ("/opt/homebrew/bin/unrar" if Path("/opt/homebrew/bin/unrar").exists() else None)
-            or ("/usr/local/bin/unrar" if Path("/usr/local/bin/unrar").exists() else None)
-        )
-
-        self._bin_7z = (
-            shutil.which("7zz")
-            or shutil.which("7z")
-            or shutil.which("7za")
-            or ("/opt/homebrew/bin/7zz" if Path("/opt/homebrew/bin/7zz").exists() else None)
-            or ("/opt/homebrew/bin/7z" if Path("/opt/homebrew/bin/7z").exists() else None)
-        )
+        self._bin_unrar = external.find_unrar()
+        self._bin_7z = external.find_7zip()
 
     def _get_connection(self, conn: Optional[sqlite3.Connection] = None) -> sqlite3.Connection:
         if conn is not None:
@@ -524,29 +513,14 @@ class StashExporter:
             extracted = False
             last_err = ""
 
-            candidates = []
-
-            # For .rar archives, prioritize official unrar (handles WinRAR 7.x v6 compression)
-            if ext == ".rar" and bin_unrar and Path(bin_unrar).exists():
-                candidates.append([str(bin_unrar), "e", "-y", "-r", str(archive_path), f"*{filename_only}", f"{pass_dir}/"])
-                candidates.append([str(bin_unrar), "e", "-y", "-r", str(archive_path), filename_only, f"{pass_dir}/"])
-                candidates.append([str(bin_unrar), "e", "-y", str(archive_path), internal_path.replace("/", "\\"), f"{pass_dir}/"])
-                candidates.append([str(bin_unrar), "e", "-y", str(archive_path), internal_path.replace("\\", "/"), f"{pass_dir}/"])
-
-            # 7-Zip attempts (handles 7z, and standard RAR5/ZIP where supported)
-            if bin_7z and Path(bin_7z).exists():
-                candidates.append([str(bin_7z), "e", str(archive_path), f"-o{pass_dir}", f"*{filename_only}", "-r", "-y"])
-                candidates.append([str(bin_7z), "e", str(archive_path), f"-o{pass_dir}", internal_path, "-y"])
-                candidates.append([str(bin_7z), "e", str(archive_path), f"-o{pass_dir}", internal_path.replace("/", "\\"), "-y"])
-
-            # Fallback unrar if file is a RAR archive with a non-rar extension
-            if bin_unrar and Path(bin_unrar).exists() and not any(cmd[0] == str(bin_unrar) for cmd in candidates):
-                candidates.append([str(bin_unrar), "e", "-y", "-r", str(archive_path), f"*{filename_only}", f"{pass_dir}/"])
+            candidates = external.member_commands(
+                ext, bin_unrar, bin_7z, archive_path, internal_path, filename_only, pass_dir
+            )
 
             for cmd in candidates:
                 try:
-                    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60.0)
-                    found = [f for f in pass_dir.rglob("*") if f.is_file() and f.name.lower() == filename_only.lower()]
+                    proc = external.run(cmd, external.MEMBER_TIMEOUT)
+                    found = [f for f in external.regular_files(pass_dir) if f.name.lower() == filename_only.lower()]
                     if found and found[0].stat().st_size > 0:
                         shutil.move(str(found[0]), str(temp_scratch_file))
                         extracted = True
@@ -621,15 +595,10 @@ class StashExporter:
             temp_extract_folder = scratch_dir / f"unpack_{uuid.uuid4().hex[:8]}"
             temp_extract_folder.mkdir(parents=True, exist_ok=True)
 
-            if ext == ".rar" and self._bin_unrar and Path(self._bin_unrar).exists():
-                cmd = [str(self._bin_unrar), "x", "-y", str(archive_path), f"{temp_extract_folder}/"]
-                subprocess.run(cmd, capture_output=True, check=True)
-            elif self._bin_7z and Path(self._bin_7z).exists():
-                cmd = [str(self._bin_7z), "x", str(archive_path), f"-o{temp_extract_folder}", "-y"]
-                subprocess.run(cmd, capture_output=True, check=True)
+            external.extract_all(ext, archive_path, temp_extract_folder, self._bin_unrar, self._bin_7z)
 
-            for item in temp_extract_folder.rglob("*"):
-                if item.is_file() and item.suffix.lower() in MODEL_EXTENSIONS:
+            for item in external.regular_files(temp_extract_folder):
+                if item.suffix.lower() in MODEL_EXTENSIONS:
                     is_supp = is_supported_file(item.name)
                     if filter_mode == "presupported" and not is_supp:
                         continue
