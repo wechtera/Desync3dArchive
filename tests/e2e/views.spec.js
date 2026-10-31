@@ -479,10 +479,10 @@ test.describe('settings', () => {
     finished_at: '2026-05-01 12:00:00',
     candidates: { proposed: 2 },
     report: {
-      totals: { new: 2, known: 1, overlaps: 1, empty: 1, outside_rules: 1 },
+      totals: { new: 2, known: 1, overlaps: 1, empty: 1, low_confidence: 1 },
       releases: [
-        { name: HOSTILE, new: [{ rel_path: 'a/b', category: 'Heroes' }], known: 1, overlaps: ['a/c'], empty: ['a/d'], outside_rules: false },
-        { name: 'Odd Release', new: [{ rel_path: 'Odd Release', category: 'Miniatures' }], known: 0, overlaps: [], empty: [], outside_rules: true },
+        { name: HOSTILE, new: [{ rel_path: 'a/b', category: 'Heroes' }], known: 1, overlaps: ['a/c'], empty: ['a/d'], low_confidence: [] },
+        { name: 'Odd Release', new: [{ rel_path: 'Odd Release', category: 'Miniatures' }], known: 0, overlaps: [], empty: [], low_confidence: ['Odd Release: no folder in its path has a usable name'] },
       ],
     },
   };

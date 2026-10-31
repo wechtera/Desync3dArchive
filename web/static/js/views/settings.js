@@ -444,14 +444,14 @@ async function loadLibraryPreview(lib) {
     return;
   }
 
-  const releases = (report?.releases || []).filter(r => r.new.length || r.overlaps.length || r.empty.length || r.outside_rules);
+  const releases = (report?.releases || []).filter(r => r.new.length || r.overlaps.length || r.empty.length || r.low_confidence.length);
   render(html`
     <div class="mt-4 pt-3" style="border-top: 1px solid #262635;">
       <h3 class="font-bold font-md mb-2 text-accent">Preview for ${lib.name}</h3>
       ${report ? html`
         <p class="text-dim font-sm" id="library-preview-summary">
           ${report.totals.new} new, ${report.totals.known} already known, ${report.totals.overlaps} overlapping,
-          ${report.totals.empty} empty, ${report.totals.outside_rules} treated as one model.
+          ${report.totals.empty} empty, ${report.totals.low_confidence} to check.
           Overlapping and empty folders are never added.
         </p>
         <table class="table-compact">
@@ -459,12 +459,12 @@ async function loadLibraryPreview(lib) {
           <tbody>
             ${releases.map(r => html`
               <tr>
-                <td>${r.new.length ? html`<input type="checkbox" class="preview-release-check" data-release=${r.name} ?checked=${!r.outside_rules}>` : nothing}</td>
+                <td>${r.new.length ? html`<input type="checkbox" class="preview-release-check" data-release=${r.name} ?checked=${!r.low_confidence.length}>` : nothing}</td>
                 <td>${r.name}</td>
                 <td class="font-mono">${r.new.length}</td>
                 <td class="font-mono">${r.known}</td>
                 <td>
-                  ${r.outside_rules ? html`<span class="status-badge status-failed font-xs">One model</span>` : nothing}
+                  ${previewFolderList('Check', r.low_confidence)}
                   ${previewFolderList('Overlaps', r.overlaps)}
                   ${previewFolderList('Empty', r.empty)}
                 </td>

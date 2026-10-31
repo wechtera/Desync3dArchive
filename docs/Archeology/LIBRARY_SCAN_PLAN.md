@@ -58,6 +58,10 @@ The user chose one model per character across scales and support types, with bus
 
 **Open: the classifier is Loot-specific.** The user wants a separate model resolver that does not depend on one library's layout or on where the files came from, with better pattern detection, possibly ML. Do not extend the Loot rules further until that is decided.
 
+**Decided 2026-10-31: `services/model_resolver.py`, structural learning, no ML for now, busts are separate models.** It takes paths and knows no library. A word sitting beside many different names is a variant, typos of known words are caught, and names repeated under many subjects are parts. Linked libraries use it now. Loot came out at 2,544 models with no Loot words in the code.
+
+**Archives have not switched.** Against the 173 production archives it agrees 65 percent with the peeker and is not ready: the old peeker over-splits supported and unsupported copies, and the resolver wrongly merges flat archives, where poses differ only by filename. It needs to work on filenames before it replaces the peeker.
+
 **The resolver must also cover archive peeks.** `ArchivePeeker` already resolves MMF archives into submodels, 498 across 173 archives in production, with its own rules: creator-specific strings in `_derive_submodel_identity` and `_segment_image_driven`, such as Comet Lord, Jurakin and `Mummy Base`, plus `STUDIO_ALIASES`. It also uses renders as evidence, so the resolver's input needs images as well as files. The result only differs in where it lands: models for a library, submodels for an archive. Existing submodels must not change silently: compare old and new output before switching.
 
 ## Before deploying

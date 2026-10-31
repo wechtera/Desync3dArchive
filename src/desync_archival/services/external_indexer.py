@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from desync_archival import settings as app_config
-from desync_archival.services import inactive_log
+from desync_archival.services import inactive_log, model_resolver
 
 try:
     from desync_archival.services.logger import log_layer, logger
@@ -27,16 +27,6 @@ except ImportError:
 SUPPORTED_FILE_EXTENSIONS = {".stl", ".lys", ".ctb", ".chitubox", ".zip", ".rar", ".7z"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
-SCALE_SUPPORT_DIR_NAMES = {
-    "32mm", "75mm", "28mm", "54mm", "scale", "supported", "unsupported",
-    "no supports", "supports", "presupported", "pre-supported", "files", "stl"
-}
-
-CATEGORY_DIR_TOKENS = {
-    "heroes", "monsters", "enemies", "props", "npc", "terrain", "creatures",
-    "minis", "bundle", "characters", "bonus", "bosses", "allies"
-}
-
 
 # Nobody deletes a fifth of a library by hand. That many missing means a flaky mount, so hold it.
 MASS_MISSING_MIN = 10
@@ -46,13 +36,6 @@ MONTHS = (
     "january", "february", "march", "april", "may", "june", "july", "august",
     "september", "october", "november", "december",
 )
-# Words that say which print a folder is, not who is in it.
-VARIANT_WORD = re.compile(
-    r"^(fdm)?[\d.]*\d+mm$|^fdm[\d.]*$|^(no|un|pre)?-?supports?(ed)?$|^hollow$|^solid$|^lychee$"
-    r"|^readytoslicer?$|^slicer$|^chitubox$|^resin$|^busts?$|^stl$|^all$",
-    re.IGNORECASE,
-)
-
 COVER = "cover"
 PEEK = "peek"
 ARCHIVE_EXTENSIONS = {".zip", ".rar", ".7z"}
@@ -108,15 +91,6 @@ def walk_files(root: Path) -> Iterator[tuple[Path, int, int]]:
             yield path, info.st_size, info.st_mtime_ns
 
 
-def has_model_files(path: Path, loose_only: bool = False) -> bool:
-    # Bail on the first hit. Listing a full model over SMB is the slow part of a preview.
-    wanted = (".stl",) if loose_only else (".stl", ".zip")
-    for _, _, filenames in os.walk(path, onerror=_read_failed):
-        if any(name.lower().endswith(wanted) and not name.startswith(".") for name in filenames):
-            return True
-    return False
-
-
 def release_month_of(release_name: str) -> str:
     match = re.search(r"(\d{4}[-_]\d{2})", release_name)
     if match:
@@ -131,18 +105,6 @@ def release_month_of(release_name: str) -> str:
 def is_presupported(path_text: str) -> bool:
     # Lookbehind because "unsupported" contains "supported". Lychee and ready-to-slice ship supported.
     return bool(re.search(r"(?<!un)supported|lychee|readytoslice", path_text, re.IGNORECASE))
-
-
-def is_scale_layout(subdirs: list[Path]) -> bool:
-    return any(re.search(r"\d+mm|bust", d.name, re.IGNORECASE) for d in subdirs)
-
-
-def character_words(folder: str) -> list[str]:
-    return [word for word in re.split(r"[_\s]+", folder) if word and not VARIANT_WORD.match(word)]
-
-
-def display_name(words: list[str]) -> str:
-    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", " ".join(words)).strip()
 
 
 def primary_folder_rank(rel_path: str) -> tuple[int, int, str]:
@@ -201,66 +163,27 @@ class ExternalLibraryIndexer:
         conn.execute("PRAGMA foreign_keys = ON;")
         return conn
 
-    def _find_model_directories(self, release_dir: Path) -> list[tuple[Path, str]]:
-        subdirs = list_dirs(release_dir)
-
-        if not subdirs:
-            return [(release_dir, "Miniatures")]
-
-        if any(d.name.lower() in SCALE_SUPPORT_DIR_NAMES for d in subdirs):
-            return [(release_dir, "Miniatures")]
-
-        model_dirs: list[tuple[Path, str]] = []
-        for d in subdirs:
-            d_name_low = d.name.lower()
-            is_category = (
-                any(token in d_name_low for token in CATEGORY_DIR_TOKENS)
-                or bool(re.match(r"^\d{1,2}\s*[-_]", d_name_low))
-            )
-
-            if is_category:
-                cat_clean = sanitize_title(d.name)
-                cat_children = list_dirs(d)
-                if cat_children:
-                    model_dirs.extend((c, cat_clean) for c in cat_children if has_model_files(c))
-                elif has_model_files(d, loose_only=True):
-                    model_dirs.append((d, cat_clean))
-            elif has_model_files(d):
-                model_dirs.append((d, "Miniatures"))
-
-        return model_dirs if model_dirs else [(release_dir, "Miniatures")]
-
-    def _find_characters(self, release_dir: Path, root: Path) -> list[dict[str, Any]]:
-        """For scale/category/variant/Character_32mm_Variant releases: one entry per character."""
-        groups: dict[tuple[str, bool], dict[str, Any]] = {}
+    def _read_release(self, release_dir: Path, root: Path) -> tuple[list[str], list[str]]:
+        """Returns every folder, and the topmost ones holding model files."""
+        folders: list[str] = []
+        holding: list[str] = []
         for current, dirnames, filenames in os.walk(release_dir, onerror=_read_failed):
             dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
             folder = Path(current)
-            # Stat blocks and magazines sit at the top of a release. They aren't a character.
-            if folder == release_dir:
-                continue
-            if not any(Path(n).suffix.lower() in SUPPORTED_FILE_EXTENSIONS and not n.startswith(".") for n in filenames):
-                continue
-            dirnames[:] = []  # This is the character. Anything deeper is its parts.
+            rel_path = str(folder.relative_to(root))
+            folders.append(rel_path)
+            # Stat blocks and magazines sit at the top of a release, so that level never counts.
+            if folder != release_dir and any(
+                Path(name).suffix.lower() in SUPPORTED_FILE_EXTENSIONS and not name.startswith(".") for name in filenames
+            ):
+                holding.append(rel_path)
+                dirnames[:] = []
+        return folders, holding
 
-            rel_parts = folder.relative_to(root).parts
-            # Some folders are only "Supported" or "32mm", so fall back to whoever they sit under.
-            words = next((w for part in reversed(rel_parts[1:]) if (w := character_words(part))), [folder.name])
-            is_bust = any("bust" in part.lower() for part in rel_parts)
-            slug = re.sub(r"[^a-z0-9]", "", "".join(words).lower()) or "untitled"
-            parent = character_words(rel_parts[-2]) if len(rel_parts) > 2 else []
-
-            entry = groups.setdefault((slug, is_bust), {
-                "rel_path": f"{rel_parts[0]}/{slug}{'-bust' if is_bust else ''}",
-                "name": display_name(words) + (" Bust" if is_bust else ""),
-                "category": "Busts" if is_bust else (parent[-1] if parent else "Miniatures"),
-                "folders": [],
-            })
-            entry["folders"].append("/".join(rel_parts))
-
-        for entry in groups.values():
-            entry["folders"].sort(key=primary_folder_rank)
-        return list(groups.values())
+    @staticmethod
+    def _within(folder: str, claimed: set[str]) -> bool:
+        path = Path(folder)
+        return any(str(parent) in claimed for parent in (path, *path.parents))
 
     def _score_image(self, img_path: Path, model_name: str) -> int:
         stem_low = img_path.stem.lower()
@@ -603,53 +526,60 @@ class ExternalLibraryIndexer:
         known_rel = {key.split("/", 1)[1] for key in known_keys}
         known_folders = known_folders or {}
         release_dirs = self._check_root(root)
-        releases: list[dict[str, Any]] = []
-        complete = True
 
+        # Read the whole tree first: the resolver learns from all of it, so a preview can't be partial.
+        all_folders: list[str] = []
+        file_folders: dict[str, list[str]] = {}
         for index, release_dir in enumerate(release_dirs, 1):
             if is_cancelled():
-                complete = False
-                break
-            progress(index / len(release_dirs) * 95.0, f"[{index}/{len(release_dirs)}] {release_dir.name[:40]}")
+                return {"releases": [], "complete": False, "totals": {}}
+            progress(index / len(release_dirs) * 95.0, f"[{index}/{len(release_dirs)}] Reading {release_dir.name[:40]}")
+            all_folders_here, holding = self._read_release(release_dir, root)
+            all_folders.extend(all_folders_here)
+            file_folders[release_dir.name] = holding
 
+        variants = model_resolver.learn_variant_words(all_folders)
+        parts = model_resolver.learn_part_words([f for held in file_folders.values() for f in held], variants)
+        claimed = known_rel | {folder for held in known_folders.values() for folder in held}
+
+        releases: list[dict[str, Any]] = []
+        for release_dir in release_dirs:
+            prefix = f"{release_dir.name}/"
             entry: dict[str, Any] = {
                 "name": release_dir.name, "month": release_month_of(release_dir.name),
-                "new": [], "known": 0, "overlaps": [], "empty": [], "outside_rules": False,
+                "new": [], "known": 0, "overlaps": [], "empty": [], "low_confidence": [],
             }
-            prefix = f"{release_dir.name}/"
-            known_here = {rel for rel in known_rel if rel == release_dir.name or rel.startswith(prefix)}
+            holding = file_folders[release_dir.name]
+            if not holding:
+                entry["empty"].append(release_dir.name)
 
-            subdirs = list_dirs(release_dir)
-            if is_scale_layout(subdirs) and not release_dir.name[:4].isdigit():
-                for character in self._find_characters(release_dir, root):
-                    held = known_folders.get(character["rel_path"])
-                    if held is None:
-                        entry["new"].append(character)
-                    elif set(character["folders"]) - held:
-                        # A later scale for a known character extends it. It isn't a new model.
-                        entry["new"].append({**character, "extends": True})
+            for model in model_resolver.resolve([f[len(prefix):] for f in holding], variants=variants, parts=parts):
+                folders = sorted((prefix + f for f in model.folders), key=primary_folder_rank)
+                rel_path = prefix + model.key
+                # Known folders win, so a model from an earlier scan keeps its identity.
+                inside_known = [f for f in folders if self._within(f, claimed)]
+                if rel_path in known_folders:
+                    if set(folders) - known_folders[rel_path]:
+                        entry["new"].append({
+                            "rel_path": rel_path, "name": model.name, "category": model.category or "Miniatures",
+                            "folders": folders, "extends": True,
+                        })
                     else:
                         entry["known"] += 1
-                releases.append(entry)
-                continue
-
-            for model_dir, category in self._find_model_directories(release_dir):
-                rel_path = str(model_dir.relative_to(root))
-                if rel_path in known_rel:
+                elif inside_known:
                     entry["known"] += 1
-                elif any(rel_path.startswith(f"{other}/") or other.startswith(f"{rel_path}/") for other in known_here):
+                elif any(other.startswith(f"{f}/") for f in folders for other in claimed):
                     entry["overlaps"].append(rel_path)
-                elif not has_model_files(model_dir):
-                    entry["empty"].append(rel_path)
                 else:
                     entry["new"].append({
-                        "rel_path": rel_path, "name": sanitize_title(model_dir.name), "category": category,
-                        "folders": [rel_path],
+                        "rel_path": rel_path, "name": model.name, "category": model.category or "Miniatures",
+                        "folders": folders,
                     })
-                if model_dir == release_dir:
-                    entry["outside_rules"] = True
+                    if model.confidence == "low":
+                        entry["low_confidence"].append(f"{rel_path}: {model.reason}")
             releases.append(entry)
 
+        complete = True
         return {
             "releases": releases,
             "complete": complete,
@@ -659,7 +589,7 @@ class ExternalLibraryIndexer:
                 "known": sum(r["known"] for r in releases),
                 "overlaps": sum(len(r["overlaps"]) for r in releases),
                 "empty": sum(len(r["empty"]) for r in releases),
-                "outside_rules": sum(1 for r in releases if r["outside_rules"]),
+                "low_confidence": sum(len(r["low_confidence"]) for r in releases),
             },
         }
 
@@ -694,7 +624,7 @@ class ExternalLibraryIndexer:
 
             if not report["complete"]:
                 self._close_run(conn, run_id, "stopped", report)
-                return {"success": True, "stopped": True, "run_id": run_id, **report["totals"]}
+                return {"success": True, "stopped": True, "run_id": run_id, "new": 0}
 
             with conn:
                 conn.execute("DELETE FROM library_candidates WHERE library_id = ? AND status = ?;", (library_id, PROPOSED))

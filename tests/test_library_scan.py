@@ -93,14 +93,15 @@ class PreviewTests(ScanCase):
         self.assertEqual([r[0] for r in self.rows("SELECT name FROM models WHERE source = 'external'")], ["Dragon"])
 
     def test_known_folders_are_never_reclassified(self):
-        self.scan_everything()
-        # A scale folder would make the classifier treat the whole release as one model.
-        (self.root / "2024-01 - Drop" / "32mm").mkdir()
-        report = self.indexer.classify_library(self.root, 1, {key_for(1, r[0]) for r in self.rows(
-            "SELECT substr(external_key, 3) FROM models WHERE source = 'external'")})
-        drop = report["releases"][0]
-        self.assertEqual(drop["new"], [])
-        self.assertEqual(drop["overlaps"], ["2024-01 - Drop"])
+        conn = self.connect()
+        with conn:
+            conn.execute(
+                "INSERT INTO models (name, source, library_id, external_key, vault_path, raw_backup_path) VALUES ('Old', 'external', 1, ?, ?, '')",
+                (key_for(1, "2024-01 - Drop"), str(self.root / "2024-01 - Drop")),
+            )
+        conn.close()
+        self.assertEqual(self.indexer.preview_library(1)["new"], 1)
+        self.assertEqual(self.rows("SELECT rel_path FROM library_candidates")[0][0], "2024-02 - Next/dragon")
 
     def test_a_new_folder_is_found_and_added_alone(self):
         self.scan_everything()
