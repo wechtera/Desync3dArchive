@@ -38,3 +38,13 @@ class CatalogValidationTests(RouteCase):
 class ArchiveValidationTests(RouteCase):
     def test_bad_model_ids_are_refused(self):
         self.assertIn("model_ids", self.refused("/api/reconcile/archive-peek", {"model_ids": ["x"]}))
+
+
+class DownloadValidationTests(RouteCase):
+    def test_bad_queue_bodies_are_refused(self):
+        self.refused("/api/downloads/queue", {"model_ids": "all"})
+        self.refused("/api/downloads/queue", {"model_ids": ["x"]}, method="DELETE")
+        self.refused("/api/downloads/dequeue", {"purge_incomplete": "maybe"})
+
+    def test_bad_control_action_is_refused(self):
+        self.refused("/api/downloads/control", {"action": 5})
