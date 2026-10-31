@@ -3027,3 +3027,12 @@ pre, .task-log-viewer, .console-output {
 .checkbox-group-grid .control-checkbox-label:hover {
   color: var(--text-main);
 }
+
+.stash-item-inactive .thumb-wrap img {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
+.btn-pill[hidden] {
+  display: none;
+}

@@ -439,8 +439,13 @@ export async function openModelDetailModal(modelId) {
           </div>
 
           <div class="detail-actions-card">
-            ${actionBtn}
-            <button type="button" class="btn-pill btn-full" @click=${() => window.openAddToStashModal({ item_type: 'model', model_id: data.id, title: data.name, creator: data.designer_name || 'Unknown' })}>
+            ${data.is_active === 0 ? html`
+              <div id="detail-unavailable-note" class="status-badge status-failed font-xs">
+                Library unlinked. Not available for local download, slice or print.
+              </div>
+            ` : ''}
+            ${data.is_active === 0 ? '' : actionBtn}
+            <button type="button" class="btn-pill btn-full" ?hidden=${data.is_active === 0} @click=${() => window.openAddToStashModal({ item_type: 'model', model_id: data.id, title: data.name, creator: data.designer_name || 'Unknown' })}>
               + Add Model to Stash
             </button>
             ${data.url ? html`

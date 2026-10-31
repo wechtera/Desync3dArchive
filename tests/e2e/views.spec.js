@@ -217,6 +217,41 @@ test.describe('tasks', () => {
   });
 });
 
+test.describe('unlinked library items', () => {
+  const stash = { id: 4, name: 'Print soon', item_count: 2, is_active: 0, description: '' };
+  const item = (id, isInactive) => ({
+    id, item_type: 'model', model_id: id, title: `Model ${id}`, creator_name: 'Forge', model_name: `Model ${id}`,
+    thumbnail_url: '', size_bytes: 10, is_inactive: isInactive,
+  });
+
+  test('a stash flags the inactive model and keeps the others plain', async ({ page }) => {
+    await mock(page, '/api/stashes', { stashes: [stash] });
+    await mock(page, '/api/stashes/active', { active_stash: null });
+    await mock(page, '/api/stashes/4', { stash: { ...stash, items: [item(1, true), item(2, false)] } });
+    await page.goto('/#stashes');
+    await page.getByText('Print soon').first().click();
+
+    const cards = page.locator('.stash-item-card');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0).locator('.status-failed')).toHaveText('UNAVAILABLE');
+    await expect(cards.nth(0).locator('.status-failed')).toHaveAttribute('title', /download, slice or print/);
+    await expect(cards.nth(0)).toHaveClass(/stash-item-inactive/);
+    await expect(cards.nth(1).locator('.status-failed')).toHaveCount(0);
+    expect(page.pageErrors).toEqual([]);
+  });
+
+  test('the detail view explains it and hides download and stash actions', async ({ page }) => {
+    await mock(page, '/api/models/detail', {
+      id: 1, name: 'Golem', designer_name: 'Forge', source: 'external', is_active: 0, tags: [], files: [],
+    });
+    await page.goto('/');
+    await page.evaluate(() => window.openModelDetailModal(1));
+    await expect(page.locator('#detail-unavailable-note')).toContainText('Not available for local download');
+    await expect(page.getByRole('button', { name: '+ Add Model to Stash' })).toBeHidden();
+    expect(page.pageErrors).toEqual([]);
+  });
+});
+
 test.describe('add to stash', () => {
   const active = { id: 3, name: HOSTILE, item_count: 2, is_active: 1 };
   const stashes = [active, { id: 4, name: 'Second', item_count: 1, is_active: 0 }];

@@ -83,7 +83,7 @@ Classify every reference above as internal ID, MMF ID, or path, in a table added
 
 ### Phase 2: Fix unlink (done)
 
-Unlinking a library flags its contents inactive and deletes nothing. A flagged stash item needs its model row, so the models, files and library row stay and carry `is_active = 0`. Inactive models leave the catalog, search, metrics and queues. Stash items stay visible, marked inactive, and are skipped on export. Relinking the same path reactivates the same rows with the same IDs.
+Unlinking a library flags its contents inactive and deletes nothing. A flagged stash item needs its model row, so the models, files and library row stay and carry `is_active = 0`. Inactive models leave the catalog, search, metrics and queues. Stash items stay visible with an UNAVAILABLE flag and a dimmed image, and are skipped on export. The detail page still opens by ID and explains that the model is not available for local download, slice or print. Relinking the same path reactivates the same rows with the same IDs.
 
 Turn on `foreign_keys` in the indexer. This stands alone, so it doesn't wait for the schema work.
 

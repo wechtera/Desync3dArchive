@@ -97,7 +97,13 @@ class UnlinkTests(UnlinkCase):
         self.assertNotIn(100, self.catalog_ids())
         found = self.client.get("/api/models", params={"search": "Golem"}).json()["models"]
         self.assertEqual([model["id"] for model in found], [50])
-        self.assertEqual(self.client.get("/api/models/100").status_code, 404)
+
+    def test_an_inactive_model_still_opens_by_id_and_says_so(self):
+        self.unlink()
+        response = self.client.get("/api/models/100")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["is_active"], 0)
+        self.assertEqual(self.client.get("/api/models/100/files").status_code, 200)
 
     def test_metrics_stop_counting_them(self):
         before = self.client.get("/api/metrics").json()["total_models"]

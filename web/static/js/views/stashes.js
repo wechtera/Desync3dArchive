@@ -17,6 +17,8 @@ import {
 import { formatBytes } from '../utils.js';
 import { appendToBody, html, nothing, render } from '../template.js';
 
+const UNAVAILABLE_NOTE = 'Library unlinked. Not available for local download, slice or print.';
+
 let currentSelectedStashId = null;
 let currentStashesList = [];
 
@@ -460,8 +462,8 @@ function renderStashItemCard(item) {
     : html`<div class="text-dim font-xs font-mono" style="padding:20px; text-align:center;">NO PREVIEW</div>`;
 
   return html`
-    <div class="card stash-item-card">
-      <div class="thumb-wrap">
+    <div class="card stash-item-card ${item.is_inactive ? 'stash-item-inactive' : ''}">
+      <div class="thumb-wrap" title=${item.is_inactive ? UNAVAILABLE_NOTE : ''}>
         ${thumbHtml}
         <span class="badge ${typeBadgeClass} stash-type-pill">${typeLabel}</span>
       </div>
@@ -479,7 +481,7 @@ function renderStashItemCard(item) {
 
         <div class="card-badge-row mt-1">
           <span class="badge badge-ext">${item.file_extension || 'FILE'}</span>
-          ${item.is_inactive ? html`<span class="status-badge status-failed font-xs">INACTIVE</span>` : ''}
+          ${item.is_inactive ? html`<span class="status-badge status-failed font-xs" title=${UNAVAILABLE_NOTE}>UNAVAILABLE</span>` : ''}
           ${item.is_supported ? html`<span class="status-badge status-completed font-xs">PRE-SUPPORTED</span>` : ''}
         </div>
 

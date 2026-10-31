@@ -21,14 +21,16 @@ from desync_archival.services.logger import logger
 from desync_archival.services.mesh_renderer import VALID_VIEWS, MeshRenderer
 
 # Global SQL filters: Exclude tombstones and records with missing designer metadata
-VALID_MODEL_RAW = """
-    is_active = 1
-    AND name NOT LIKE '[Unavailable Model %]'
+VALID_MODEL_KNOWN = """
+    name NOT LIKE '[Unavailable Model %]'
     AND designer_name IS NOT NULL
     AND designer_name != ''
     AND designer_name != 'Unknown Designer'
     AND designer_name != 'Unknown'
 """
+
+# Lists and counts leave out unlinked models. A stash item can still open one by its ID.
+VALID_MODEL_RAW = "is_active = 1 AND " + VALID_MODEL_KNOWN
 
 VALID_MODEL_M = """
     m.is_active = 1
@@ -276,7 +278,7 @@ def handle_get_model_detail(
 
     model_id = int(raw_id)
     cursor = conn.execute(
-        queries.GET_MODEL_DETAIL_1.format(VALID_MODEL_RAW=VALID_MODEL_RAW), 
+        queries.GET_MODEL_DETAIL_1.format(VALID_MODEL_RAW=VALID_MODEL_KNOWN), 
         (model_id,)
     )
     row = cursor.fetchone()
@@ -408,7 +410,7 @@ def handle_get_model_files(
 
     model_id = int(raw_model_id)
     model = conn.execute(
-        queries.GET_MODEL_FILES_1.format(VALID_MODEL_RAW=VALID_MODEL_RAW),
+        queries.GET_MODEL_FILES_1.format(VALID_MODEL_RAW=VALID_MODEL_KNOWN),
         (model_id,),
     ).fetchone()
 
