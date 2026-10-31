@@ -72,3 +72,9 @@ class SettingsValidationTests(RouteCase):
 
     def test_settings_keep_open_keys(self):
         self.assertEqual(self.client.post("/api/settings", json={"batch_size": "5"}).status_code, 200)
+
+
+class TaskValidationTests(RouteCase):
+    def test_bad_ingest_bodies_are_refused(self):
+        self.refused("/api/ingest/start", {"raw_ids": 5})
+        self.refused("/api/tasks/ingest", {"model_ids": "all"})
