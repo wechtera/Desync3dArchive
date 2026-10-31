@@ -36,32 +36,6 @@ def run_startup_analytics(conn: sqlite3.Connection):
     log_layer("sql", logging.INFO, "Starting catalog continuity calculation and monthly release clustering...")
     with conn:
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS model_tags (
-                model_id INTEGER NOT NULL,
-                tag TEXT NOT NULL
-            );
-        """)
-
-        cols = [r["name"] for r in conn.execute("PRAGMA table_info(models)").fetchall()]
-
-        if "release_month" not in cols:
-            conn.execute("ALTER TABLE models ADD COLUMN release_month TEXT;")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_models_release_month ON models(release_month);")
-
-        if "is_bonus" not in cols:
-            conn.execute("ALTER TABLE models ADD COLUMN is_bonus BOOLEAN DEFAULT 0;")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_models_bonus ON models(is_bonus);")
-
-        if "designer_id" not in cols:
-            conn.execute("ALTER TABLE models ADD COLUMN designer_id INTEGER DEFAULT 0;")
-
-        if "description" not in cols:
-            conn.execute("ALTER TABLE models ADD COLUMN description TEXT;")
-
-        if "published_at" not in cols:
-            conn.execute("ALTER TABLE models ADD COLUMN published_at TEXT;")
-
-        conn.execute("""
             UPDATE models 
             SET release_month = substr(published_at, 1, 7)
             WHERE (release_month IS NULL OR release_month = '') 
@@ -79,25 +53,7 @@ def run_startup_analytics(conn: sqlite3.Connection):
                );
         """)
 
-        conn.execute("DROP TABLE IF EXISTS releases;")
-        conn.execute("""
-            CREATE TABLE releases (
-                id TEXT PRIMARY KEY,
-                designer_name TEXT NOT NULL,
-                designer_id INTEGER,
-                release_month TEXT NOT NULL,
-                model_count INTEGER NOT NULL,
-                bonus_count INTEGER NOT NULL DEFAULT 0,
-                total_files INTEGER NOT NULL,
-                total_size_bytes INTEGER NOT NULL,
-                is_likely_bundle BOOLEAN DEFAULT 0,
-                sample_image_url TEXT,
-                common_tags TEXT,
-                computed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_releases_designer ON releases(designer_name);")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_releases_month ON releases(release_month);")
+        conn.execute("DELETE FROM releases;")
 
         cluster_query = """
             SELECT 

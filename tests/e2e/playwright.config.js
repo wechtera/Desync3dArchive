@@ -19,7 +19,8 @@ module.exports = defineConfig({
   },
   webServer: {
     // Starts from a fresh sanitized database, with workers off and outside network blocked.
-    command: `cp "${devDir}/library.clean.db" "${devDir}/old_app/library.db" && ` +
+    command: `rm -f "${devDir}"/old_app/library.db-wal "${devDir}"/old_app/library.db-shm && ` +
+      `cp "${devDir}/library.clean.db" "${devDir}/old_app/library.db" && ` +
       `"${repoRoot}/.venv/bin/python" "${repoRoot}/scripts/baseline/old_app_server.py" ` +
       `--code new --port ${port} --app-root "${devDir}/old_app"`,
     url: `http://127.0.0.1:${port}/`,

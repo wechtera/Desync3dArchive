@@ -3,6 +3,7 @@ tests/test_stash_exporter.py - Automated unit tests for Slicer Stash Exporter.
 Verifies NAS immutability, scratch directory cleanup, surgical extraction, and folder hierarchy.
 """
 
+from db_helper import create_database
 import hashlib
 import json
 import os
@@ -32,6 +33,7 @@ class TestStashExporter(unittest.TestCase):
     def setUp(self):
         self.test_dir = Path(tempfile.mkdtemp())
         self.db_path = self.test_dir / "test_library.db"
+        create_database(self.db_path)
         self.nas_dir = self.test_dir / "nas_vault"
         self.local_work_dir = self.test_dir / "local_work"
         self.export_dir = self.test_dir / "print_queue"
@@ -133,8 +135,8 @@ class TestStashExporter(unittest.TestCase):
             self.model_vault_dir.mkdir(parents=True, exist_ok=True)
 
             self.conn.execute("""
-                INSERT INTO models (id, name, designer_name, vault_path)
-                VALUES (100, 'Ghul Squad', 'Archvillain Games', ?);
+                INSERT INTO models (id, name, designer_name, vault_path, raw_backup_path)
+                VALUES (100, 'Ghul Squad', 'Archvillain Games', ?, '');
             """, (str(self.model_vault_dir),))
 
             # 2. Mock Archive on NAS with 4 distinct members
@@ -146,8 +148,8 @@ class TestStashExporter(unittest.TestCase):
                 zf.writestr("readme.txt", b"Do not print")
 
             self.conn.execute("""
-                INSERT INTO downloaded_files (file_id, model_id, cleaned_filename, vault_path, storage_tier, actual_bytes)
-                VALUES (500, 100, 'ghul_squad.zip', ?, 'nas', ?);
+                INSERT INTO downloaded_files (file_id, model_id, original_filename, local_relative_path, cleaned_filename, vault_path, storage_tier, actual_bytes)
+                VALUES (500, 100, 'ghul_squad.zip', 'ghul_squad.zip', 'ghul_squad.zip', ?, 'nas', ?);
             """, (str(self.archive_path), self.archive_path.stat().st_size))
 
             # 3. Submodels inside Archive (Ghul B has 2 files; Ghul A has 1 file)

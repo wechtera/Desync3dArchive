@@ -71,69 +71,6 @@ class ExternalLibraryIndexer:
         conn.execute("PRAGMA busy_timeout = 45000;")
         return conn
 
-    def _ensure_schema(self, conn: sqlite3.Connection):
-        """Ensures all necessary tables and columns exist in SQLite database."""
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(models);").fetchall()}
-        for col, col_def in [
-            ("source", "TEXT DEFAULT 'mmf'"),
-            ("vault_path", "TEXT"),
-            ("raw_backup_path", "TEXT DEFAULT ''"),
-            ("primary_category", "TEXT"),
-            ("pre_supported", "BOOLEAN DEFAULT 0"),
-        ]:
-            if col not in cols and cols:
-                try:
-                    with conn:
-                        conn.execute(f"ALTER TABLE models ADD COLUMN {col} {col_def};")
-                except Exception:
-                    pass
-
-        with conn:
-            conn.executescript("""
-                CREATE TABLE IF NOT EXISTS external_libraries (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    path TEXT UNIQUE NOT NULL,
-                    default_creator TEXT,
-                    disk_bytes INTEGER DEFAULT 0,
-                    total_models INTEGER DEFAULT 0,
-                    total_files INTEGER DEFAULT 0,
-                    last_scanned_at TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS model_tags (
-                    model_id INTEGER,
-                    tag TEXT NOT NULL,
-                    PRIMARY KEY (model_id, tag),
-                    FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE
-                );
-            """)
-
-        df_cols = {r[1] for r in conn.execute("PRAGMA table_info(downloaded_files);").fetchall()}
-        for col, col_def in [
-            ("vault_path", "TEXT"),
-            ("staging_path", "TEXT"),
-            ("file_extension", "TEXT"),
-            ("sha256", "TEXT"),
-        ]:
-            if col not in df_cols and df_cols:
-                try:
-                    with conn:
-                        conn.execute(f"ALTER TABLE downloaded_files ADD COLUMN {col} {col_def};")
-                except Exception:
-                    pass
-
-        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()}
-        if "download_jobs" in tables:
-            dj_cols = {r[1] for r in conn.execute("PRAGMA table_info(download_jobs);").fetchall()}
-            if "destination_path" not in dj_cols and dj_cols:
-                try:
-                    with conn:
-                        conn.execute("ALTER TABLE download_jobs ADD COLUMN destination_path TEXT;")
-                except Exception:
-                    pass
-
     def _alloc_model_id(self, conn: sqlite3.Connection) -> int:
         if self._next_model_id is None:
             cur = conn.execute(
@@ -257,7 +194,6 @@ class ExternalLibraryIndexer:
         is_cancelled = cancel_cb or (lambda: False)
 
         with self._get_db() as conn:
-            self._ensure_schema(conn)
             lib_row = conn.execute("SELECT * FROM external_libraries WHERE id = ?;", (library_id,)).fetchone()
 
         if not lib_row:
@@ -490,11 +426,16 @@ class ExternalLibraryIndexer:
                 if "releases" in tables:
                     with conn:
                         conn.execute("""
-                            INSERT INTO releases (release_month, designer_name, model_count)
-                            VALUES (?, ?, ?)
-                            ON CONFLICT(release_month, designer_name) DO UPDATE SET
+                            INSERT INTO releases (
+                                id, designer_name, designer_id, release_month,
+                                model_count, total_files, total_size_bytes
+                            ) VALUES (?, ?, 0, ?, ?, 0, 0)
+                            ON CONFLICT(id) DO UPDATE SET
                                 model_count = model_count + excluded.model_count;
-                        """, (release_month, default_creator, len(model_dirs)))
+                        """, (
+                            f"external_{default_creator}_{release_month}",
+                            default_creator, release_month, len(model_dirs),
+                        ))
 
         # 8. Update External Library Telemetry in SQLite
         with self._get_db() as conn:
@@ -531,7 +472,6 @@ class ExternalLibraryIndexer:
         INVARIANT: MUST NOT delete or touch any physical files on storage.
         """
         with self._get_db() as conn:
-            self._ensure_schema(conn)
             lib_row = conn.execute("SELECT id, name, path FROM external_libraries WHERE id = ?;", (library_id,)).fetchone()
             if not lib_row:
                 return {"success": False, "error": f"External library #{library_id} not found."}

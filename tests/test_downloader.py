@@ -2,6 +2,7 @@
 tests/test_downloader.py - Unit and integration tests for DownloadManager OAuth refactoring.
 """
 
+from db_helper import create_database
 import io
 import json
 import os
@@ -37,6 +38,7 @@ class TestDownloaderOAuth(unittest.TestCase):
         self.sandbox = Path(self.temp_dir_obj.name).resolve()
 
         self.db_path = self.sandbox / "test_library.db"
+        create_database(self.db_path)
         self.staging_path = self.sandbox / "staging"
         self.nas_path = self.sandbox / "nas_vault"
 
@@ -129,14 +131,14 @@ class TestDownloaderOAuth(unittest.TestCase):
                 );
 
                 -- Initial settings
-                INSERT INTO app_settings (key, value) VALUES ('download_work_path', '{str(self.staging_path)}');
-                INSERT INTO app_settings (key, value) VALUES ('download_root_path', '{str(self.nas_path)}');
-                INSERT INTO app_settings (key, value) VALUES ('mmf_access_token', 'mock_oauth_bearer_token_xyz');
-                INSERT INTO app_settings (key, value) VALUES ('cookies_json', '[]');
+                INSERT OR REPLACE INTO app_settings (key, value) VALUES ('download_work_path', '{str(self.staging_path)}');
+                INSERT OR REPLACE INTO app_settings (key, value) VALUES ('download_root_path', '{str(self.nas_path)}');
+                INSERT OR REPLACE INTO app_settings (key, value) VALUES ('mmf_access_token', 'mock_oauth_bearer_token_xyz');
+                INSERT OR REPLACE INTO app_settings (key, value) VALUES ('cookies_json', '[]');
 
                 -- Seed sample model
-                INSERT INTO models (id, name, designer_name, release_month)
-                VALUES (101, 'Dragon Slayer', 'Archvillain Games', '2026-10');
+                INSERT INTO models (id, name, designer_name, release_month, raw_backup_path)
+                VALUES (101, 'Dragon Slayer', 'Archvillain Games', '2026-10', '');
 
                 INSERT INTO model_files (file_id, model_id, filename, size_bytes, download_url)
                 VALUES (5001, 101, 'Dragon_Slayer.zip', {len(VALID_ZIP_CONTENT)}, 'https://example.com/initial_stale.zip');

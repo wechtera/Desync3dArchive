@@ -138,6 +138,14 @@ def staging_dir() -> Path:
     return data_dir() / "staging"
 
 
+def backup_dir() -> Path:
+    _load()
+    value = os.environ.get("DESYNC_BACKUP_DIR", "").strip()
+    if not value:
+        raise SettingsError("DESYNC_BACKUP_DIR is required for backups. See .env.example.")
+    return Path(value).expanduser().resolve()
+
+
 def web_dir() -> Path:
     return REPO_ROOT / "web"
 

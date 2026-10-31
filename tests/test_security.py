@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import httpx
+from db_helper import init_persistent_tables
 from fastapi.testclient import TestClient
 
 from desync_archival import settings
@@ -20,7 +21,7 @@ from desync_archival.api.routes.settings import _merge_cookies
 from desync_archival.api.routes.tasks import handle_get_scrapes_download
 from desync_archival.services import auth_service
 from desync_archival.services import logger as log
-from desync_archival.services.db import get_db_connection, init_persistent_tables
+from desync_archival.services.db import get_db_connection
 from desync_archival.services.downloader import DownloadManager
 
 JSON_HEADERS = {"Content-Type": "application/json"}

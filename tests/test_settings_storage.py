@@ -2,6 +2,7 @@
 tests/test_settings_storage.py - Automated tests for storage settings and print queue metrics.
 """
 
+from db_helper import create_database
 import os
 from pathlib import Path
 import shutil
@@ -38,6 +39,7 @@ class TestSettingsStorage(unittest.TestCase):
     def setUp(self):
         self.test_dir = Path(tempfile.mkdtemp())
         self.db_path = self.test_dir / "test_library.db"
+        create_database(self.db_path)
         self.conn = sqlite3.connect(str(self.db_path))
         self.conn.row_factory = sqlite3.Row
 

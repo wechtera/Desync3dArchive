@@ -93,11 +93,11 @@ def serve_new(app_root: Path, port: int) -> int:
     started = time.perf_counter()
     import uvicorn
 
-    from desync_archival import settings
+    from desync_archival import migrations, settings
     from desync_archival.api import server
 
     conn = server.get_db()
-    server.init_persistent_tables(conn)
+    migrations.apply_pending(conn)
     settings.check_stored_paths(conn)
     conn.close()
 

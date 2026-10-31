@@ -3,6 +3,7 @@ tests/test_stash_routes.py - Automated tests for Stash REST API export route.
 Tests POST /api/stashes/<id>/export success, empty stash rejection, and route dispatching.
 """
 
+from db_helper import create_database
 from pathlib import Path
 import shutil
 import sqlite3
@@ -39,6 +40,7 @@ class TestStashRoutes(unittest.TestCase):
     def setUp(self):
         self.test_dir = Path(tempfile.mkdtemp())
         self.db_path = self.test_dir / "test_library.db"
+        create_database(self.db_path)
         self.nas_dir = self.test_dir / "nas_vault"
         self.work_dir = self.test_dir / "work_scratch"
         self.export_dir = self.test_dir / "print_queue"
@@ -133,8 +135,8 @@ class TestStashRoutes(unittest.TestCase):
     def _populate_fixtures(self):
         with self.conn:
             # Storage configuration paths
-            self.conn.execute("INSERT INTO app_settings (key, value) VALUES ('stash_download_path', ?);", (str(self.export_dir),))
-            self.conn.execute("INSERT INTO app_settings (key, value) VALUES ('download_work_path', ?);", (str(self.work_dir),))
+            self.conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('stash_download_path', ?);", (str(self.export_dir),))
+            self.conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('download_work_path', ?);", (str(self.work_dir),))
 
             # Model 200: Healthy, downloaded
             model_dir = self.nas_dir / "Comet_Lord" / "Dune_Mummy"
@@ -144,13 +146,13 @@ class TestStashRoutes(unittest.TestCase):
                 zf.writestr("mummy_p1_khopesh.stl", b"MUMMY MESH STL CONTENT")
 
             self.conn.execute("""
-                INSERT INTO models (id, name, designer_name, vault_path)
-                VALUES (200, 'Dune Mummy', 'Comet Lord', ?);
+                INSERT INTO models (id, name, designer_name, vault_path, raw_backup_path)
+                VALUES (200, 'Dune Mummy', 'Comet Lord', ?, '');
             """, (str(model_dir),))
 
             self.conn.execute("""
-                INSERT INTO downloaded_files (file_id, model_id, cleaned_filename, vault_path, storage_tier, actual_bytes)
-                VALUES (800, 200, 'dune_mummy.zip', ?, 'nas', ?);
+                INSERT INTO downloaded_files (file_id, model_id, original_filename, local_relative_path, cleaned_filename, vault_path, storage_tier, actual_bytes)
+                VALUES (800, 200, 'dune_mummy.zip', 'dune_mummy.zip', 'dune_mummy.zip', ?, 'nas', ?);
             """, (str(archive_file), archive_file.stat().st_size))
 
             # Stash 1: Valid with 1 model item

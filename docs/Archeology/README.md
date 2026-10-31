@@ -29,7 +29,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 2 passed its user test on branch `migration/02-security`, waiting for approval to merge.
+- **Phase:** Step 3 complete on branch `migration/03-migrations`, waiting for approval to merge.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -40,6 +40,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 - [x] Stack proposal drafted and decisions recorded
 - [x] Migration prompts written
 - [x] New project created: git repository, README with setup steps, `.gitignore`, Python and Node dependency manifests, `tools/` linker, and these docs
+- [x] Step 3: numbered migrations, runner, one schema source, verified backup and restore, WAL
 - [x] Step 2 code: V1 to V5 and V9 closed, code grant with refresh, token rotation handling, no secrets in responses
 - [x] Step 1: FastAPI and uvicorn shell, lifespan, threadpool, request logging, Playwright smoke test
 - [x] Step 0C: `check.sh`, per-file lint and type ratchet, JSON log lines, request and job IDs, redaction
@@ -49,8 +50,8 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Next
 
-- [ ] Merge `migration/02-security` after that and user approval
-- [ ] Run Step 3 from `MIGRATION_PROMPTS.md`
+- [ ] Merge `migration/03-migrations` after user approval
+- [ ] Run Step 4 from `MIGRATION_PROMPTS.md`
 
 ## Project decisions
 
@@ -66,6 +67,26 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Commits.** Commit freely on step branches. Merge to `main` after the exit check and user approval.
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
+
+## Step 3 results
+
+**Exit check:** Passed on the dev database through `dbtool migrate`: all 16 tables and 107,444 rows matched before and after, with integrity `ok`, 0 foreign key violations, WAL mode and schema version 2. A backup restored to a new path with identical row counts, and restoring over an existing file was refused. All 105 contract snapshots still match, without changes.
+
+**One schema source:** about 570 lines of table creation and `ALTER` shims are gone from 11 modules. `migrations/0001_baseline.sql` is the exact schema captured from a dev copy. A live database at `user_version` 0 is adopted as version 1 with no structural change, after its tables and columns are checked. `0002_wal.sql` turns on WAL. No foreign key or index corrections were needed.
+
+**Production safety:** the app never migrates by itself anywhere. It refuses to start if the schema is behind, and it names the command to run. On production, `dbtool migrate` also needs `--confirm-production`. Migration takes a verified backup first, stops if the backup fails, and checks row counts afterward. Production has not been touched.
+
+**Backups:** `dbtool backup` writes a verified 0600 file to `DESYNC_BACKUP_DIR` and keeps 14. Each backup is one self-contained file. `dbtool restore` only writes to a new path. The daily schedule arrives in Step 5.
+
+**Bugs found and fixed**
+- External library scans could never finish. The indexer's last step wrote to `releases` using a constraint the real table has never had, so it failed on the real schema. All 3 scans in history show as failed, and Loot Studios still shows 0 models and no scan date. The test fixture had its own `releases` table, which hid this. Rescanning at cutover should correct those library totals.
+- `run_startup_analytics` dropped and recreated `releases`. It now clears the rows, so the migrations stay the only schema source. It is still never called, and Step 5 addresses that.
+- Default settings read `cookies.json` from the working directory. They now read it from the data directory.
+- Stash service tests never ran the "downloaded first" guardrail, because their minimal tables lacked the vault columns. They run with it now.
+
+**Test changes:** databases in test fixtures now come from migrations through `tests/db_helper.py`, apart from `tests/test_analytics.py`, which has its own in-memory schema and logic. Inserts gained the columns the real schema requires. Assertions did not change, except that the stash service schema test now calls the helper, and `test_stash_service.py` gives its models a vault.
+
+**Dev tooling:** contract runs now set `nas/vault`, `stash` and `staging` aside and restore them. Baselines start from `library.clean.db`, so real dev sign-ins can't reach a snapshot.
 
 ## Step 2 results
 

@@ -4,7 +4,7 @@ A single-user, local-first archive and asset manager for a MyMiniFactory (MMF) 3
 
 This project replaces `scrapepage`, which stays frozen in the sibling directory for reference and rollback.
 
-**Status:** The app runs on FastAPI, bound to loopback, with the Step 2 security fixes in place. It has no login yet, so it stays loopback-only until Step 7. Follow [docs/Archeology/README.md](docs/Archeology/README.md) for the current state.
+**Status:** The app runs on FastAPI, bound to loopback, with the Step 2 security fixes and versioned database migrations in place. It has no login yet, so it stays loopback-only until Step 7. Follow [docs/Archeology/README.md](docs/Archeology/README.md) for the current state.
 
 ## Prerequisites
 
@@ -57,8 +57,14 @@ To build a sanitized development copy from production:
 ```bash
 uv run python -m desync_archival.api.server   # web UI at http://localhost:8080
 ./check.sh                                    # tests, lint, types and dependency audits
+uv run python -m desync_archival.dbtool status   # schema version
+uv run python -m desync_archival.dbtool migrate  # apply migrations, after a verified backup
+uv run python -m desync_archival.dbtool backup   # write a verified backup to DESYNC_BACKUP_DIR
+uv run python -m desync_archival.dbtool restore BACKUP_FILE NEW_PATH   # restore to a new path
 uv run python scripts/baseline/record_contract.py --compare   # compare the API to the snapshots
 ```
+
+The app never migrates a database by itself. If the schema is behind, it refuses to start and names the command to run. On production, `migrate` also needs `--confirm-production`.
 
 The app and the old app both use port 8080, so stop one before starting the other. `check.sh` runs the browser tests when `~/DESYNC_Data_dev` exists, and they use port 8099.
 

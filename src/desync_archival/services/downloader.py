@@ -251,7 +251,6 @@ class DownloadManager:
         self.cookies: Dict[str, str] = {}
         self.access_token: str = ""
 
-        self._ensure_schema_columns()
         self._load_settings()
 
     def _get_db(self) -> sqlite3.Connection:
@@ -435,26 +434,6 @@ class DownloadManager:
                 time.sleep(1.0)
 
         return False
-
-    def _ensure_schema_columns(self):
-        """Ensures destination logging, checksum, and archive download columns exist in SQLite."""
-        with self._get_db() as conn:
-            with conn:
-                m_cols = {r[1] for r in conn.execute("PRAGMA table_info(models);").fetchall()}
-                if "vault_path" not in m_cols:
-                    conn.execute("ALTER TABLE models ADD COLUMN vault_path TEXT;")
-                if "archive_download_url" not in m_cols:
-                    conn.execute("ALTER TABLE models ADD COLUMN archive_download_url TEXT;")
-
-                dj_cols = {r[1] for r in conn.execute("PRAGMA table_info(download_jobs);").fetchall()}
-                if "destination_path" not in dj_cols:
-                    conn.execute("ALTER TABLE download_jobs ADD COLUMN destination_path TEXT;")
-
-                df_cols = {r[1] for r in conn.execute("PRAGMA table_info(downloaded_files);").fetchall()}
-                if "vault_path" not in df_cols:
-                    conn.execute("ALTER TABLE downloaded_files ADD COLUMN vault_path TEXT;")
-                if "sha256" not in df_cols:
-                    conn.execute("ALTER TABLE downloaded_files ADD COLUMN sha256 TEXT;")
 
     def _refresh_token_if_expiring(self):
         """Replaces the access token shortly before it expires."""

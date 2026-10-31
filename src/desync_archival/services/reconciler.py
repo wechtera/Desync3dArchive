@@ -119,73 +119,12 @@ class VaultReconciler:
         self.storage = StorageManager(db_path)
         self.previews_root = app_config.previews_dir().resolve()
         self.previews_root.mkdir(parents=True, exist_ok=True)
-        self._ensure_schema()
 
     def _get_db(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), timeout=45.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout = 45000;")
         return conn
-
-    def _ensure_schema(self):
-        with self._get_db() as conn:
-            with conn:
-                conn.executescript("""
-                    CREATE TABLE IF NOT EXISTS reconciliation_runs (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        status TEXT NOT NULL,
-                        scan_mode TEXT DEFAULT 'fast',
-                        progress_pct REAL DEFAULT 0,
-                        current_item TEXT,
-                        total_audited INTEGER DEFAULT 0,
-                        healthy_count INTEGER DEFAULT 0,
-                        discrepancy_count INTEGER DEFAULT 0,
-                        report_json TEXT,
-                        error_message TEXT,
-                        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        completed_at TIMESTAMP
-                    );
-
-                    CREATE TABLE IF NOT EXISTS file_archive_submodels (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        file_id INTEGER NOT NULL,
-                        model_id INTEGER NOT NULL,
-                        name TEXT NOT NULL,
-                        relative_dir TEXT,
-                        preview_image_path TEXT,
-                        total_files INTEGER DEFAULT 0,
-                        total_bytes INTEGER DEFAULT 0,
-                        has_presupported BOOLEAN DEFAULT 0,
-                        has_unsupported BOOLEAN DEFAULT 0,
-                        has_slicer_project BOOLEAN DEFAULT 0,
-                        formats_json TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (file_id) REFERENCES model_files(file_id) ON DELETE CASCADE,
-                        FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE
-                    );
-
-                    CREATE TABLE IF NOT EXISTS file_archive_members (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        submodel_id INTEGER,
-                        file_id INTEGER NOT NULL,
-                        internal_path TEXT NOT NULL,
-                        filename TEXT NOT NULL,
-                        size_bytes INTEGER DEFAULT 0,
-                        is_supported BOOLEAN DEFAULT 0,
-                        file_extension TEXT,
-                        FOREIGN KEY (submodel_id) REFERENCES file_archive_submodels(id) ON DELETE SET NULL,
-                        FOREIGN KEY (file_id) REFERENCES model_files(file_id) ON DELETE CASCADE
-                    );
-
-                    CREATE INDEX IF NOT EXISTS idx_archive_submodels_file ON file_archive_submodels(file_id);
-                    CREATE INDEX IF NOT EXISTS idx_archive_submodels_model ON file_archive_submodels(model_id);
-                    CREATE INDEX IF NOT EXISTS idx_archive_members_file ON file_archive_members(file_id);
-                    CREATE INDEX IF NOT EXISTS idx_archive_members_submodel ON file_archive_members(submodel_id);
-                """)
-                cols = {r[1] for r in conn.execute("PRAGMA table_info(reconciliation_runs);").fetchall()}
-                if "scan_mode" not in cols:
-                    conn.execute("ALTER TABLE reconciliation_runs ADD COLUMN scan_mode TEXT DEFAULT 'fast';")
-        log_layer("sql", logging.DEBUG, "VaultReconciler schema verified.")
 
     def execute_reconciliation(
         self,

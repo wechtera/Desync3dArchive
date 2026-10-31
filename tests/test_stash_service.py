@@ -12,6 +12,7 @@ Test Coverage:
 8. Active pointer fallback when an active stash is deleted.
 """
 
+from db_helper import create_database
 from pathlib import Path
 import sqlite3
 import sys
@@ -39,6 +40,7 @@ class TestStashServiceIsolated(unittest.TestCase):
         self.temp_dir_obj = tempfile.TemporaryDirectory()
         self.sandbox = Path(self.temp_dir_obj.name).resolve()
         self.db_path = self.sandbox / "test_library.db"
+        create_database(self.db_path)
 
         # 2. Seed parent catalog tables required for foreign key constraints
         self._init_test_database()
@@ -110,10 +112,10 @@ class TestStashServiceIsolated(unittest.TestCase):
                 );
 
                 -- Seed catalog data for testing
-                INSERT INTO models (id, name, designer_name)
-                VALUES (101, 'Vampire Lord', 'Artisan Guild'),
-                       (102, 'Ghul Pack', 'Artisan Guild'),
-                       (103, 'Dire Wolf', 'Artisan Guild');
+                INSERT INTO models (id, name, designer_name, raw_backup_path)
+                VALUES (101, 'Vampire Lord', 'Artisan Guild', ''),
+                       (102, 'Ghul Pack', 'Artisan Guild', ''),
+                       (103, 'Dire Wolf', 'Artisan Guild', '');
 
                 INSERT INTO model_files (file_id, model_id, filename, size_bytes)
                 VALUES (501, 101, 'Vampire_Lord.zip', 150000000);
@@ -125,10 +127,20 @@ class TestStashServiceIsolated(unittest.TestCase):
                 VALUES (1001, 1, 501, 'Files/Vampire_Sword.stl', 'Vampire_Sword.stl', 12000000, 1);
             """)
 
+            # The real schema enforces the "downloaded first" guardrail, so give these models a vault.
+            vault = self.sandbox / "vault"
+            vault.mkdir()
+            (vault / "Vampire_Lord.zip").write_bytes(b"archive")
+            conn.execute("UPDATE models SET vault_path = ?;", (str(vault),))
+            conn.execute("""
+                INSERT INTO downloaded_files (
+                    file_id, model_id, original_filename, cleaned_filename, local_relative_path,
+                    actual_bytes, vault_path, storage_tier
+                ) VALUES (501, 101, 'Vampire_Lord.zip', 'Vampire_Lord.zip', 'Vampire_Lord.zip', 7, ?, 'nas');
+            """, (str(vault / "Vampire_Lord.zip"),))
+
     def test_schema_creation_and_idempotency(self):
         """Verifies schema creates necessary tables and can be called repeatedly without error."""
-        self.svc.ensure_schema()
-        self.svc.ensure_schema()
 
         with sqlite3.connect(str(self.db_path)) as conn:
             tables = {

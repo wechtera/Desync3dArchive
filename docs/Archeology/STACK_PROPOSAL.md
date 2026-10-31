@@ -21,7 +21,7 @@ The problems found in the archeology are in the HTTP layer, secrets handling, sc
 | MMF sign-in | Implicit grant, no refresh | **Implicit grant with verified `state`, with the authorization code grant available by setting** | The application has only an API key, which the code grant rejects. A client secret from MMF would enable refresh tokens |
 | Database | SQLite, rollback-journal mode | **SQLite in WAL mode** | Readers stop blocking on the download workers' writes |
 | Data access | Raw SQL | **Keep raw SQL**, moved into per-domain query modules | An ORM adds a large layer and no capability this app needs |
-| Migrations | `CREATE IF NOT EXISTS` and `ALTER` in 7 modules | **Numbered `.sql` files plus `PRAGMA user_version`**, with a runner of about 50 lines | One schema source of truth. `user_version` is 0 today, so the live DB becomes the baseline |
+| Migrations | `CREATE IF NOT EXISTS` and `ALTER` in 7 modules | **Numbered `.sql` files plus `PRAGMA user_version`**, with a runner of about 50 lines | One schema source of truth. The live DB at `user_version` 0 is adopted as the baseline |
 | Search | `LIKE '%term%'` | **SQLite FTS5** on name, designer and tags | Built in, and no new service |
 | Background jobs | `TaskManager` and `DownloadManager` singletons with threads | **One small DB-backed job runner**, in-process, using threads | Adds restart recovery and timeouts. No Redis or queue library |
 | Scraper | Node, `scrape.js`, progress parsed from stdout | **Keep Node**, and have it emit JSON lines | Required: the documented API has no library or purchases endpoint. The stealth plugin is Node-only and the scraper works |

@@ -118,24 +118,6 @@ def _bg_calculate_library_telemetry(db_path: Path, library_id: int, lib_path: Pa
         log_layer("storage", logging.ERROR, f"Background disk usage scan failed for Library #{library_id}: {e}")
 
 
-def _ensure_external_libraries_schema(conn: sqlite3.Connection):
-    """Ensures external_libraries table exists in SQLite database."""
-    with conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS external_libraries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                path TEXT UNIQUE NOT NULL,
-                default_creator TEXT,
-                disk_bytes INTEGER DEFAULT 0,
-                total_models INTEGER DEFAULT 0,
-                total_files INTEGER DEFAULT 0,
-                last_scanned_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-
-
 def _extract_tokens_from_json(raw_json: str) -> Tuple[str, str]:
     cf_val, php_val = "", ""
     if not raw_json:
@@ -166,12 +148,6 @@ def _extract_tokens_from_json(raw_json: str) -> Tuple[str, str]:
 # -------------------------------------------------------------------------
 # Core Settings Endpoints
 # -------------------------------------------------------------------------
-
-def _has_settings_table(conn: sqlite3.Connection) -> bool:
-    return conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_settings';"
-    ).fetchone() is not None
-
 
 def _merge_cookies(existing_json: str, updates: dict[str, str | None]) -> str:
     """Replaces named cookies in the stored list and keeps every other cookie."""
@@ -250,18 +226,11 @@ def handle_post_settings(
             data["cookie_phpsessid"] = php_extracted
     elif data.get("cookie_cf_clearance") or data.get("cookie_phpsessid"):
         data["cookies_json"] = _merge_cookies(
-            auth_service.get_setting(conn, "cookies_json") if _has_settings_table(conn) else "",
+            auth_service.get_setting(conn, "cookies_json"),
             {"cf_clearance": data.get("cookie_cf_clearance"), "PHPSESSID": data.get("cookie_phpsessid")},
         )
 
     with conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS app_settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
         for k, v in data.items():
             conn.execute("""
                 INSERT INTO app_settings (key, value, updated_at)
@@ -291,7 +260,6 @@ def handle_get_external_libraries(
     Returns all registered in-place external library directories with telemetry,
     formatted disk usage, model counts, and scan timestamps.
     """
-    _ensure_external_libraries_schema(conn)
     conn.row_factory = sqlite3.Row
     rows = conn.execute("""
         SELECT id, name, path, default_creator, disk_bytes, total_models,
@@ -331,7 +299,6 @@ def handle_post_external_library(
     Strictly READ-ONLY: Never moves, renames, modifies, or creates files in the target directory.
     Returns immediately and calculates recursive disk footprint in a background thread.
     """
-    _ensure_external_libraries_schema(conn)
     data = body or {}
     raw_path = str(data.get("path", "")).strip()
     if not raw_path:
@@ -415,7 +382,6 @@ def handle_delete_external_library(
     Unlinks an in-place library record from SQLite.
     INVARIANT: MUST NOT delete or touch any physical files or folders on the NAS.
     """
-    _ensure_external_libraries_schema(conn)
     conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT id, name, path FROM external_libraries WHERE id = ?;", (library_id,)).fetchone()
     if not row:
@@ -450,7 +416,6 @@ def handle_post_external_library_scan(
     POST /api/settings/libraries/:id/scan
     Dispatches task_type = 'external_library_reconcile' to scan and index the external library in-place.
     """
-    _ensure_external_libraries_schema(conn)
     conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT id, name, path, default_creator FROM external_libraries WHERE id = ?;", (library_id,)).fetchone()
     if not row:
@@ -643,13 +608,6 @@ def handle_post_logging_config(
     layers_str = ",".join(layers)
 
     with conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS app_settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
         conn.execute("""
             INSERT INTO app_settings (key, value, updated_at) VALUES ('log_level', ?, CURRENT_TIMESTAMP)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP;

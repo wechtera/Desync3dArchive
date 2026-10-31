@@ -196,7 +196,6 @@ class TaskManager:
         self.active_task_id: Optional[int] = None
         self.active_process: Optional[subprocess.Popen] = None
         self._cancel_requested: bool = False
-        self._ensure_schema()
         self._initialized = True
 
     def _get_db(self) -> sqlite3.Connection:
@@ -204,99 +203,6 @@ class TaskManager:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout = 45000;")
         return conn
-
-    def _ensure_schema(self):
-        with self._get_db() as conn:
-            with conn:
-                conn.executescript("""
-                    CREATE TABLE IF NOT EXISTS models (
-                        id INTEGER PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        url TEXT,
-                        description TEXT,
-                        published_at TEXT,
-                        designer_id INTEGER,
-                        designer_name TEXT,
-                        designer_username TEXT,
-                        primary_category TEXT,
-                        parent_category TEXT,
-                        pre_supported BOOLEAN DEFAULT 0,
-                        featured BOOLEAN DEFAULT 0,
-                        views INTEGER DEFAULT 0,
-                        likes INTEGER DEFAULT 0,
-                        price_value REAL,
-                        price_currency TEXT,
-                        primary_image_url TEXT,
-                        raw_backup_path TEXT NOT NULL,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        release_month TEXT,
-                        is_bonus BOOLEAN DEFAULT 0,
-                        vault_path TEXT,
-                        archive_download_url TEXT,
-                        source TEXT DEFAULT 'mmf'
-                    );
-
-                    CREATE TABLE IF NOT EXISTS model_tags (
-                        model_id INTEGER,
-                        tag TEXT NOT NULL,
-                        PRIMARY KEY (model_id, tag),
-                        FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE
-                    );
-
-                    CREATE TABLE IF NOT EXISTS model_files (
-                        file_id INTEGER PRIMARY KEY,
-                        model_id INTEGER NOT NULL,
-                        filename TEXT,
-                        size_bytes INTEGER,
-                        download_url TEXT,
-                        created_at TEXT,
-                        FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE
-                    );
-
-                    CREATE TABLE IF NOT EXISTS schema_anomalies (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        model_id INTEGER NOT NULL,
-                        anomaly_type TEXT NOT NULL,
-                        details TEXT NOT NULL,
-                        detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-
-                    CREATE TABLE IF NOT EXISTS pipeline_tasks (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        task_type TEXT NOT NULL,
-                        status TEXT NOT NULL,
-                        progress_pct REAL DEFAULT 0,
-                        progress_label TEXT,
-                        log_output TEXT DEFAULT '',
-                        error_message TEXT,
-                        params_json TEXT,
-                        artifacts_json TEXT,
-                        result_summary_json TEXT,
-                        result_json TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        started_at TIMESTAMP,
-                        completed_at TIMESTAMP
-                    );
-
-                    CREATE INDEX IF NOT EXISTS idx_models_designer ON models(designer_name);
-                    CREATE INDEX IF NOT EXISTS idx_models_category ON models(primary_category);
-                    CREATE INDEX IF NOT EXISTS idx_tags_tag ON model_tags(tag);
-                    CREATE INDEX IF NOT EXISTS idx_files_model ON model_files(model_id);
-                """)
-
-                m_cols = {r[1] for r in conn.execute("PRAGMA table_info(models);").fetchall()}
-                if "archive_download_url" not in m_cols:
-                    conn.execute("ALTER TABLE models ADD COLUMN archive_download_url TEXT;")
-                if "source" not in m_cols:
-                    conn.execute("ALTER TABLE models ADD COLUMN source TEXT DEFAULT 'mmf';")
-
-                task_cols = {r[1] for r in conn.execute("PRAGMA table_info(pipeline_tasks);").fetchall()}
-                if "params_json" not in task_cols:
-                    conn.execute("ALTER TABLE pipeline_tasks ADD COLUMN params_json TEXT;")
-                if "result_json" not in task_cols:
-                    conn.execute("ALTER TABLE pipeline_tasks ADD COLUMN result_json TEXT;")
-                if "error_message" not in task_cols:
-                    conn.execute("ALTER TABLE pipeline_tasks ADD COLUMN error_message TEXT;")
 
     def _get_setting(self, key: str, default: str = "") -> str:
         with self._get_db() as conn:

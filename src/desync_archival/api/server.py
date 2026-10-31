@@ -21,9 +21,10 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from desync_archival import migrations
 from desync_archival import settings as app_config
 from desync_archival.api.routes import dispatch_route
-from desync_archival.services.db import get_db_connection, init_persistent_tables
+from desync_archival.services.db import get_db_connection, seed_default_settings
 from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
 from desync_archival.services.logger import log_context, logger
 from desync_archival.services.task_manager import TaskManager
@@ -262,7 +263,8 @@ def start_managers() -> None:
     logger.info("[Server] Initializing database schema")
     conn = get_db()
     try:
-        init_persistent_tables(conn)
+        migrations.require_current(conn)
+        seed_default_settings(conn)
         app_config.check_stored_paths(conn)
     finally:
         conn.close()

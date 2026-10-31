@@ -16,6 +16,8 @@ import statistics
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Self
@@ -277,9 +279,10 @@ class Harness:
             target = self.app / name
             if target.is_dir():
                 shutil.rmtree(target)
+        # Stale WAL files beside a fresh copy would corrupt it, so they go first.
+        for suffix in ("-journal", "-wal", "-shm"):
+            (self.app / f"library.db{suffix}").unlink(missing_ok=True)
         shutil.copy2(self.dest / CLEAN_DB, self.app / "library.db")
-        for path in (self.app / "library.db-journal", self.app / "library.db-wal"):
-            path.unlink(missing_ok=True)
 
         log = open(self.dest / "baseline" / "old_app.stderr.log", "w", encoding="utf-8")
         self.process = subprocess.Popen(
@@ -300,6 +303,27 @@ class Harness:
         assert self.process
         self.process.terminate()
         self.process.wait(timeout=15)
+
+
+@contextmanager
+def preserved_dev_storage(dest: Path) -> Iterator[None]:
+    """Sets real dev files aside, because each harness run resets these folders."""
+    kept = dest / "baseline" / "kept_storage"
+    if kept.exists():
+        raise RuntimeError(f"{kept} is left from an interrupted run. Restore it before continuing.")
+    kept.mkdir()
+    folders = {"vault": dest / "nas" / "vault", "stash": dest / "stash", "staging": dest / "staging"}
+    for name, folder in folders.items():
+        if folder.exists():
+            folder.rename(kept / name)
+    try:
+        yield
+    finally:
+        for name, folder in folders.items():
+            if (kept / name).exists():
+                shutil.rmtree(folder, ignore_errors=True)
+                (kept / name).rename(folder)
+        kept.rmdir()
 
 
 def record_run(dest: Path, code: str = "old") -> tuple[dict[str, Any], float, list[Case]]:
@@ -429,11 +453,15 @@ def main() -> int:
     parser.add_argument("--source-db", type=Path, default=REPO_ROOT.parent / "scrapepage" / "library.db")
     args = parser.parse_args()
     dest = args.dest.resolve()
-    if args.accept:
-        return accept_changes(dest, args.accept)
-    if args.compare:
-        return compare_new_app(dest)
+    with preserved_dev_storage(dest):
+        if args.accept:
+            return accept_changes(dest, args.accept)
+        if args.compare:
+            return compare_new_app(dest)
+        return record_baseline(dest, args.source_db)
 
+
+def record_baseline(dest: Path, source_db: Path) -> int:
     print("Run 1")
     first, _, cases = record_run(dest)
     print("Run 2")
@@ -456,7 +484,7 @@ def main() -> int:
         text_by_name[name] = text
         (SNAPSHOT_DIR / f"{name}.json").write_text(text, encoding="utf-8")
 
-    secrets = production_secret_values(args.source_db)
+    secrets = production_secret_values(source_db)
     real_leaks = sum(1 for text in text_by_name.values() for secret in secrets if secret in text)
 
     print("Recording performance baseline")

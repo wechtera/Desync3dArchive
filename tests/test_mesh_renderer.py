@@ -22,7 +22,8 @@ for p in (ROOT_DIR, UI_DIR):
 
 from desync_archival import settings as app_config
 from desync_archival.services.mesh_renderer import MeshRenderer, VALID_VIEWS, MODEL_PRIORITY_TOKENS, AVOID_TOKENS
-from desync_archival.services.db import get_db_connection, init_persistent_tables
+from db_helper import init_persistent_tables
+from desync_archival.services.db import get_db_connection
 
 
 class TestMeshRenderer(unittest.TestCase):
@@ -179,7 +180,7 @@ class TestMeshRenderer(unittest.TestCase):
 
         conn = self._get_db()
         with conn:
-            conn.execute("INSERT INTO models (id, name) VALUES (10, 'Warrior');")
+            conn.execute("INSERT INTO models (id, name, url, raw_backup_path) VALUES (10, 'Warrior', '', '');")
             conn.execute("""
                 INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path, file_extension, vault_path, actual_bytes)
                 VALUES (500, 10, 'loose_mesh.stl', 'loose_mesh.stl', 'loose_mesh.stl', '.stl', ?, ?);
@@ -212,11 +213,12 @@ class TestMeshRenderer(unittest.TestCase):
 
         conn = self._get_db()
         with conn:
-            conn.execute("INSERT INTO models (id, name) VALUES (20, 'Hero Pack');")
+            conn.execute("INSERT INTO models (id, name, url, raw_backup_path) VALUES (20, 'Hero Pack', '', '');")
             conn.execute("""
                 INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path, file_extension, vault_path, actual_bytes)
                 VALUES (600, 20, 'pack.zip', 'pack.zip', 'pack.zip', '.zip', ?, ?);
             """, (str(zip_file), zip_file.stat().st_size))
+            conn.execute("INSERT INTO model_files (file_id, model_id, filename, size_bytes) VALUES (600, 20, 'pack.zip', 0)")
             conn.execute("""
                 INSERT INTO file_archive_members (id, file_id, internal_path, filename, file_extension, size_bytes)
                 VALUES (700, 600, 'Meshes/hero_unsupported.stl', 'hero_unsupported.stl', '.stl', 100);
@@ -244,7 +246,7 @@ class TestMeshRenderer(unittest.TestCase):
 
         conn = self._get_db()
         with conn:
-            conn.execute("INSERT INTO models (id, name) VALUES (30, 'Crash Model');")
+            conn.execute("INSERT INTO models (id, name, url, raw_backup_path) VALUES (30, 'Crash Model', '', '');")
             conn.execute("""
                 INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path, file_extension, vault_path, actual_bytes)
                 VALUES (800, 30, 'crash_mesh.stl', 'crash_mesh.stl', 'crash_mesh.stl', '.stl', ?, ?);

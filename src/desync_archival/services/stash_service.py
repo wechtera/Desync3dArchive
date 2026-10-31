@@ -20,7 +20,6 @@ class StashService:
         else:
             self.db_path = app_config.db_path().resolve()
 
-        self.ensure_schema()
 
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), timeout=45.0)
@@ -28,56 +27,6 @@ class StashService:
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.execute("PRAGMA busy_timeout = 45000;")
         return conn
-
-    def ensure_schema(self, conn: Optional[sqlite3.Connection] = None):
-        """Ensures the stashes and stash_items tables and indexes exist."""
-        ddl = """
-            CREATE TABLE IF NOT EXISTS stashes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                description TEXT DEFAULT 'A pile of gray',
-                is_active BOOLEAN DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS stash_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                stash_id INTEGER NOT NULL,
-                item_type TEXT NOT NULL CHECK(item_type IN ('model', 'file', 'submodel', 'archive_member')),
-                model_id INTEGER NOT NULL,
-                file_id INTEGER,
-                submodel_id INTEGER,
-                archive_member_id INTEGER,
-                notes TEXT DEFAULT '',
-                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (stash_id) REFERENCES stashes(id) ON DELETE CASCADE,
-                FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE,
-                FOREIGN KEY (file_id) REFERENCES model_files(file_id) ON DELETE CASCADE,
-                FOREIGN KEY (submodel_id) REFERENCES file_archive_submodels(id) ON DELETE CASCADE,
-                FOREIGN KEY (archive_member_id) REFERENCES file_archive_members(id) ON DELETE CASCADE
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_stashes_active ON stashes(is_active);
-            CREATE INDEX IF NOT EXISTS idx_stash_items_stash ON stash_items(stash_id);
-            CREATE INDEX IF NOT EXISTS idx_stash_items_model ON stash_items(model_id);
-            CREATE INDEX IF NOT EXISTS idx_stash_items_type ON stash_items(stash_id, item_type);
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_stash_items_unique ON stash_items(
-                stash_id,
-                item_type,
-                model_id,
-                COALESCE(file_id, 0),
-                COALESCE(submodel_id, 0),
-                COALESCE(archive_member_id, 0)
-            );
-        """
-        if conn:
-            with conn:
-                conn.executescript(ddl)
-        else:
-            with self._get_connection() as local_conn:
-                with local_conn:
-                    local_conn.executescript(ddl)
 
     # -------------------------------------------------------------------------
     # Guardrail Verification Helpers

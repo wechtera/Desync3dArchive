@@ -5,19 +5,18 @@ Tests OAuth authentication, Stash manifests, in-place external libraries, and ep
 
 import http.client
 import json
-import os
-from pathlib import Path
 import sys
 import tempfile
-import threading
 import time
-from typing import Optional
 import unittest
-from unittest.mock import MagicMock, patch
 import zipfile
+from pathlib import Path
+from typing import Optional
+from unittest.mock import MagicMock, patch
+
+from live_server import LiveServer
 
 from desync_archival import settings as app_config
-from live_server import LiveServer
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 UI_DIR = ROOT_DIR / "ui"
@@ -29,9 +28,11 @@ for p in (ROOT_DIR, UI_DIR):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
+from db_helper import init_persistent_tables
+
 from desync_archival.api import server
 from desync_archival.services import auth_service
-from desync_archival.services.db import get_db_connection, init_persistent_tables
+from desync_archival.services.db import get_db_connection
 
 # Fail-safe check: Hard abort if the test harness is ever pointed at the live library
 assert server.DB_PATH != (ROOT_DIR / "library.db").resolve(), (

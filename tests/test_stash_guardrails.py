@@ -3,6 +3,7 @@ tests/test_stash_guardrails.py - Automated unit tests for stash download guardra
 Verifies that un-downloaded models, files, submodels, and archive members cannot be stashed.
 """
 
+from db_helper import create_database
 from pathlib import Path
 import shutil
 import sqlite3
@@ -39,6 +40,7 @@ class TestStashGuardrails(unittest.TestCase):
     def setUp(self):
         self.test_dir = Path(tempfile.mkdtemp())
         self.db_path = self.test_dir / "test_library.db"
+        create_database(self.db_path)
         self.vault_dir = self.test_dir / "vault"
         self.vault_dir.mkdir(parents=True, exist_ok=True)
 
@@ -112,25 +114,25 @@ class TestStashGuardrails(unittest.TestCase):
             self.conn.execute("INSERT INTO stashes (id, name, is_active) VALUES (1, 'Resin Queue', 1);")
 
             # 1. Model 101: Un-downloaded (vault_path IS NULL)
-            self.conn.execute("INSERT INTO models (id, name, vault_path) VALUES (101, 'Ghost Dragon', NULL);")
+            self.conn.execute("INSERT INTO models (id, name, vault_path, raw_backup_path) VALUES (101, 'Ghost Dragon', NULL, '');")
             self.conn.execute("INSERT INTO model_files (file_id, model_id, filename, size_bytes) VALUES (1001, 101, 'dragon.zip', 500000);")
 
             # 2. Model 102: Corrupted path (vault_path set but directory does not exist on disk)
             fake_dir = self.vault_dir / "NonExistentFolder"
-            self.conn.execute("INSERT INTO models (id, name, vault_path) VALUES (102, 'Broken Mech', ?);", (str(fake_dir),))
+            self.conn.execute("INSERT INTO models (id, name, vault_path, raw_backup_path) VALUES (102, 'Broken Mech', ?, '');", (str(fake_dir),))
 
             # 3. Model 103: Downloaded & Healthy
             model_103_dir = self.vault_dir / "Archvillain" / "Ghul"
             model_103_dir.mkdir(parents=True, exist_ok=True)
-            self.conn.execute("INSERT INTO models (id, name, vault_path) VALUES (103, 'Ghul Squad', ?);", (str(model_103_dir),))
+            self.conn.execute("INSERT INTO models (id, name, vault_path, raw_backup_path) VALUES (103, 'Ghul Squad', ?, '');", (str(model_103_dir),))
 
             archive_file = model_103_dir / "ghul_squad.zip"
             archive_file.write_bytes(b"mock zip content")
 
             self.conn.execute("INSERT INTO model_files (file_id, model_id, filename, size_bytes) VALUES (1003, 103, 'ghul_squad.zip', 16);")
             self.conn.execute("""
-                INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, vault_path, storage_tier, actual_bytes)
-                VALUES (1003, 103, 'ghul_squad.zip', 'ghul_squad.zip', ?, 'nas', 16);
+                INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, vault_path, storage_tier, actual_bytes, local_relative_path)
+                VALUES (1003, 103, 'ghul_squad.zip', 'ghul_squad.zip', ?, 'nas', 16, 'ghul_squad.zip');
             """, (str(archive_file),))
 
             # Submodel and Member tied to Model 103

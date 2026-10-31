@@ -550,17 +550,7 @@ def handle_post_model_render_view(
 
     force_rerender = bool(payload.get("force", False))
 
-    # Self-healing schema: check if source column exists in models table
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(models);").fetchall()}
-    if "source" not in cols:
-        try:
-            with conn:
-                conn.execute("ALTER TABLE models ADD COLUMN source TEXT DEFAULT 'mmf';")
-            cols.add("source")
-        except Exception:
-            pass
-
-    source_expr = "COALESCE(source, 'mmf') AS source" if "source" in cols else "'mmf' AS source"
+    source_expr = "COALESCE(source, 'mmf') AS source"
 
     model = conn.execute(f"""
         SELECT id, name, designer_name, vault_path, primary_image_url,

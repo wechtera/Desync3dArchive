@@ -129,13 +129,6 @@ class StashExporter:
         c = self._get_connection(conn)
         should_close = conn is None
         try:
-            # Self-healing schema check
-            try:
-                from desync_archival.services.stash_service import StashService
-                StashService(db_path=self.db_path).ensure_schema(c)
-            except Exception:
-                pass
-
             stash = c.execute("SELECT id, name, description FROM stashes WHERE id = ?;", (stash_id,)).fetchone()
             if not stash:
                 raise ValueError(f"Stash #{stash_id} does not exist.")

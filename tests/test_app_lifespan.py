@@ -2,19 +2,33 @@
 
 import http.client
 import json
+import sqlite3
 import threading
 import time
 import unittest
 from unittest.mock import MagicMock, patch
 
+from db_helper import create_database
 from fastapi.testclient import TestClient
 from live_server import LiveServer
 
 from desync_archival.api import server
+from desync_archival.migrations import MigrationError
 from desync_archival.services import logger as log
 
 
 class LifespanTests(unittest.TestCase):
+    def setUp(self):
+        create_database(server.DB_PATH)
+
+    def test_app_refuses_to_start_on_an_old_schema(self):
+        conn = sqlite3.connect(server.DB_PATH)
+        conn.execute("PRAGMA user_version = 1")
+        conn.close()
+        with self.assertRaises(MigrationError), TestClient(server.create_app(), base_url="http://localhost"):
+            pass
+        create_database(server.DB_PATH)
+
     def test_managers_start_and_stop_with_the_app(self):
         manager = MagicMock()
         with patch.object(server, "DownloadManager", return_value=manager), patch.object(server, "TaskManager") as tasks, \

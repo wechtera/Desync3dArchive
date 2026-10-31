@@ -17,6 +17,7 @@ Requirements satisfied:
    - Safe HTTP preview fallback downloading via httpx.
 """
 
+from db_helper import create_database
 import json
 import os
 from pathlib import Path
@@ -73,6 +74,7 @@ class TestArchivePeekerIsolated(unittest.TestCase):
         self.sandbox = Path(self.temp_dir_obj.name).resolve()
 
         self.db_path = self.sandbox / "test_library.db"
+        create_database(self.db_path)
         self.previews_path = self.sandbox / "previews"
         self.previews_path.mkdir(parents=True, exist_ok=True)
 
@@ -121,11 +123,11 @@ class TestArchivePeekerIsolated(unittest.TestCase):
                 );
 
                 -- Test model records
-                INSERT INTO models (id, name, primary_image_url, vault_path) 
-                VALUES (842170, 'Lunatics of the Death-Tide', 'https://example.com/lunatics.jpg', NULL);
+                INSERT INTO models (id, name, primary_image_url, vault_path, raw_backup_path) 
+                VALUES (842170, 'Lunatics of the Death-Tide', 'https://example.com/lunatics.jpg', NULL, '');
 
-                INSERT INTO models (id, name, primary_image_url, vault_path) 
-                VALUES (841381, 'Archvillain Bestiary Vol XXXVII', 'https://example.com/bestiary.jpg', NULL);
+                INSERT INTO models (id, name, primary_image_url, vault_path, raw_backup_path) 
+                VALUES (841381, 'Archvillain Bestiary Vol XXXVII', 'https://example.com/bestiary.jpg', NULL, '');
 
                 -- Test archive file records
                 INSERT INTO model_files (file_id, model_id, filename, size_bytes)

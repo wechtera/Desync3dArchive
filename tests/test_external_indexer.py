@@ -24,7 +24,8 @@ for p in (ROOT_DIR, UI_DIR):
         sys.path.insert(0, str(p))
 
 from desync_archival.services.external_indexer import ExternalLibraryIndexer, SYNTHETIC_ID_OFFSET
-from desync_archival.services.db import get_db_connection, init_persistent_tables
+from db_helper import init_persistent_tables
+from desync_archival.services.db import get_db_connection
 
 
 class TestExternalIndexer(unittest.TestCase):
