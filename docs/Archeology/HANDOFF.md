@@ -128,7 +128,7 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 ## Next action
 
-**Production cut over on 2026-10-31 and is running from `~/DESYNC_Data` at `http://127.0.0.1:8080`,** on code from `migration/09-cutover`. Run production commands through `scripts/production.sh`, which reads `~/.config/desync-archival/production.env`. The pre-migration backup is `DESYNC_Backups/library-20261031-131839-482898.db`. `../scrapepage` is unchanged and remains the rollback copy.
+**Production cut over on 2026-10-31 and is running from `~/DESYNC_Data` at `http://127.0.0.1:8080`,** on code from `migration/09-cutover`. Use `scripts/server.sh start|stop|restart|status` for the server, and `scripts/production.sh` for other production commands. Both read `~/.config/desync-archival/production.env`. The pre-migration backup is `DESYNC_Backups/library-20261031-131839-482898.db`. `../scrapepage` is unchanged and remains the rollback copy.
 
 1. The user signs in to MMF again. The stored token expired on 2026-10-30.
 2. To reach production from other machines: run `scripts/production.sh python -m desync_archival.dbtool set-password`, set `DESYNC_HOST=0.0.0.0`, `DESYNC_ALLOWED_HOSTS` and the TLS paths in `production.env`, and restart.

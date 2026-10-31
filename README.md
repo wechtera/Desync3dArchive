@@ -52,6 +52,21 @@ To build a sanitized development copy from production:
 ./scripts/build_dev_data.py --protect /path/to/nas --protect /path/to/staging --protect /path/to/stash
 ```
 
+## Running production
+
+Production runs in the background from `~/DESYNC_Data`, using the settings in `~/.config/desync-archival/production.env`. Run these from this folder:
+
+```bash
+scripts/server.sh status    # is it running, and where
+scripts/server.sh start     # start it, and wait until it is listening
+scripts/server.sh stop      # stop it, and give workers time to finish cleanly
+scripts/server.sh restart   # stop, then start
+```
+
+The server does not start by itself after a reboot, so run `start`. Stop the dev app first if it is on the same port. The script never stops another program on that port and never forces a stop. Startup output goes to `~/DESYNC_Data/logs/server.out`, and the app log is `~/DESYNC_Data/logs/vault.log`.
+
+For any other production command, use `scripts/production.sh`, for example `scripts/production.sh python -m desync_archival.dbtool status`.
+
 ## Running
 
 ```bash
