@@ -13,6 +13,12 @@
 
 The peek stored raw facts (`file_archive_members`) and an interpretation (`file_archive_submodels`). Only the interpretation is wrong. New grouping is computed from stored paths, written beside the old rows and compared. It needs no NAS and can rerun at will. The old rows stay until stashes and previews have moved and the user has accepted the result.
 
+## Decisions, 2026-10-31
+
+- **One model, many collections.** A bundle and the same item sold alone share one model. Files and collections stay separate. Automatic only when printable filenames and exact sizes all match. Anything close is flagged for a human. An unpeeked collection stays a placeholder until peeked, then joins, and its old ID redirects so stashes hold.
+- **Archives get human review,** on the same screen as Loot, worst first.
+- **Busts join their character's group.** Groups never span collections automatically. Tags do that.
+
 ## Stages
 
 1. **Archive resolution.** The resolver works on folders, and on archives it agreed with the peeker 65% of the time. Add file-level resolution, run on the 173 archives without writing, and show the user the differences.
