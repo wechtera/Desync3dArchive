@@ -58,6 +58,8 @@ The user chose one model per character across scales and support types, with bus
 
 **Open: the classifier is Loot-specific.** The user wants a separate model resolver that does not depend on one library's layout or on where the files came from, with better pattern detection, possibly ML. Do not extend the Loot rules further until that is decided.
 
+**The resolver must also cover archive peeks.** `ArchivePeeker` already resolves MMF archives into submodels, 498 across 173 archives in production, with its own rules: creator-specific strings in `_derive_submodel_identity` and `_segment_image_driven`, such as Comet Lord, Jurakin and `Mummy Base`, plus `STUDIO_ALIASES`. It also uses renders as evidence, so the resolver's input needs images as well as files. The result only differs in where it lands: models for a library, submodels for an archive. Existing submodels must not change silently: compare old and new output before switching.
+
 ## Before deploying
 
 1. Merge `feature/library-scan`. Production runs from `migration/09-cutover` in `DESYNC_3D_Archival`, so the checkout must move with it.
