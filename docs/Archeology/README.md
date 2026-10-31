@@ -21,6 +21,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 | File | Purpose |
 |---|---|
+| `HANDOFF.md` | Start here in a new session: context, locations, status and pitfalls |
 | `SCRAPEPAGE_ARCHEOLOGY.md` | Findings: use cases, architecture, business rules, security register V1 to V20 |
 | `STACK_PROPOSAL.md` | Accepted stack, decisions, production data safeguards, LAN consequences |
 | `MIGRATION_PROMPTS.md` | Ordered prompts for Steps 0A to 9, with exit checks |

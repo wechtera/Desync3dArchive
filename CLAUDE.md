@@ -1,6 +1,6 @@
 # DESYNC 3D Archival
 
-Read `docs/Archeology/README.md` first. It holds the project rules, current state and decisions.
+Read `docs/Archeology/HANDOFF.md` first, then `docs/Archeology/README.md`. They hold the project context, rules, current state and decisions.
 
 - Never use em dashes.
 - Never manually modify change logs.

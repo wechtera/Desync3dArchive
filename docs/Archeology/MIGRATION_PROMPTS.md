@@ -238,6 +238,8 @@ Exit check: all contract tests pass with the catch-all removed.
    behavior if they do not.
 7. Run the Step 3 backup on a daily schedule through the job runner, and show the last backup
    time and result in Settings.
+8. Pause download workers shortly before the OAuth token expires instead of letting a 401 trip the
+   circuit breaker. Show a reconnect prompt, and resume queued downloads after reconnecting.
 Exit check: killing the app mid-job on a dev copy leaves recoverable state, and a real small
 scrape and a test download to the dev vault succeed with user approval.
 ```
