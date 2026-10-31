@@ -30,7 +30,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 6 passed its automated exit check on branch `migration/06-frontend`. It needs the user's look at the UI and approval to merge.
+- **Phase:** Step 6 is merged. Step 7 is on `migration/07-lan`, and its exit check needs a login from another computer.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** `check.sh` passes at the latest commit: 384 Python tests, 1 skipped, 22 browser tests and 110 contract cases.
 - **Production data:** Untouched. Dev work never reaches it, and `library.db` still has its 15:50 modified time from 2026-10-30. The last full NAS comparison, after Step 4, was clean.
@@ -71,6 +71,15 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Commits.** Commit freely on step branches. Merge to `main` after the exit check and user approval.
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
+
+## Step 7 results
+
+- One password: salted scrypt hash in a 0600 file outside the repository and data folder, set with `dbtool set-password`. No users table.
+- Session cookie is HttpOnly, Secure and SameSite=Strict. Sessions are held in memory as hashes, last 30 days and end on restart, logout or a password change.
+- Five failures from one address lock it out for 15 minutes.
+- `/api/auth/callback` stays public because Strict cookies are not sent on the redirect back from MMF. The page holds no data, and its `token_callback` POST is same-site, so it still needs a session.
+- Tested: every registered route refuses anonymous requests, and the real server command runs over TLS and refuses a LAN bind when unprotected.
+- Not tested: a login from another computer, and MMF sign-in through a LAN redirect URI.
 
 ## Step 6 results
 

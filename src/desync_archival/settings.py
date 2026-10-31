@@ -4,6 +4,7 @@ The data directory has no default, so the app can't fall back to a path next to 
 Outside APP_ENV=production, the guard refuses any path that resolves to a production location.
 """
 
+import ipaddress
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -70,6 +71,34 @@ def port() -> int:
         return int(value) if value else DEFAULT_PORT
     except ValueError as e:
         raise SettingsError("DESYNC_PORT must be a number.") from e
+
+
+def is_loopback(bind_host: str) -> bool:
+    if bind_host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(bind_host).is_loopback
+    except ValueError:
+        return False
+
+
+def login_required() -> bool:
+    """Login is required when reachable from other machines, or when forced on."""
+    _load()
+    return not is_loopback(host()) or os.environ.get("DESYNC_REQUIRE_LOGIN", "") == "1"
+
+
+def secrets_file() -> Path:
+    _load()
+    value = os.environ.get("DESYNC_SECRETS_FILE", "").strip()
+    return Path(value).expanduser().resolve() if value else Path.home() / ".config" / "desync-archival" / "secrets.json"
+
+
+def tls_files() -> tuple[Path, Path] | None:
+    _load()
+    cert = os.environ.get("DESYNC_TLS_CERT", "").strip()
+    key = os.environ.get("DESYNC_TLS_KEY", "").strip()
+    return (Path(cert).expanduser(), Path(key).expanduser()) if cert and key else None
 
 
 def allowed_hosts() -> set[str]:

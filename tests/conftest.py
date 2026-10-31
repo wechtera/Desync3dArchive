@@ -13,6 +13,7 @@ os.environ["APP_ENV"] = "test"
 os.environ["DESYNC_DATA_DIR"] = str(Path(_DATA_DIR.name).resolve())
 # Tests use temporary folders. tests/test_allowed_roots.py narrows this to test the rule.
 os.environ["DESYNC_ALLOWED_ROOTS"] = str(Path(tempfile.gettempdir()).resolve())
+os.environ["DESYNC_SECRETS_FILE"] = str(Path(_DATA_DIR.name).resolve() / "secrets.json")
 
 from desync_archival import settings
 

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DESYNC 3D Vault - Log In</title>
+  <link rel="stylesheet" href="/static/css/vault.css">
+</head>
+<body>
+  <main class="modal modal-md" style="margin: 15vh auto; padding: 24px;">
+    <h2 class="modal-title-accent">DESYNC 3D Vault</h2>
+    <form id="login-form" class="modal-body-stack">
+      <label for="login-password">Password</label>
+      <input type="password" id="login-password" class="search-box select-full" autocomplete="current-password" autofocus required>
+      <p id="login-error" class="text-alert font-sm" role="alert"></p>
+      <button type="submit" class="btn-pill btn-action-primary">Log In</button>
+    </form>
+  </main>
+  <script type="module" src="/static/js/login.js"></script>
+</body>
+</html>

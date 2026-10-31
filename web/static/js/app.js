@@ -119,6 +119,7 @@ import {
   saveAuthCredentials,
   connectAccount,
   disconnectAccount,
+  logOut,
   testAccountConnection
 } from './views/settings.js';
 
@@ -562,6 +563,7 @@ Object.assign(window, {
   saveAuthCredentials,
   connectAccount,
   disconnectAccount,
+  logOut,
   testAccountConnection,
 
   // === 15. Pipeline Tasks, Scraper & Ingest Automation ===
@@ -654,6 +656,16 @@ function initApp() {
   loadMetrics();
   checkHealth();
 }
+
+// When a session ends, every view's next request lands here. MMF's own 401s lack this header.
+const nativeFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const res = await nativeFetch(...args);
+  if (res.status === 401 && res.headers.get('X-Login-Required')) {
+    window.location.href = '/login';
+  }
+  return res;
+};
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initApp);

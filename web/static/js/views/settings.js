@@ -78,6 +78,7 @@ export async function loadSettingsView() {
     loadDirectoryUsage(),
     loadExternalLibraries(),
     loadAuthStatus(),
+    loadSessionStatus(),
     loadLoggingSettings()
   ]);
   bindCookieJsonSync();
@@ -618,6 +619,25 @@ export async function connectAccount() {
     }
   } catch (err) {
     alert(`Connection error: ${err.message}`);
+  }
+}
+
+async function loadSessionStatus() {
+  try {
+    const res = await fetch('/api/session');
+    const data = await res.json();
+    document.getElementById('btn-logout').style.display = data.login_required ? '' : 'none';
+  } catch (err) {
+    console.error('Error loading session status:', err);
+  }
+}
+
+export async function logOut() {
+  try {
+    await fetch('/api/logout', { method: 'POST' });
+    window.location.href = '/login';
+  } catch (err) {
+    alert(`Log out error: ${err.message}`);
   }
 }
 

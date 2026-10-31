@@ -4,7 +4,7 @@ A single-user, local-first archive and asset manager for a MyMiniFactory (MMF) 3
 
 This project replaces `scrapepage`, which stays frozen in the sibling directory for reference and rollback.
 
-**Status:** Migration is through Step 5 of 9, all on `main`. The app is usable on dev data, bound to loopback, and production has not moved yet. It has no login, so it stays loopback-only until Step 7. Start with [docs/Archeology/HANDOFF.md](docs/Archeology/HANDOFF.md).
+**Status:** Migration is through Step 6 of 9 on `main`, with Step 7 (LAN mode) on `migration/07-lan`. The app is usable on dev data, bound to loopback by default, and production has not moved yet. Start with [docs/Archeology/HANDOFF.md](docs/Archeology/HANDOFF.md).
 
 ## Prerequisites
 
@@ -69,6 +69,35 @@ The app never migrates a database by itself. If the schema is behind, it refuses
 Sign in from Settings with **Connect**, which opens MMF's login page, where you also choose how long the sign-in lasts. Only the Client ID has to be saved first. The library scrape needs session cookies, which go in their own Settings fields, and it runs without a browser window by default. If Cloudflare asks for a check, turn that switch off and scrape in a visible window.
 
 The app and the old app both use port 8080, so stop one before starting the other. `check.sh` runs the browser tests when `~/DESYNC_Data_dev` exists, and they use port 8099.
+
+## LAN mode
+
+By default the app listens on loopback and has no login. To reach it from another computer:
+
+```bash
+uv run python -m desync_archival.dbtool set-password   # at least 12 characters
+
+brew install mkcert
+mkcert -install
+mkcert vault.local 192.168.1.20   # use this server's hostname and address
+```
+
+Then set these in `.env` and start the app as usual:
+
+```bash
+DESYNC_HOST=0.0.0.0
+DESYNC_ALLOWED_HOSTS=vault.local,192.168.1.20
+DESYNC_TLS_CERT=/full/path/to/vault.local+1.pem
+DESYNC_TLS_KEY=/full/path/to/vault.local+1-key.pem
+```
+
+The app refuses to start beyond loopback without the password and both certificate files. `DESYNC_ALLOWED_HOSTS` replaces the defaults, so list every name people will type, and include `localhost` if you still use it on the server. To trust the certificate on another computer, copy `rootCA.pem` from the folder `mkcert -CAROOT` prints and add it to that computer's trust store. Never copy `rootCA-key.pem`.
+
+There is one password and no user accounts. It is stored as a salted scrypt hash in `~/.config/desync-archival/secrets.json`, mode 0600, outside the repository and data folder. Sessions last 30 days and live in memory, so restarting the app signs everyone out. Five wrong passwords from one address lock that address out for 15 minutes. Changing the password signs everyone out.
+
+**MMF sign-in:** the redirect URI in Settings must exactly match one registered with MMF, and it has to work from the browser doing the sign-in, because MMF sends that browser there. `http://localhost:8080/api/auth/callback` only works on the server itself. From another computer, register and save something like `https://vault.local:8080/api/auth/callback`, or sign in on the server.
+
+**Scraper on a headless server:** a scrape runs without a window by default, but a Cloudflare check needs a visible window, so a server with no display can't pass one. `cf_clearance` is tied to the IP address and browser that earned it, so a cookie copied from another computer may fail. If scraping fails there, scrape on a computer with a display or paste model IDs into the download queue.
 
 ## Data
 

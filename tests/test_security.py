@@ -85,12 +85,9 @@ class V1BindTests(unittest.TestCase):
         with patch.dict(os.environ, {"DESYNC_PORT": "abc"}), self.assertRaises(settings.SettingsError):
             settings.port()
 
-    def test_bind_beyond_loopback_is_refused(self):
-        for host in ("0.0.0.0", "192.168.1.5", "example.com"):
-            with self.assertRaises(settings.SettingsError):
-                server.check_bind_host(host)
+    def test_loopback_needs_nothing_more(self):
         for host in ("127.0.0.1", "::1", "localhost"):
-            server.check_bind_host(host)
+            server.check_network_ready(host)
 
 
 class V2SecretExposureTests(AppCase):

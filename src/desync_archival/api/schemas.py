@@ -96,6 +96,10 @@ class LogsPurgeBody(RequestBody):
     days: int | str | None = None
 
 
+class LoginBody(RequestBody):
+    password: str
+
+
 class ConfirmBody(RequestBody):
     confirm: bool = False
 

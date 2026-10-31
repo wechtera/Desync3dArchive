@@ -3,7 +3,6 @@ api/server.py - FastAPI app: one catch-all /api route, static assets and preview
 Supports both 2-tuple JSON responses and 3-tuple binary image streams.
 """
 
-import ipaddress
 import json
 import mimetypes
 import re
@@ -19,13 +18,13 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
 
 from desync_archival import migrations
 from desync_archival import settings as app_config
-from desync_archival.services import jobs
+from desync_archival.services import jobs, login
 from desync_archival.services.db import get_db_connection, seed_default_settings
 from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
 from desync_archival.services.logger import log_context, logger
@@ -190,6 +189,36 @@ class SecurityMiddleware:
         return None
 
 
+class LoginMiddleware:
+    """Blocks anonymous requests when login is required. Only these paths stay open."""
+
+    # The callback page must stay open: SameSite=Strict cookies are not sent on the redirect back
+    # from MMF. It holds no data, and storing the token still needs a session.
+    PUBLIC_PATHS = frozenset({
+        "/login", "/api/login", "/api/session", "/api/auth/callback",
+        "/static/css/vault.css", "/static/js/login.js", "/static/js/auth_callback.js",
+    })
+
+    def __init__(self, app: Any):
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or not app_config.login_required() or scope["path"] in self.PUBLIC_PATHS:
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope)
+        if login.session_valid(request.cookies.get(login.COOKIE_NAME)):
+            await self.app(scope, receive, send)
+            return
+
+        if scope["path"].startswith("/api/"):
+            response: Response = JSONResponse({"error": "Login required"}, 401, {"X-Login-Required": "1"})
+        else:
+            response = RedirectResponse("/login", 303)
+        await response(scope, receive, send)
+
+
 def redirect_location(data: Any) -> str | None:
     if isinstance(data, str):
         match = re.search(r"url=([^'>\s]+)", data) or re.search(r"href=['\"]([^'\"]+)['\"]", data)
@@ -301,6 +330,7 @@ def create_app(manage_workers: bool = True) -> FastAPI:
             await run_in_threadpool(stop_managers)
 
     app = FastAPI(title="DESYNC 3D Vault", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(LoginMiddleware)
     app.add_middleware(SecurityMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
 
@@ -336,23 +366,29 @@ def create_app(manage_workers: bool = True) -> FastAPI:
 app = create_app()
 
 
-def check_bind_host(host: str) -> None:
-    """Binding beyond loopback needs the login and TLS that LAN mode adds."""
-    if host == "localhost":
+def check_network_ready(host: str) -> None:
+    """Reaching beyond loopback needs a password and TLS, or the app refuses to start."""
+    if app_config.login_required() and not login.has_password():
+        raise app_config.SettingsError(
+            "Login is required, and no password is set. Run: uv run python -m desync_archival.dbtool set-password"
+        )
+    if app_config.is_loopback(host):
         return
-    try:
-        loopback = ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        loopback = False
-    if not loopback:
-        raise app_config.SettingsError(f"Refusing to bind to {host}: only loopback is supported until LAN mode.")
+    tls = app_config.tls_files()
+    if not tls or not all(path.is_file() for path in tls):
+        raise app_config.SettingsError(f"Refusing to bind to {host} without DESYNC_TLS_CERT and DESYNC_TLS_KEY files.")
 
 
 def main() -> None:
     host, port = app_config.host(), app_config.port()
-    check_bind_host(host)
-    logger.info(f"[Server] Starting Web UI and API at http://{host}:{port}")
-    uvicorn.run(app, host=host, port=port, log_config=None, access_log=False, timeout_graceful_shutdown=5)
+    check_network_ready(host)
+    tls = app_config.tls_files()
+    scheme = "https" if tls else "http"
+    logger.info(f"[Server] Starting Web UI and API at {scheme}://{host}:{port}")
+    uvicorn.run(
+        app, host=host, port=port, log_config=None, access_log=False, timeout_graceful_shutdown=5,
+        ssl_certfile=str(tls[0]) if tls else None, ssl_keyfile=str(tls[1]) if tls else None,
+    )
 
 
 if __name__ == "__main__":

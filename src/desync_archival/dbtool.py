@@ -1,11 +1,29 @@
-"""Database commands: status, migrate, backup and restore."""
+"""Database commands: status, migrate, backup and restore. Also sets the app password."""
 
 import argparse
+import getpass
 import sqlite3
 import sys
 from pathlib import Path
 
 from desync_archival import backup, migrations, settings
+from desync_archival.services import login
+
+
+def set_password() -> int:
+    if sys.stdin.isatty():
+        password = getpass.getpass("New app password: ")
+        if password != getpass.getpass("Repeat it: "):
+            print("error: the passwords did not match", file=sys.stderr)
+            return 1
+    else:
+        password = sys.stdin.readline().rstrip("\n")
+    try:
+        print(f"password saved in {login.set_password(password)}")
+    except login.WeakPasswordError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def main() -> int:
@@ -18,7 +36,11 @@ def main() -> int:
     restore = commands.add_parser("restore")
     restore.add_argument("backup_file", type=Path)
     restore.add_argument("target", type=Path)
+    commands.add_parser("set-password")
     args = parser.parse_args()
+
+    if args.command == "set-password":
+        return set_password()
 
     db_path = settings.db_path()
     try:

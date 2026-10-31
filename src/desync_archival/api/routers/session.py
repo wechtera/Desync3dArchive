@@ -1,0 +1,62 @@
+"""App login: separate from MMF sign-in, and only used in LAN mode."""
+
+from fastapi import APIRouter, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse, JSONResponse, Response
+from pydantic import ValidationError
+
+from desync_archival import settings as app_config
+from desync_archival.api import schemas
+from desync_archival.services import login
+from desync_archival.services.logger import logger
+
+router = APIRouter()
+
+
+def client_id(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+@router.get("/login")
+def login_page() -> Response:
+    return FileResponse(app_config.web_dir() / "login.html")
+
+
+@router.get("/api/session")
+def session_status(request: Request) -> Response:
+    token = request.cookies.get(login.COOKIE_NAME)
+    return JSONResponse({"login_required": app_config.login_required(), "authenticated": login.session_valid(token)})
+
+
+@router.post("/api/login")
+async def log_in(request: Request) -> Response:
+    client = client_id(request)
+    if login.is_locked_out(client):
+        return JSONResponse({"error": "Too many attempts. Try again later."}, 429)
+
+    try:
+        body = schemas.LoginBody.model_validate_json(await request.body())
+    except ValidationError:
+        return JSONResponse({"error": "A password is required."}, 400)
+
+    # scrypt takes real time, so it stays off the event loop.
+    if not await run_in_threadpool(login.verify_password, body.password):
+        login.record_failure(client)
+        return JSONResponse({"error": "Wrong password."}, 401)
+
+    login.clear_failures(client)
+    logger.info(f"Login from {client}")
+    response = JSONResponse({"success": True})
+    response.set_cookie(
+        login.COOKIE_NAME, login.create_session(), max_age=login.SESSION_SECONDS,
+        path="/", httponly=True, secure=True, samesite="strict",
+    )
+    return response
+
+
+@router.post("/api/logout")
+def log_out(request: Request) -> Response:
+    login.end_session(request.cookies.get(login.COOKIE_NAME))
+    response = JSONResponse({"success": True})
+    response.delete_cookie(login.COOKIE_NAME, path="/", httponly=True, secure=True, samesite="strict")
+    return response

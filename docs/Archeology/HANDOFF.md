@@ -77,8 +77,8 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 | 3 | Done | Migrations, backups, WAL |
 | 4 | Done | Routers, query modules, dry-run, audit log, V6 |
 | 5 | Done | Job recovery, tools adapter, scraper events, backups. User confirmed a real scrape and download |
-| 6 | **Waiting on user review** | Code complete on `migration/06-frontend`. Automated checks pass |
-| 7 | Next | LAN mode: login and TLS |
+| 6 | Done | Merged to `main` after the user's review |
+| 7 | **Waiting on user test** | Code on `migration/07-lan`. Automated checks are not a substitute: the exit check needs a login from another computer |
 | 8 | To do | Measured performance work |
 | 9 | To do | Secrets and cutover. The only step that changes production, with approval at each stage |
 
@@ -101,7 +101,7 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 ## Known limits
 
-- **V1** closes fully in Step 7. The app has no login, so it refuses to bind beyond loopback.
+- **V1** is closed by Step 7 once the user confirms it. Beyond loopback, the app needs login, a password and TLS, or it refuses to start. `LoginMiddleware.PUBLIC_PATHS` is an exact-match allow list, so a new route is protected by default.
 - **V5:** token injection is closed, but the deprecated implicit grant is still in use because it is the only option.
 - **Untested against real services:** whether MMF's hosts honor `Range`, a Cloudflare check with `--no-sandbox` removed, and the `releases` fix against the real Loot Studios folder. 
 - **Snapshot gaps:** stash export, scrape and ingest record failure paths only.
