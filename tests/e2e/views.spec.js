@@ -576,6 +576,35 @@ test.describe('settings', () => {
     await expect(page.locator('.preview-model-flagged')).toHaveText('Voxshax');
   });
 
+  test('a flagged release says what to check and lights up the cause', async ({ page }) => {
+    await openReviewScreen(page);
+    await page.locator('.preview-release-open').first().click();
+    await expect(page.locator('#review-concerns')).toContainText('What to check (1)');
+    await expect(page.locator('#review-concerns')).toContainText('Item inside a model');
+    await expect(page.locator('#review-concerns')).toContainText('click New Card');
+
+    // It opens on the concern: the folder that caused it stands out from the rest of the card.
+    await expect(page.locator('.review-row[data-path="Drop/Voxshax/Tomb"]')).toHaveClass(/review-row-suspect/);
+    await expect(page.locator('.review-row[data-path="Drop/Voxshax"]')).toHaveClass(/review-row-flagged/);
+    await expect(page.locator('.review-row[data-path="Drop/Voxshax"]')).not.toHaveClass(/review-row-suspect/);
+    await expect(page.locator('.review-card[data-card="Voxshax"]')).toHaveClass(/review-card-focus/);
+    await expect(page.locator('.review-row[data-path="Drop/Busts/Lidda"]')).toHaveCount(0);
+  });
+
+  test('a possible duplicate lights up both cards', async ({ page }) => {
+    const release = structuredClone(reviewRelease);
+    release.cards[0].flags = ['Very close to Lidda, possibly the same thing'];
+    await mock(page, '/api/settings/libraries/2/preview', reviewReport);
+    await page.route('**/api/settings/libraries/2/preview/release*', (route) => route.fulfill({ json: release }));
+    await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true }], total: 1 });
+    await page.goto('/#downloads');
+    await page.locator('#sub-btn-libraries').click();
+    await page.locator('.preview-release-open').first().click();
+    await expect(page.locator('#review-concerns')).toContainText('Possible duplicate');
+    await expect(page.locator('.review-row[data-path="Drop/Voxshax"]')).toHaveClass(/review-row-focus/);
+    await expect(page.locator('.review-row[data-path="Drop/Busts/Lidda"]')).toHaveClass(/review-row-focus/);
+  });
+
   test('a card keeps the code guess until a human moves something', async ({ page }) => {
     await openReviewScreen(page);
     let saved = null;

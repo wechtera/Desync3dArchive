@@ -3086,3 +3086,19 @@ pre, .task-log-viewer, .console-output {
 .model-view-facts dd { margin: 0; }
 .model-view-tags { display: flex; flex-wrap: wrap; gap: 4px; max-height: 96px; overflow-y: auto; }
 @media (max-width: 600px) { .model-view-head { grid-template-columns: minmax(0, 1fr); } }
+.review-concerns { border: 1px solid var(--warning, #c9a227); padding: 8px 10px; margin-bottom: 12px; max-height: 26vh; overflow-y: auto; }
+.review-concerns-title { font-weight: 600; margin-bottom: 6px; color: var(--warning, #c9a227); }
+.review-concern { display: block; width: 100%; background: none; border: 0; border-left: 3px solid transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 4px 8px; font-size: 0.8rem; }
+.review-concern:hover, .review-concern-focus { border-left-color: #4fa3e0; background: rgba(79, 163, 224, 0.12); }
+.review-concern-line { display: block; opacity: 0.9; }
+.review-concern-label { color: var(--warning, #c9a227); font-weight: 600; }
+.review-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.review-key { display: inline-block; width: 12px; height: 12px; margin-left: 8px; }
+.review-key-focus, .review-row-focus { background: rgba(79, 163, 224, 0.18); }
+.review-key-flagged { background: rgba(201, 162, 39, 0.16); }
+.review-key-suspect { background: rgba(224, 79, 79, 0.45); }
+.review-row-flagged { background: rgba(201, 162, 39, 0.16); }
+.review-row-focus { background: rgba(79, 163, 224, 0.18); }
+.review-row-suspect { background: rgba(224, 79, 79, 0.45); font-weight: 600; }
+.review-card-flagged { border-left: 3px solid var(--warning, #c9a227); }
+.review-card-focus { border-left-color: #4fa3e0; background: rgba(79, 163, 224, 0.1); }

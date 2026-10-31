@@ -72,7 +72,7 @@ For any other production command, use `scripts/production.sh`, for example `scri
 Linked libraries such as Loot Studios are read in place and never changed. In **Manage / Retrieve / Reconcile Assets > Linked Libraries**:
 
 - **Preview New Folders** shows what would be added, and adds nothing. Run it after adding a folder to the library.
-- **Review** by clicking a release or model. The tree shows which card owns each folder or file. Tick rows, then use **New Card** or **Move to Card**, and rename or skip cards. Your cards are saved separately, so a new preview keeps them, and only something new reopens the release.
+- **Review** by clicking a release or model. It opens on **What to check**, which says what's wrong with each flagged card and what to do. Clicking one jumps to it, with its rows in blue and the row causing the concern in red. The tree shows which card owns each folder or file. Tick rows, then use **New Card** or **Move to Card**, and rename or skip cards. Your cards are saved separately, so a new preview keeps them, and only something new reopens the release.
 - **Approve and Add Reviewed** adds releases you marked reviewed, plus unflagged models from the rest. Flagged models and unticked releases stay proposed for later, and added models leave the review screen.
 - **Approve and Add All** adds everything still proposed. An unticked release is skipped for good.
 - **Full Rescan** checks known models against storage. It never adds new folders.

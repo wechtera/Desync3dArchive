@@ -443,11 +443,101 @@ function childrenOf(path) {
   return { folders: direct(review.data.folders), files: direct(review.data.files) };
 }
 
+const squash = (text) => text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+
+// Flags arrive as sentences from the resolver. This turns each into what's wrong, what to do about
+// it, and which rows or cards to light up. A flag that matches nothing is still shown as written.
+function concernOf(flag) {
+  const close = flag.match(/^Very close to (.+), possibly the same thing$/);
+  if (close) {
+    return {
+      label: 'Possible duplicate', other: close[1], terms: [],
+      ask: `Compare with ${close[1]}. If they're one design, tick its rows and Move to Card. If they're different, leave both.`,
+    };
+  }
+  const parent = flag.match(/^Named from a parent folder, but its folder says (.+)$/);
+  if (parent) {
+    const names = parent[1].split(', ');
+    return { label: 'Wrong name?', terms: names, ask: `The name came from a parent folder, but the highlighted folder says ${parent[1]}. Rename the card if so.` };
+  }
+  const holds = flag.match(/^Holds other named items: (.+)$/);
+  if (holds) {
+    const names = holds[1].split(', ');
+    return { label: 'Item inside a model', terms: names, ask: 'Is a highlighted folder its own thing? Tick it and click New Card. If it\'s a piece of this model, leave it.' };
+  }
+  if (flag.endsWith('is also a folder grouping other models')) {
+    return { label: 'Named after its folder', terms: [], ask: 'This card took the name of the folder around it. The blue rows show what it really is, so rename the card to match.' };
+  }
+  if (/^Spans \d+ folders/.test(flag)) {
+    return { label: 'Unusually large', terms: [], ask: 'It covers far more folders than others here. Check its paths: if different designs were merged, split them with New Card.' };
+  }
+  if (flag.startsWith('New since your review')) return { label: 'New', terms: [], ask: 'This appeared after you reviewed the release.' };
+  return { label: 'Check', terms: [], ask: flag };
+}
+
+const isNote = (flag) => flag.startsWith('Shared with');
+const concernsOf = (card) => (card.flags || []).filter(f => !isNote(f)).map(concernOf);
+
+function isSuspectRow(path, card) {
+  if (!card) return false;
+  const name = squash(leaf(path));
+  return concernsOf(card).some(c => c.terms.some(term => squash(term) && name.includes(squash(term))));
+}
+
+function focusCard(card) {
+  review.focus = card.key;
+  openPathsTo(card);
+  for (const concern of concernsOf(card)) {
+    const twin = review.cards.find(c => c.name === concern.other);
+    if (twin) openPathsTo(twin);
+  }
+  drawReview();
+  const row = document.querySelector(`.review-row[data-path="${CSS.escape(card.members[0] || '')}"]`);
+  row?.scrollIntoView({ block: 'center' });
+  document.querySelector('.review-card-focus')?.scrollIntoView({ block: 'nearest' });
+  document.querySelector('.review-concern-focus')?.scrollIntoView({ block: 'nearest' });
+}
+
+function drawConcerns() {
+  const flagged = review.cards.filter(c => concernsOf(c).length);
+  if (!flagged.length) return html`<p class="font-sm text-dim" id="review-concerns-none">Nothing is flagged here.</p>`;
+  return html`
+    <div class="review-concerns" id="review-concerns">
+      <div class="font-sm review-concerns-title">What to check (${flagged.length})</div>
+      ${flagged.map(card => html`
+        <button type="button" class=${`review-concern ${card.key === review.focus ? 'review-concern-focus' : ''}`} @click=${() => focusCard(card)}>
+          <strong>${card.name}</strong>
+          ${concernsOf(card).map(c => html`
+            <span class="review-concern-line"><span class="review-concern-label">${c.label}</span> ${c.ask}</span>
+          `)}
+        </button>
+      `)}
+      <div class="font-xs text-dim review-legend">
+        <span class="review-key review-key-focus"></span> card you're checking
+        <span class="review-key review-key-flagged"></span> rows on a flagged card
+        <span class="review-key review-key-suspect"></span> the row causing the concern
+      </div>
+    </div>
+  `;
+}
+
 function openPathsTo(card) {
   // The member itself opens too: what's wrong with a flagged card is usually inside it.
   for (const member of card.members) {
     for (let at = member; at.includes('/'); at = at.slice(0, at.lastIndexOf('/'))) review.open.add(at);
   }
+}
+
+function rowClass(path, owner) {
+  const twins = review.cards.find(c => c.key === review.focus);
+  const inFocus = owner && (owner.key === review.focus
+    || (twins && concernsOf(twins).some(c => c.other === owner.name)));
+  return [
+    'review-row',
+    owner && concernsOf(owner).length ? 'review-row-flagged' : '',
+    inFocus ? 'review-row-focus' : '',
+    isSuspectRow(path, owner) ? 'review-row-suspect' : '',
+  ].filter(Boolean).join(' ');
 }
 
 function drawTreeRow(path, isFile, depth) {
@@ -464,7 +554,7 @@ function drawTreeRow(path, isFile, depth) {
     drawReview();
   };
   return html`
-    <div class="review-row" data-path=${path} style=${`padding-left: ${depth * 16}px`}>
+    <div class=${rowClass(path, owner)} data-path=${path} style=${`padding-left: ${depth * 16}px`}>
       <input type="checkbox" class="review-select" aria-label=${`Select ${leaf(path)}`} ?disabled=${locked} .checked=${review.selected.has(path)} @change=${toggleSelected}>
       ${isFile ? html`<span class="review-twisty"></span>` : html`
         <button type="button" class="review-twisty" aria-label=${expanded ? 'Collapse' : 'Expand'} @click=${toggleOpen}>${expanded ? '-' : '+'}</button>
@@ -510,13 +600,9 @@ function drawCard(card) {
     review.dirty = true;
     if (field === 'skip') drawReview();
   };
-  const show = () => {
-    review.focus = card.key;
-    openPathsTo(card);
-    drawReview();
-  };
+  const show = () => focusCard(card);
   return html`
-    <div class=${`review-card ${card.key === review.focus ? 'review-card-focus' : ''} ${card.skip ? 'review-card-skip' : ''}`} data-card=${card.name}>
+    <div class=${`review-card ${card.key === review.focus ? 'review-card-focus' : ''} ${card.skip ? 'review-card-skip' : ''} ${concernsOf(card).length ? 'review-card-flagged' : ''}`} data-card=${card.name}>
       <div class="flex gap-2">
         <input type="text" class="review-card-name" aria-label="Card name" .value=${card.name} @input=${edit('name')} spellcheck="false">
         <input type="text" class="review-card-category" aria-label="Category" .value=${card.category} @input=${edit('category')} spellcheck="false">
@@ -526,7 +612,7 @@ function drawCard(card) {
         <button type="button" class="link-btn" @click=${show}>${card.members.length} ${card.members.length === 1 ? 'path' : 'paths'}</button>
         <label><input type="checkbox" class="review-skip" .checked=${!!card.skip} @change=${edit('skip')}> Skip</label>
       </div>
-      ${(card.flags || []).map(flag => html`<div class="font-xs review-flag">${flag}</div>`)}
+      ${(card.flags || []).map(flag => html`<div class=${`font-xs ${isNote(flag) ? 'text-dim' : 'review-flag'}`}>${isNote(flag) ? flag : concernOf(flag).label}</div>`)}
     </div>
   `;
 }
@@ -544,6 +630,7 @@ function drawReview() {
   const cards = [...review.cards].sort((a, b) => (b.flags || []).length - (a.flags || []).length || a.key.localeCompare(b.key));
   render(html`
     ${data.settled.length ? html`<p class="text-dim font-sm">${data.settled.length} cards here are already approved and hidden. Their paths show as In library.</p>` : nothing}
+    ${drawConcerns()}
     <div class="review-layout">
       <div class="review-tree" id="review-tree">
         ${top.map(f => drawTreeRow(f, false, 0))}
@@ -582,6 +669,9 @@ async function showReview(source, focusKey = '') {
     for (const card of review.cards) if ((card.flags || []).length || card.key === review.focus) openPathsTo(card);
     drawReview();
     window.openModal('library-review-modal');
+    // Land on the first concern, so the release opens on the thing that needs a decision.
+    const first = review.cards.find(c => c.key === review.focus) || review.cards.find(c => concernsOf(c).length);
+    if (first) focusCard(first);
   } catch (err) {
     alert(`Could not open it: ${err.message}`);
   }
