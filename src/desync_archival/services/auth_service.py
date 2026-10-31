@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from desync_archival.services import secret_store
 from desync_archival.services.logger import log_layer, logger
 
 MMF_USER_API_URL = "https://www.myminifactory.com/api/v2/user"
@@ -17,21 +18,7 @@ MMF_AUTHORIZE_URL = "https://auth.myminifactory.com/web/authorize"
 DEFAULT_REDIRECT_URI = "http://localhost:8080/api/auth/callback"
 
 # Never returned by the API. Each one is reported only as configured or not.
-SECRET_SETTING_KEYS = (
-    "PHPSESSID",
-    "cf_clearance",
-    "cookie_cf_clearance",
-    "cookie_cf_bm",
-    "cookie_cfuvid",
-    "cookie_cflb",
-    "cookie_phpsessid",
-    "cookie_rememberme",
-    "cookies_json",
-    "mmf_access_token",
-    "mmf_client_secret",
-    "mmf_oauth_state",
-    "mmf_refresh_token",
-)
+SECRET_SETTING_KEYS = secret_store.KEYS
 # Single-cookie settings, with the cookie name and domain each one is sent under.
 COOKIE_FIELDS = {
     "cookie_cf_clearance": ("cf_clearance", ".myminifactory.com"),
@@ -47,13 +34,20 @@ AUTH_MANAGED_KEYS = ("mmf_access_token", "mmf_oauth_state", "mmf_token_expires_a
 
 
 def get_setting(conn: sqlite3.Connection, key: str, default: str = "") -> str:
+    if key in SECRET_SETTING_KEYS:
+        held = secret_store.load()
+        if key in held:
+            return held[key]
     row = conn.execute("SELECT value FROM app_settings WHERE key = ?;", (key,)).fetchone()
     return row["value"] if row and row["value"] is not None else default
 
 
 def set_settings(conn: sqlite3.Connection, mapping: dict[str, str]):
+    secret_store.save({k: v for k, v in mapping.items() if k in SECRET_SETTING_KEYS})
     with conn:
         for k, v in mapping.items():
+            if k in SECRET_SETTING_KEYS:
+                continue
             conn.execute("""
                 INSERT INTO app_settings (key, value, updated_at)
                 VALUES (?, ?, CURRENT_TIMESTAMP)

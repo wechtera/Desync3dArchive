@@ -82,6 +82,12 @@ def is_loopback(bind_host: str) -> bool:
         return False
 
 
+def stored_data_path(path: Path) -> str:
+    """Paths inside the data folder are stored relative to it, so the folder can move."""
+    resolved = Path(path).resolve()
+    return str(resolved.relative_to(data_dir())) if resolved.is_relative_to(data_dir()) else str(path)
+
+
 def login_required() -> bool:
     """Login is required when reachable from other machines, or when forced on."""
     _load()

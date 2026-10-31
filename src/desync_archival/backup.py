@@ -76,7 +76,21 @@ def prune(directory: Path, keep: int) -> list[Path]:
     removed = backups[:-keep] if keep > 0 else []
     for path in removed:
         path.unlink()
+        secrets_copy(path).unlink(missing_ok=True)
     return removed
+
+
+def secrets_copy(backup_path: Path) -> Path:
+    return backup_path.with_suffix(".secrets.json")
+
+
+def _copy_secrets(target: Path) -> None:
+    source = app_config.secrets_file()
+    if not source.is_file():
+        return
+    copy = secrets_copy(target)
+    os.close(os.open(copy, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
+    copy.write_bytes(source.read_bytes())
 
 
 def create_backup(db_path: Path, keep: int = DEFAULT_RETENTION) -> Path:
@@ -92,6 +106,7 @@ def create_backup(db_path: Path, keep: int = DEFAULT_RETENTION) -> Path:
         _copy_database(db_path, temp, journal_mode="DELETE")
         counts = verify(temp, expected=row_counts(db_path))
         temp.rename(target)
+        _copy_secrets(target)
     except BaseException:
         temp.unlink(missing_ok=True)
         logger.error(f"Backup of {db_path.name} failed")

@@ -80,13 +80,15 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 | 6 | Done | Merged to `main` after the user's review |
 | 7 | Done | User logged in from another computer. Merged to `main` |
 | 8 | Done | Merged to `main` |
-| 8B | **Waiting on approval to merge** | Key decoupling on `migration/08b-keys`, see `KEY_DECOUPLING_PLAN.md`. Dev database is at schema 7, so the app won't start from `main` until this merges |
-| 9 | To do | Secrets and cutover. The only step that changes production, with approval at each stage |
+| 8B | Done | Key decoupling merged to `main`, see `KEY_DECOUPLING_PLAN.md`. Dev database is at schema 7 |
+| 9 | **In progress** | On `migration/09-cutover`. Stages 1 to 3 of the prompt are done on dev data. Production stages wait for approval, one at a time |
 
 `MIGRATION_PROMPTS.md` holds each step's prompt. Use the file, not an older pasted copy: the prompts have been rewritten since they were first written.
 
 ## Decisions that are easy to get wrong
 
+- **Secrets live in the file, with the database as a fallback.** `services/secret_store.py` holds the rule: a key in the file wins, and writes always go to the file. Read secrets through `auth_service.get_setting` or `overlay`, never straight from `app_settings`. Dev and production must not share a secrets file.
+- **Every test gets a fresh secrets file,** and tests pin host, TLS, backup folder and secrets away from `.env`. Keep that when adding a setting.
 - **Internal keys are not MMF IDs.** Old rows happen to share the number, new rows do not. Reach MMF, metadata files and vault folders through `external_key`, using `services/identity.py`. An ID above 2,000,000,000 no longer means external, so use `source`.
 - **Uniqueness lives in triggers, not constraints.** An increment column is the only key, and `tests/test_increment_keys.py` enforces it. `ON CONFLICT` no longer works on business values, so update first and insert if nothing changed. The `sqlite3` command-line tool cannot write to `models` or `model_tags`.
 - **A missing mount limits features, it never invalidates data.** If the NAS or an external library is offline, browsing, metadata and adding to stashes still work, because they read the catalog. Only work that needs the files, such as export, render or download, stops. Reconcile skips offline libraries so their files are not reported as missing. Unlinking is different: it is a deliberate choice and flags contents inactive.
@@ -125,6 +127,13 @@ To confirm production is untouched, compare each manifest in `~/DESYNC_Data_dev/
 
 ## Next action
 
-Have the user approve merging `migration/08b-keys`, then follow `CUTOVER.md`, one approved stage at a time. Sample comes first. `.env` holds the user's LAN setup on purpose, and tests and the harness pin themselves to loopback so it can't affect them. Step 9 must run migration 0004 on production through `dbtool migrate --confirm-production`.
+Pick up from `CUTOVER.md`. Production has not been changed.
+
+1. Add a `rewrite-paths` command to `scripts/cutover.py`. The stages run it on their copies, but the real cutover needs it on its own. Runbook stage 5 step 5 depends on it.
+2. Ask the user to approve the `sample` stage on the real production database. It copies real data and secrets into a work folder, so delete that folder afterwards.
+3. Look at the report with the user, then ask to approve `full`, then the rollback rehearsal, then the real cutover.
+4. Merge `migration/09-cutover` when the user approves. Nothing on it changes production by itself.
+
+Decisions already made: production stays on this Mac (E21 covers moving later), and production backups go to `test_stl_shelf/DESYNC_Backups` on the same disk for now. The user knows that does not protect against losing the drive.
 
 **State of dev:** the user is signed in on the dev app with a 7-day token issued 2026-10-30, and session cookies are saved in dev. Cloudflare cookies expire quickly, so expect to paste fresh ones before the next scrape. The dev app was left running on port 8080 and may need restarting. The dev catalog does not have Master Wendigo (276218) yet, because no ingest was run. Job 112 for model 148200 shows `failed` in dev and left files in dev staging, which is harmless.

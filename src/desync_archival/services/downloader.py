@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from desync_archival import settings as app_config
-from desync_archival.services import identity
+from desync_archival.services import identity, secret_store
 from desync_archival.services.logger import job_logged, log_layer, logger
 from desync_archival.services.paths import sanitize_segment
 
@@ -458,6 +458,7 @@ class DownloadManager:
             offload_mb = float(settings.get("offload_chunk_size_mb", 4.0))
             self.offload_chunk_size = max(256 * 1024, int(offload_mb * 1024 * 1024))
 
+            secret_store.overlay(settings)
             self.access_token = settings.get("mmf_access_token", "").strip()
             try:
                 self.token_expires_at = int(settings.get("mmf_token_expires_at") or 0)

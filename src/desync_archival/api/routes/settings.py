@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from desync_archival import settings as app_config
 from desync_archival.db.queries import settings as queries
-from desync_archival.services import audit, auth_service
+from desync_archival.services import audit, auth_service, secret_store
 from desync_archival.services.external_indexer import deactivate_library
 
 try:
@@ -184,6 +184,7 @@ def handle_get_settings(
     except Exception:
         settings = {}
 
+    secret_store.overlay(settings)
     if not settings.get("stash_download_path"):
         settings["stash_download_path"] = DEFAULT_STASH_EXPORT_PATH
 
@@ -231,9 +232,11 @@ def handle_post_settings(
         base = data.get("cookies_json") or auth_service.get_setting(conn, "cookies_json")
         data["cookies_json"] = _merge_cookies(base, single_cookies)
 
+    secret_store.save({k: v for k, v in data.items() if k in secret_store.KEYS})
     with conn:
         for k, v in data.items():
-            conn.execute(queries.POST_SETTINGS_1, (str(k), str(v) if v is not None else ""))
+            if k not in secret_store.KEYS:
+                conn.execute(queries.POST_SETTINGS_1, (str(k), str(v) if v is not None else ""))
 
     if download_manager and hasattr(download_manager, "_load_settings"):
         download_manager._load_settings()

@@ -8,14 +8,12 @@ out. Sessions and failed attempts both reset with the process, which suits a sin
 import base64
 import hashlib
 import hmac
-import json
-import os
 import secrets
 import threading
 import time
 from pathlib import Path
 
-from desync_archival import settings as app_config
+from desync_archival.services import secret_store
 from desync_archival.services.logger import logger
 
 SCRYPT_N = 2**15
@@ -52,39 +50,25 @@ def hash_password(password: str) -> dict[str, str]:
     }
 
 
-def _load(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-
-
 def set_password(password: str) -> Path:
     """Saves the password hash to the 0600 secrets file, keeping anything else in it."""
     if len(password) < MIN_PASSWORD_LENGTH:
         raise WeakPasswordError(f"Use at least {MIN_PASSWORD_LENGTH} characters.")
 
-    path = app_config.secrets_file()
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    data = _load(path)
+    data = secret_store.read_file()
     data["login"] = hash_password(password)
-
-    temp = path.with_suffix(".tmp")
-    descriptor = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        json.dump(data, handle)
-    temp.replace(path)
+    path = secret_store.write_file(data)
     clear_sessions()
     logger.warning("App password changed. All sessions were signed out.")
     return path
 
 
 def has_password() -> bool:
-    return bool(_load(app_config.secrets_file()).get("login"))
+    return bool(secret_store.read_file().get("login"))
 
 
 def verify_password(password: str) -> bool:
-    stored = _load(app_config.secrets_file()).get("login")
+    stored = secret_store.read_file().get("login")
     if not stored:
         return False
     digest = _derive(password, base64.b64decode(stored["salt"]))

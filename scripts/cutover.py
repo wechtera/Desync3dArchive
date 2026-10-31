@@ -148,10 +148,26 @@ def reduce_to_sample(path: Path, size: int) -> list[int]:
         conn.close()
 
 
-def verify(before_path: Path, after_path: Path, rows_only: bool = False) -> dict[str, Any]:
+def rewrite_paths(path: Path, old_root: Path) -> int:
+    """Makes stored paths under the old data folder relative, so they follow the data to its new home."""
+    prefix = f"{old_root}/"
+    conn = sqlite3.connect(path)
+    try:
+        updated = conn.execute(
+            "UPDATE models SET raw_backup_path = substr(raw_backup_path, ?) WHERE substr(raw_backup_path, 1, ?) = ?",
+            (len(prefix) + 1, len(prefix), prefix),
+        ).rowcount
+        conn.commit()
+        return updated
+    finally:
+        conn.close()
+
+
+def verify(before_path: Path, after_path: Path, rows_only: bool = False, old_root: Path | None = None) -> dict[str, Any]:
     """Proves a migration kept every value, and that the result follows the key rules.
 
-    rows_only is for a restored backup, which is meant to have the older schema.
+    rows_only is for a restored backup, which is meant to have the older schema. old_root allows
+    only the expected change to stored paths under that folder.
     """
     before, after = open_read_only(before_path), open_read_only(after_path)
     problems: list[str] = []
@@ -166,7 +182,10 @@ def verify(before_path: Path, after_path: Path, rows_only: bool = False) -> dict
             renamed = table == "releases" and "release_key" in new_columns
             if renamed:
                 shared = [c for c in shared if c != "id"]
-            old_sql = ", ".join(['id'] * renamed + [f'"{c}"' for c in shared])
+            old_columns_sql = [f'"{c}"' for c in shared]
+            if table == "models" and old_root:
+                old_columns_sql[shared.index("raw_backup_path")] = f"replace(raw_backup_path, '{old_root}/', '')"
+            old_sql = ", ".join(['id'] * renamed + old_columns_sql)
             new_sql = ", ".join(['release_key'] * renamed + [f'"{c}"' for c in shared])
             old_rows = sorted(map(repr, before.execute(f'SELECT {old_sql} FROM "{table}"')))
             new_rows = sorted(map(repr, after.execute(f'SELECT {new_sql} FROM "{table}"')))
@@ -294,6 +313,7 @@ def smoke(stage_dir: Path) -> dict[str, Any]:
 
 def run_stage(name: str, source: Path, workdir: Path, size: int | None) -> dict[str, Any]:
     from desync_archival import migrations
+    from desync_archival.services import secret_store
 
     stage_dir = workdir / name
     if stage_dir.exists():
@@ -307,6 +327,7 @@ def run_stage(name: str, source: Path, workdir: Path, size: int | None) -> dict[
     if size:
         report["sample_model_ids"] = reduce_to_sample(before, size)
     copy_database(before, live)
+    os.environ["DESYNC_SECRETS_FILE"] = str(stage_dir / "secrets.json")
 
     started = time.perf_counter()
     result = migrations.migrate_database(live)
@@ -314,9 +335,17 @@ def run_stage(name: str, source: Path, workdir: Path, size: int | None) -> dict[
         "from": result["from"], "to": result["to"], "backup": str(result["backup"]),
         "seconds": round(time.perf_counter() - started, 2),
     }
-    report["verify"] = verify(before, live)
+    report["paths_rewritten"] = rewrite_paths(live, source.parent)
+    conn = sqlite3.connect(live)
+    try:
+        report["secrets_exported"] = secret_store.export_from_database(conn)
+        held = secret_store.load()
+        report["secrets_match"] = all(held.get(k) == v for k, v in secret_store.stored_in_database(conn).items())
+    finally:
+        conn.close()
+    report["verify"] = verify(before, live, old_root=source.parent)
     report["smoke"] = smoke(stage_dir)
-    report["passed"] = report["verify"]["passed"] and report["smoke"]["passed"]
+    report["passed"] = report["verify"]["passed"] and report["smoke"]["passed"] and report["secrets_match"]
     (stage_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return report
 
@@ -388,6 +417,7 @@ def rollback(data_dir: Path, backup_file: Path, port: int, confirm: bool) -> dic
 
 
 def print_result(result: dict[str, Any]) -> int:
+    # Names of secrets are fine to show. Values never enter a report.
     print(json.dumps({k: v for k, v in result.items() if k != "sample_model_ids"}, indent=2))
     return 0 if result.get("passed") else 1
 

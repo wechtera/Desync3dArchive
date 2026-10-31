@@ -4,7 +4,7 @@ A single-user, local-first archive and asset manager for a MyMiniFactory (MMF) 3
 
 This project replaces `scrapepage`, which stays frozen in the sibling directory for reference and rollback.
 
-**Status:** Migration is through Step 8 of 9 on `main`, with key decoupling on `migration/08b-keys`. The app is usable on dev data, bound to loopback by default, and production has not moved yet. Start with [docs/Archeology/HANDOFF.md](docs/Archeology/HANDOFF.md).
+**Status:** Migration is through Step 8 and key decoupling on `main`. Step 9 preparation is on `migration/09-cutover`, and production has not moved yet. The cutover steps are in [docs/Archeology/CUTOVER.md](docs/Archeology/CUTOVER.md). The app is usable on dev data, bound to loopback by default, and production has not moved yet. Start with [docs/Archeology/HANDOFF.md](docs/Archeology/HANDOFF.md).
 
 ## Prerequisites
 
@@ -61,6 +61,8 @@ uv run python -m desync_archival.dbtool status   # schema version
 uv run python -m desync_archival.dbtool migrate  # apply migrations, after a verified backup
 uv run python -m desync_archival.dbtool backup   # write a verified backup to DESYNC_BACKUP_DIR
 uv run python -m desync_archival.dbtool restore BACKUP_FILE NEW_PATH   # restore to a new path
+uv run python -m desync_archival.dbtool export-secrets   # copy secrets from the database to the secrets file
+uv run python scripts/cutover.py --help   # staged migration rehearsal and rollback
 uv run python scripts/baseline/record_contract.py --compare   # compare the API to the snapshots
 ```
 

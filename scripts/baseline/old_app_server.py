@@ -91,6 +91,9 @@ def serve_new(app_root: Path, port: int) -> int:
     os.environ["DESYNC_TLS_CERT"] = ""
     os.environ["DESYNC_TLS_KEY"] = ""
     os.environ["DESYNC_DATA_DIR"] = str(app_root)
+    # A fresh file each run, so a harness never reads or writes the real secrets.
+    os.environ["DESYNC_SECRETS_FILE"] = str(app_root / "harness_secrets.json")
+    (app_root / "harness_secrets.json").unlink(missing_ok=True)
     # A neutral working directory shows up any code still relying on the current directory.
     os.chdir(app_root.parent / "baseline")
 

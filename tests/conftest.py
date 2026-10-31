@@ -21,6 +21,15 @@ os.environ["DESYNC_REQUIRE_LOGIN"] = ""
 os.environ["DESYNC_TLS_CERT"] = ""
 os.environ["DESYNC_TLS_KEY"] = ""
 
+import pytest
+
 from desync_archival import settings
 
 settings.data_dir()
+
+
+@pytest.fixture(autouse=True)
+def fresh_secrets_file():
+    """Secrets take priority over the database, so one test's file must not reach the next."""
+    settings.secrets_file().unlink(missing_ok=True)
+    yield

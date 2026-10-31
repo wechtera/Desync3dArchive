@@ -333,8 +333,8 @@ class NoSecretSettingTests(unittest.TestCase):
             path.name for path in sources
             if "vendor" not in path.parts and "mmf_client_secret" in path.read_text(encoding="utf-8")
         }
-        # auth_service lists it to hide it from the API, and the logger redacts it.
-        self.assertEqual(readers, {"auth_service.py", "logger.py"})
+        # secret_store lists it to keep it out of the API, and the logger redacts it.
+        self.assertEqual(readers, {"secret_store.py", "logger.py"})
         source = (root / "src/desync_archival/services/auth_service.py").read_text(encoding="utf-8")
         self.assertNotIn('get_setting(conn, "mmf_client_secret")', source)
 

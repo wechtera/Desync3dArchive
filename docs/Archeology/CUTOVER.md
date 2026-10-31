@@ -1,6 +1,6 @@
 # Cutover runbook
 
-**Status:** Draft from the key decoupling work. Step 9 finishes it, including the secrets file. Every stage marked **Approval** waits for the user.
+**Status:** Ready to run from stage 1. No production stage has been run except the read-only preflight. Every stage marked **Approval** waits for the user.
 
 **Rule:** a small sample goes first and is inspected before the rest. Rollback is tested before anything touches production.
 
@@ -35,7 +35,9 @@ uv run python scripts/cutover.py preflight --source ../scrapepage/library.db
 
 Last run, 2026-10-31: passed, with 4,893 models and 496 downloaded files.
 
-### 2. Sample: a small set on a throwaway copy
+### 2. Sample: a small set on a throwaway copy, **Approval**
+
+This is the first stage that copies real production data, including its secrets, into the work folder. Delete the work folder when finished.
 
 ```bash
 uv run python scripts/cutover.py sample --source ../scrapepage/library.db --workdir ~/DESYNC_Rehearsal
@@ -77,13 +79,25 @@ The first command is a dry run. Expect the added row in `dropped`, and `passed: 
 2. Take a verified backup of the old `library.db`, and confirm the row counts.
 3. Copy production data to `~/DESYNC_Data`. The originals stay unchanged.
 4. Run `uv run python -m desync_archival.dbtool migrate --confirm-production` with `APP_ENV=production` on the copy.
-5. Run `verify` between the backup and the migrated copy.
+5. Rewrite stored paths with `cutover.py`'s `rewrite_paths`, so the 7 absolute `raw_backup_path` rows follow the data, then run `verify` between the backup and the migrated copy. There is no command for the rewrite yet on its own: the sample and full stages run it on their copies. Add one before this stage.
 6. Set `DESYNC_ALLOWED_ROOTS` to the data folder, NAS vault, staging, stash export folder and every external library.
-7. Start the new app. Check the catalog, a stash, and a model on each storage tier.
+7. Set `DESYNC_SECRETS_FILE` to its own production file, such as `~/.config/desync-archival/production.json`. The default file also holds the dev login, so production must not share it.
+8. Run `uv run python -m desync_archival.dbtool export-secrets`, then `set-password` if LAN mode stays on.
+9. Set `DESYNC_BACKUP_DIR` to the production backup folder.
+10. Start the new app. Check the catalog, a stash, and a model on each storage tier.
 
 ### 6. After cutover
 
 Rescan Loot Studios, because its totals are blank from the Step 3 indexer bug. Confirm the scheduled backup runs, restore the first one to a new path, and do a real scrape, ingest, download and stash export before sign-off.
+
+### 7. After the user accepts: separate **Approval**
+
+```bash
+uv run python -m desync_archival.dbtool blank-secrets            # shows what would be blanked
+uv run python -m desync_archival.dbtool blank-secrets --confirm  # refuses unless the file holds every value
+```
+
+Then rotate the MMF API key and cookies, because the old app exposed them. Ask separately before removing anything in `../scrapepage`.
 
 ## Rollback
 

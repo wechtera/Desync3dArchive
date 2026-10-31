@@ -30,7 +30,7 @@ import httpx
 from desync_archival import backup
 from desync_archival import settings as app_config
 from desync_archival.services import auth_service, jobs
-from desync_archival.services import identity
+from desync_archival.services import identity, secret_store
 from desync_archival.services.analytics import run_startup_analytics
 from desync_archival.services.logger import job_logged, log_layer, logger
 from desync_archival.services.paths import sanitize_segment
@@ -144,7 +144,7 @@ def extract_normalized_records(model_id: int, data: dict, backup_path: Path):
         price_val,
         price_curr,
         primary_image_url,
-        str(backup_path),
+        app_config.stored_data_path(backup_path),
     )
 
     tag_rows = []
@@ -246,6 +246,8 @@ class TaskManager:
             log_layer("http", logging.WARNING, f"Model #{model_id}: Cover download failed: {e}")
 
     def _get_setting(self, key: str, default: str = "") -> str:
+        if key in secret_store.KEYS and key in secret_store.load():
+            return secret_store.load()[key]
         with self._get_db() as conn:
             row = conn.execute("SELECT value FROM app_settings WHERE key = ?;", (key,)).fetchone()
             return row["value"] if row and row["value"] is not None else default

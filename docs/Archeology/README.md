@@ -30,7 +30,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 8 is merged. Key decoupling (Step 8B) is complete on `migration/08b-keys` and needs approval to merge.
+- **Phase:** Step 8B is merged. Step 9 preparation is on `migration/09-cutover`, and no production stage has run except the read-only preflight.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** `check.sh` passes at the latest commit: 384 Python tests, 1 skipped, 22 browser tests and 110 contract cases.
 - **Production data:** Untouched. Dev work never reaches it, and `library.db` still has its 15:50 modified time from 2026-10-30. The last full NAS comparison, after Step 4, was clean.
@@ -59,7 +59,9 @@ This directory tracks the state of the app, what has been done, and what comes n
 - [x] Step 8 code: FTS5 catalog search
 - [x] Merge Step 8
 - [x] Step 8B code: key decoupling, duplicate report, cutover tool
-- [ ] Merge Step 8B after approval
+- [x] Merge Step 8B
+- [x] Step 9 preparation: runbook, secrets file, stored path rewrite, staged rehearsal on dev data
+- [ ] Step 9 production stages, one approval at a time
 
 ## Project decisions
 
@@ -75,6 +77,14 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Commits.** Commit freely on step branches. Merge to `main` after the exit check and user approval.
 - **Backups.** A backup and restore command arrives in Step 3, a daily schedule in Step 5, and production backups in Step 9.
 - **`SCRAPEPAGE_ARCHEOLOGY.md`** is a historical record. Its paths and line numbers describe `scrapepage`.
+
+## Step 9 preparation results
+
+- **Secrets:** `dbtool export-secrets` copies database secrets to the 0600 file, and the app reads the file first. `dbtool blank-secrets --confirm` refuses unless the file holds every value. Commands print key names, never values.
+- **Backups:** each backup keeps a 0600 copy of the secrets file, removed with it by retention.
+- **Stored paths:** new metadata paths are stored relative to the data folder. The cutover stages rewrite the 7 old absolute rows.
+- **Rehearsal on dev data, 2026-10-31:** sample and full stages passed, with 7 paths rewritten and none left absolute. Dev data holds no secrets, so the live export moved nothing, and the tests cover it with real values.
+- **Not done:** any production stage beyond the read-only preflight, and a standalone `rewrite-paths` command.
 
 ## Step 8 results
 

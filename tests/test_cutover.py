@@ -125,6 +125,33 @@ class VerifyTests(CutoverCase):
         self.assertTrue(cutover.verify(self.db, self.after, rows_only=True)["passed"])
 
 
+class RewriteTests(CutoverCase):
+    def setUp(self):
+        super().setUp()
+        self.after = self.base / "after.db"
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE models SET raw_backup_path = '/old/data/metadata/model_1.json' WHERE id = 1")
+        conn.execute("UPDATE models SET raw_backup_path = 'metadata/model_2.json' WHERE id = 2")
+        conn.commit()
+        conn.close()
+        shutil.copy(self.db, self.after)
+
+    def test_absolute_paths_under_the_old_folder_become_relative(self):
+        self.assertEqual(cutover.rewrite_paths(self.after, Path("/old/data")), 1)
+        conn = sqlite3.connect(self.after)
+        rows = conn.execute("SELECT raw_backup_path FROM models ORDER BY id").fetchall()
+        conn.close()
+        self.assertEqual(rows, [("metadata/model_1.json",), ("metadata/model_2.json",)])
+
+    def test_paths_elsewhere_are_left_alone(self):
+        self.assertEqual(cutover.rewrite_paths(self.after, Path("/other")), 0)
+
+    def test_verify_allows_only_the_expected_rewrite(self):
+        cutover.rewrite_paths(self.after, Path("/old/data"))
+        self.assertTrue(cutover.verify(self.db, self.after, old_root=Path("/old/data"))["passed"])
+        self.assertFalse(cutover.verify(self.db, self.after)["passed"])
+
+
 class RollbackTests(CutoverCase):
     def setUp(self):
         super().setUp()

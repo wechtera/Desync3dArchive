@@ -1,4 +1,4 @@
-"""Database commands: status, migrate, backup and restore. Also sets the app password."""
+"""Database commands: status, migrate, backup and restore. Also manages the secrets file."""
 
 import argparse
 import getpass
@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from desync_archival import backup, migrations, settings
-from desync_archival.services import login
+from desync_archival.services import login, secret_store
 
 
 def set_password() -> int:
@@ -26,6 +26,23 @@ def set_password() -> int:
     return 0
 
 
+def move_secrets(args: argparse.Namespace) -> int:
+    conn = sqlite3.connect(settings.db_path())
+    try:
+        if args.command == "export-secrets":
+            print(f"copied to {settings.secrets_file()}: {secret_store.export_from_database(conn)}")
+        elif not args.confirm:
+            print(f"would blank: {sorted(secret_store.stored_in_database(conn))}. Add --confirm to do it.")
+        else:
+            print(f"blanked: {secret_store.blank_database(conn)}")
+    except secret_store.SecretsError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -37,10 +54,15 @@ def main() -> int:
     restore.add_argument("backup_file", type=Path)
     restore.add_argument("target", type=Path)
     commands.add_parser("set-password")
+    commands.add_parser("export-secrets")
+    blank = commands.add_parser("blank-secrets")
+    blank.add_argument("--confirm", action="store_true")
     args = parser.parse_args()
 
     if args.command == "set-password":
         return set_password()
+    if args.command in ("export-secrets", "blank-secrets"):
+        return move_secrets(args)
 
     db_path = settings.db_path()
     try:
