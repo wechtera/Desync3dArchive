@@ -8,6 +8,8 @@ import logging
 import re
 import shutil
 import sqlite3
+import subprocess
+import uuid
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -288,36 +290,38 @@ class ArchivePeeker:
                         extracted[img_path] = out_file
                     except Exception as ze:
                         log_layer("archive", logging.WARNING, f"Image extract error on {img_path}: {ze}")
-        elif self._bin_7z and Path(self._bin_7z).exists():
+        else:
             for img_path in filtered_targets:
-                try:
-                    clean_name = re.sub(r"[^\w\-_\.]", "_", Path(img_path).name)
-                    cmd = external.seven_zip_extract_member(str(self._bin_7z), archive_path, img_path, dest_dir)
-                    external.run(cmd, external.MEMBER_TIMEOUT, check=True)
-                    target_file = dest_dir / Path(img_path).name
-                    if target_file.exists():
-                        final_file = dest_dir / clean_name
-                        if target_file != final_file:
-                            shutil.move(str(target_file), str(final_file))
-                        extracted[img_path] = final_file
-                except Exception as e7:
-                    log_layer("archive", logging.WARNING, f"7z image extract error on {img_path}: {e7}")
-        elif self._bin_unrar and Path(self._bin_unrar).exists():
-            for img_path in filtered_targets:
-                try:
-                    clean_name = re.sub(r"[^\w\-_\.]", "_", Path(img_path).name)
-                    cmd = external.unrar_extract_member(str(self._bin_unrar), archive_path, img_path, dest_dir)
-                    external.run(cmd, external.MEMBER_TIMEOUT, check=True)
-                    target_file = dest_dir / Path(img_path).name
-                    if target_file.exists():
-                        final_file = dest_dir / clean_name
-                        if target_file != final_file:
-                            shutil.move(str(target_file), str(final_file))
-                        extracted[img_path] = final_file
-                except Exception as ure:
-                    log_layer("archive", logging.WARNING, f"unrar image extract error on {img_path}: {ure}")
+                out_file = self._extract_one_image(archive_path, img_path, dest_dir)
+                if out_file:
+                    extracted[img_path] = out_file
 
         return extracted
+
+    def _extract_one_image(self, archive_path: Path, img_path: str, dest_dir: Path) -> Optional[Path]:
+        # Homebrew's 7zz has no RAR codec. It fails but leaves a 0 byte file, which used to pass as
+        # an image, so a broken preview hid the real one. Only a file with bytes in it counts.
+        name = Path(img_path).name
+        scratch = dest_dir / f".extract_{uuid.uuid4().hex[:8]}"
+        scratch.mkdir(parents=True, exist_ok=True)
+        try:
+            for cmd in external.member_commands(
+                archive_path.suffix.lower(), self._bin_unrar, self._bin_7z, archive_path, img_path, name, scratch
+            ):
+                try:
+                    external.run(cmd, external.MEMBER_TIMEOUT)
+                except (OSError, subprocess.SubprocessError) as e:
+                    log_layer("archive", logging.WARNING, f"Image extract error on {img_path}: {e}")
+                    continue
+                target = scratch / name
+                if target.exists() and target.stat().st_size > 0:
+                    final = dest_dir / re.sub(r"[^\w\-_\.]", "_", name)
+                    target.replace(final)
+                    return final
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+        log_layer("archive", logging.WARNING, f"No tool could extract {img_path} from {archive_path.name}")
+        return None
 
     def _fetch_catalog_fallback_image(self, model_id: int, dest_dir: Path) -> Optional[Path]:
         url = None
@@ -728,9 +732,35 @@ class ArchivePeeker:
                 conn.executemany("DELETE FROM file_archive_members WHERE id = ?;", [(i,) for i in old_members.values()])
                 conn.executemany("DELETE FROM file_archive_submodels WHERE id = ?;", [(i,) for i in old_subs.values()])
 
+            with conn:
+                conn.execute("UPDATE model_files SET peeked_at = CURRENT_TIMESTAMP WHERE file_id = ?;", (file_id,))
+
             # A failure here must not undo a good peek. The next build picks these entries up.
             try:
                 catalog_levels.build_archive_models(conn, model_id)
             except sqlite3.Error as e:
                 log_layer("archive", logging.ERROR, f"Catalog levels not updated for File #{file_id}: {e}")
         log_layer("sql", logging.DEBUG, f"Persisted {len(submodels)} submodels and {len(all_clean_members)} archive members for File #{file_id}")
+
+
+def repeek_broken(db_path: Path) -> dict[str, int]:
+    """Peeks again any archive left with a 0 byte preview. Rows update in place, so nothing is lost."""
+    root = app_config.previews_dir().resolve()
+    broken = {
+        int(path.parent.name) for path in root.glob("*/*/*")
+        if path.is_file() and path.parent.name.isdigit() and path.stat().st_size == 0
+    }
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    marks = ",".join("?" * len(broken))
+    rows = conn.execute(
+        f"SELECT file_id, model_id, vault_path FROM downloaded_files WHERE file_id IN ({marks});", sorted(broken)
+    ).fetchall() if broken else []
+    conn.close()
+    peeker = ArchivePeeker(db_path)
+    summary = {"archives": len(rows), "repaired": 0, "failed": 0}
+    for row in rows:
+        result = peeker.inspect_and_record(row["model_id"], row["file_id"], Path(row["vault_path"] or ""))
+        summary["repaired" if result.get("success") else "failed"] += 1
+    log_layer("archive", logging.INFO, f"Repeek of broken previews: {summary}")
+    return summary

@@ -10,6 +10,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from desync_archival import settings as app_config
 from desync_archival.services import model_resolver
 from desync_archival.services.logger import log_layer
 
@@ -18,6 +19,8 @@ RESOLVED = "resolved"
 SKIPPED = "skipped"
 MERGED = "merged"
 PLACEHOLDER = "placeholder"
+FIRST_REAL_ID = 1_000_000_000_000  # Placeholders share their collection's ID, so real models start here.
+IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 SCALE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s?mm\b", re.IGNORECASE)
 
 
@@ -142,6 +145,88 @@ def _store_model(
     return model_id, True
 
 
+def _image_score(model_slug: str, folders: set[str], image: sqlite3.Row) -> int:
+    folder, _, name = image["internal_path"].rpartition("/")
+    stem = model_resolver.slug_of([name.rpartition(".")[0]])
+    named = bool(stem) and (model_slug in stem or stem.removesuffix("s") in model_slug)
+    return (10 if named else 0) + (5 if folder in folders else 0)
+
+
+def assign_images(conn: sqlite3.Connection, collection_id: int) -> int:
+    """Gives each model the best picture peeked from its own archive, if one really was extracted."""
+    conn.row_factory = sqlite3.Row
+    images = [
+        r for r in conn.execute("""
+            SELECT a.file_id, a.internal_path FROM file_archive_members a JOIN model_files f ON f.file_id = a.file_id
+            WHERE f.model_id = ?;
+        """, (collection_id,)).fetchall()
+        if r["internal_path"].lower().endswith(IMAGE_EXTENSIONS) and not r["internal_path"].startswith("/")
+    ]
+    models = conn.execute("""
+        SELECT DISTINCT m.id, m.name FROM catalog_models m JOIN model_artifacts a ON a.catalog_model_id = m.id
+        JOIN model_files f ON f.file_id = a.file_id WHERE f.model_id = ? AND m.image_path IS NULL;
+    """, (collection_id,)).fetchall()
+    assigned = 0
+    for model in models:
+        folders = {
+            r[0].rpartition("/")[0] for r in conn.execute(
+                "SELECT path FROM model_artifacts WHERE catalog_model_id = ?;", (model["id"],)
+            ).fetchall()
+        }
+        slug = model_resolver.slug_of(model_resolver.words_in(model["name"]))
+        for image in sorted(images, key=lambda i: -_image_score(slug, folders, i)):
+            if not _image_score(slug, folders, image):
+                break
+            name = re.sub(r"[^\w\-_\.]", "_", image["internal_path"].rpartition("/")[2])
+            on_disk = app_config.previews_dir().resolve() / str(collection_id) / str(image["file_id"]) / name
+            if on_disk.is_file() and on_disk.stat().st_size > 0:
+                conn.execute(
+                    "UPDATE catalog_models SET image_path = ? WHERE id = ?;",
+                    (f"previews/{collection_id}/{image['file_id']}/{name}", model["id"]),
+                )
+                assigned += 1
+                break
+    return assigned
+
+
+def rebuild_unreviewed(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Throws away proposals nobody has reviewed and builds them again. Reviewed work stays."""
+    conn.row_factory = sqlite3.Row
+    reviewed = {r[0] for r in conn.execute("SELECT collection_id FROM collection_reviews WHERE reviewed = 1;").fetchall()}
+    targets = [
+        r[0] for r in conn.execute("""
+            SELECT DISTINCT f.model_id FROM model_artifacts a JOIN model_files f ON f.file_id = a.file_id
+            WHERE a.archive_member_id IS NOT NULL;
+        """).fetchall() if r[0] not in reviewed
+    ]
+    with conn:
+        for collection_id in targets:
+            conn.execute("""
+                DELETE FROM model_artifacts WHERE archive_member_id IS NOT NULL
+                    AND file_id IN (SELECT file_id FROM model_files WHERE model_id = ?);
+            """, (collection_id,))
+            conn.execute("DELETE FROM model_groups WHERE collection_id = ?;", (collection_id,))
+            conn.execute(
+                "DELETE FROM catalog_model_collections WHERE collection_id = ? AND catalog_model_id != ?;",
+                (collection_id, collection_id),
+            )
+            conn.execute("""
+                UPDATE catalog_models SET name = (SELECT name FROM models WHERE id = ?), state = ?, merged_into = NULL,
+                    image_path = NULL
+                WHERE id = ?;
+            """, (collection_id, PLACEHOLDER, collection_id))
+            conn.execute(
+                "INSERT INTO catalog_model_collections (catalog_model_id, collection_id) VALUES (?, ?);",
+                (collection_id, collection_id),
+            )
+        conn.execute("""
+            DELETE FROM catalog_models WHERE state = ? AND id >= ? AND NOT EXISTS (
+                SELECT 1 FROM model_artifacts a WHERE a.catalog_model_id = catalog_models.id
+            );
+        """, (PROPOSED, FIRST_REAL_ID))
+    return {"reset": len(targets), **build_archive_models(conn)}
+
+
 def build_archive_models(conn: sqlite3.Connection, only_collection: int | None = None) -> dict[str, Any]:
     """Adds whatever a peek stored that has no artifact yet, so it can run any number of times.
 
@@ -175,33 +260,42 @@ def build_archive_models(conn: sqlite3.Connection, only_collection: int | None =
         spare = collection_id if placeholder and placeholder["state"] == PLACEHOLDER else None
         first = None
         groups = set()
+        # Unsupported and presupported often ship as separate archives. Same shape, same model.
+        merged: dict[str, tuple[model_resolver.ResolvedModel, list[sqlite3.Row]]] = {}
+        for entries in archives.values():
+            by_path = {e["internal_path"]: e for e in entries}
+            for model in model_resolver.resolve_files(list(by_path), variants, pieces):
+                held = [by_path[p] for p in model.files]
+                if model.name.lower() in merged:
+                    merged[model.name.lower()][1].extend(held)
+                else:
+                    merged[model.name.lower()] = (model, held)
+
         with conn:
-            for entries in archives.values():
-                by_path = {e["internal_path"]: e for e in entries}
-                for model in model_resolver.resolve_files(list(by_path), variants, pieces):
-                    held = [by_path[p] for p in model.files]
-                    model_id, created = _store_model(conn, model, collection_id, spare, held, known)
-                    if created and spare == model_id:
-                        spare = None
-                    first = first or model_id
-                    conn.executemany(
-                        "INSERT INTO catalog_model_tags (catalog_model_id, tag) VALUES (?, ?);",
-                        [(model_id, clean_tag(tag)) for tag in model.tags],
+            for model, held in merged.values():
+                model_id, created = _store_model(conn, model, collection_id, spare, held, known)
+                if created and spare == model_id:
+                    spare = None
+                first = first or model_id
+                conn.executemany(
+                    "INSERT INTO catalog_model_tags (catalog_model_id, tag) VALUES (?, ?);",
+                    [(model_id, clean_tag(tag)) for tag in model.tags],
+                )
+                summary["models" if created else "shared"] += 1
+                summary["artifacts"] += len(held)
+                if model.group:
+                    group_id = _group_id(conn, collection_id, model.group)
+                    groups.add(group_id)
+                    conn.execute(
+                        "INSERT INTO model_group_members (group_id, catalog_model_id) VALUES (?, ?);", (group_id, model_id),
                     )
-                    summary["models" if created else "shared"] += 1
-                    summary["artifacts"] += len(held)
-                    if model.group:
-                        group_id = _group_id(conn, collection_id, model.group)
-                        groups.add(group_id)
-                        conn.execute(
-                            "INSERT INTO model_group_members (group_id, catalog_model_id) VALUES (?, ?);", (group_id, model_id),
-                        )
             if spare is not None and first is not None:
                 # Everything here is shared with another collection, so the placeholder redirects.
                 conn.execute("UPDATE catalog_models SET state = ?, merged_into = ? WHERE id = ?;", (MERGED, first, spare))
                 conn.execute(
                     "DELETE FROM catalog_model_collections WHERE catalog_model_id = ? AND collection_id = ?;", (spare, collection_id),
                 )
+            assign_images(conn, collection_id)
         summary["collections"] += 1
         summary["groups"] += len(groups)
     log_layer("storage", 20, f"Catalog levels built from stored archive lists: {summary}")

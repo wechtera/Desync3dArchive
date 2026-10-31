@@ -261,7 +261,8 @@ def parse_body(body_bytes: bytes) -> Any:
 def serve_preview(rel_path: str) -> Response:
     file_path = (app_config.data_dir() / "previews" / rel_path).resolve()
 
-    if not file_path.is_relative_to(PREVIEWS_DIR) or not file_path.is_file():
+    # An empty file is a failed extraction, and a blank tab tells the user nothing.
+    if not file_path.is_relative_to(PREVIEWS_DIR) or not file_path.is_file() or file_path.stat().st_size == 0:
         # Graceful SVG placeholder fallback instead of breaking 404 JSON
         return Response(
             content=SVG_PLACEHOLDER,

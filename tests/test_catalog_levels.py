@@ -284,6 +284,88 @@ class PeekTests(unittest.TestCase):
         self.assertIsNone(self.artifact("Ghoul_B.stl"))
         self.assertIsNotNone(self.artifact("Ghoul_A.stl"))
 
+    def test_each_model_gets_the_picture_beside_its_files(self):
+        self.peek(["Piotr/Piotr_Body.stl", "Piotr/Piotr.jpg", "Reyna/Reyna_Body.stl", "Reyna/Reyna.jpg"])
+        rows = dict(self.conn.execute("SELECT name, image_path FROM catalog_models WHERE state = 'proposed'").fetchall())
+        self.assertTrue(rows["Piotr"].endswith("/Piotr.jpg"))
+        self.assertTrue(rows["Reyna"].endswith("/Reyna.jpg"))
+
+    def test_an_empty_image_is_never_used(self):
+        self.peek(["Piotr/Piotr_Body.stl", "Piotr/Piotr.jpg"])
+        path = self.conn.execute("SELECT image_path FROM catalog_models WHERE state = 'proposed'").fetchone()[0]
+        with self.conn:
+            self.conn.execute("UPDATE catalog_models SET image_path = NULL")
+        (Path(self.temp.name) / path).write_bytes(b"")
+        catalog_levels.assign_images(self.conn, self.collection)
+        self.assertIsNone(self.conn.execute("SELECT image_path FROM catalog_models WHERE state = 'proposed'").fetchone()[0])
+
+    def test_a_peek_records_when_it_ran(self):
+        self.peek(["Piotr/Piotr_Body.stl"])
+        self.assertIsNotNone(self.conn.execute("SELECT peeked_at FROM model_files WHERE file_id = ?", (self.file_id,)).fetchone()[0])
+
+
+class ImageExtractionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.dest = Path(self.temp.name)
+
+    def extract(self, tries):
+        peeker = ArchivePeeker.__new__(ArchivePeeker)
+        peeker._bin_unrar = peeker._bin_7z = "tool"
+        commands = [[write] for write in tries]
+
+        def fake_run(cmd, _timeout):
+            cmd[0](next(self.dest.glob(".extract_*")))
+
+        with patch("desync_archival.services.archive_peeker.external.member_commands", return_value=commands), \
+                patch("desync_archival.services.archive_peeker.external.run", side_effect=fake_run):
+            return peeker._extract_images(self.dest / "a.rar", ["x/pic.jpg"], self.dest, "rar")
+
+    def test_an_empty_file_falls_through_to_the_next_tool(self):
+        found = self.extract([lambda d: (d / "pic.jpg").write_bytes(b""), lambda d: (d / "pic.jpg").write_bytes(b"real")])
+        self.assertEqual(found["x/pic.jpg"].read_bytes(), b"real")
+
+    def test_only_empty_results_extract_nothing(self):
+        self.assertEqual(self.extract([lambda d: (d / "pic.jpg").write_bytes(b"")]), {})
+        self.assertEqual(list(self.dest.glob(".extract_*")), [])
+
+
+class CollectionMergeTests(BuildCase):
+    PLAIN = (("Pack/Piotr Kvade - Warrior of the Hollow Moon/Piotr_Body.stl", 10), ("Pack/Piotr Kvade - Warrior of the Hollow Moon/Piotr_Base.stl", 11))
+    PRE = (
+        ("Pack - Presupported/Piotr Kvade - Warrior of the Hollow Moon - Presupported/Piotr_Body_Supported.stl", 20),
+        ("Pack - Presupported/Piotr Kvade - Warrior of the Hollow Moon - Presupported/Piotr_Base_Supported.stl", 21),
+    )
+
+    def test_two_archives_of_one_collection_make_one_model(self):
+        self.archive(self.collection, self.PLAIN)
+        self.archive(self.collection, self.PRE)
+        self.build()
+        self.assertEqual(self.one("SELECT COUNT(*) FROM catalog_models WHERE state = 'proposed'")[0], 1)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM model_artifacts")[0], 4)
+
+    def test_the_model_takes_the_fuller_folder_name(self):
+        self.archive(self.collection, self.PLAIN)
+        self.build()
+        self.assertEqual(self.one("SELECT name FROM catalog_models WHERE state = 'proposed'")[0], "Piotr Kvade Warrior of the Hollow Moon")
+
+    def test_a_rebuild_redoes_proposals_and_keeps_reviewed_work(self):
+        self.archive(self.collection, self.PLAIN)
+        kept = self.add_collection("Kept", "1/k")
+        self.archive(kept, [("Oak/Oak.stl", 5)])
+        self.build()
+        self.conn.row_factory = sqlite3.Row
+        cards = archive_review.view(self.conn, kept)["cards"]
+        cards[0]["name"] = "Renamed Oak"
+        archive_review.save(self.conn, kept, cards, True)
+        with self.conn:
+            self.conn.execute("UPDATE catalog_models SET name = 'Stale' WHERE id = ?", (self.collection,))
+        catalog_levels.rebuild_unreviewed(self.conn)
+        self.assertEqual(self.one("SELECT name FROM catalog_models WHERE id = ?", self.collection)[0], "Piotr Kvade Warrior of the Hollow Moon")
+        self.assertEqual(self.one("SELECT COUNT(*) FROM catalog_models WHERE name = 'Renamed Oak'")[0], 1)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM model_artifacts")[0], 3)
+
 
 class ArchiveReviewTests(BuildCase):
     def setUp(self):

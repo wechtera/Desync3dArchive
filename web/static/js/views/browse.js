@@ -15,7 +15,7 @@ let searchTimer = null;
 function card(model, onClick) {
   return html`
     <button type="button" class="browse-card" data-model=${model.id} @click=${onClick}>
-      <img src=${`/previews/${model.cover_id}/cover.jpg`} @error=${imageFallback(model.image_url)} loading="lazy" alt=${model.name}>
+      <img src=${model.image_path ? `/${model.image_path}` : `/previews/${model.cover_id}/cover.jpg`} @error=${imageFallback(model.image_url)} loading="lazy" alt=${model.name}>
       <div class="browse-card-title">${model.name}</div>
       <div class="browse-card-meta">
         ${model.designer_name || ''}${model.artifacts ? ` · ${model.artifacts} artifacts` : ' · Contents unknown'}

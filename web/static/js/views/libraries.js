@@ -31,6 +31,7 @@ let currentReport = null;
 let review = null;
 let archiveQueue = [];
 
+const peekTime = (stamp) => parseServerTime(stamp)?.toLocaleString() || stamp;
 const flagsIn = (release) => release.new.filter(m => (m.flags || []).length).length;
 
 function flaggedUnreviewed(report) {
@@ -515,7 +516,8 @@ function drawReview() {
   const { data } = review;
   const top = data.folders.filter(f => !f.slice(data.release.length + 1).includes('/'));
   const selected = review.selected.size;
-  document.getElementById('library-review-title').textContent = data.title || data.release;
+  const peeked = data.peeked_at ? ` - peeked ${peekTime(data.peeked_at)}` : '';
+  document.getElementById('library-review-title').textContent = `${data.title || data.release}${peeked}`;
   const groupNames = [...new Set(review.cards.map(c => c.group).filter(Boolean))].sort();
   // Flagged cards first. The key tiebreak stops a card jumping while its name is being edited.
   const cards = [...review.cards].sort((a, b) => (b.flags || []).length - (a.flags || []).length || a.key.localeCompare(b.key));
@@ -603,11 +605,12 @@ export async function loadArchiveQueue() {
         ${reviewed} of ${archiveQueue.length} collections reviewed. Most suspicious first.
       </p>
       <table class="table-compact">
-        <thead><tr><th>Collection</th><th>Models</th><th>Groups</th><th>Artifacts</th><th>Status</th></tr></thead>
+        <thead><tr><th>Collection</th><th>Last Peeked</th><th>Models</th><th>Groups</th><th>Artifacts</th><th>Status</th></tr></thead>
         <tbody>
           ${archiveQueue.map(c => html`
             <tr class=${c.suspect && !c.reviewed ? 'preview-row-flagged' : ''}>
               <td><button type="button" class="link-btn archive-review-open" @click=${() => openArchiveReview(c.id)}>${c.name}</button></td>
+              <td class="font-sm">${c.peeked_at ? peekTime(c.peeked_at) : '-'}</td>
               <td class="font-mono">${c.models}</td>
               <td class="font-mono">${c.model_groups}</td>
               <td class="font-mono">${c.artifacts}</td>

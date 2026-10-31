@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from desync_archival import backup, migrations, settings
-from desync_archival.services import catalog_levels, login, secret_store
+from desync_archival.services import archive_peeker, catalog_levels, login, secret_store
 
 
 def set_password() -> int:
@@ -51,6 +51,9 @@ def main() -> int:
     migrate.add_argument("--confirm-production", action="store_true")
     build = commands.add_parser("build-models")
     build.add_argument("--confirm-production", action="store_true")
+    build.add_argument("--rebuild", action="store_true", help="redo every unreviewed proposal")
+    repeek = commands.add_parser("repeek-broken")
+    repeek.add_argument("--confirm-production", action="store_true")
     commands.add_parser("backup")
     restore = commands.add_parser("restore")
     restore.add_argument("backup_file", type=Path)
@@ -82,9 +85,14 @@ def main() -> int:
             print(f"backup written: {backup.create_backup(db_path)}")
             conn = sqlite3.connect(db_path)
             try:
-                print(catalog_levels.build_archive_models(conn))
+                print(catalog_levels.rebuild_unreviewed(conn) if args.rebuild else catalog_levels.build_archive_models(conn))
             finally:
                 conn.close()
+        elif args.command == "repeek-broken":
+            if settings.is_production() and not args.confirm_production:
+                raise migrations.MigrationError("Refusing to repeek in production without --confirm-production")
+            print(f"backup written: {backup.create_backup(db_path)}")
+            print(archive_peeker.repeek_broken(db_path))
         elif args.command == "backup":
             print(f"backup written: {backup.create_backup(db_path)}")
         else:

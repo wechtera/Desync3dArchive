@@ -628,7 +628,7 @@ test.describe('settings', () => {
         return route.fulfill({ json: { success: true, cards: 2 } });
       }
       return route.fulfill({ json: {
-        release: '3', title: 'Vampire Court', folders: ['3/a.zip', '3/a.zip/Ghuls'], files: ['3/a.zip/Ghuls/A.stl', '3/a.zip/Ghuls/B.stl'],
+        release: '3', title: 'Vampire Court', peeked_at: '2026-10-31 12:00:00', folders: ['3/a.zip', '3/a.zip/Ghuls'], files: ['3/a.zip/Ghuls/A.stl', '3/a.zip/Ghuls/B.stl'],
         cards: [
           { key: '7', name: 'Ghul A', category: '', members: ['3/a.zip/Ghuls/A.stl'], skip: false, flags: [], group: 'Ghul', tags: [] },
           { key: '8', name: 'Ghul B', category: '', members: ['3/a.zip/Ghuls/B.stl'], skip: false, flags: [], group: 'Ghul', tags: [] },
@@ -640,7 +640,7 @@ test.describe('settings', () => {
     await page.locator('#sub-btn-archives').click();
     await expect(page.locator('#archive-queue-summary')).toContainText('0 of 1');
     await page.locator('.archive-review-open').click();
-    await expect(page.locator('#library-review-title')).toHaveText('Vampire Court');
+    await expect(page.locator('#library-review-title')).toContainText('Vampire Court - peeked');
     await expect(page.locator('#btn-review-reset')).toHaveCount(0);
     await page.locator('.review-card[data-card="Ghul B"] .review-card-group').fill('Undead');
     await page.locator('#btn-review-save').click();

@@ -336,7 +336,10 @@ def resolve_files(paths: list[str], variants: set[str], pieces: set[str] | None 
         one_build = len(named) <= 1 or (inside_folder and not (pure_poses and leaf.endswith("s")))
         if one_build:
             words = list(named[0]) if len(named) == 1 else _title_of(place, named)
-            models.append(_model_of(_display(words) or "Untitled", place, [p for held in cores.values() for p in held]))
+            held = [p for files in cores.values() for p in files]
+            # Filenames shorten names: Piotr.stl lives in Piotr Kvade - Warrior of the Hollow Moon.
+            title = _folder_title(held[0], leaf, variants) if slug_of(words) and slug_of(words) in leaf else ""
+            models.append(_model_of(title or _display(words) or "Untitled", place, held))
             continue
 
         shared = _shared_start(named)
@@ -359,6 +362,17 @@ def _core_of(stem: tuple[str, ...], pieces: set[str]) -> tuple[str, ...]:
         if len(core) > 1 and POSE.match(word.lower()):
             break
     return tuple(core)
+
+
+def _folder_title(path: str, leaf: str, variants: set[str]) -> str:
+    # Only the tail is trimmed: Warrior of the Hollow Moon keeps a word that's a print word elsewhere.
+    for part in reversed(path.split("/")[:-1]):
+        if slug_of(subject_words(part, variants)) == leaf:
+            words = words_in(part)
+            while words and _is_variant(words[-1], variants):
+                words.pop()
+            return _display(words)
+    return ""
 
 
 def _title_of(place: str, named: list[tuple[str, ...]]) -> list[str]:

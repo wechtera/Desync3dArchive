@@ -58,7 +58,7 @@ def list_models(conn: sqlite3.Connection, search: str = "", page: int = 1) -> di
     total = conn.execute(f"SELECT COUNT(*) FROM catalog_models m WHERE {where};", args).fetchone()[0]
     offset = (max(1, page) - 1) * PAGE_SIZE
     rows = conn.execute(
-        f"""SELECT m.id, m.name, m.category, m.state,
+        f"""SELECT m.id, m.name, m.category, m.state, m.image_path,
                    (SELECT COUNT(*) FROM model_artifacts a WHERE a.catalog_model_id = m.id) AS artifacts
             FROM catalog_models m WHERE {where} ORDER BY m.name COLLATE NOCASE, m.id LIMIT {PAGE_SIZE} OFFSET {offset};""",
         args,
@@ -68,13 +68,13 @@ def list_models(conn: sqlite3.Connection, search: str = "", page: int = 1) -> di
 
 def model_detail(conn: sqlite3.Connection, model_id: int) -> dict[str, Any] | None:
     conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT id, name, category, state, merged_into FROM catalog_models WHERE id = ?;", (model_id,)).fetchone()
+    row = conn.execute("SELECT id, name, category, state, merged_into, image_path FROM catalog_models WHERE id = ?;", (model_id,)).fetchone()
     # Old IDs keep working after a merge, however many times it happened.
     seen = set()
     while row and row["merged_into"] and row["id"] not in seen:
         seen.add(row["id"])
         row = conn.execute(
-            "SELECT id, name, category, state, merged_into FROM catalog_models WHERE id = ?;", (row["merged_into"],)
+            "SELECT id, name, category, state, merged_into, image_path FROM catalog_models WHERE id = ?;", (row["merged_into"],)
         ).fetchone()
     if not row:
         return None
@@ -95,7 +95,7 @@ def group_detail(conn: sqlite3.Connection, group_id: int) -> dict[str, Any] | No
     if not group:
         return None
     rows = conn.execute("""
-        SELECT m.id, m.name, m.category, m.state,
+        SELECT m.id, m.name, m.category, m.state, m.image_path,
                (SELECT COUNT(*) FROM model_artifacts a WHERE a.catalog_model_id = m.id) AS artifacts
         FROM catalog_models m JOIN model_group_members g ON g.catalog_model_id = m.id
         WHERE g.group_id = ? AND m.state NOT IN (?, ?) ORDER BY m.name COLLATE NOCASE;

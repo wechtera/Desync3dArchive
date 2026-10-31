@@ -535,7 +535,7 @@ export async function openModelDetailModal(modelId) {
           ` : ''}
 
           <div class="detail-box">
-            <div class="detail-box-heading">File Members (${files.length})</div>
+            <div class="detail-box-heading">Files (${files.length})</div>
             <table>
               <thead>
                 <tr>
@@ -716,7 +716,7 @@ export async function openArchiveViewerModal(fileId) {
     btnLogical.classList.add('active');
     btnRaw.classList.remove('active');
   }
-  if (bodyEl) render(html`<div class="loading-placeholder-lg">Dissecting archive contents & loading submodels...</div>`, bodyEl);
+  if (bodyEl) render(html`<div class="loading-placeholder-lg">Reading archive contents...</div>`, bodyEl);
 
   try {
     const [submodelsData, rawTreeData] = await Promise.all([
@@ -733,8 +733,8 @@ export async function openArchiveViewerModal(fileId) {
     if (subtitleEl) {
       render(html`
         Archive File #${submodelsData.file_id} &bull; Total Volume: <strong>${formatBytes(submodelsData.size_bytes)}</strong>
-        &bull; <strong>${submodelsData.total_submodels} Logical Submodel${submodelsData.total_submodels === 1 ? '' : 's'}</strong>
-        &bull; <strong>${rawTreeData.total_entries || 0} Total Archive Members</strong>
+        &bull; <strong>${submodelsData.total_submodels} Model${submodelsData.total_submodels === 1 ? '' : 's'}</strong>
+        &bull; <strong>${rawTreeData.total_entries || 0} Total Files</strong>
       `, subtitleEl);
     }
 
@@ -859,13 +859,13 @@ function renderLogicalSubmodelsView(container, data) {
           </div>
           <div class="submodel-meta font-mono font-xs text-dim">
             <span>Volume: <strong>${formatBytes(sm.total_bytes)}</strong></span> &bull;
-            <span>Members: <strong>${sm.total_files || members.length} files</strong></span>
+            <span>Artifacts: <strong>${sm.total_files || members.length} files</strong></span>
           </div>
           <div class="submodel-path font-mono font-xs text-dim" title="${sm.relative_dir || '/'}">
             Folder: ${sm.relative_dir || '[Root Directory]'}
           </div>
           <details class="submodel-members-details">
-            <summary class="submodel-members-summary">Inspect ${members.length} File Component${members.length === 1 ? '' : 's'}</summary>
+            <summary class="submodel-members-summary">Inspect ${members.length} File${members.length === 1 ? '' : 's'}</summary>
             <div class="submodel-members-list">
               ${membersListHtml}
             </div>

@@ -41,7 +41,7 @@ def queue(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     conn.row_factory = sqlite3.Row
     rows = conn.execute("""
         SELECT m.id, m.name, COUNT(DISTINCT a.catalog_model_id) AS models, COUNT(a.id) AS artifacts,
-               COALESCE(MAX(r.reviewed), 0) AS reviewed,
+               COALESCE(MAX(r.reviewed), 0) AS reviewed, MAX(f.peeked_at) AS peeked_at,
                (SELECT COUNT(*) FROM model_groups g WHERE g.collection_id = m.id) AS model_groups
         FROM models m
         JOIN model_files f ON f.model_id = m.id
@@ -79,6 +79,7 @@ def view(conn: sqlite3.Connection, collection_id: int) -> dict[str, Any]:
     review = conn.execute("SELECT reviewed FROM collection_reviews WHERE collection_id = ?;", (collection_id,)).fetchone()
     return {
         "release": str(collection_id), "title": collection["name"], "folders": sorted(folders), "files": files,
+        "peeked_at": conn.execute("SELECT MAX(peeked_at) FROM model_files WHERE model_id = ?;", (collection_id,)).fetchone()[0],
         "cards": [
             {
                 "key": str(m["id"]), "name": m["name"], "category": m["category"] or "", "members": held[m["id"]],
