@@ -33,3 +33,8 @@ class CatalogValidationTests(RouteCase):
 
     def test_non_numeric_ids_do_not_match(self):
         self.assertEqual(self.client.get("/api/models/abc").status_code, 404)
+
+
+class ArchiveValidationTests(RouteCase):
+    def test_bad_model_ids_are_refused(self):
+        self.assertIn("model_ids", self.refused("/api/reconcile/archive-peek", {"model_ids": ["x"]}))

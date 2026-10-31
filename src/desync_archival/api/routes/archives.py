@@ -7,6 +7,7 @@ from pathlib import Path
 import sqlite3
 from typing import Any, Optional
 
+from desync_archival.db.queries import archives as queries
 from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.reconciler import VaultReconciler
 
@@ -28,36 +29,17 @@ def handle_get_archive_submodels(
 
     file_id = int(file_id_raw)
 
-    file_row = conn.execute("""
-        SELECT mf.file_id, mf.model_id, mf.filename, mf.size_bytes,
-               df.storage_tier, df.vault_path, df.downloaded_at
-        FROM model_files mf
-        LEFT JOIN downloaded_files df ON mf.file_id = df.file_id
-        WHERE mf.file_id = ?;
-    """, (file_id,)).fetchone()
+    file_row = conn.execute(queries.GET_ARCHIVE_SUBMODELS_1, (file_id,)).fetchone()
 
     if not file_row:
         return {"error": f"File #{file_id} not found in database"}, 404
 
-    submodels = conn.execute("""
-        SELECT id, file_id, model_id, name, relative_dir, preview_image_path,
-               total_files, total_bytes, has_presupported, has_unsupported,
-               has_slicer_project, formats_json, scales_json, created_at
-        FROM file_archive_submodels
-        WHERE file_id = ?
-        ORDER BY id ASC;
-    """, (file_id,)).fetchall()
+    submodels = conn.execute(queries.GET_ARCHIVE_SUBMODELS_2, (file_id,)).fetchall()
 
     result_submodels = []
     for sm in submodels:
         sm_id = sm["id"]
-        members = conn.execute("""
-            SELECT id, submodel_id, internal_path, filename, size_bytes,
-                   is_supported, file_extension
-            FROM file_archive_members
-            WHERE submodel_id = ?
-            ORDER BY filename ASC;
-        """, (sm_id,)).fetchall()
+        members = conn.execute(queries.GET_ARCHIVE_SUBMODELS_3, (sm_id,)).fetchall()
 
         formats = []
         if sm["formats_json"]:
@@ -117,15 +99,7 @@ def handle_get_archive_raw(
 
     file_id = int(file_id_raw)
 
-    members = conn.execute("""
-        SELECT fam.id, fam.submodel_id, fam.internal_path, fam.filename,
-               fam.size_bytes, fam.is_supported, fam.file_extension,
-               fas.name AS submodel_name
-        FROM file_archive_members fam
-        LEFT JOIN file_archive_submodels fas ON fam.submodel_id = fas.id
-        WHERE fam.file_id = ?
-        ORDER BY fam.internal_path ASC;
-    """, (file_id,)).fetchall()
+    members = conn.execute(queries.GET_ARCHIVE_RAW_1, (file_id,)).fetchall()
 
     if not members:
         return {
@@ -154,7 +128,7 @@ def handle_post_archive_peek_backfill(
     Dispatches task_type = 'archive_peek_backfill' via TaskManager.
     """
     if task_manager is None:
-        db_path = Path(conn.execute("PRAGMA database_list;").fetchone()[2])
+        db_path = Path(conn.execute(queries.POST_ARCHIVE_PEEK_BACKFILL_1).fetchone()[2])
         reconciler = VaultReconciler(db_path)
         report = reconciler.backfill_archive_peeks(model_ids=body.get("model_ids"))
         return report, 200
