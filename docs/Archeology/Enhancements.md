@@ -27,4 +27,3 @@ Ideas found during migration. None are scheduled unless a step or the user asks 
 | E24 | Review models already in the catalog | The review screen covers previews only. Splitting an added model needs a rule for which card keeps the ID, and what happens to stashes holding it. |
 | E25 | Choose variants at stash export | A linked character spans every scale and support type, and export copies every file. Let a stash pick a scale and support type. |
 | E26 | Render covers only from a card's own files | A card that had a folder carved out can still pick an STL from that folder for its cover. |
-| E27 | Sub-models in linked library review | Add **Make Sub-model** to the review screen, so an item inside a model can be stashed alone without becoming its own card. Needs a home for sub-models that have no archive, because `file_archive_submodels` requires one. |

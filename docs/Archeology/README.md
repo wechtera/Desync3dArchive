@@ -25,7 +25,8 @@ This directory tracks the state of the app, what has been done, and what comes n
 | `SCRAPEPAGE_ARCHEOLOGY.md` | Findings: use cases, architecture, business rules, security register V1 to V20 |
 | `STACK_PROPOSAL.md` | Accepted stack, decisions, production data safeguards, LAN consequences |
 | `MIGRATION_PROMPTS.md` | Ordered prompts for Steps 0A to 9, with exit checks |
-| `GLOSSARY.md` | What model, card, sub-model, variant and part mean |
+| `GLOSSARY.md` | What collection, model group, model, artifact and file mean |
+| `CATALOG_HIERARCHY_PLAN.md` | Moving the catalog to those levels |
 | `Questions.md` | Open questions that are not blockers |
 | `Enhancements.md` | Enhancement ideas found during migration |
 
