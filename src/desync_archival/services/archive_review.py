@@ -9,6 +9,7 @@ import sqlite3
 from collections import defaultdict
 from typing import Any
 
+from desync_archival.services import model_resolver
 from desync_archival.services.catalog_levels import MERGED, RESOLVED, SKIPPED
 from desync_archival.services.library_review import DEFAULT_CATEGORY, ReviewError
 
@@ -34,6 +35,27 @@ def _owner(path: str, claims: dict[str, int]) -> int | None:
         if owner is not None:
             return owner
     return None
+
+
+def _review_flags(cards: list[dict[str, Any]]) -> None:
+    """Same signals as a linked release, plus the one archives get wrong most: pieces as models."""
+    models = [
+        model_resolver.ResolvedModel(
+            key=model_resolver.slug_of(model_resolver.words_in(card["name"])), name=card["name"],
+            folders=sorted({m.rpartition("/")[0] for m in card["members"]}),
+        )
+        for card in cards
+    ]
+    variants = set(model_resolver.PRINT_WORDS)
+    model_resolver.flag_models(models, variants, set(model_resolver.PIECE_WORDS))
+    for card, model in zip(cards, models, strict=True):
+        card["flags"] += model.flags
+        # Raygalius LT beside Raygalius is nearly always a piece that became a model.
+        parent = max(
+            (c["name"] for c in cards if card["name"].lower().startswith(f"{c['name'].lower()} ")), key=len, default="",
+        )
+        if parent:
+            card["flags"].append(f"Looks like a part of {parent}")
 
 
 def queue(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -77,17 +99,19 @@ def view(conn: sqlite3.Connection, collection_id: int) -> dict[str, Any]:
         " GROUP BY catalog_model_id;", list(held),
     ).fetchall())
     review = conn.execute("SELECT reviewed FROM collection_reviews WHERE collection_id = ?;", (collection_id,)).fetchone()
+    cards = [
+        {
+            "key": str(m["id"]), "name": m["name"], "category": m["category"] or "", "members": held[m["id"]],
+            "skip": m["state"] == SKIPPED, "group": groups.get(m["id"], ""), "tags": [],
+            "flags": [f"Shared with {shared[m['id']] - 1} other collections"] if shared.get(m["id"], 1) > 1 else [],
+        }
+        for m in sorted(models, key=lambda x: x["name"].lower())
+    ]
+    _review_flags(cards)
     return {
         "release": str(collection_id), "title": collection["name"], "folders": sorted(folders), "files": files,
         "peeked_at": conn.execute("SELECT MAX(peeked_at) FROM model_files WHERE model_id = ?;", (collection_id,)).fetchone()[0],
-        "cards": [
-            {
-                "key": str(m["id"]), "name": m["name"], "category": m["category"] or "", "members": held[m["id"]],
-                "skip": m["state"] == SKIPPED, "group": groups.get(m["id"], ""), "tags": [],
-                "flags": [f"Shared with {shared[m['id']] - 1} other collections"] if shared.get(m["id"], 1) > 1 else [],
-            }
-            for m in sorted(models, key=lambda x: x["name"].lower())
-        ],
+        "cards": cards,
         "reviewed": bool(review and review["reviewed"]), "changed": False, "locked": [], "settled": [],
     }
 

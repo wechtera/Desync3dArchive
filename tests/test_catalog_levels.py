@@ -446,6 +446,22 @@ class ArchiveReviewTests(BuildCase):
         self.build()
         self.assertFalse(self.view()["reviewed"])
 
+    def test_a_piece_that_became_a_model_is_flagged(self):
+        other = self.add_collection("Beast", "1/b")
+        self.archive(other, [("Beast/Beast.stl", 5), ("Pieces/Beast LT.stl", 6)])
+        self.build()
+        cards = archive_review.view(self.conn, other)["cards"]
+        flags = {c["name"]: c["flags"] for c in cards}
+        self.assertEqual(flags.get("Beast LT"), ["Looks like a part of Beast"])
+        self.assertEqual(flags["Beast"], [])
+
+    def test_a_typo_pair_is_flagged_as_in_a_release(self):
+        other = self.add_collection("Hags", "1/h")
+        self.archive(other, [("Monsters/Green Hag.stl", 5), ("Monsters/Gree Hag.stl", 6)])
+        self.build()
+        flags = [f for c in archive_review.view(self.conn, other)["cards"] for f in c["flags"]]
+        self.assertIn("Very close to Gree Hag, possibly the same thing", flags)
+
     def test_the_queue_puts_unreviewed_first(self):
         other = self.add_collection("Other", "1/z")
         self.archive(other, [("Oak/Oak.stl", 5)])

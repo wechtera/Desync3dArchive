@@ -157,7 +157,7 @@ export async function populateCreatorsFilter() {
   const currentSelection = select.value;
   try {
     const creators = await fetchCreators();
-    const optionsHtmlParts = [htmlhtml`<option value="">All Creators</option>`];
+    const optionsHtmlParts = [html`<option value="">All Creators</option>`];
     optionsHtmlParts.push(creators.map(c => {
       const name = c.designer_name || 'Unknown';
       const count = c.total_models || 0;

@@ -689,7 +689,7 @@ test.describe('settings', () => {
         release: '3', title: 'Vampire Court', peeked_at: '2026-10-31 12:00:00', folders: ['3/a.zip', '3/a.zip/Ghuls'], files: ['3/a.zip/Ghuls/A.stl', '3/a.zip/Ghuls/B.stl'],
         cards: [
           { key: '7', name: 'Ghul A', category: '', members: ['3/a.zip/Ghuls/A.stl'], skip: false, flags: [], group: 'Ghul', tags: [] },
-          { key: '8', name: 'Ghul B', category: '', members: ['3/a.zip/Ghuls/B.stl'], skip: false, flags: [], group: 'Ghul', tags: [] },
+          { key: '8', name: 'Ghul B', category: '', members: ['3/a.zip/Ghuls/B.stl'], skip: false, flags: ['Looks like a part of Ghul A'], group: 'Ghul', tags: [] },
         ],
         reviewed: false, changed: false, locked: [], settled: [],
       } });
@@ -700,6 +700,9 @@ test.describe('settings', () => {
     await page.locator('.archive-review-open').click();
     await expect(page.locator('#library-review-title')).toContainText('Vampire Court - peeked');
     await expect(page.locator('#btn-review-reset')).toHaveCount(0);
+    await expect(page.locator('#review-concerns')).toContainText('Possible part');
+    await expect(page.locator('#review-concerns')).toContainText('Move to Card');
+    await expect(page.locator('.review-row[data-path="3/a.zip/Ghuls/B.stl"]').or(page.locator('.review-row[data-path="3/a.zip/Ghuls"]')).first()).toBeVisible();
     await page.locator('.review-card[data-card="Ghul A"] .review-card-name').fill('Zombie');
     await page.locator('.review-row[data-path="3/a.zip"] .review-select').check();
     await expect(page.locator('#review-target option')).toHaveText(['Ghul B', 'Zombie']);

@@ -31,3 +31,5 @@ Ideas found during migration. None are scheduled unless a step or the user asks 
 | E28 | Review padding and general UX | The new screens were built from tests against mock data, so nobody tuned them on the real catalog. Review padding, spacing and overall feel across Linked Libraries, Archive Review, the review modal and the Models view. |
 | E29 | Regroup the Manage tabs | Tab order: MMF Sync, Download MMF, External Vault, Vault Reconcile. Download MMF holds Pending & Queue Explorer, Active Transfers and History & Audit Log. External Vault holds Linked Libraries and Archive Review. |
 | E30 | Improve the archive review modal UI | The modal needs a design pass on real archives, covering the tree, the card list and how a move is made. |
+| E31 | Make the source link easier to see | In the model view, turn the source page link into a pill or button. |
+| E32 | Refuse conflicting jobs | Jobs that shouldn't run together, such as a Full Rescan during an add or a peek during a rebuild, must fail at once with a clear message instead of relying on the user to know. Decide which pairs conflict, and enforce it in the task manager. |

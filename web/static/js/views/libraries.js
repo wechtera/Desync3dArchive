@@ -455,6 +455,13 @@ function concernOf(flag) {
       ask: `Compare with ${close[1]}. If they're one design, tick its rows and Move to Card. If they're different, leave both.`,
     };
   }
+  const part = flag.match(/^Looks like a part of (.+)$/);
+  if (part) {
+    return {
+      label: 'Possible part', other: part[1], terms: [],
+      ask: `This may be a piece of ${part[1]}, not a model of its own. If so, tick its rows and Move to Card. If it's its own design, leave it.`,
+    };
+  }
   const parent = flag.match(/^Named from a parent folder, but its folder says (.+)$/);
   if (parent) {
     const names = parent[1].split(', ');
