@@ -7,6 +7,7 @@ Preserves 100% of pre-existing catalog exploration and metrics functionality.
 from datetime import date, datetime
 import json
 from pathlib import Path
+from desync_archival.db.queries import catalog as queries
 from desync_archival import settings as app_config
 import shutil
 import sqlite3
@@ -63,20 +64,7 @@ def handle_get_metrics(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
-    counts = conn.execute(f"""
-        SELECT 
-            (SELECT COUNT(*) FROM models WHERE {VALID_MODEL_RAW}) AS total_models,
-            (SELECT COUNT(*) FROM models WHERE is_bonus = 1 AND {VALID_MODEL_RAW}) AS total_bonus_models,
-            (SELECT COUNT(DISTINCT designer_name) FROM models WHERE {VALID_MODEL_RAW}) AS total_creators,
-            (SELECT COUNT(*) FROM model_files mf JOIN models m ON mf.model_id = m.id WHERE {VALID_MODEL_M}) AS total_files,
-            (SELECT COALESCE(SUM(size_bytes), 0) FROM model_files mf JOIN models m ON mf.model_id = m.id WHERE {VALID_MODEL_M}) AS total_library_size_bytes,
-            (SELECT COALESCE(SUM(df.actual_bytes), 0) FROM downloaded_files df JOIN models m ON df.model_id = m.id WHERE {VALID_MODEL_M}) AS total_downloaded_bytes,
-            (SELECT COUNT(*) FROM download_jobs j JOIN models m ON j.model_id = m.id WHERE j.status = 'completed' AND {VALID_MODEL_M}) AS total_downloaded_models,
-            (SELECT COUNT(*) FROM download_jobs j JOIN models m ON j.model_id = m.id WHERE j.downloaded_files > 0 AND j.downloaded_files < j.total_files AND {VALID_MODEL_M}) AS total_partial_models,
-            (SELECT COUNT(*) FROM models WHERE pre_supported = 1 AND {VALID_MODEL_RAW}) AS supported_models,
-            (SELECT COUNT(*) FROM releases WHERE {VALID_RELEASE_COND}) AS total_releases,
-            (SELECT COUNT(*) FROM releases WHERE is_likely_bundle = 1 AND {VALID_RELEASE_COND}) AS likely_bundles;
-    """).fetchone()
+    counts = conn.execute(queries.GET_METRICS_1.format(VALID_MODEL_M=VALID_MODEL_M, VALID_MODEL_RAW=VALID_MODEL_RAW, VALID_RELEASE_COND=VALID_RELEASE_COND)).fetchone()
 
     data = {
         "total_models": counts["total_models"],
@@ -112,21 +100,7 @@ def handle_get_creators(
     body: dict,
     params: dict,
 ) -> tuple[list[dict[str, Any]], int]:
-    creators = conn.execute(f"""
-        SELECT 
-            designer_name,
-            designer_id,
-            COUNT(DISTINCT CASE WHEN is_bonus = 0 THEN m.id END) AS total_models,
-            COUNT(DISTINCT CASE WHEN is_bonus = 1 THEN m.id END) AS bonus_models,
-            COUNT(DISTINCT m.release_month) AS active_months,
-            SUM(CASE WHEN m.pre_supported = 1 THEN 1 ELSE 0 END) AS supported_models,
-            MIN(m.release_month) AS first_seen,
-            MAX(m.release_month) AS latest_seen
-        FROM models m
-        WHERE {VALID_MODEL_M}
-        GROUP BY designer_name
-        ORDER BY total_models DESC;
-    """).fetchall()
+    creators = conn.execute(queries.GET_CREATORS_1.format(VALID_MODEL_M=VALID_MODEL_M)).fetchall()
     return [dict(r) for r in creators], 200
 
 
@@ -149,37 +123,10 @@ def handle_get_releases(
     if bundles_only:
         where_clause += " AND r.is_likely_bundle = 1"
 
-    count_query = f"SELECT COUNT(*) FROM releases r {where_clause};"
+    count_query = queries.GET_RELEASES_1.format(where_clause=where_clause)
     total_count = conn.execute(count_query, args).fetchone()[0]
 
-    query = f"""
-        SELECT r.*,
-            (SELECT m.id FROM models m 
-             WHERE m.designer_name = r.designer_name 
-               AND m.release_month = r.release_month 
-               AND m.primary_image_url IS NOT NULL 
-               AND m.primary_image_url != ''
-               AND {VALID_MODEL_M}
-             ORDER BY m.id DESC LIMIT 1) AS sample_model_id,
-            (SELECT COUNT(*) FROM models m JOIN download_jobs j ON m.id = j.model_id 
-             WHERE m.designer_name = r.designer_name 
-               AND m.release_month = r.release_month 
-               AND j.status = 'completed'
-               AND {VALID_MODEL_M}) AS completed_jobs,
-            (SELECT COUNT(*) FROM models m JOIN download_jobs j ON m.id = j.model_id 
-             WHERE m.designer_name = r.designer_name 
-               AND m.release_month = r.release_month 
-               AND j.status IN ('pending', 'downloading')
-               AND {VALID_MODEL_M}) AS queued_jobs,
-            (SELECT COUNT(DISTINCT df.model_id) FROM models m JOIN downloaded_files df ON m.id = df.model_id 
-             WHERE m.designer_name = r.designer_name 
-               AND m.release_month = r.release_month
-               AND {VALID_MODEL_M}) AS downloaded_models
-        FROM releases r
-        {where_clause}
-        ORDER BY r.release_month DESC, r.model_count DESC
-        LIMIT ? OFFSET ?;
-    """
+    query = queries.GET_RELEASES_2.format(VALID_MODEL_M=VALID_MODEL_M, where_clause=where_clause)
     rows = conn.execute(query, args + [limit, offset]).fetchall()
 
     enriched = []
@@ -226,33 +173,8 @@ def handle_get_models(
     limit = max(1, min(150, int(params.get("limit", [24])[0])))
     offset = max(0, int(params.get("offset", [0])[0]))
 
-    query = f"""
-        SELECT m.id, m.name, m.designer_name, m.designer_username, m.primary_category, m.release_month,
-               m.published_at, m.is_bonus, m.pre_supported, m.primary_image_url, m.url,
-               (SELECT COUNT(*) FROM model_files f WHERE f.model_id = m.id) AS file_count,
-               (SELECT COUNT(*) FROM downloaded_files df WHERE df.model_id = m.id) AS downloaded_file_count,
-               (SELECT GROUP_CONCAT(mt.tag, '||') FROM model_tags mt WHERE mt.model_id = m.id) AS tags_raw,
-               j.status AS job_status,
-               CASE 
-                 WHEN j.status = 'completed' THEN 'completed'
-                 WHEN j.status IN ('pending', 'downloading') THEN 'queued'
-                 WHEN j.status = 'failed' THEN 'failed'
-                 WHEN (SELECT COUNT(*) FROM downloaded_files df WHERE df.model_id = m.id) > 0 
-                      AND (SELECT COUNT(*) FROM downloaded_files df WHERE df.model_id = m.id) < (SELECT COUNT(*) FROM model_files mf WHERE mf.model_id = m.id) THEN 'partial'
-                 WHEN (SELECT COUNT(*) FROM downloaded_files df WHERE df.model_id = m.id) >= (SELECT COUNT(*) FROM model_files mf WHERE mf.model_id = m.id) 
-                      AND (SELECT COUNT(*) FROM model_files mf WHERE mf.model_id = m.id) > 0 THEN 'completed'
-                 ELSE 'not_downloaded'
-               END AS download_status
-        FROM models m
-        LEFT JOIN download_jobs j ON j.id = (SELECT MAX(id) FROM download_jobs WHERE model_id = m.id)
-        WHERE {VALID_MODEL_M}
-    """
-    count_query = f"""
-        SELECT COUNT(*)
-        FROM models m
-        LEFT JOIN download_jobs j ON j.id = (SELECT MAX(id) FROM download_jobs WHERE model_id = m.id)
-        WHERE {VALID_MODEL_M}
-    """
+    query = queries.GET_MODELS_1.format(VALID_MODEL_M=VALID_MODEL_M)
+    count_query = queries.GET_MODELS_2.format(VALID_MODEL_M=VALID_MODEL_M)
     args = []
 
     if only_bonus:
@@ -346,7 +268,7 @@ def handle_get_model_detail(
 
     model_id = int(raw_id)
     cursor = conn.execute(
-        f"SELECT * FROM models WHERE id = ? AND {VALID_MODEL_RAW};", 
+        queries.GET_MODEL_DETAIL_1.format(VALID_MODEL_RAW=VALID_MODEL_RAW), 
         (model_id,)
     )
     row = cursor.fetchone()
@@ -361,7 +283,7 @@ def handle_get_model_detail(
 
     try:
         tag_rows = conn.execute(
-            "SELECT tag FROM model_tags WHERE model_id = ? ORDER BY tag ASC;", (model_id,)
+            queries.GET_MODEL_DETAIL_2, (model_id,)
         ).fetchall()
         model_data["tags"] = [r[0] for r in tag_rows if r[0]]
     except Exception:
@@ -370,29 +292,13 @@ def handle_get_model_detail(
     files = []
     try:
         has_df = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='downloaded_files';"
+            queries.GET_MODEL_DETAIL_3
         ).fetchone()
 
         if has_df:
-            file_rows = conn.execute("""
-                SELECT 
-                    f.file_id, f.filename, f.size_bytes, f.download_url, f.created_at,
-                    df.storage_tier, df.local_relative_path, df.actual_bytes,
-                    CASE WHEN df.file_id IS NOT NULL THEN 1 ELSE 0 END AS is_downloaded
-                FROM model_files f
-                LEFT JOIN downloaded_files df ON f.file_id = df.file_id
-                WHERE f.model_id = ?
-                ORDER BY f.size_bytes DESC, f.filename ASC;
-            """, (model_id,)).fetchall()
+            file_rows = conn.execute(queries.GET_MODEL_DETAIL_4, (model_id,)).fetchall()
         else:
-            file_rows = conn.execute("""
-                SELECT file_id, filename, size_bytes, download_url, created_at,
-                       NULL AS storage_tier, NULL AS local_relative_path, NULL AS actual_bytes,
-                       0 AS is_downloaded
-                FROM model_files
-                WHERE model_id = ?
-                ORDER BY size_bytes DESC, filename ASC;
-            """, (model_id,)).fetchall()
+            file_rows = conn.execute(queries.GET_MODEL_DETAIL_5, (model_id,)).fetchall()
 
         for fr in file_rows:
             if isinstance(fr, sqlite3.Row):
@@ -410,11 +316,11 @@ def handle_get_model_detail(
 
     try:
         has_dj = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='download_jobs';"
+            queries.GET_MODEL_DETAIL_6
         ).fetchone()
         if has_dj:
             job_row = conn.execute(
-                "SELECT status, downloaded_files, downloaded_bytes, total_files, total_bytes, enqueued_at, completed_at, error_message FROM download_jobs WHERE model_id = ? ORDER BY id DESC LIMIT 1;",
+                queries.GET_MODEL_DETAIL_7,
                 (model_id,)
             ).fetchone()
             if job_row:
@@ -494,23 +400,14 @@ def handle_get_model_files(
 
     model_id = int(raw_model_id)
     model = conn.execute(
-        f"SELECT id, name, designer_name, url, primary_image_url FROM models WHERE id = ? AND {VALID_MODEL_RAW};",
+        queries.GET_MODEL_FILES_1.format(VALID_MODEL_RAW=VALID_MODEL_RAW),
         (model_id,),
     ).fetchone()
 
     if not model:
         return {"error": f"Model {model_id} not found or missing metadata"}, 404
 
-    files = conn.execute("""
-        SELECT 
-            f.file_id, f.filename, f.size_bytes, f.download_url, f.created_at,
-            df.local_relative_path, df.actual_bytes,
-            CASE WHEN df.file_id IS NOT NULL THEN 1 ELSE 0 END AS is_downloaded
-        FROM model_files f
-        LEFT JOIN downloaded_files df ON f.file_id = df.file_id
-        WHERE f.model_id = ?
-        ORDER BY f.size_bytes DESC, f.filename ASC;
-    """, (model_id,)).fetchall()
+    files = conn.execute(queries.GET_MODEL_FILES_2, (model_id,)).fetchall()
 
     total_size = sum(f["size_bytes"] or 0 for f in files)
     return {
@@ -552,11 +449,7 @@ def handle_post_model_render_view(
 
     source_expr = "COALESCE(source, 'mmf') AS source"
 
-    model = conn.execute(f"""
-        SELECT id, name, designer_name, vault_path, primary_image_url,
-               {source_expr}
-        FROM models WHERE id = ?;
-    """, (model_id,)).fetchone()
+    model = conn.execute(queries.POST_MODEL_RENDER_VIEW_1.format(source_expr=source_expr), (model_id,)).fetchone()
 
     if not model:
         return {"error": f"Model #{model_id} not found."}, 404
@@ -603,13 +496,7 @@ def handle_post_model_render_view(
 
         # Check loose downloaded STL files recorded in SQLite
         if not candidate_stl:
-            file_rows = conn.execute("""
-                SELECT df.vault_path, df.staging_path
-                FROM downloaded_files df
-                WHERE df.model_id = ?
-                  AND (LOWER(df.file_extension) = '.stl' OR LOWER(df.cleaned_filename) LIKE '%.stl')
-                ORDER BY df.actual_bytes DESC;
-            """, (model_id,)).fetchall()
+            file_rows = conn.execute(queries.POST_MODEL_RENDER_VIEW_2, (model_id,)).fetchall()
 
             for fr in file_rows:
                 for p_str in (fr["vault_path"], fr["staging_path"]):
@@ -636,7 +523,7 @@ def handle_post_model_render_view(
 
         if view == "front_left" and not model["primary_image_url"]:
             with conn:
-                conn.execute("UPDATE models SET primary_image_url = ? WHERE id = ?;", (f"/previews/{model_id}/cover.jpg", model_id))
+                conn.execute(queries.POST_MODEL_RENDER_VIEW_3, (f"/previews/{model_id}/cover.jpg", model_id))
 
         return {
             "success": True,

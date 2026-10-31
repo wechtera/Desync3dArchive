@@ -301,6 +301,11 @@ def create_app(manage_workers: bool = True) -> FastAPI:
     app.add_middleware(SecurityMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
 
+    from desync_archival.api import routers
+
+    for router in routers.ALL:
+        app.include_router(router)
+
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "DELETE"])
     async def api_catch_all(request: Request) -> Response:
         # raw_path keeps the percent-encoding that dispatch_route has always received.
