@@ -118,6 +118,13 @@ export async function loadSettings() {
 
     setVal('setting-auth-client-id', data.mmf_client_id || '');
     setSecret('setting-auth-api-key', secrets.mmf_client_secret);
+
+    const backupEl = document.getElementById('backup-status');
+    if (backupEl) {
+      backupEl.textContent = data.last_backup_at
+        ? `Last database backup: ${data.last_backup_at} (${data.last_backup_result})`
+        : 'No database backup has run yet.';
+    }
   } catch (err) {
     console.error('Failed to load settings:', err);
   }

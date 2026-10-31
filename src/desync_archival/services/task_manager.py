@@ -12,30 +12,29 @@ Instrumented with dynamic topic-based subsystem logging ('http', 'storage', 'sql
 """
 
 import asyncio
-from datetime import datetime
 import json
 import logging
-import os
-from pathlib import Path
-from desync_archival import settings as app_config
-from desync_archival.services.paths import sanitize_segment
-from desync_archival.services import auth_service, jobs
-from desync_archival.services.analytics import run_startup_analytics
-import re
 import shutil
 import sqlite3
 import subprocess
-import sys
 import threading
+import time
 import traceback
 from collections.abc import Callable
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
 
+from desync_archival import backup
+from desync_archival import settings as app_config
+from desync_archival.services import auth_service, jobs
+from desync_archival.services.analytics import run_startup_analytics
 from desync_archival.services.logger import job_logged, log_layer, logger
-from .reconciler import VaultReconciler
+from desync_archival.services.paths import sanitize_segment
 
+from .reconciler import VaultReconciler
 
 KNOWN_TOP_LEVEL_KEYS = {
     "id", "url", "name", "visibility", "visibility_name", "listed",
@@ -49,7 +48,16 @@ KNOWN_TOP_LEVEL_KEYS = {
 }
 
 
-def parse_cookies(text: str) -> Dict[str, str]:
+def parse_scrape_event(line: str) -> dict[str, Any] | None:
+    """Reads one scraper event. Anything else, such as a Node error, stays plain text."""
+    try:
+        event = json.loads(line)
+    except ValueError:
+        return None
+    return event if isinstance(event, dict) and "event" in event else None
+
+
+def parse_cookies(text: str) -> dict[str, str]:
     """Reads a Cookie-Editor list or a name-value object into a name-value dict."""
     try:
         parsed = json.loads(text) if text else {}
@@ -314,6 +322,60 @@ class TaskManager:
             results.append(item)
         return results
 
+    def _handle_scrape_line(self, task_id: int, line: str, expected_count: int) -> None:
+        """Turns one line of scraper output into task log and progress."""
+        event = parse_scrape_event(line)
+        if event is None:
+            self._append_log(task_id, line)
+            return
+
+        name = event.get("event")
+        count = int(event.get("count") or 0)
+        if name == "cycle":
+            total = max(expected_count, count, 1)
+            pct = min(90.0, 10.0 + (count / total) * 80.0)
+            self._update_progress(task_id, pct, f"Cycle {event.get('cycle')}: {count} models intercepted...")
+            self._append_log(task_id, f"Cycle {event.get('cycle')}: {count} unique models collected")
+        elif name == "api_batch":
+            self._append_log(task_id, f"API batch of {count} items from {event.get('path')}")
+        elif name == "finalizing":
+            self._update_progress(task_id, 95.0, "Finalizing outputs on disk...")
+        elif name == "done":
+            self._append_log(task_id, f"Scraper finished with {count} model IDs")
+        else:
+            self._append_log(task_id, str(event.get("message", line)))
+
+    def run_scheduled_backup(self) -> bool:
+        """Starts a backup if the last one is over a day old. Returns whether it started one."""
+        try:
+            app_config.backup_dir()
+        except app_config.SettingsError:
+            return False
+        last = self._get_setting("last_backup_epoch", "0")
+        if time.time() - float(last or 0) < jobs.BACKUP_INTERVAL:
+            return False
+        return bool(self.start_task("database_backup").get("success"))
+
+    @job_logged(lambda self, task_id, *_: f"task-{task_id}")
+    def _run_backup_worker(self, task_id: int, params: dict[str, Any]):
+        try:
+            path = backup.create_backup(self.db_path)
+            result = f"OK: {path.name}"
+            status, label = jobs.COMPLETED, "Database backup complete"
+        except (backup.BackupError, app_config.SettingsError, sqlite3.Error, OSError) as e:
+            logger.error(f"Scheduled backup failed: {e}")
+            result, status, label = f"Failed: {type(e).__name__}", jobs.FAILED, "Database backup failed"
+
+        with self._get_db() as conn:
+            auth_service.set_settings(conn, {
+                "last_backup_epoch": str(time.time()),
+                "last_backup_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "last_backup_result": result,
+            })
+        self._finalize_task(task_id, status, label, {"result": result})
+        with self._lock:
+            self.active_task_id = None
+
     def _rebuild_releases(self, task_id: int) -> None:
         """Ingest changes the catalog, so releases are rebuilt. A failure here keeps the ingest result."""
         try:
@@ -388,6 +450,7 @@ class TaskManager:
             "library_scrape": (self._run_scrape_worker, (task_id,)),
             "stash_export": (self._run_stash_export_worker, (task_id, task_params)),
             "external_library_reconcile": (self._run_external_indexer_worker, (task_id, task_params)),
+            "database_backup": (self._run_backup_worker, (task_id, task_params)),
         }
         if task_type not in workers:
             self._finalize_task(task_id, "failed", f"Unsupported task type: {task_type}", {})
@@ -593,6 +656,7 @@ class TaskManager:
         cookies_dest = target_dir / "cookies.json"
         try:
             parsed = json.loads(cookies_json_val) if cookies_json_val else []
+            cookies_dest.touch(mode=0o600)
             cookies_dest.write_text(json.dumps(parsed, indent=2), encoding="utf-8")
             count_label = len(parsed) if isinstance(parsed, list) else "valid"
             self._append_log(task_id, f"Exported {count_label} session cookies to {target_dir.name}/cookies.json")
@@ -613,7 +677,9 @@ class TaskManager:
 
         self._update_progress(task_id, 5.0, "Launching Playwright browser...")
 
-        cmd = [node_bin, str(scrape_script), "--cookies", str(cookies_dest)]
+        with self._get_db() as conn:
+            expected_count = conn.execute("SELECT count(*) FROM models WHERE source = 'mmf';").fetchone()[0]
+        cmd = [node_bin, str(scrape_script), "--cookies", str(cookies_dest), "--expected", str(expected_count)]
         try:
             process = subprocess.Popen(
                 cmd,
@@ -630,21 +696,11 @@ class TaskManager:
                 line_str = line.strip()
                 if not line_str:
                     continue
-                self._append_log(task_id, line_str)
-
-                match_cycle = re.search(r"Cycle\s+(\d+):\s+(\d+)\s+unique models collected", line_str)
-                if match_cycle:
-                    cycle = int(match_cycle.group(1))
-                    count = int(match_cycle.group(2))
-                    pct = min(90.0, 10.0 + (count / 5000.0) * 80.0)
-                    self._update_progress(task_id, pct, f"Cycle {cycle}: {count} models intercepted...")
-                    log_layer("http", logging.DEBUG, f"Playwright scrape intercepted {count} model IDs in cycle {cycle}")
-
-                if "Target count reached" in line_str or "Captured all" in line_str:
-                    self._update_progress(task_id, 95.0, "Finalizing outputs on disk...")
+                self._handle_scrape_line(task_id, line_str, expected_count)
 
             process.wait()
             return_code = process.returncode
+            cookies_dest.unlink(missing_ok=True)
 
             if self._cancel_requested:
                 self._finalize_task(task_id, "cancelled", "Scrape cancelled by user.", {})

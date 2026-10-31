@@ -22,7 +22,8 @@
       },
       "is_paused": false,
       "is_running": false,
-      "queued_jobs": []
+      "queued_jobs": [],
+      "reconnect_required": false
     },
     "location": null,
     "status": 200

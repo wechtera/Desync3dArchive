@@ -19,6 +19,14 @@
     </div>
   </div>
 
+  <div class="system-banner banner-danger" id="banner-reconnect">
+    <div class="banner-content">
+      <span>Your MyMiniFactory sign-in is about to expire. Downloads are paused and will resume after you reconnect.</span>
+    </div>
+    <div class="banner-actions">
+      <button class="btn-pill btn-action-primary" onclick="switchTab('settings')">Reconnect</button>
+    </div>
+  </div>
   <div class="system-banner banner-danger" id="banner-circuit">
     <div>
       <strong>Download Queue Paused:</strong>
@@ -590,6 +598,7 @@
           </div>
         </div>
         <div id="critical-directories-table-container"></div>
+        <p class="text-dim font-sm" id="backup-status"></p>
       </div>
 
       <!-- Card 1b: In-Place External Libraries Management -->

@@ -313,6 +313,10 @@ export async function checkHealth() {
 
     const dlRes = await fetchDownloadsStatus().catch(() => null);
     if (dlRes) {
+      const reconnectBanner = document.getElementById('banner-reconnect');
+      if (reconnectBanner) {
+        reconnectBanner.style.display = dlRes.reconnect_required ? 'flex' : 'none';
+      }
       const circuitBanner = document.getElementById('banner-circuit');
       if (circuitBanner) {
         circuitBanner.style.display = dlRes.circuit_breaker_tripped ? 'flex' : 'none';

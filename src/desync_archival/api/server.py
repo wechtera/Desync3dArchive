@@ -8,6 +8,7 @@ import json
 import mimetypes
 import re
 import sqlite3
+import threading
 import time
 import urllib.parse
 import uuid
@@ -47,6 +48,7 @@ SVG_PLACEHOLDER = (
 
 download_manager: DownloadManager | None = None
 task_manager: TaskManager | None = None
+schedule_stop = threading.Event()
 
 
 def get_db() -> sqlite3.Connection:
@@ -251,9 +253,22 @@ def start_managers() -> None:
     except StorageUnavailableError as e:
         logger.warning(f"[Server] Storage notice: {e} (Workers will start once storage is configured via UI)")
 
+    schedule_stop.clear()
+    threading.Thread(target=backup_schedule, name="backup-schedule", daemon=True).start()
+
+
+def backup_schedule() -> None:
+    """Checks hourly, so a backup skipped while the app was busy or off still happens."""
+    wait = jobs.FIRST_BACKUP_CHECK_SECONDS
+    while not schedule_stop.wait(wait):
+        wait = jobs.BACKUP_CHECK_SECONDS
+        if task_manager:
+            task_manager.run_scheduled_backup()
+
 
 def stop_managers() -> None:
     logger.info("[Server] Shutting down")
+    schedule_stop.set()
     if download_manager:
         download_manager.stop()
 

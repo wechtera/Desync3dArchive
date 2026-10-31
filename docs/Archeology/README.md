@@ -30,7 +30,7 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Current state
 
-- **Phase:** Step 5 in progress on branch `migration/05-jobs-tools`. Items 1 to 4 are done.
+- **Phase:** Step 5 code complete on branch `migration/05-jobs-tools`. Its exit check still needs the user's real scrape and test download.
 - **Source baseline:** `scrapepage` commit `9bfa46d`, frozen and left unchanged.
 - **Tests:** 84 passing on 2026-10-30, before commit `9bfa46d`. Not re-run since.
 - **Production data:** Untouched. `library.db` was last modified at 15:50 on 2026-10-30, before this work began.
@@ -52,8 +52,9 @@ This directory tracks the state of the app, what has been done, and what comes n
 
 ## Next
 
-- [ ] Finish Step 5: item 5 (scraper JSON lines), item 6 (Range resume), item 7 (scheduled backups), item 8 (pause before token expiry)
 - [ ] User: real small scrape and test download for the Step 5 exit check
+- [ ] Merge `migration/05-jobs-tools` after that and user approval
+- [ ] Run Step 6 from `MIGRATION_PROMPTS.md`
 
 ## Project decisions
 
@@ -77,6 +78,13 @@ This directory tracks the state of the app, what has been done, and what comes n
 - **Releases (item 2):** ingest now rebuilds `releases`. A failed rebuild logs and keeps the ingest result.
 - **Cookie fallback (item 3):** fixed, through one `parse_cookies` helper.
 - **External tools (item 4):** all unrar, 7-Zip and Blender calls go through `src/desync_archival/external/`, closing V7. Lookup order is `tools/` symlinks, PATH, a setting, then common folders. Calls have timeouts, stdin closed, and lenient decoding. Bulk extraction checks paths, file count and size before unpacking, then checks again afterward and removes symlinks. `sanitize_segment` has one home in `services/paths.py`.
+
+- **Scraper (item 5):** `scrape.js` emits JSON lines, and `TaskManager._handle_scrape_line` reads them. Other text, such as a Node error, stays in the task log. The 4,000 early exit is now 80% of the catalog size, passed with `--expected`. The 4,868 target is gone on purpose: stopping at the catalog size could miss new purchases, so scrolling stops when no new models appear. `--no-sandbox` is removed, intercepted URLs are logged as paths only, and each run's cookie copy is 0600 and deleted when the scraper exits. Existing copies in old `scrapes/` folders were left alone.
+- **Download resume (item 6):** a saved `.part` file is resumed with a `Range` request, only when the host answers 206 from exactly that byte. Otherwise the file restarts. The checksum covers the whole file. Whether MMF's hosts honor `Range` is not known yet.
+- **Backups (item 7):** a daily `database_backup` task runs through the job runner, checked hourly, and waits if another task is running. Settings shows the last result.
+- **Token expiry (item 8):** workers stop claiming new jobs 10 minutes before a token that can't refresh expires, and a banner asks to reconnect. Signing in reloads the workers, so the queue resumes alone. A file already downloading finishes if it can.
+
+**Contract:** `downloads_status` and `downloads_queue_get` gain `reconnect_required`.
 
 **Tool syntax verified against real binaries:** 7-Zip treated `-oevil.stl` as an option without `--`, and extracted it as a file with `--`. unrar also uses `--`: a bare `-` fails with "Unknown option", which `test_real_unrar_accepts_the_stop_marker` guards. No real RAR archive has been extracted through the adapter yet, so that is part of the Step 5 exit check.
 

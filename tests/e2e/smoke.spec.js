@@ -165,3 +165,23 @@ test('declining the dialog sends no destructive request', async ({ page }) => {
   await page.evaluate(() => window.clearTaskHistory());
   expect(bodies).toEqual([{}]);
 });
+
+test('reconnect banner follows the download status', async ({ page }) => {
+  await page.route('**/api/downloads/status', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { ...body, reconnect_required: true } });
+  });
+  await page.goto('/');
+  await expect(page.locator('#banner-reconnect')).toBeVisible();
+});
+
+test('settings shows the last backup', async ({ page }) => {
+  await page.route('**/api/settings', async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { ...body, last_backup_at: '2026-10-30 20:00:00', last_backup_result: 'OK: x.db' } });
+  });
+  await page.goto('/#settings');
+  await expect(page.locator('#backup-status')).toContainText('2026-10-30 20:00:00');
+});

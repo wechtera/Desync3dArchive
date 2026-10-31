@@ -4,30 +4,25 @@ Supports OAuth 2.0 Bearer authenticated downloads, live URL hydration, and dual-
 Instrumented with dynamic topic-based subsystem logging ('http', 'storage', 'archive').
 """
 
-from datetime import datetime
 import hashlib
 import json
 import logging
-import os
-from pathlib import Path
-from contextlib import contextmanager
-
-from desync_archival import settings as app_config
-from desync_archival.services.paths import sanitize_segment
-from desync_archival.services import auth_service
 import re
 import shutil
 import sqlite3
-import sys
 import threading
 import time
-from typing import Any, Dict, List, Optional
-import urllib.parse
 import zipfile
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import httpx
 
+from desync_archival import settings as app_config
+from desync_archival.services import auth_service
 from desync_archival.services.logger import job_logged, log_layer, logger
+from desync_archival.services.paths import sanitize_segment
 
 try:
     from .archive_peeker import ArchivePeeker
@@ -39,6 +34,17 @@ except ImportError:
 
 STREAM_CHUNK_SIZE_DEFAULT = 1024 * 1024       # 1 MB download buffer
 OFFLOAD_CHUNK_SIZE_DEFAULT = 4 * 1024 * 1024  # 4 MB network transfer buffer
+
+
+TOKEN_EXPIRY_MARGIN_SECONDS = 600
+
+
+def can_resume(status_code: int, content_range: str | None, resume_from: int) -> bool:
+    """Only a 206 that starts exactly at the saved size can be appended. Anything else restarts."""
+    if status_code != 206 or not resume_from or not content_range:
+        return False
+    match = re.match(r"bytes (\d+)-", content_range)
+    return bool(match) and int(match.group(1)) == resume_from
 
 
 class StorageUnavailableError(Exception):
@@ -242,6 +248,8 @@ class DownloadManager:
         self.offload_chunk_size = OFFLOAD_CHUNK_SIZE_DEFAULT
         self.cookies: Dict[str, str] = {}
         self.access_token: str = ""
+        self.can_refresh: bool = False
+        self.token_expires_at: int = 0
 
         self._load_settings()
 
@@ -441,15 +449,21 @@ class DownloadManager:
         return self.access_token != rejected
 
     @contextmanager
-    def _auth_stream(self, client: httpx.Client, url: str):
+    def _auth_stream(self, client: httpx.Client, url: str, headers: dict | None = None):
         """Streams a URL, refreshing the token and retrying once after a 401."""
-        with client.stream("GET", url) as resp:
+        with client.stream("GET", url, headers=headers) as resp:
             if resp.status_code != 401 or not self._recover_from_401():
                 yield resp
                 return
         client.headers["Authorization"] = f"Bearer {self.access_token}"
-        with client.stream("GET", url) as resp:
+        with client.stream("GET", url, headers=headers) as resp:
             yield resp
+
+    def needs_reconnect(self) -> bool:
+        """True when the token is about to expire and can't be refreshed."""
+        if not self.access_token or self.can_refresh or not self.token_expires_at:
+            return False
+        return time.time() >= self.token_expires_at - TOKEN_EXPIRY_MARGIN_SECONDS
 
     def _load_settings(self):
         with self._get_db() as conn:
@@ -468,6 +482,11 @@ class DownloadManager:
             self.offload_chunk_size = max(256 * 1024, int(offload_mb * 1024 * 1024))
 
             self.access_token = settings.get("mmf_access_token", "").strip()
+            self.can_refresh = bool(settings.get("mmf_refresh_token", "").strip())
+            try:
+                self.token_expires_at = int(settings.get("mmf_token_expires_at") or 0)
+            except ValueError:
+                self.token_expires_at = 0
 
             raw_cookies = settings.get("cookies_json", "{}").strip()
             try:
@@ -585,7 +604,7 @@ class DownloadManager:
 
     def _download_worker_loop(self, worker_id: int):
         while self.is_running:
-            if self.is_paused or self.is_circuit_breaker_tripped():
+            if self.is_paused or self.is_circuit_breaker_tripped() or self.needs_reconnect():
                 time.sleep(1.0)
                 continue
 
@@ -746,10 +765,12 @@ class DownloadManager:
                 t0 = time.time()
                 bytes_received = 0
                 hasher = hashlib.sha256()
+                resume_from = part_path.stat().st_size if part_path.exists() else 0
+                range_headers = {"Range": f"bytes={resume_from}-"} if resume_from else None
 
                 log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Streaming {cleaned_name} ({expected_size} B) for Model #{model_id}")
 
-                with self._auth_stream(client, dl_url) as resp:
+                with self._auth_stream(client, dl_url, range_headers) as resp:
                     if resp.status_code in (401, 403):
                         reason = (
                             f"MyMiniFactory OAuth token expired (HTTP {resp.status_code}) on file {filename}"
@@ -758,10 +779,22 @@ class DownloadManager:
                         )
                         self.trip_circuit_breaker(reason)
                         raise RuntimeError(f"Authentication failure (HTTP {resp.status_code})")
-                    if resp.status_code != 200:
+                    if resp.status_code == 416:
+                        part_path.unlink(missing_ok=True)
+                        raise RuntimeError(f"Saved partial file for {file_id} was refused. Restarting it.")
+                    if resp.status_code not in (200, 206):
                         raise RuntimeError(f"HTTP {resp.status_code} downloading file {file_id}")
 
-                    with open(part_path, "wb") as f_out:
+                    resuming = can_resume(resp.status_code, resp.headers.get("Content-Range"), resume_from)
+                    if resuming:
+                        # The checksum has to cover the whole file, including the saved part.
+                        with open(part_path, "rb") as saved:
+                            for block in iter(lambda: saved.read(1024 * 1024), b""):
+                                hasher.update(block)
+                        downloaded_bytes_acc += resume_from
+                        log_layer("http", logging.INFO, f"Resuming {cleaned_name} from byte {resume_from}")
+
+                    with open(part_path, "ab" if resuming else "wb") as f_out:
                         for chunk in resp.iter_bytes(chunk_size=self.stream_chunk_size):
                             if not chunk:
                                 continue
@@ -1117,6 +1150,7 @@ class DownloadManager:
         return {
             "is_running": self.is_running,
             "is_paused": self.is_paused,
+            "reconnect_required": self.needs_reconnect(),
             "circuit_breaker_tripped": bool(cb_row and cb_row["value"] == "1"),
             "circuit_breaker_reason": cb_reason["value"] if cb_reason else "",
             "active_downloads": active_dl_list,

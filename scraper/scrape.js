@@ -6,6 +6,15 @@ chromium.use(stealth);
 
 const cookiesFlag = process.argv.indexOf('--cookies');
 const cookiesPath = cookiesFlag === -1 ? '' : process.argv[cookiesFlag + 1];
+const expectedFlag = process.argv.indexOf('--expected');
+const expectedCount = expectedFlag === -1 ? 0 : Number(process.argv[expectedFlag + 1]) || 0;
+// The API can hand over the whole library at once. Most of it counts as a full capture.
+const fullPayloadCount = expectedCount > 0 ? Math.floor(expectedCount * 0.8) : Infinity;
+
+// The app reads one JSON object per line from stdout.
+function emit(event, fields = {}) {
+  console.log(JSON.stringify({ event, ...fields }));
+}
 
 (async () => {
   if (!cookiesPath) {
@@ -37,17 +46,15 @@ const cookiesPath = cookiesFlag === -1 ? '' : process.argv[cookiesFlag + 1];
       channel: 'chrome',
       headless: false,
       args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
         '--disable-blink-features=AutomationControlled',
         '--disable-infobars'
       ]
     });
   } catch (err) {
-    console.log('[Browser] Chrome channel launch failed, falling back to default Chromium...');
+    emit('status', { message: 'Chrome launch failed, falling back to Chromium' });
     browser = await chromium.launch({
       headless: false,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+      args: ['--disable-blink-features=AutomationControlled']
     });
   }
 
@@ -79,8 +86,8 @@ const cookiesPath = cookiesFlag === -1 ? '' : process.argv[cookiesFlag + 1];
         }
 
         if (Array.isArray(items) && items.length > 50) {
-          console.log(`\n[API Intercepted] URL: ${response.url()}`);
-          console.log(`[API Intercepted] Found batch of ${items.length} items.`);
+          // Only the path: query strings can carry tokens.
+          emit('api_batch', { path: new URL(response.url()).pathname, count: items.length });
 
           for (const item of items) {
             const modelId = String(
@@ -96,7 +103,7 @@ const cookiesPath = cookiesFlag === -1 ? '' : process.argv[cookiesFlag + 1];
             }
           }
 
-          if (models.size >= 4000) {
+          if (models.size >= fullPayloadCount) {
             fullPayloadCaptured = true;
           }
         }
@@ -104,7 +111,7 @@ const cookiesPath = cookiesFlag === -1 ? '' : process.argv[cookiesFlag + 1];
     }
   });
 
-  console.log('Navigating to MyMiniFactory library...');
+  emit('status', { message: 'Navigating to MyMiniFactory library' });
   await page.goto('https://www.myminifactory.com/library', { waitUntil: 'domcontentloaded' });
 
   // Cloudflare Challenge Detection and Grace Period
@@ -115,30 +122,29 @@ const cookiesPath = cookiesFlag === -1 ? '' : process.argv[cookiesFlag + 1];
                          (await page.$('#cf-turnstile')) !== null;
 
     if (hasChallenge) {
-      console.log('\n[Cloudflare] Turnstile verification screen detected.');
-      console.log('[Cloudflare] Please click the verification box in the browser window if prompted...');
+      emit('status', { message: 'Cloudflare check detected. Click the box in the browser window if prompted.' });
 
       await page.waitForFunction(() => {
         return !document.title.includes('Just a moment') && !document.querySelector('#challenge-running');
       }, { timeout: 90000 });
 
-      console.log('[Cloudflare] Verification passed. Resuming library capture...');
+      emit('status', { message: 'Cloudflare check passed' });
       
       // Update cookies.json with any newly minted Cloudflare session cookies
       const updatedCookies = await context.cookies();
       fs.writeFileSync(cookiesPath, JSON.stringify(updatedCookies, null, 2));
     }
   } catch (cfErr) {
-    console.log('[Cloudflare] Wait ended or bypassed: ' + cfErr.message);
+    emit('status', { message: `Cloudflare wait ended: ${cfErr.message}` });
   }
 
   // Wait for initial JSON payloads to stream in
   await page.waitForTimeout(6000);
 
   if (fullPayloadCaptured) {
-    console.log(`\nSuccess! Captured all ${models.size} models directly from API payload.`);
+    emit('finalizing', { count: models.size });
   } else {
-    console.log(`\nAPI provided ${models.size} models so far. Proceeding with scroll extraction...`);
+    emit('status', { message: `API provided ${models.size} models. Scrolling for the rest.` });
 
     for (let cycle = 1; cycle <= 250; cycle++) {
       const prevCount = models.size;
@@ -173,7 +179,7 @@ const cookiesPath = cookiesFlag === -1 ? '' : process.argv[cookiesFlag + 1];
         }
       }
 
-      console.log(`Cycle ${cycle}: ${models.size} unique models collected...`);
+      emit('cycle', { cycle, count: models.size });
 
       await page.evaluate(() => {
         window.scrollTo(0, document.body.scrollHeight);
@@ -188,13 +194,9 @@ const cookiesPath = cookiesFlag === -1 ? '' : process.argv[cookiesFlag + 1];
       await page.mouse.wheel(0, 4000);
       await page.waitForTimeout(3000);
 
-      if (models.size >= 4868) {
-        console.log(`Target count reached (${models.size} models).`);
-        break;
-      }
-
+      // There is no fixed target: a library can hold more than the catalog knows about.
       if (models.size === prevCount && cycle > 5) {
-        console.log('No new models detected. Stopping.');
+        emit('finalizing', { count: models.size });
         break;
       }
     }
@@ -205,6 +207,6 @@ const cookiesPath = cookiesFlag === -1 ? '' : process.argv[cookiesFlag + 1];
   fs.writeFileSync('model_ids.txt', sortedIds.join('\n') + '\n');
   fs.writeFileSync('models.json', JSON.stringify(Object.fromEntries(models), null, 2));
 
-  console.log(`\nFinished! Saved ${sortedIds.length} model IDs to 'model_ids.txt'.`);
+  emit('done', { count: sortedIds.length });
   await browser.close();
 })();

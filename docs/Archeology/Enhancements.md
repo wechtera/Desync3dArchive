@@ -18,4 +18,5 @@ Ideas found during migration. None are scheduled unless a step or the user asks 
 | E16 | Add an audit history view in Settings | `audit_log` is only readable with SQL today | Step 4 |
 | E17 | Give query constants descriptive names | Names like `GET_METRICS_1` came from the script that moved them | Step 4 |
 | E18 | Move service-layer SQL into query modules | Step 4 covered route handlers only | Step 4 |
+| E19 | Save refreshed Cloudflare cookies from a scrape back to settings | The scraper writes new cookies to its run folder, and nothing reads them | Step 5 |
 | E6 | Accessibility and responsive layout review | Neither has been assessed | Archeology section 9 |
