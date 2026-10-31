@@ -45,6 +45,8 @@ uv run python scripts/cutover.py sample --source ../scrapepage/library.db --work
 
 Takes 25 models, starting with every awkward kind: stash members, hashed and unhashed downloads, archives, linked library models, tombstones, bonus models, models with no files, and unfinished jobs. It then migrates them, compares every value, and runs the real app on the result with workers off and outside network blocked.
 
+After the comparison, the copy's stored storage paths are pointed inside the stage folder, and the originals are listed under `paths_isolated` in the report. The app refuses production paths outside production mode, and this also keeps the rehearsal away from the real vault. So a later `verify` of this copy reports those paths as changed, and files show as offline in the app.
+
 **Stop and look.** Read `sample/report.json`, then open the app on the sample and check a few models by eye:
 
 ```bash
@@ -79,7 +81,13 @@ The first command is a dry run. Expect the added row in `dropped`, and `passed: 
 2. Take a verified backup of the old `library.db`, and confirm the row counts.
 3. Copy production data to `~/DESYNC_Data`. The originals stay unchanged.
 4. Run `uv run python -m desync_archival.dbtool migrate --confirm-production` with `APP_ENV=production` on the copy.
-5. Rewrite stored paths with `cutover.py`'s `rewrite_paths`, so the 7 absolute `raw_backup_path` rows follow the data, then run `verify` between the backup and the migrated copy. There is no command for the rewrite yet on its own: the sample and full stages run it on their copies. Add one before this stage.
+5. Rewrite stored paths so the 7 absolute `raw_backup_path` rows follow the data, then verify against the backup:
+
+   ```bash
+   APP_ENV=production uv run python scripts/cutover.py rewrite-paths ~/DESYNC_Data/library.db --old-root /Users/adamwechter/Programming/test_stl_shelf/scrapepage
+   uv run python scripts/cutover.py verify BACKUP ~/DESYNC_Data/library.db --old-root /Users/adamwechter/Programming/test_stl_shelf/scrapepage
+   ```
+
 6. Set `DESYNC_ALLOWED_ROOTS` to the data folder, NAS vault, staging, stash export folder and every external library.
 7. Set `DESYNC_SECRETS_FILE` to its own production file, such as `~/.config/desync-archival/production.json`. The default file also holds the dev login, so production must not share it.
 8. Run `uv run python -m desync_archival.dbtool export-secrets`, then `set-password` if LAN mode stays on.

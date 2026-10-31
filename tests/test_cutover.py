@@ -146,6 +146,43 @@ class RewriteTests(CutoverCase):
     def test_paths_elsewhere_are_left_alone(self):
         self.assertEqual(cutover.rewrite_paths(self.after, Path("/other")), 0)
 
+    def test_the_rewrite_command_reports_its_count(self):
+        result = cutover.rewrite_stored_paths(self.after, Path("/old/data"))
+        self.assertEqual(result["paths_rewritten"], 1)
+        self.assertTrue(result["passed"])
+
+    def test_the_rewrite_command_refuses_a_missing_database(self):
+        with self.assertRaises(SystemExit):
+            cutover.rewrite_stored_paths(self.base / "missing.db", Path("/old/data"))
+
+    def test_the_rewrite_command_refuses_production_paths_outside_production(self):
+        from desync_archival import settings
+        with patch.object(settings, "is_protected", return_value=True), self.assertRaises(settings.ProductionPathError):
+            cutover.rewrite_stored_paths(self.after, Path("/old/data"))
+
+    def test_isolating_points_real_storage_inside_the_stage(self):
+        conn = sqlite3.connect(self.after)
+        conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('download_root_path', '/Volumes/STL/Vault')")
+        conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('metadata_backup_path', 'metadata')")
+        conn.execute("DELETE FROM external_libraries")
+        conn.execute("INSERT INTO external_libraries (name, path) VALUES ('Loot', '/Volumes/Loot')")
+        conn.commit()
+        conn.close()
+
+        stage = self.base / "stage"
+        changed = cutover.isolate_paths(self.after, stage)
+
+        self.assertEqual(changed["download_root_path"], "/Volumes/STL/Vault")
+        self.assertIn("/Volumes/Loot", changed.values())
+        self.assertNotIn("metadata_backup_path", changed)
+        conn = sqlite3.connect(self.after)
+        stored = dict(conn.execute("SELECT key, value FROM app_settings"))
+        library = conn.execute("SELECT path FROM external_libraries").fetchone()[0]
+        conn.close()
+        self.assertEqual(stored["metadata_backup_path"], "metadata")
+        self.assertTrue(Path(stored["download_root_path"]).is_relative_to(stage))
+        self.assertTrue(Path(library).is_relative_to(stage))
+
     def test_verify_allows_only_the_expected_rewrite(self):
         cutover.rewrite_paths(self.after, Path("/old/data"))
         self.assertTrue(cutover.verify(self.db, self.after, old_root=Path("/old/data"))["passed"])

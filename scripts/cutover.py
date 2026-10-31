@@ -163,6 +163,45 @@ def rewrite_paths(path: Path, old_root: Path) -> int:
         conn.close()
 
 
+def rewrite_stored_paths(path: Path, old_root: Path) -> dict[str, Any]:
+    """The rewrite on its own, for the real cutover. Protected paths need APP_ENV=production."""
+    from desync_archival import settings
+
+    settings.check_path(path)
+    if not path.is_file():
+        raise SystemExit(f"No database at {path}")
+    return {"database": str(path), "old_root": str(old_root), "paths_rewritten": rewrite_paths(path, old_root), "passed": True}
+
+
+def isolate_paths(path: Path, stage_dir: Path) -> dict[str, str]:
+    """Points a throwaway copy's stored storage paths inside its stage, away from the real ones.
+
+    Runs after verify, because the copy no longer matches the source once it has run. The folders are
+    left uncreated, so the app treats them as offline mounts. Returns the original of each change.
+    """
+    from desync_archival import settings
+
+    sandbox = stage_dir / "sandbox"
+    changed: dict[str, str] = {}
+    conn = sqlite3.connect(path)
+    try:
+        marks = ",".join("?" * len(settings.PATH_SETTING_KEYS))
+        for key, value in conn.execute(
+            f"SELECT key, value FROM app_settings WHERE key IN ({marks})", settings.PATH_SETTING_KEYS
+        ).fetchall():
+            if value and Path(value).is_absolute():
+                conn.execute("UPDATE app_settings SET value = ? WHERE key = ?", (str(sandbox / key), key))
+                changed[key] = value
+        for rowid, value in conn.execute("SELECT rowid, path FROM external_libraries").fetchall():
+            if value:
+                conn.execute("UPDATE external_libraries SET path = ? WHERE rowid = ?", (str(sandbox / f"library_{rowid}"), rowid))
+                changed[f"external_library_{rowid}"] = value
+        conn.commit()
+        return changed
+    finally:
+        conn.close()
+
+
 def verify(before_path: Path, after_path: Path, rows_only: bool = False, old_root: Path | None = None) -> dict[str, Any]:
     """Proves a migration kept every value, and that the result follows the key rules.
 
@@ -344,6 +383,7 @@ def run_stage(name: str, source: Path, workdir: Path, size: int | None) -> dict[
     finally:
         conn.close()
     report["verify"] = verify(before, live, old_root=source.parent)
+    report["paths_isolated"] = isolate_paths(live, stage_dir)
     report["smoke"] = smoke(stage_dir)
     report["passed"] = report["verify"]["passed"] and report["smoke"]["passed"] and report["secrets_match"]
     (stage_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -439,7 +479,12 @@ def main() -> int:
     compare = commands.add_parser("verify")
     compare.add_argument("before", type=Path)
     compare.add_argument("after", type=Path)
+    compare.add_argument("--old-root", type=Path)
     compare.add_argument("--rows-only", action="store_true")
+
+    rewrite = commands.add_parser("rewrite-paths")
+    rewrite.add_argument("database", type=Path)
+    rewrite.add_argument("--old-root", type=Path, required=True)
 
     undo = commands.add_parser("rollback")
     undo.add_argument("--data-dir", type=Path, required=True)
@@ -451,7 +496,9 @@ def main() -> int:
     if args.command == "preflight":
         return print_result(preflight(args.source))
     if args.command == "verify":
-        return print_result(verify(args.before, args.after, args.rows_only))
+        return print_result(verify(args.before, args.after, args.rows_only, args.old_root))
+    if args.command == "rewrite-paths":
+        return print_result(rewrite_stored_paths(args.database.resolve(), args.old_root))
     if args.command == "rollback":
         return print_result(rollback(args.data_dir.resolve(), args.backup.resolve(), args.port, args.confirm))
 
