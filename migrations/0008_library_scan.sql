@@ -42,7 +42,9 @@ CREATE TABLE library_candidates (
     run_id INTEGER NOT NULL,
     rel_path TEXT NOT NULL,
     release_name TEXT NOT NULL,
+    name TEXT NOT NULL,
     category TEXT NOT NULL,
+    folders_json TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'proposed',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -72,6 +74,21 @@ WHEN EXISTS (
     SELECT 1 FROM library_work_queue
     WHERE kind = NEW.kind AND model_id = NEW.model_id AND COALESCE(file_id, 0) = COALESCE(NEW.file_id, 0)
 )
+BEGIN
+    SELECT RAISE(IGNORE);
+END;
+
+-- Later Loot releases repeat a character across scales and support types, and one character is
+-- one model. Single-folder models have no rows here: their key is their folder.
+CREATE TABLE library_model_folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_id INTEGER NOT NULL,
+    rel_path TEXT NOT NULL,
+    FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_library_model_folders_model ON library_model_folders(model_id);
+CREATE TRIGGER no_duplicate_model_folder BEFORE INSERT ON library_model_folders
+WHEN EXISTS (SELECT 1 FROM library_model_folders WHERE model_id = NEW.model_id AND rel_path = NEW.rel_path)
 BEGIN
     SELECT RAISE(IGNORE);
 END;

@@ -118,6 +118,92 @@ class PreviewTests(ScanCase):
         self.assertEqual({k: after[k] for k in before}, before)
 
 
+class CharacterLayoutTests(ScanCase):
+    """Monthly releases since 2022: scale/category/variant/Character_32mm_Variant."""
+
+    def setUp(self):
+        super().setUp()
+        base = "April 2024/32mm_Forge/All_Forge_Construct_32mm"
+        for variant in ("LYCHEE", "ReadyToSlice", "UnSupported"):
+            self.add_model(f"{base}/Forge_Construct_32mm_{variant}", f"BrazenBull_32mm_{variant}", f"bull_{variant}.stl")
+            self.add_model(
+                f"April 2024/75mm_Forge/All_Forge_Construct_75mm/Forge_Construct_75mm_{variant}",
+                f"BrazenBull_75mm_{variant}", f"bull75_{variant}.stl",
+            )
+        self.add_model(f"{base}/Forge_Construct_32mm_LYCHEE", "ClayGolem_32mm_LYCHEE", "golem.lys")
+        self.add_model("April 2024/Forge_Busts/Forge_Bust_LYCHEE", "BrazenBull_Bust_LYCHEE", "bust.stl")
+        (self.root / "April 2024" / "Stat_Blocks.zip").write_bytes(b"zip")
+
+    def bull(self):
+        return self.rows("SELECT * FROM models WHERE name = 'Brazen Bull'")[0]
+
+    def test_one_character_is_one_model_across_scales_and_variants(self):
+        self.scan_everything()
+        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE name = 'Brazen Bull'"), 1)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM model_files WHERE model_id = ?", self.bull()["id"]), 6)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM library_model_folders WHERE model_id = ?", self.bull()["id"]), 6)
+
+    def test_a_bust_is_its_own_model(self):
+        self.scan_everything()
+        row = self.rows("SELECT primary_category FROM models WHERE name = 'Brazen Bull Bust'")[0]
+        self.assertEqual(row[0], "Busts")
+
+    def test_the_category_comes_from_the_folders(self):
+        self.scan_everything()
+        self.assertEqual(self.bull()["primary_category"], "Construct")
+
+    def test_the_cover_folder_is_unsupported_32mm(self):
+        self.scan_everything()
+        self.assertTrue(self.bull()["vault_path"].endswith("BrazenBull_32mm_UnSupported"))
+
+    def test_months_are_read_from_named_releases(self):
+        self.scan_everything()
+        self.assertEqual(self.bull()["release_month"], "2024-04")
+
+    def test_unsupported_is_not_presupported(self):
+        self.assertFalse(external_indexer.is_presupported("BrazenBull_32mm_UnSupported/a.stl"))
+        self.assertTrue(external_indexer.is_presupported("BrazenBull_32mm_LYCHEE/a.lys"))
+        self.assertTrue(external_indexer.is_presupported("X_Supported_Solid/a.stl"))
+
+    def test_rescanning_a_character_changes_nothing(self):
+        self.scan_everything()
+        files = self.count("SELECT COUNT(*) FROM model_files")
+        self.assertEqual(self.indexer.rescan_known(1)["models_changed"], 0)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM model_files"), files)
+        self.assertEqual(self.indexer.preview_library(1)["new"], 0)
+
+    def test_a_later_scale_extends_the_character(self):
+        self.scan_everything()
+        model_id = self.bull()["id"]
+        self.add_model("April 2024/54mm_Forge/All_Forge_Construct_54mm/Forge_Construct_54mm_UnSupported", "BrazenBull_54mm_UnSupported", "b54.stl")
+        self.assertEqual(self.indexer.preview_library(1)["new"], 1)
+        conn = self.connect()
+        self.indexer.approve_candidates(conn, 1, [])
+        conn.close()
+        self.indexer.add_approved(1)
+        self.assertEqual(self.bull()["id"], model_id)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM model_files WHERE model_id = ?", model_id), 7)
+
+    def test_a_lost_variant_keeps_the_model_and_logs_its_files(self):
+        self.scan_everything()
+        shutil.rmtree(self.root / "April 2024" / "75mm_Forge")
+        self.indexer.rescan_known(1)
+        self.assertEqual(self.bull()["is_active"], 1)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM inactive_log WHERE reason = 'file_missing' AND item_name LIKE 'bull75%'"), 3)
+
+    def test_losing_every_folder_flags_it_inactive(self):
+        self.scan_everything()
+        shutil.rmtree(self.root / "April 2024")
+        self.assertGreaterEqual(self.indexer.rescan_known(1)["models_missing"], 1)
+        self.assertEqual(self.bull()["is_active"], 0)
+
+    def test_files_from_every_scale_keep_their_real_paths(self):
+        self.scan_everything()
+        paths = [r[0] for r in self.rows("SELECT vault_path FROM downloaded_files WHERE model_id = ?", self.bull()["id"])]
+        self.assertEqual(len(paths), 6)
+        self.assertTrue(all(Path(path).is_file() for path in paths))
+
+
 class InventoryTests(ScanCase):
     def test_inventory_never_renders_or_opens_archives(self):
         self.add_model("2024-02 - Next", "Boxed", "pack.zip")
@@ -326,6 +412,21 @@ class MissingTests(ScanCase):
         path.write_bytes(SOLID)
         self.indexer.rescan_known(1)
         self.assertEqual(self.count("SELECT COUNT(*) FROM inactive_log WHERE reason = 'file_missing' AND resolved_at IS NULL"), 0)
+
+
+class RenderChoiceTests(ScanCase):
+    def test_unsupported_folders_are_used_for_renders(self):
+        folder = self.add_model("x", "Bull_32mm_UnSupported", "bull.stl")
+        self.assertEqual(ImageWorker(self.db).renderer.select_best_render_candidate(folder).name, "bull.stl")
+
+    def test_supported_is_used_when_nothing_else_exists(self):
+        folder = self.add_model("x", "Bull_32mm_Supported_Solid", "bull.stl")
+        self.assertEqual(ImageWorker(self.db).renderer.select_best_render_candidate(folder).name, "bull.stl")
+
+    def test_unsupported_beats_supported(self):
+        folder = self.add_model("x", "Pack", "bull_supported.stl")
+        (folder / "bull.stl").write_bytes(SOLID)
+        self.assertEqual(ImageWorker(self.db).renderer.select_best_render_candidate(folder).name, "bull.stl")
 
 
 class ImageWorkerTests(ScanCase):

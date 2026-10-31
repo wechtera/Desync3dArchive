@@ -52,7 +52,11 @@ Read-only, nothing written. The classifier took 73 seconds, and walking every pr
 - Releases named like `April 2022` get no month, because only `2022-04` style names are parsed. They land in `Unassigned`.
 - `Loyalty` is empty.
 
-Waiting on the user: what one model is in these releases.
+The user chose one model per character across scales and support types, with busts assumed separate.
+
+**Second preview, same day, with character grouping:** 2,426 new, 25 known, 384 seconds. Still not approvable: a name like `No` means the Tribe sets were read as scale layouts, `Bases Bust` repeats across releases, categories such as `NoSuports` leak through, and `Ready To Print` survives in names.
+
+**Open: the classifier is Loot-specific.** The user wants a separate model resolver that does not depend on one library's layout or on where the files came from, with better pattern detection, possibly ML. Do not extend the Loot rules further until that is decided.
 
 ## Before deploying
 

@@ -157,6 +157,15 @@ class ImageWorker:
     def _still_mounted(self, job: sqlite3.Row) -> bool:
         return Path(job["library_path"]).is_dir()
 
+    def _best_stl(self, conn: sqlite3.Connection, job: sqlite3.Row, model_dir: Path) -> Path | None:
+        # A character's main folder can be Lychee-only, so try its other scales and variants.
+        rows = conn.execute("SELECT rel_path FROM library_model_folders WHERE model_id = ? ORDER BY id;", (job["model_id"],)).fetchall()
+        for folder in [model_dir, *(Path(job["library_path"]) / r[0] for r in rows)]:
+            best = self.renderer.select_best_render_candidate(folder)
+            if best:
+                return best
+        return None
+
     def _cover(self, conn: sqlite3.Connection, job: sqlite3.Row) -> str:
         model_id = job["model_id"]
         model_dir = Path(job["vault_path"])

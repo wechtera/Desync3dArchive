@@ -5,6 +5,7 @@ Supports persistent cover generation and on-demand ephemeral rendering with zero
 """
 
 import logging
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -49,14 +50,14 @@ class MeshRenderer:
         Selects the best un-supported body mesh from loose files on disk.
         """
         all_stls: List[Path] = []
+        supported_stls: List[Path] = []
         for f in directory.rglob("*"):
             if not f.is_file() or f.suffix.lower() != ".stl":
                 continue
-            lower_path = str(f).lower()
-            if "supported" in lower_path or "(supported)" in lower_path or "_supported" in lower_path:
-                continue
-            all_stls.append(f)
+            supported_stls.append(f) if re.search(r"(?<!un)supported", str(f), re.IGNORECASE) else all_stls.append(f)
 
+        # A render with supports beats no cover at all.
+        all_stls = all_stls or supported_stls
         if not all_stls:
             return None
 
