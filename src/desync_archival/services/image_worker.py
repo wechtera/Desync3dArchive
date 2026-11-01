@@ -14,6 +14,7 @@ from typing import Any, Optional
 from desync_archival import settings as app_config
 from desync_archival.db.queries import image_worker as queries
 from desync_archival.services import inactive_log
+from desync_archival.services.db import scoped_connection
 from desync_archival.services.external_indexer import COVER, ExternalLibraryIndexer
 from desync_archival.services.logger import log_layer, logger
 from desync_archival.services.mesh_renderer import MeshRenderer
@@ -72,11 +73,7 @@ class ImageWorker:
         self._thread: threading.Thread | None = None
 
     def _get_db(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), timeout=45.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout = 45000;")
-        conn.execute("PRAGMA foreign_keys = ON;")
-        return conn
+        return scoped_connection(self.db_path)
 
     def start(self) -> None:
         self._stop.clear()

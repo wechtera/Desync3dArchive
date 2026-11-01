@@ -35,6 +35,7 @@ from desync_archival.services import (
     secret_store,
     tags,
 )
+from desync_archival.services.db import scoped_connection
 from desync_archival.services.external_indexer import (
     SUPPORTED_FILE_EXTENSIONS,
     FULL,
@@ -136,11 +137,8 @@ def _bg_calculate_library_telemetry(db_path: Path, library_id: int, lib_path: Pa
         log_layer("storage", logging.INFO, f"Background disk usage scan started for Library #{library_id}: {lib_path}")
         total_files, total_bytes = _fast_dir_stats(lib_path)
 
-        conn = sqlite3.connect(str(db_path), timeout=45.0)
-        conn.execute(queries.PRAGMA_ROW)
-        with conn:
+        with scoped_connection(db_path) as conn:
             conn.execute(queries.UPDATE_EXTERNAL_LIBRARIES_DISK_BYTES_BY_ID, (total_bytes, total_files, library_id))
-        conn.close()
 
         log_layer("storage", logging.INFO, f"Background disk usage scan completed for Library #{library_id}: {format_bytes(total_bytes)} across {total_files:,} files.")
     except Exception as e:

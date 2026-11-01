@@ -23,6 +23,7 @@ from desync_archival.services import (
     library_review,
     model_resolver,
 )
+from desync_archival.services.db import scoped_connection
 from desync_archival.services.library_review import (
     ADDED,
     APPROVED,
@@ -161,11 +162,7 @@ class ExternalLibraryIndexer:
         self.previews_root.mkdir(parents=True, exist_ok=True)
 
     def _get_db(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), timeout=45.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout = 45000;")
-        conn.execute("PRAGMA foreign_keys = ON;")
-        return conn
+        return scoped_connection(self.db_path)
 
     def _read_release(self, release_dir: Path, root: Path) -> tuple[list[str], list[str], list[str]]:
         """Folders to learn from, the topmost ones holding model files, and every model file."""

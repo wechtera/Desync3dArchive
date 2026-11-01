@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${DESYNC_PRODUCTION_ENV:-$HOME/.config/desync-archival/production.env}"
 SERVER_MODULE="desync_archival.api.server"
 WAIT_SECONDS=30
+OPEN_FILES=4096
 
 usage() {
     echo "Usage: scripts/server.sh start|stop|restart|status" >&2
@@ -74,6 +75,8 @@ start() {
     fi
     mkdir -p "$(dirname "$LOG")"
     echo "Starting. Output goes to $LOG"
+    # macOS starts processes at 256 open files. Reaching that stops the server taking requests (E48).
+    ulimit -n "$OPEN_FILES" 2>/dev/null || echo "Could not raise the open file limit, staying at $(ulimit -n)"
     nohup "$ROOT/scripts/production.sh" python -m "$SERVER_MODULE" >> "$LOG" 2>&1 &
     disown
     if wait_for_port busy; then

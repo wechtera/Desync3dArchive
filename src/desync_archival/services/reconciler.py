@@ -23,6 +23,7 @@ import httpx
 from desync_archival import settings as app_config
 from desync_archival.db.queries import reconciler as queries
 from desync_archival.services import pending_deletion
+from desync_archival.services.db import scoped_connection
 from desync_archival.services.downloader import StorageManager, StorageUnavailableError
 from desync_archival.services.logger import log_layer
 from desync_archival.services.paths import (
@@ -135,11 +136,7 @@ class VaultReconciler:
         self.previews_root.mkdir(parents=True, exist_ok=True)
 
     def _get_db(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), timeout=45.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout = 45000;")
-        conn.execute("PRAGMA foreign_keys = ON;")
-        return conn
+        return scoped_connection(self.db_path)
 
     def execute_reconciliation(
         self,

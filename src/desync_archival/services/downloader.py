@@ -26,6 +26,7 @@ import httpx
 from desync_archival import settings as app_config
 from desync_archival.db.queries import downloader as queries
 from desync_archival.services import auth_service, identity, secret_store
+from desync_archival.services.db import scoped_connection
 from desync_archival.services.logger import job_logged, log_layer, logger
 from desync_archival.services.paths import sanitize_segment
 
@@ -220,7 +221,7 @@ class StorageManager:
         self._metrics: tuple[float, dict[str, Any]] | None = None
 
     def _get_setting(self, key: str) -> str:
-        with sqlite3.connect(str(self.db_path)) as conn:
+        with scoped_connection(self.db_path) as conn:
             row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY, (key,)).fetchone()
             return row[0] if row and row[0] is not None else ""
 
@@ -318,11 +319,7 @@ class DownloadManager:
         self._load_settings()
 
     def _get_db(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), timeout=45.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout = 45000;")
-        conn.execute("PRAGMA foreign_keys = ON;")
-        return conn
+        return scoped_connection(self.db_path)
 
     def dequeue_models(self, model_ids: List[int]) -> int:
         """Removes models from the download queue, protecting actively downloading or completed jobs."""

@@ -34,6 +34,12 @@ class ServerScriptTests(unittest.TestCase):
             env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(self.base), "DESYNC_PRODUCTION_ENV": str(self.env_file)},
         )
 
+    def test_start_raises_the_open_file_limit(self):
+        # E48: the macOS default of 256 is low enough for a busy scan to stop the server.
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('ulimit -n "$OPEN_FILES"', text)
+        self.assertLess(text.index('ulimit -n "$OPEN_FILES"'), text.index('nohup "$ROOT/scripts/production.sh"'))
+
     def test_an_unknown_command_shows_usage(self):
         result = self.run_script("bounce")
         self.assertEqual(result.returncode, 2)

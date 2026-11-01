@@ -40,6 +40,7 @@ from desync_archival.services import (
     secret_store,
 )
 from desync_archival.services.analytics import run_startup_analytics
+from desync_archival.services.db import scoped_connection
 from desync_archival.services.downloader import StorageUnavailableError
 from desync_archival.services.logger import job_logged, log_layer, logger, redact
 from desync_archival.services.paths import sanitize_segment
@@ -228,11 +229,7 @@ class TaskManager:
         self._initialized = True
 
     def _get_db(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), timeout=45.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout = 45000;")
-        conn.execute("PRAGMA foreign_keys = ON;")
-        return conn
+        return scoped_connection(self.db_path)
 
     def _cache_cover(self, model_id: int, image_url: str | None) -> None:
         if not image_url:
@@ -1107,7 +1104,7 @@ class TaskManager:
                         # FIXME(P-06): a blocking HTTP call on the event loop, under db_lock, so ingest concurrency is one.
                         self._cache_cover(local_id, model_row[16])
 
-                        with conn:
+                        with self._get_db() as conn:
                             if is_tombstone:
                                 inactive_log.record(
                                     conn, inactive_log.MODEL, local_id, data.get("name"), inactive_log.METADATA_INGEST,

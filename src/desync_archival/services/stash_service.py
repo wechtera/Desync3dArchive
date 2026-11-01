@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from desync_archival import settings as app_config
 from desync_archival.db.queries import stash_service as queries
+from desync_archival.services.db import scoped_connection
 
 
 class StashService:
@@ -22,11 +23,7 @@ class StashService:
 
 
     def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), timeout=45.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON;")
-        conn.execute("PRAGMA busy_timeout = 45000;")
-        return conn
+        return scoped_connection(self.db_path)
 
     # -------------------------------------------------------------------------
     # Guardrail Verification Helpers

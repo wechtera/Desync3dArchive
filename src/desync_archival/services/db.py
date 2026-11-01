@@ -4,18 +4,51 @@ services/db.py - Settings defaults and the SQLite connection factory.
 
 import sqlite3
 from pathlib import Path
-from typing import Union
 
 from desync_archival import settings as app_config
 from desync_archival.db.queries import db as queries
 from desync_archival.services import secret_store
 
 
-def get_db_connection(db_path: Union[Path, str]) -> sqlite3.Connection:
+class ScopedConnection(sqlite3.Connection):
+    """Closes when its outermost `with` ends.
+
+    sqlite3's own `with` only commits, and a dropped connection can't close itself, because it
+    sits in a reference cycle with its statement cache. Each one kept its file handles until the
+    garbage collector ran, and a burst of them hit the 256 file limit and stopped the server (E48).
+    Nested `with conn:` blocks still just commit, so helpers that take a connection keep working.
+    """
+
+    _depth = 0
+
+    def __enter__(self):
+        self._depth += 1
+        return super().__enter__()
+
+    def __exit__(self, *exc_info):
+        self._depth -= 1
+        try:
+            return super().__exit__(*exc_info)
+        finally:
+            if self._depth == 0:
+                self.close()
+
+
+def get_db_connection(db_path: Path | str) -> sqlite3.Connection:
+    """A connection its owner closes. For one block of work, use `scoped_connection`."""
     conn = sqlite3.connect(str(db_path), timeout=45.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.execute("PRAGMA busy_timeout = 45000;")
+    return conn
+
+
+def scoped_connection(db_path: Path | str, foreign_keys: bool = True) -> ScopedConnection:
+    conn = sqlite3.connect(str(db_path), timeout=45.0, factory=ScopedConnection)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 45000;")
+    if foreign_keys:
+        conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
 

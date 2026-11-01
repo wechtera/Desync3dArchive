@@ -2,6 +2,7 @@
 services/logger.py - Centralized rotating file logger with dynamic subsystem layer filtering.
 """
 
+import contextlib
 import json
 import logging
 import re
@@ -253,7 +254,8 @@ def get_logging_config() -> Dict[str, Any]:
 def init_logging_from_db(db_path: Path):
     """Initializes logging settings from the SQLite database."""
     try:
-        with sqlite3.connect(str(db_path)) as conn:
+        # closing(), because services.db imports modules that import this logger.
+        with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(queries.SELECT_APP_SETTINGS_BY_KEY).fetchall()
             settings = {r["key"]: r["value"] for r in rows}

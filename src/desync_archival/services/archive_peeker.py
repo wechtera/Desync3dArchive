@@ -22,6 +22,7 @@ from desync_archival import external
 from desync_archival import settings as app_config
 from desync_archival.db.queries import archive_peeker as queries
 from desync_archival.services import catalog_levels
+from desync_archival.services.db import scoped_connection
 from desync_archival.services.logger import log_layer
 
 # Formats recognized as 3D printable models or slicer projects
@@ -86,10 +87,7 @@ class ArchivePeeker:
 
 
     def _get_db(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), timeout=45.0)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA busy_timeout = 45000;")
-        return conn
+        return scoped_connection(self.db_path, foreign_keys=False)
 
     def inspect_and_record(self, model_id: int, file_id: int, archive_path: Path) -> Dict[str, Any]:
         """Entry point: inspects an archive, performs bidirectional segmentation, and records submodels."""
