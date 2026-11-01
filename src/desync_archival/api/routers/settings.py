@@ -74,6 +74,7 @@ add_route(router, "GET", "/api/inactive", plain(handlers.handle_get_inactive))
 add_route(router, "GET", "/api/settings", plain(handlers.handle_get_settings))
 add_route(router, "POST", "/api/settings", plain(handlers.handle_post_settings), schemas.SettingsBody)
 add_route(router, "GET", "/api/settings/directories", plain(handlers.handle_get_directory_usage))
+add_route(router, "GET", "/api/settings/locations", plain(handlers.handle_get_locations))
 add_route(router, "GET", "/api/system/browse", plain(handlers.handle_get_system_browse))
 add_route(router, "GET", "/api/storage/status", plain(storage_handlers.handle_get_storage_status))
 add_route(router, "POST", "/api/storage/config", plain(storage_handlers.handle_post_storage_config),

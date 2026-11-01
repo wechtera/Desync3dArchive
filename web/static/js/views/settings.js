@@ -8,6 +8,7 @@ import { formatBytes, parseServerTime } from '../utils.js';
 import { appendToBody, html, imageFallback, nothing, render, safeUrl, stopPropagation } from '../template.js';
 import {
   fetchAuditHistory,
+  fetchLocations,
   fetchBackups,
   postBackups,
   fetchExternalLibraries,
@@ -77,6 +78,7 @@ export async function loadSettingsView() {
   await Promise.all([
     loadSettings(),
     loadDirectoryUsage(),
+    loadLocations(),
     loadLibraryUsage(),
     loadAuthStatus(),
     loadSessionStatus(),
@@ -204,6 +206,41 @@ export function switchSettingsTab(tab) {
     btn.classList.toggle('active', selected);
     btn.setAttribute('aria-selected', selected ? 'true' : 'false');
   });
+}
+
+export async function loadLocations() {
+  const panel = document.getElementById('locations-panel');
+  if (!panel) return;
+  try {
+    const { locations } = await fetchLocations();
+    const groups = [...new Set(locations.map(l => l.group))];
+    render(html`
+      <div class="settings-panel-header">
+        <div>
+          <h2 class="settings-panel-title">Where Everything Lives</h2>
+          <div class="settings-panel-subtitle">Every location the app uses on this machine, and how to change it. Server settings are explained on the Help page.</div>
+        </div>
+      </div>
+      ${groups.map(group => html`
+        <section class="location-group">
+          <h3>${group}</h3>
+          ${locations.filter(l => l.group === group).map(l => html`
+            <div class="location-row">
+              <strong class="font-sm">${l.name}</strong>
+              <span class="font-sm">${l.purpose}</span>
+              <span class="font-xs text-dim">${l.change}</span>
+              <span class="location-path font-mono font-xs">
+                ${l.path || 'Not set'}
+                ${l.state === 'not found' ? html`<span class="location-state location-state-missing"> (not found: offline, or not created yet)</span>` : nothing}
+              </span>
+            </div>
+          `)}
+        </section>
+      `)}
+    `, panel);
+  } catch (err) {
+    render(html`<div class="table-msg text-alert">Failed loading locations: ${err.message}</div>`, panel);
+  }
 }
 
 export async function loadAuditHistory(action = '') {

@@ -811,6 +811,27 @@ test.describe('settings', () => {
     await expect.poll(() => sent?.paths).toEqual(['/d/Pack', '/d/dragon.stl']);
   });
 
+  test('directories lists every location and explains missing ones', async ({ page }) => {
+    await page.route('**/api/settings/locations', (route) => route.fulfill({ json: { locations: [
+      { group: 'Configuration', name: 'Settings file', path: '/c/production.env', purpose: 'Server settings', change: 'Edit the file', state: 'found' },
+      { group: 'Files and libraries', name: 'Vault', path: '/Volumes/V', purpose: 'Permanent home', change: 'Settings', state: 'not found' },
+      { group: 'Backups', name: 'Backup mirror', path: '', purpose: 'Second copy', change: 'Settings', state: 'not set' },
+    ] } }));
+    await page.goto('/');
+    await page.evaluate(() => window.switchTab('settings'));
+    await page.locator('[data-settings-tab-btn="directories"]').click();
+    const panel = page.locator('#locations-panel');
+    await expect(panel).toContainText('/c/production.env');
+    await expect(panel).toContainText('offline, or not created yet');
+    await expect(panel).toContainText('Not set');
+  });
+
+  test('help explains the server settings file', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => window.switchTab('help'));
+    await expect(page.locator('#help-configuration')).toContainText('DESYNC_ALLOWED_ROOTS');
+  });
+
   test('clicking a tag shows the models that have it', async ({ page }) => {
     const urls = [];
     await page.route('**/api/tags*', (route) => route.fulfill({ json: { tags: [{ name: 'undead', uses: 3 }], total: 1 } }));

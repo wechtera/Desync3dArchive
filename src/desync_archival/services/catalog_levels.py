@@ -69,13 +69,14 @@ def build_loose_models(
 ) -> None:
     """Turns imported loose files into models. The caller holds the transaction.
 
-    A single file takes the name it was imported under. Anything more goes through the resolver.
+    A lone model takes the name it was imported under, when given one. Beside an archive it has to
+    stand on its own name, because the import's name describes the whole collection.
     """
     by_path = {rel_path: (file_id, target, size) for file_id, target, rel_path, size in files}
     paths = list(by_path)
     variants = set(model_resolver.PRINT_WORDS)
     models = model_resolver.resolve_files(paths, variants)
-    if len(models) == 1:
+    if len(models) == 1 and label:
         models[0].name, models[0].group = label, ""
     spare: int | None = collection_id
     for model in models:

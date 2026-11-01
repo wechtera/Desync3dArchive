@@ -549,6 +549,10 @@ export async function fetchCatalogModels(search, page, tag = '') {
   return request(`/api/catalog-models?q=${encodeURIComponent(search)}&page=${page}&tag=${encodeURIComponent(tag)}`);
 }
 
+export async function fetchLocations() {
+  return request('/api/settings/locations');
+}
+
 export async function browseImportFolder(folder) {
   return request(`/api/system/browse?files=1${folder ? `&path=${encodeURIComponent(folder)}` : ''}`);
 }

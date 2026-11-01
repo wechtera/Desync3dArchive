@@ -737,6 +737,8 @@
             Save Storage Paths
           </button>
         </div>
+
+        <div class="location-panel" id="locations-panel"></div>
       </div>
 
       <!-- Card 3: Worker Engine Tuning & I/O Buffers -->
@@ -1187,6 +1189,53 @@
           <div class="help-callout">
             <strong>Absolute File Safety Guarantee:</strong><br>
             All stash actions are purely logical manifest operations in SQLite. Adding or deleting items will never touch physical archive files on disk.
+          </div>
+        </div>
+      </article>
+
+      <article class="card help-card help-card-wide" id="help-configuration">
+        <div class="help-card-header">
+          <h3>Configuring the Server: production.env</h3>
+        </div>
+        <div class="help-card-body">
+          <p>Settings live in two places. Anything you can change in the Settings tab is stored by the app. Server settings, which have to be known before the app can start, live in <code>~/.config/desync-archival/production.env</code>. Settings &gt; Directories shows the exact path on this machine, and every other location the app uses.</p>
+          <ul class="help-bullet-list">
+            <li><strong>Changes apply on restart.</strong> Save the file, then run <code>scripts/server.sh restart</code>.</li>
+            <li><strong>It is a shell file.</strong> Write <code>NAME=value</code> with no spaces around the equals sign, and put quotes around a path containing spaces.</li>
+            <li><strong>Passwords and keys don't go here.</strong> They belong in the secrets file, set from Settings or <code>dbtool set-password</code>.</li>
+            <li><strong>Development is separate.</strong> A development run reads <code>.env</code> in the checkout, and is refused any path in <code>DESYNC_PROTECTED_PATHS</code>.</li>
+          </ul>
+          <div class="help-table-wrap">
+            <table class="help-table">
+              <thead><tr><th>Setting</th><th>What it does</th><th>Example</th></tr></thead>
+              <tbody>
+                <tr><td colspan="3" class="help-table-group">Required</td></tr>
+                <tr><td><code>APP_ENV</code></td><td>Set to <code>production</code>. Any other value refuses production paths.</td><td><code>production</code></td></tr>
+                <tr><td><code>DESYNC_DATA_DIR</code></td><td>Folder for the database, previews, metadata and logs. No default, and it should stay off the NAS.</td><td><code>/Users/you/DESYNC_Data</code></td></tr>
+                <tr><td colspan="3" class="help-table-group">Folders the app may reach</td></tr>
+                <tr><td><code>DESYNC_ALLOWED_ROOTS</code></td><td>Colon-separated. The only folders the file browsers can open or Import File can read. If unset, only the data folder. Add a folder here if it can't be picked.</td><td><code>/Volumes/STL/DESYNC_Vault:/Users/you/Downloads</code></td></tr>
+                <tr><td><code>DESYNC_PROTECTED_PATHS</code></td><td>Colon-separated. Folders a development run must never touch. Required in development.</td><td><code>/Volumes/STL:/Users/you/DESYNC_Data</code></td></tr>
+                <tr><td colspan="3" class="help-table-group">Backups</td></tr>
+                <tr><td><code>DESYNC_BACKUP_DIR</code></td><td>Where backups go. Outside the data folder, ideally on another disk. Settings &gt; Backups wins over this.</td><td><code>/Users/you/DESYNC_Backups</code></td></tr>
+                <tr><td><code>DESYNC_BACKUP_MIRROR_DIR</code></td><td>Optional second copy. Secrets aren't copied there. Settings &gt; Backups wins over this.</td><td><code>/Volumes/STL/Backups</code></td></tr>
+                <tr><td colspan="3" class="help-table-group">Network</td></tr>
+                <tr><td><code>DESYNC_HOST</code></td><td>Address to listen on. <code>127.0.0.1</code> is this machine only. <code>0.0.0.0</code> is LAN mode, which needs the login and TLS settings below.</td><td><code>0.0.0.0</code></td></tr>
+                <tr><td><code>DESYNC_PORT</code></td><td>Port. Defaults to 8080.</td><td><code>8080</code></td></tr>
+                <tr><td><code>DESYNC_ALLOWED_HOSTS</code></td><td>Comma-separated names and addresses devices may use to reach the app, beyond localhost.</td><td><code>my-mac.local,192.168.1.20</code></td></tr>
+                <tr><td><code>DESYNC_REQUIRE_LOGIN</code></td><td>Set to <code>1</code> to require the password. Always on in LAN mode.</td><td><code>1</code></td></tr>
+                <tr><td><code>DESYNC_TLS_CERT</code></td><td>Certificate file for HTTPS. Needs the key as well.</td><td><code>~/.config/desync-archival/tls/vault.pem</code></td></tr>
+                <tr><td><code>DESYNC_TLS_KEY</code></td><td>Private key for that certificate.</td><td><code>~/.config/desync-archival/tls/vault-key.pem</code></td></tr>
+                <tr><td colspan="3" class="help-table-group">Rarely needed</td></tr>
+                <tr><td><code>DESYNC_SECRETS_FILE</code></td><td>Moves the secrets file from its default place.</td><td><code>~/.config/desync-archival/production.json</code></td></tr>
+                <tr><td><code>DESYNC_BLENDER_BIN</code></td><td>Blender to use for preview renders, if it isn't in <code>tools/</code>.</td><td><code>/Applications/Blender.app/Contents/MacOS/Blender</code></td></tr>
+                <tr><td><code>DESYNC_UNRAR_BIN</code></td><td>unrar to use for RAR archives, if it isn't in <code>tools/</code>.</td><td><code>/opt/homebrew/bin/unrar</code></td></tr>
+                <tr><td><code>DESYNC_PRODUCTION_ENV</code></td><td>Moves this settings file. Set it in your shell, since it says where the file is.</td><td><code>~/config/production.env</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="help-callout">
+            <strong>Example: let Import File reach Downloads.</strong><br>
+            Add the folder to <code>DESYNC_ALLOWED_ROOTS</code>, separated by a colon, then run <code>scripts/server.sh restart</code>.
           </div>
         </div>
       </article>

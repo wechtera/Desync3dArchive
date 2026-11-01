@@ -400,9 +400,15 @@ class TaskManager:
                     conn, self.db_path, [Path(p) for p in params["paths"]], params.get("creator", ""),
                     lambda message: self._append_log(task_id, message),
                     lambda pct, label: self._update_progress(task_id, pct, label),
+                    lambda: self._cancel_requested,
                 )
             label = f"Imported {totals['imported']} files, {totals['repeats']} already in the catalog"
+            if totals["archives"]:
+                label += f", {totals['archives']} archives to review"
             status = jobs.COMPLETED
+        except file_import.ImportCancelled:
+            self._append_log(task_id, "Import stopped. Anything already finished stays in the catalog.")
+            totals, status, label = {}, jobs.CANCELLED, "Import cancelled"
         except (file_import.ImportRefused, OSError, sqlite3.Error) as e:
             self._append_log(task_id, f"Import stopped: {e}")
             totals, status, label = {}, jobs.FAILED, "Import failed"

@@ -173,6 +173,28 @@ There is one password and no user accounts. It is stored as a salted scrypt hash
 
 **Scraper on a headless server:** a scrape runs without a window by default, but a Cloudflare check needs a visible window, so a server with no display can't pass one. `cf_clearance` is tied to the IP address and browser that earned it, so a cookie copied from another computer may fail. If scraping fails there, scrape on a computer with a display or paste model IDs into the download queue.
 
+## Configuration
+
+Settings live in two places. Anything in the Settings tab is stored by the app. Server settings, which must be known before the app starts, live in `~/.config/desync-archival/production.env` for production and `.env` for development. Changes apply on restart. The file is shell syntax: `NAME=value` with no spaces around the equals sign, and quotes around a path containing spaces. Passwords and keys don't go in it.
+
+| Setting | What it does | |
+|---|---|---|
+| `APP_ENV` | `production`. Any other value refuses production paths | Required |
+| `DESYNC_DATA_DIR` | Folder for the database, previews, metadata and logs. Keep it off the NAS | Required |
+| `DESYNC_ALLOWED_ROOTS` | Colon-separated folders the file browsers and Import File can reach. Defaults to the data folder | Usually set |
+| `DESYNC_PROTECTED_PATHS` | Colon-separated folders a development run must never touch | Development |
+| `DESYNC_BACKUP_DIR` | Backup folder. Settings > Backups wins over this | Optional |
+| `DESYNC_BACKUP_MIRROR_DIR` | Second backup copy. Settings > Backups wins over this | Optional |
+| `DESYNC_HOST`, `DESYNC_PORT` | Address and port. Defaults are `127.0.0.1` and `8080` | Optional |
+| `DESYNC_ALLOWED_HOSTS` | Comma-separated names devices may use to reach the app | LAN mode |
+| `DESYNC_REQUIRE_LOGIN` | `1` requires the password. Always on in LAN mode | LAN mode |
+| `DESYNC_TLS_CERT`, `DESYNC_TLS_KEY` | HTTPS certificate and key | LAN mode |
+| `DESYNC_SECRETS_FILE` | Moves the secrets file | Rare |
+| `DESYNC_BLENDER_BIN`, `DESYNC_UNRAR_BIN` | Tool locations, if not in `tools/` | Rare |
+| `DESYNC_PRODUCTION_ENV` | Moves the settings file. Set it in your shell | Rare |
+
+The Help page in the app has the same reference with examples. Settings > Directories lists every location in use on this machine, with its purpose and how to change it.
+
 ## Data
 
 Code and data are kept apart, and no data belongs in this repository.

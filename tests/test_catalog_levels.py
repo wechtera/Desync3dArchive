@@ -1,3 +1,5 @@
+import os
+import re
 import socket
 import sqlite3
 import tempfile
@@ -10,6 +12,7 @@ from unittest.mock import MagicMock, patch
 from db_helper import create_database
 
 from desync_archival import dbtool
+from desync_archival import settings as app_config
 from desync_archival.api.routes import settings as routes
 from desync_archival.migrations import MigrationError
 from desync_archival.services import (
@@ -18,6 +21,7 @@ from desync_archival.services import (
     catalog_levels,
     file_import,
     jobs,
+    locations,
     tags,
 )
 from desync_archival.services.archive_peeker import ArchivePeeker
@@ -731,6 +735,84 @@ class ImportTests(BuildCase):
         totals = self.bring(self.incoming / "Mixed")
         self.assertEqual((totals["imported"], totals["repeats"]), (1, 1))
 
+    def zipped(self, rel, *members):
+        path = self.incoming / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(path, "w") as archive:
+            for member in members:
+                archive.writestr(member, b"solid " + member.encode())
+        return path
+
+    def test_a_zip_is_peeked_into_models_and_waits_for_review(self):
+        totals = self.bring(self.zipped("Pack.zip", "Ghouls/Ghoul_A.stl", "Ghouls/Ghoul_B.stl"))
+        self.assertEqual(totals["archives"], 1)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM model_artifacts WHERE archive_member_id IS NOT NULL")[0], 2)
+        self.assertEqual(catalog_browse.list_models(self.conn, "Ghoul")["total"], 2)
+        self.assertEqual([i["name"] for i in archive_review.queue(self.conn)], ["Pack"])
+
+    def test_a_folder_of_raw_files_and_zips_keeps_both(self):
+        self.write("Mixed/Dragon.stl", b"raw")
+        self.zipped("Mixed/Ghouls.zip", "Ghoul_A.stl", "Ghoul_B.stl")
+        totals = self.bring(self.incoming / "Mixed")
+        self.assertEqual((totals["collections"], totals["imported"], totals["archives"]), (1, 2, 1))
+        collection = self.one("SELECT id FROM collections WHERE source = 'import'")[0]
+        shown = {m["name"] for m in catalog_browse.list_models(self.conn)["models"]}
+        self.assertTrue({"Dragon", "Ghoul A", "Ghoul B"} <= shown, shown)
+        self.assertEqual(self.one(
+            "SELECT COUNT(*) FROM model_artifacts a JOIN model_files f ON f.file_id = a.file_id WHERE f.model_id = ?",
+            collection,
+        )[0], 3)
+
+    def test_a_cancelled_job_is_marked_cancelled(self):
+        self.conn.commit()
+        manager = object.__new__(TaskManager)
+        manager.db_path = self.db
+        manager._lock = threading.Lock()
+        manager.active_task_id = 1
+        manager._cancel_requested = True
+        task_id = self.conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('file_import', 'running')").lastrowid
+        self.conn.commit()
+        manager._run_file_import_worker(task_id, {"paths": [str(self.write("dragon.stl"))]})
+        self.assertEqual(self.one("SELECT status FROM pipeline_tasks WHERE id = ?", task_id)[0], "cancelled")
+        self.assertIsNone(manager.active_task_id)
+
+    def test_a_zip_a_raw_file_and_a_folder_picked_together(self):
+        self.write("Set/part.stl", b"p")
+        totals = self.bring(self.zipped("a.zip", "x.stl"), self.write("b.stl", b"b"), self.incoming / "Set")
+        self.assertEqual((totals["collections"], totals["imported"]), (3, 3))
+
+    def test_an_unreadable_zip_is_kept_and_reported(self):
+        said = []
+        path = self.write("broken.zip", b"not a zip at all")
+        totals = self.bring(path, log=said.append)
+        self.assertEqual((totals["imported"], totals["archives"]), (1, 0))
+        self.assertTrue(any("couldn't be read" in line for line in said))
+        self.assertTrue(list(self.vault.glob("ad-hoc/*/broken.zip")))
+
+    def test_progress_moves_during_one_large_file(self):
+        seen = []
+        path = self.write("big.stl", b"x" * (file_import.CHUNK * 3))
+        with patch("desync_archival.services.file_import.time.monotonic", side_effect=range(10, 1000, 5)):
+            self.bring(path, progress=lambda pct, label: seen.append((pct, label)))
+        self.assertGreaterEqual(len(seen), 4)
+        self.assertEqual([p for p, _ in seen], sorted(p for p, _ in seen))
+        self.assertTrue(any(label.startswith("Copying") for _, label in seen))
+
+    def test_cancelling_leaves_no_half_file_and_no_row(self):
+        checks = iter([False, False, True])
+        path = self.write("big.stl", b"x" * (file_import.CHUNK * 2))
+        with self.assertRaises(file_import.ImportCancelled):
+            self.bring(path, cancelled=lambda: next(checks, True))
+        self.assertEqual([p for p in self.vault.rglob("*") if p.is_file()], [])
+        self.assertEqual(self.one("SELECT COUNT(*) FROM collections WHERE source = 'import'")[0], 0)
+
+    def test_too_little_space_refuses_before_copying(self):
+        with patch("desync_archival.services.file_import.shutil.disk_usage") as usage:
+            usage.return_value.free = 1
+            with self.assertRaisesRegex(file_import.ImportRefused, "free"):
+                self.bring(self.write("dragon.stl"))
+        self.assertEqual(list(self.vault.rglob("*.stl")), [])
+
     def test_the_hash_is_stored(self):
         self.bring(self.write("dragon.stl"))
         self.assertEqual(len(self.one("SELECT sha256 FROM downloaded_files WHERE original_filename = 'dragon.stl'")[0]), 64)
@@ -816,6 +898,66 @@ class ImportTests(BuildCase):
         conn = sqlite3.connect(self.db)
         conn.row_factory = sqlite3.Row
         return conn
+
+class LocationTests(BuildCase):
+    def listed(self):
+        return {e["name"]: e for e in locations.listing(self.conn)}
+
+    def setUp(self):
+        super().setUp()
+        self.conn.row_factory = None
+        self.vault = Path(self.temp.name) / "vault"
+        self.vault.mkdir()
+        with self.conn:
+            self.conn.execute("DELETE FROM app_settings WHERE key = 'download_root_path'")
+            self.conn.execute("INSERT INTO app_settings (key, value) VALUES ('download_root_path', ?)", (str(self.vault),))
+
+    def test_ad_hoc_always_follows_the_vault_root(self):
+        entry = self.listed()["Ad-hoc imports"]
+        self.assertEqual(entry["path"], str(self.vault / "ad-hoc"))
+        self.assertIn("Fixed", entry["change"])
+
+    def test_every_entry_explains_itself(self):
+        for entry in self.listed().values():
+            self.assertTrue(entry["purpose"] and entry["change"] and entry["group"], entry)
+
+    def test_every_data_folder_is_listed(self):
+        shown = {e["path"] for e in self.listed().values()}
+        for folder in (app_config.previews_dir, app_config.metadata_dir, app_config.logs_dir, app_config.scrapes_dir):
+            self.assertIn(str(folder()), shown)
+
+    def test_a_linked_library_is_listed(self):
+        with self.conn:
+            self.conn.execute("INSERT INTO external_libraries (name, path, is_active) VALUES ('Loot', '/nas/loot', 1)")
+        self.assertEqual(self.listed()["Linked library: Loot"]["path"], "/nas/loot")
+
+    def test_an_offline_location_is_reported_and_not_an_error(self):
+        with self.conn:
+            self.conn.execute("UPDATE app_settings SET value = '/nowhere/at/all' WHERE key = 'download_root_path'")
+        self.assertEqual(self.listed()["Vault"]["state"], "not found")
+
+    def test_an_unset_location_says_so(self):
+        with self.conn:
+            self.conn.execute("DELETE FROM app_settings WHERE key = 'download_root_path'")
+        listed = self.listed()
+        self.assertEqual((listed["Vault"]["state"], listed["Ad-hoc imports"]["path"]), ("not set", ""))
+
+    def test_production_reports_its_own_settings_file(self):
+        with patch.dict(os.environ, {"APP_ENV": "production", "DESYNC_PRODUCTION_ENV": "/etc/x.env"}):
+            self.assertEqual(app_config.settings_file(), Path("/etc/x.env"))
+        with patch.dict(os.environ, {"APP_ENV": "development"}):
+            self.assertEqual(app_config.settings_file().name, ".env")
+
+    def test_every_server_setting_is_documented(self):
+        repo = Path(__file__).resolve().parents[1]
+        used = set()
+        for path in [*(repo / "src").rglob("*.py"), *(repo / "scripts").glob("*.sh")]:
+            used |= set(re.findall(r"\b(?:DESYNC_[A-Z_]+|APP_ENV)\b", path.read_text(encoding="utf-8")))
+        used = {name for name in used if not name.endswith("_")}
+        for page in ("web/index.html", "README.md"):
+            text = (repo / page).read_text(encoding="utf-8")
+            self.assertEqual({name for name in used if name not in text}, set(), page)
+
 
 class AuditCoverageTests(BuildCase):
     def actions(self):

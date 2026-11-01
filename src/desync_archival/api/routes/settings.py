@@ -20,6 +20,7 @@ from desync_archival.db.queries import settings as queries
 from desync_archival.services import (
     archive_review,
     audit,
+    locations,
     auth_service,
     catalog_browse,
     catalog_review,
@@ -61,6 +62,7 @@ __all__ = [
     "format_bytes",
     "handle_delete_external_library",
     "handle_get_directory_usage",
+    "handle_get_locations",
     "handle_get_external_libraries",
     "handle_get_logging_config",
     "handle_get_settings",
@@ -876,6 +878,15 @@ def handle_get_inactive(
 # -------------------------------------------------------------------------
 # Directory Metrics & System Browse Endpoints
 # -------------------------------------------------------------------------
+
+def handle_get_locations(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    return {"locations": locations.listing(conn)}, 200
+
 
 def handle_get_directory_usage(
     conn: sqlite3.Connection,

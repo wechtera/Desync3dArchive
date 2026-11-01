@@ -101,6 +101,14 @@ def secrets_file() -> Path:
     return Path(value).expanduser().resolve() if value else Path.home() / ".config" / "desync-archival" / "secrets.json"
 
 
+def settings_file() -> Path:
+    """Production reads its own file, set up by scripts/production.sh, and development reads .env."""
+    if app_env() != PRODUCTION:
+        return REPO_ROOT / ".env"
+    value = os.environ.get("DESYNC_PRODUCTION_ENV", "").strip()
+    return Path(value).expanduser() if value else Path.home() / ".config" / "desync-archival" / "production.env"
+
+
 def tls_files() -> tuple[Path, Path] | None:
     _load()
     cert = os.environ.get("DESYNC_TLS_CERT", "").strip()

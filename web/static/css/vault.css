@@ -3323,3 +3323,21 @@ select, input[type="text"] { font-size: 0.9rem; }
 .tag-open:hover { color: var(--accent); text-decoration: underline; }
 .browse-summary-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .browse-summary-row #browse-summary { margin: 0; }
+
+/* Locations and configuration help */
+.location-group { margin-top: 18px; }
+.location-group h3 { font-size: 13px; color: var(--text-muted); margin-bottom: 6px; }
+.location-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(220px, 2fr) minmax(130px, 1fr); gap: 4px 16px; padding: 10px 0; border-top: 1px solid var(--border-dim); }
+.location-path { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.location-state { color: var(--text-muted); }
+.location-state-missing { color: var(--warning, var(--text-muted)); }
+.help-card-wide { grid-column: 1 / -1; }
+.help-table-wrap { overflow-x: auto; margin: 10px 0; }
+.help-table { width: 100%; border-collapse: collapse; }
+.help-table th, .help-table td { text-align: left; vertical-align: top; padding: 7px 12px 7px 0; border-top: 1px solid var(--border-dim); }
+.help-table td:first-child, .help-table td:last-child { overflow-wrap: anywhere; min-width: 170px; }
+.help-table-group { color: var(--text-muted); font-weight: 600; padding-top: 14px; }
+@media (max-width: 720px) {
+  .location-row { grid-template-columns: 1fr; }
+}
+.location-panel { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border-dim); }
