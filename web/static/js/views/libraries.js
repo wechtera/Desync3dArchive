@@ -427,7 +427,7 @@ const isInside = (path, parent) => path === parent || path.startsWith(`${parent}
 function ownerOf(path) {
   // The deepest claim wins, the same rule the server carves by.
   for (let at = path; at.includes('/') || at; at = at.includes('/') ? at.slice(0, at.lastIndexOf('/')) : '') {
-    const card = review.cards.find(c => c.members.includes(at));
+    const card = review.cards.find(c => c.paths.includes(at));
     if (card) return card;
   }
   return null;
@@ -499,7 +499,7 @@ function focusCard(card) {
     if (twin) openPathsTo(twin);
   }
   drawReview();
-  const row = document.querySelector(`.review-row[data-path="${CSS.escape(card.members[0] || '')}"]`);
+  const row = document.querySelector(`.review-row[data-path="${CSS.escape(card.paths[0] || '')}"]`);
   row?.scrollIntoView({ block: 'center' });
   document.querySelector('.review-card-focus')?.scrollIntoView({ block: 'nearest' });
   document.querySelector('.review-concern-focus')?.scrollIntoView({ block: 'nearest' });
@@ -530,7 +530,7 @@ function drawConcerns() {
 
 function openPathsTo(card) {
   // The member itself opens too: what's wrong with a flagged card is usually inside it.
-  for (const member of card.members) {
+  for (const member of card.paths) {
     for (let at = member; at.includes('/'); at = at.slice(0, at.lastIndexOf('/'))) review.open.add(at);
   }
 }
@@ -577,9 +577,9 @@ function drawTreeRow(path, isFile, depth) {
 function moveSelected(target) {
   // A ticked folder carries its contents, so its ticked children add nothing.
   const picked = [...review.selected].filter(p => ![...review.selected].some(o => o !== p && isInside(p, o)));
-  for (const card of review.cards) card.members = card.members.filter(m => !picked.some(p => isInside(m, p)));
-  target.members.push(...picked);
-  review.cards = review.cards.filter(c => c.members.length);
+  for (const card of review.cards) card.paths = card.paths.filter(m => !picked.some(p => isInside(m, p)));
+  target.paths.push(...picked);
+  review.cards = review.cards.filter(c => c.paths.length);
   review.selected.clear();
   review.focus = target.key;
   review.dirty = true;
@@ -595,7 +595,7 @@ function moveToChosen() {
 function newCard() {
   const first = [...review.selected][0];
   if (!first) return;
-  const card = { key: '', name: leaf(first).replace(/\.[^.]+$/, ''), category: '', members: [], skip: false, flags: [], group: '', tags: [] };
+  const card = { key: '', name: leaf(first).replace(/\.[^.]+$/, ''), category: '', paths: [], skip: false, flags: [], group: '', tags: [] };
   card.key = `new-${Date.now()}`;
   review.cards = [card, ...review.cards];
   moveSelected(card);
@@ -616,7 +616,7 @@ function drawCard(card) {
       </div>
       <input type="text" class="review-card-group mt-1" aria-label="Model group" placeholder="Model group" list="review-groups" .value=${card.group || ''} @input=${edit('group')} spellcheck="false">
       <div class="review-card-actions font-xs text-dim">
-        <button type="button" class="link-btn" @click=${show}>${card.members.length} ${card.members.length === 1 ? 'path' : 'paths'}</button>
+        <button type="button" class="link-btn" @click=${show}>${card.paths.length} ${card.paths.length === 1 ? 'path' : 'paths'}</button>
         <label><input type="checkbox" class="review-skip" .checked=${!!card.skip} @change=${edit('skip')}> Skip</label>
       </div>
       ${(card.flags || []).map(flag => html`<div class=${`font-xs ${isNote(flag) ? 'text-dim' : 'review-flag'}`}>${isNote(flag) ? flag : concernOf(flag).label}</div>`)}

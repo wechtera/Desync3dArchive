@@ -352,3 +352,8 @@ class BackupScheduleTests(TempDb):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BackupIntervalTests(unittest.TestCase):
+    def test_backups_are_monthly(self):
+        self.assertEqual(jobs.BACKUP_INTERVAL, 30 * 24 * 3600)

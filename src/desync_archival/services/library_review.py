@@ -25,16 +25,16 @@ class ReviewError(ValueError):
     """The request can't be applied. The message is shown to the user."""
 
 
-def carve(members_of: dict[str, list[str]], locked: set[str] | None = None) -> dict[str, list[str]]:
-    """What each card must leave out: paths inside its members that belong to someone else."""
-    owners = [(path, key) for key, members in members_of.items() for path in members]
+def carve(paths_of: dict[str, list[str]], locked: set[str] | None = None) -> dict[str, list[str]]:
+    """What each card must leave out: paths inside its paths that belong to someone else."""
+    owners = [(path, key) for key, paths in paths_of.items() for path in paths]
     owners += [(path, None) for path in locked or ()]
     return {
         key: sorted({
             path for path, owner in owners
-            if owner != key and any(path.startswith(f"{member}/") for member in members)
+            if owner != key and any(path.startswith(f"{member}/") for member in paths)
         })
-        for key, members in members_of.items()
+        for key, paths in paths_of.items()
     }
 
 
@@ -131,7 +131,7 @@ def write_candidates(
     """Replaces what's undecided in a release. Approved and added rows are history, so they stay."""
     settled = _settled(conn, library_id, release)
     keys, held = _known_paths(conn, library_id, release)
-    carved = carve({c["key"]: c["members"] for c in cards}, keys | held)
+    carved = carve({c["key"]: c["paths"] for c in cards}, keys | held)
     conn.execute(
         "DELETE FROM library_candidates WHERE library_id = ? AND release_name = ? AND status IN (?, ?);",
         (library_id, release, PROPOSED, SKIPPED),
@@ -141,11 +141,11 @@ def write_candidates(
         if rel_path in settled:
             continue
         # Folders first: the first member becomes the model's vault path, and art and renders look there.
-        members = sorted(card["members"], key=lambda p: (p in files, model_resolver.primary_folder_rank(p)))
+        paths = sorted(card["paths"], key=lambda p: (p in files, model_resolver.primary_folder_rank(p)))
         conn.execute(
             "INSERT INTO library_candidates (library_id, run_id, rel_path, release_name, name, category, folders_json,"
             " exclude_json, status, group_name, tags_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
-            (library_id, run_id, rel_path, release, card["name"], card["category"], json.dumps(members),
+            (library_id, run_id, rel_path, release, card["name"], card["category"], json.dumps(paths),
              json.dumps(carved[card["key"]]), SKIPPED if card.get("skip") else PROPOSED,
              card.get("group") or "", json.dumps(card.get("tags") or [])),
         )
@@ -157,12 +157,12 @@ def _clean(cards: list[dict], paths: set[str], locked: set[str], release: str, t
     clean = []
     for card in cards:
         name = str(card.get("name") or "").strip()
-        members = [str(m) for m in card.get("members") or []]
+        claimed = [str(m) for m in card.get("paths") or []]
         if not name:
             raise ReviewError("Every card needs a name.")
-        if not members:
+        if not claimed:
             raise ReviewError(f"{name} has nothing in it.")
-        for member in members:
+        for member in claimed:
             if member not in paths:
                 raise ReviewError(f"{member} isn't in this release's snapshot. Run a new preview.")
             if member in seen:
@@ -174,7 +174,7 @@ def _clean(cards: list[dict], paths: set[str], locked: set[str], release: str, t
         key = _unique_key(wanted or model_resolver.slug_of(model_resolver.words_in(name)), taken)
         clean.append({
             "key": key, "name": name, "category": str(card.get("category") or "").strip() or DEFAULT_CATEGORY,
-            "members": members, "skip": bool(card.get("skip")), "flags": [str(f) for f in card.get("flags") or []],
+            "paths": claimed, "skip": bool(card.get("skip")), "flags": [str(f) for f in card.get("flags") or []],
             "group": str(card.get("group") or "").strip(), "tags": [str(t) for t in card.get("tags") or []],
         })
     return clean
@@ -194,7 +194,7 @@ def _code_cards(report: dict[str, Any], release: str) -> list[dict]:
     return [
         {
             "key": item["rel_path"].removeprefix(prefix), "name": item.get("name") or item["rel_path"],
-            "category": item.get("category") or DEFAULT_CATEGORY, "members": item["folders"], "skip": False,
+            "category": item.get("category") or DEFAULT_CATEGORY, "paths": item["folders"], "skip": False,
             "flags": item.get("flags") or [], "group": item.get("group") or "", "tags": item.get("tags") or [],
         }
         for item in (entry or {}).get("new", [])
@@ -265,12 +265,12 @@ def merge_preview(conn: sqlite3.Connection, library_id: int, run_id: int, report
         paths = set(tree["folders"]) | set(tree["files"])
         cards, changed = [], False
         for card in saved["cards"]:
-            members = [m for m in card["members"] if m in paths]
-            changed = changed or len(members) != len(card["members"])
-            if members:
-                cards.append({**card, "members": members})
+            surviving = [m for m in card["paths"] if m in paths]
+            changed = changed or len(surviving) != len(card["paths"])
+            if surviving:
+                cards.append({**card, "paths": surviving})
 
-        covered = {m for card in cards for m in card["members"]}
+        covered = {m for card in cards for m in card["paths"]}
         taken = {card["key"] for card in cards}
         entry = next((r for r in report["releases"] if r["name"] == release), {"new": []})
         for item in entry["new"]:
@@ -279,7 +279,7 @@ def merge_preview(conn: sqlite3.Connection, library_id: int, run_id: int, report
                 # A new folder is the one thing the human hasn't seen, so it reopens the release.
                 key = _unique_key(item["rel_path"].removeprefix(f"{release}/"), taken)
                 cards.append({
-                    "key": key, "name": item["name"], "category": item["category"], "members": fresh,
+                    "key": key, "name": item["name"], "category": item["category"], "paths": fresh,
                     "skip": False, "flags": [NEW_SINCE_REVIEW], "group": item.get("group") or "",
                     "tags": item.get("tags") or [],
                 })
@@ -343,7 +343,7 @@ def with_reviews(conn: sqlite3.Connection, library_id: int, report: dict[str, An
         keep = [c for c in review["cards"] if not c.get("skip")]
         entry["new"] = [
             {"rel_path": f"{entry['name']}/{c['key']}", "name": c["name"], "category": c["category"],
-             "folders": c["members"], "flags": c.get("flags") or [], "group": c.get("group") or ""}
+             "folders": c["paths"], "flags": c.get("flags") or [], "group": c.get("group") or ""}
             for c in keep
         ]
         entry["skipped"] = len(review["cards"]) - len(keep)

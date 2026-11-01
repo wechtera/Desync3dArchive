@@ -376,7 +376,7 @@ class TaskManager:
             self._append_log(task_id, str(event.get("message", line)))
 
     def run_scheduled_backup(self) -> bool:
-        """Starts a backup if the last one is over a day old. Returns whether it started one."""
+        """Starts a backup if the last one is a month old. Returns whether it started one."""
         try:
             app_config.backup_dir()
         except app_config.SettingsError:

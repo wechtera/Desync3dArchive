@@ -129,6 +129,8 @@ class ArchivePeeker:
             if not m.filename.startswith("._")
             and not m.filename.lower() in (".ds_store", "thumbs.db", "desktop.ini")
             and not "__macosx" in m.internal_path.lower()
+            # 7z's listing header can parse as an entry holding the archive's own disk path.
+            and not m.internal_path.startswith("/")
         ]
 
         # 2. Extract image previews

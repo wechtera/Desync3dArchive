@@ -99,7 +99,7 @@ def handle_get_archive_raw(
 
     file_id = int(file_id_raw)
 
-    members = conn.execute(queries.GET_ARCHIVE_RAW_1, (file_id,)).fetchall()
+    members = [m for m in conn.execute(queries.GET_ARCHIVE_RAW_1, (file_id,)).fetchall() if not m["internal_path"].startswith("/")]
 
     if not members:
         return {

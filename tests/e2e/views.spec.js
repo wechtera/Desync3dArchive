@@ -518,8 +518,8 @@ test.describe('settings', () => {
     folders: ['Drop/Busts', 'Drop/Busts/Lidda', 'Drop/Voxshax', 'Drop/Voxshax/Tomb'],
     files: ['Drop/Busts/Bases.zip', 'Drop/Busts/Lidda/a.stl', 'Drop/Voxshax/b.stl', 'Drop/Voxshax/Tomb/c.stl'],
     cards: [
-      { key: 'voxshax', name: 'Voxshax', category: 'Heroes', members: ['Drop/Voxshax'], skip: false, flags: ['Holds other named items: Tomb'] },
-      { key: 'lidda', name: 'Lidda', category: 'Busts', members: ['Drop/Busts/Lidda'], skip: false, flags: [] },
+      { key: 'voxshax', name: 'Voxshax', category: 'Heroes', paths: ['Drop/Voxshax'], skip: false, flags: ['Holds other named items: Tomb'] },
+      { key: 'lidda', name: 'Lidda', category: 'Busts', paths: ['Drop/Busts/Lidda'], skip: false, flags: [] },
     ],
     reviewed: false, changed: false, locked: [], settled: [],
   };
@@ -624,8 +624,8 @@ test.describe('settings', () => {
     await page.locator('#btn-review-save').click();
     await expect.poll(() => saved).not.toBeNull();
     expect(saved.release).toBe('Drop');
-    expect(saved.cards.find((c) => c.name === 'Tomb').members).toEqual(['Drop/Voxshax/Tomb']);
-    expect(saved.cards.find((c) => c.name === 'Voxshax').members).toEqual(['Drop/Voxshax']);
+    expect(saved.cards.find((c) => c.name === 'Tomb').paths).toEqual(['Drop/Voxshax/Tomb']);
+    expect(saved.cards.find((c) => c.name === 'Voxshax').paths).toEqual(['Drop/Voxshax']);
   });
 
   test('a single file can become a card, and a card can be skipped', async ({ page }) => {
@@ -643,7 +643,7 @@ test.describe('settings', () => {
     await page.locator('#btn-review-save').click();
     await expect.poll(() => saved).not.toBeNull();
     const card = saved.cards.find((c) => c.name === 'Bases');
-    expect(card.members).toEqual(['Drop/Busts/Bases.zip']);
+    expect(card.paths).toEqual(['Drop/Busts/Bases.zip']);
     expect(card.skip).toBe(true);
   });
 
@@ -688,8 +688,8 @@ test.describe('settings', () => {
       return route.fulfill({ json: {
         release: '3', title: 'Vampire Court', peeked_at: '2026-10-31 12:00:00', folders: ['3/a.zip', '3/a.zip/Ghuls'], files: ['3/a.zip/Ghuls/A.stl', '3/a.zip/Ghuls/B.stl'],
         cards: [
-          { key: '7', name: 'Ghul A', category: '', members: ['3/a.zip/Ghuls/A.stl'], skip: false, flags: [], group: 'Ghul', tags: [] },
-          { key: '8', name: 'Ghul B', category: '', members: ['3/a.zip/Ghuls/B.stl'], skip: false, flags: ['Looks like a part of Ghul A'], group: 'Ghul', tags: [] },
+          { key: '7', name: 'Ghul A', category: '', paths: ['3/a.zip/Ghuls/A.stl'], skip: false, flags: [], group: 'Ghul', tags: [] },
+          { key: '8', name: 'Ghul B', category: '', paths: ['3/a.zip/Ghuls/B.stl'], skip: false, flags: ['Looks like a part of Ghul A'], group: 'Ghul', tags: [] },
         ],
         reviewed: false, changed: false, locked: [], settled: [],
       } });

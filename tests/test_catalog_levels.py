@@ -408,25 +408,25 @@ class ArchiveReviewTests(BuildCase):
     def test_two_cards_can_merge_and_the_old_id_redirects(self):
         cards = self.view()["cards"]
         a, b = self.card(cards, "Ghoul A"), self.card(cards, "Ghoul B")
-        a["members"] += b["members"]
+        a["paths"] += b["paths"]
         archive_review.save(self.conn, self.collection, [c for c in cards if c is not b], True)
-        self.assertEqual(len(self.card(self.view()["cards"], "Ghoul A")["members"]), 3)
+        self.assertEqual(len(self.card(self.view()["cards"], "Ghoul A")["paths"]), 3)
         row = self.one("SELECT state, merged_into FROM catalog_models WHERE id = ?", int(b["key"]))
         self.assertEqual(tuple(row), ("merged", int(a["key"])))
 
     def test_a_file_can_split_into_a_new_model(self):
         cards = self.view()["cards"]
         a = self.card(cards, "Ghoul A")
-        moved = a["members"].pop()
-        archive_review.save(self.conn, self.collection, [*cards, {"name": "Split", "members": [moved]}], True)
-        self.assertEqual(self.card(self.view()["cards"], "Split")["members"], [moved])
+        moved = a["paths"].pop()
+        archive_review.save(self.conn, self.collection, [*cards, {"name": "Split", "paths": [moved]}], True)
+        self.assertEqual(self.card(self.view()["cards"], "Split")["paths"], [moved])
 
     def test_a_folder_claim_takes_everything_below_it(self):
         view = self.view()
         folder = next(f for f in view["folders"] if f.endswith("/Bases"))
-        cards = [c for c in view["cards"] if not any(m.startswith(folder) for m in c["members"])]
-        archive_review.save(self.conn, self.collection, [*cards, {"name": "All Bases", "members": [folder]}], True)
-        self.assertEqual(len(self.card(self.view()["cards"], "All Bases")["members"]), 2)
+        cards = [c for c in view["cards"] if not any(m.startswith(folder) for m in c["paths"])]
+        archive_review.save(self.conn, self.collection, [*cards, {"name": "All Bases", "paths": [folder]}], True)
+        self.assertEqual(len(self.card(self.view()["cards"], "All Bases")["paths"]), 2)
 
     def test_every_artifact_needs_a_card(self):
         cards = self.view()["cards"]
@@ -501,7 +501,7 @@ class BrowseTests(BuildCase):
         cards = archive_review.view(self.conn, self.collection)["cards"]
         a = next(c for c in cards if c["name"] == "Ghoul A")
         b = next(c for c in cards if c["name"] == "Ghoul B")
-        a["members"] += b["members"]
+        a["paths"] += b["paths"]
         archive_review.save(self.conn, self.collection, [c for c in cards if c is not b], True)
         self.assertNotIn("Ghoul B", self.names())
         self.assertEqual(catalog_browse.model_detail(self.conn, int(b["key"]))["id"], int(a["key"]))

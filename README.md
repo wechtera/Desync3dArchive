@@ -87,6 +87,15 @@ scripts/production.sh python -m desync_archival.dbtool build-models --confirm-pr
 
 **Archive Review**, beside **Linked Libraries**, works the same way for peeked archives. **View Library > Models** browses models, with search across models, model groups and artifacts.
 
+## Backups
+
+The app backs up the database monthly while it's running, and catches up if it was off. Migrations and `build-models` also back up first. The last 14 are kept in `DESYNC_BACKUP_DIR`.
+
+```bash
+scripts/production.sh python -m desync_archival.dbtool backup
+uv run python -m desync_archival.dbtool restore BACKUP_FILE NEW_PATH
+```
+
 ## Running
 
 ```bash

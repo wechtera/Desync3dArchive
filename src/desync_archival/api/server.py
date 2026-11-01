@@ -308,7 +308,7 @@ def start_managers() -> None:
 
 
 def backup_schedule() -> None:
-    """Checks hourly, so a backup skipped while the app was busy or off still happens."""
+    """Checks hourly, so a monthly backup missed while the app was busy or off still happens."""
     wait = jobs.FIRST_BACKUP_CHECK_SECONDS
     while not schedule_stop.wait(wait):
         wait = jobs.BACKUP_CHECK_SECONDS

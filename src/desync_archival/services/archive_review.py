@@ -42,7 +42,7 @@ def _review_flags(cards: list[dict[str, Any]]) -> None:
     models = [
         model_resolver.ResolvedModel(
             key=model_resolver.slug_of(model_resolver.words_in(card["name"])), name=card["name"],
-            folders=sorted({m.rpartition("/")[0] for m in card["members"]}),
+            folders=sorted({m.rpartition("/")[0] for m in card["paths"]}),
         )
         for card in cards
     ]
@@ -101,7 +101,7 @@ def view(conn: sqlite3.Connection, collection_id: int) -> dict[str, Any]:
     review = conn.execute("SELECT reviewed FROM collection_reviews WHERE collection_id = ?;", (collection_id,)).fetchone()
     cards = [
         {
-            "key": str(m["id"]), "name": m["name"], "category": m["category"] or "", "members": held[m["id"]],
+            "key": str(m["id"]), "name": m["name"], "category": m["category"] or "", "paths": held[m["id"]],
             "skip": m["state"] == SKIPPED, "group": groups.get(m["id"], ""), "tags": [],
             "flags": [f"Shared with {shared[m['id']] - 1} other collections"] if shared.get(m["id"], 1) > 1 else [],
         }
@@ -147,7 +147,7 @@ def save(conn: sqlite3.Connection, collection_id: int, cards: list[dict], review
     for index, card in enumerate(cards):
         if not str(card.get("name") or "").strip():
             raise ReviewError("Every card needs a name.")
-        for member in card.get("members") or []:
+        for member in card.get("paths") or []:
             if member not in shown and member not in folders:
                 raise ReviewError(f"{member} isn't in this collection. Reload it.")
             if member in claims:

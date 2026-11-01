@@ -879,7 +879,7 @@ function renderLogicalSubmodelsView(container, data) {
               submodel_id: sm.id || (sm.members && sm.members[0] ? sm.members[0].submodel_id : 0),
               title: sm.name
             })}>
-              + Add Submodel to Stash
+              + Add Model to Stash
             </button>
           </div>
         </div>

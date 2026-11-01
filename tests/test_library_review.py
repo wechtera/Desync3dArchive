@@ -47,10 +47,10 @@ class ReviewCase(ScanCase):
         """Moves one path out into a new card, the way the modal does."""
         cards = self.view()["cards"]
         for card in cards:
-            if card["name"] == name and member in card["members"]:
-                card["members"].remove(member)
-        cards = [c for c in cards if c["members"]]
-        return [*cards, {"name": new_name, "category": "Terrain", "members": [member]}]
+            if card["name"] == name and member in card["paths"]:
+                card["paths"].remove(member)
+        cards = [c for c in cards if c["paths"]]
+        return [*cards, {"name": new_name, "category": "Terrain", "paths": [member]}]
 
     def add_all(self):
         conn = self.connect()
@@ -84,7 +84,7 @@ class WalkTests(ReviewCase):
     def test_a_swallowed_item_is_flagged_and_left_in_place(self):
         voxshax = self.card("Voxshax")
         self.assertIn("GraveyardMausoleum", " ".join(voxshax["flags"]))
-        self.assertEqual(voxshax["members"], [f"{self.release}/Voxshax"])
+        self.assertEqual(voxshax["paths"], [f"{self.release}/Voxshax"])
 
 
 class SavingTests(ReviewCase):
@@ -130,29 +130,29 @@ class SavingTests(ReviewCase):
 
     def test_a_member_in_two_cards_is_refused(self):
         cards = self.view()["cards"]
-        cards[1]["members"].append(cards[0]["members"][0])
+        cards[1]["paths"].append(cards[0]["paths"][0])
         with self.assertRaisesRegex(ReviewError, "two cards"):
             self.save(cards)
 
     def test_a_path_outside_the_snapshot_is_refused(self):
         with self.assertRaisesRegex(ReviewError, "snapshot"):
-            self.save([{"name": "Escape", "members": ["../../etc"]}])
+            self.save([{"name": "Escape", "paths": ["../../etc"]}])
 
     def test_a_nameless_card_is_refused(self):
         with self.assertRaisesRegex(ReviewError, "name"):
-            self.save([{"name": "  ", "members": [f"{self.release}/Rings"]}])
+            self.save([{"name": "  ", "paths": [f"{self.release}/Rings"]}])
 
     def test_a_refused_save_changes_nothing(self):
         before = self.rows("SELECT rel_path, status FROM library_candidates ORDER BY id")
         with self.assertRaises(ReviewError):
-            self.save([{"name": "Escape", "members": ["nope"]}])
+            self.save([{"name": "Escape", "paths": ["nope"]}])
         self.assertEqual([tuple(r) for r in before], [tuple(r) for r in self.rows("SELECT rel_path, status FROM library_candidates ORDER BY id")])
 
     def test_a_folder_of_a_known_model_cannot_be_claimed(self):
         self.indexer.add_approved(1)
         self.add_all()
         with self.assertRaises(ReviewError):
-            self.save([{"name": "Thief", "members": [f"{self.release}/Rings"]}])
+            self.save([{"name": "Thief", "paths": [f"{self.release}/Rings"]}])
 
     def test_an_approved_card_leaves_the_review_and_its_paths_lock(self):
         conn = self.connect()
@@ -160,7 +160,7 @@ class SavingTests(ReviewCase):
         conn.close()
         self.assertEqual(self.view()["cards"], [])
         with self.assertRaisesRegex(ReviewError, "already belongs"):
-            self.save([{"name": "Thief", "members": [f"{self.release}/Rings"]}])
+            self.save([{"name": "Thief", "paths": [f"{self.release}/Rings"]}])
 
     def test_reset_returns_the_code_guess(self):
         self.save(self.split("x", f"{self.release}/Voxshax/GraveyardMausoleum", "Mausoleum"))
@@ -176,7 +176,7 @@ class PreviewAgainTests(ReviewCase):
     def test_a_new_preview_keeps_the_human_cards(self):
         self.save(self.split("x", f"{self.release}/Voxshax/GraveyardMausoleum", "Mausoleum"))
         self.indexer.preview_library(1)
-        self.assertEqual(self.card("Mausoleum")["members"], [f"{self.release}/Voxshax/GraveyardMausoleum"])
+        self.assertEqual(self.card("Mausoleum")["paths"], [f"{self.release}/Voxshax/GraveyardMausoleum"])
         self.assertTrue(self.view()["reviewed"])
         self.assertEqual(self.count("SELECT COUNT(*) FROM library_candidates WHERE name = 'Mausoleum'"), 1)
 

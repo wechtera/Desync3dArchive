@@ -84,6 +84,8 @@ def main() -> int:
                 raise migrations.MigrationError("Refusing to build models in production without --confirm-production")
             print(f"backup written: {backup.create_backup(db_path)}")
             conn = sqlite3.connect(db_path)
+            # Off by default in SQLite, and a rebuild deletes rows that others hang from.
+            conn.execute("PRAGMA foreign_keys = ON;")
             try:
                 print(catalog_levels.rebuild_unreviewed(conn) if args.rebuild else catalog_levels.build_archive_models(conn))
             finally:
@@ -96,7 +98,8 @@ def main() -> int:
         elif args.command == "backup":
             print(f"backup written: {backup.create_backup(db_path)}")
         else:
-            counts = backup.restore(args.backup_file, args.target)
+            # Resolved because restore opens these as URIs, and those can't be relative.
+            counts = backup.restore(args.backup_file.resolve(), args.target.resolve())
             print(f"restored {sum(counts.values())} rows to {args.target}")
     except (backup.BackupError, migrations.MigrationError, settings.SettingsError) as e:
         print(f"error: {e}", file=sys.stderr)
