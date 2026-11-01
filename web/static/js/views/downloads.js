@@ -1433,3 +1433,4 @@ export async function triggerCatalogPreviewSweep() {
 window.triggerCatalogPreviewSweep = triggerCatalogPreviewSweep;
 
 window.loadRunHistory = loadRunHistory;
+window.loadDuplicateResults = loadDuplicateResults;

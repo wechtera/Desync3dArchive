@@ -89,7 +89,7 @@ Import File, under Manage / Retrieve / Reconcile Assets > External Vault, takes 
 
 ### Duplicates
 
-Find Duplicates, under Vault Reconcile, compares whole files. Results stay on the card until each pair is acted on. Keep Both and Ignore are remembered, so that pair isn't raised again. Delete moves one file to `.Pending-Deletion` at the vault root, a hidden, fixed folder, and leaves a tombstone in the catalog. Linked library files are read-only and can't be deleted. Settings > Disk Usage can purge that folder, listing each file first and asking twice, and only for files moved over 14 days ago.
+Find Duplicates, under Vault Reconcile, compares whole files. Results stay on the card until each pair is acted on. Keep Both and Ignore are remembered, so that pair isn't raised again. Delete moves one file to `.Pending-Deletion` at the vault root, a hidden, fixed folder, and leaves a tombstone in the catalog. Linked library files are read-only and can't be deleted. Settings > Disk Usage lists that folder. Until a file is purged it can be restored to its old path with its catalog rows. A purge lists the files first, asks twice, and only covers files moved over 14 days ago.
 
 ### PDFs
 

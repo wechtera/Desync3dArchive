@@ -113,6 +113,10 @@ class DuplicateDeleteBody(RequestBody):
     confirm: bool = False
 
 
+class PendingRestoreBody(RequestBody):
+    id: int
+
+
 class PendingPurgeBody(RequestBody):
     confirm: bool = False
     ids: list[int] | None = None

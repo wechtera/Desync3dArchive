@@ -250,6 +250,29 @@ def handle_get_pending_deletion(
     return pending_deletion.summary(conn), 200
 
 
+def handle_get_pending_deletion_items(
+    conn: sqlite3.Connection,
+    download_manager: DownloadManager | None,
+    body: dict,
+    params: dict,
+) -> tuple[dict[str, Any], int]:
+    return pending_deletion.listing(conn), 200
+
+
+def handle_post_pending_deletion_restore(
+    conn: sqlite3.Connection,
+    download_manager: DownloadManager | None,
+    body: dict,
+    params: dict,
+) -> tuple[dict[str, Any], int]:
+    if reason := jobs.busy_reason(conn, download_manager):
+        return {"success": False, "error": reason}, 409
+    try:
+        return pending_deletion.restore_file(conn, int(body["id"])), 200
+    except pending_deletion.DeleteRefused as e:
+        return {"success": False, "error": str(e)}, e.code
+
+
 def handle_post_pending_deletion_purge(
     conn: sqlite3.Connection,
     download_manager: DownloadManager | None,

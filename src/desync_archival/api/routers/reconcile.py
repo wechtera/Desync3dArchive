@@ -14,6 +14,9 @@ add_route(router, "POST", "/api/reconcile/duplicates/decision", plain(handlers.h
 add_route(router, "POST", "/api/reconcile/duplicates/delete", plain(handlers.handle_post_reconcile_duplicate_delete),
           schemas.DuplicateDeleteBody)
 add_route(router, "GET", "/api/pending-deletion", plain(handlers.handle_get_pending_deletion))
+add_route(router, "GET", "/api/pending-deletion/items", plain(handlers.handle_get_pending_deletion_items))
+add_route(router, "POST", "/api/pending-deletion/restore", plain(handlers.handle_post_pending_deletion_restore),
+          schemas.PendingRestoreBody)
 add_route(router, "POST", "/api/pending-deletion/purge", plain(handlers.handle_post_pending_deletion_purge),
           schemas.PendingPurgeBody)
 add_route(router, "GET", "/api/reconcile/history", plain(handlers.handle_get_reconcile_history))

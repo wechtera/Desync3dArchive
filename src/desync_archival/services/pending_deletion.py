@@ -1,9 +1,11 @@
 """Takes a file out of the catalog and holds it in the vault's .Pending-Deletion folder.
 
 Nothing here erases a file straight away. A deleted file is tombstoned in deleted_files, moved
-aside, and only a double confirmed purge can remove it, 14 days after it was moved.
+aside, and only a double confirmed purge can remove it, 14 days after it was moved. Until then
+it can be restored to where it was, with the catalog rows the delete took with it.
 """
 
+import json
 import logging
 import os
 import shutil
@@ -18,6 +20,8 @@ from desync_archival.services.logger import log_layer
 from desync_archival.services.paths import PENDING_DELETION_FOLDER
 
 WAIT_DAYS = 14
+# Parents first, because restoring goes through the foreign keys that deleting cascaded along.
+SNAPSHOT_TABLES = ("model_files", "downloaded_files", "file_archive_submodels", "file_archive_members", "model_artifacts")
 DAY_SECONDS = 86400
 LINKED_SOURCES = ("external", "document")
 LINKED_REASON = "Linked libraries are read-only, so this file can only be kept or ignored."
@@ -84,6 +88,15 @@ def _hold(root: Path, source: Path, tombstone: int) -> Path:
     return target
 
 
+def _snapshot(conn: sqlite3.Connection, file_id: int, source: Path | None) -> str:
+    rows: dict[str, Any] = {
+        table: [dict(row) for row in conn.execute(f"SELECT * FROM {table} WHERE file_id = ?", (file_id,))]
+        for table in SNAPSHOT_TABLES
+    }
+    rows["duplicate_decisions"] = [dict(row) for row in conn.execute(queries.SELECT_DECISIONS_OF_FILE, (file_id, file_id))]
+    return json.dumps({"rows": rows, "modified": source.stat().st_mtime if source else None}, default=str)
+
+
 def delete_file(conn: sqlite3.Connection, file_id: int) -> dict[str, Any]:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
@@ -109,7 +122,7 @@ def delete_file(conn: sqlite3.Connection, file_id: int) -> dict[str, Any]:
         with conn:
             tombstone = int(conn.execute(queries.INSERT_TOMBSTONE, (
                 file_id, row["collection_id"], row["collection_name"], row["filename"], stored or "",
-                row["size_bytes"], row["sha256"], row["external_key"],
+                row["size_bytes"], row["sha256"], row["external_key"], _snapshot(conn, file_id, source),
             )).lastrowid or 0)
             if source and root:
                 moved = _hold(root, source, tombstone)
@@ -130,6 +143,113 @@ def delete_file(conn: sqlite3.Connection, file_id: int) -> dict[str, Any]:
     audit.record(conn, "duplicate_delete", False, result)
     log_layer("storage", logging.WARNING, f"Deleted file #{file_id} ({row['filename']}) to pending deletion")
     return result
+
+
+def _insert_row(conn: sqlite3.Connection, table: str, row: dict[str, Any]) -> None:
+    # Only columns that still exist, so a tombstone survives later migrations.
+    current = {column[1] for column in conn.execute(f"PRAGMA table_info({table})")}
+    columns = [name for name in row if name in current]
+    marks = ",".join("?" * len(columns))
+    conn.execute(f"INSERT INTO {table} ({','.join(columns)}) VALUES ({marks})", [row[name] for name in columns])
+
+
+def _put_rows_back(conn: sqlite3.Connection, rows: dict[str, list[dict[str, Any]]]) -> int:
+    """Returns how many artifacts couldn't return, because the model they belonged to is gone."""
+    lost = 0
+    for table in SNAPSHOT_TABLES:
+        for row in rows.get(table, []):
+            if table == "model_artifacts" and not conn.execute(queries.SELECT_MODEL_EXISTS, (row["model_id"],)).fetchone():
+                lost += 1
+                continue
+            _insert_row(conn, table, row)
+    for row in rows.get("duplicate_decisions", []):
+        if all(conn.execute(queries.SELECT_FILE_EXISTS, (row[key],)).fetchone() for key in ("first_file_id", "second_file_id")):
+            _insert_row(conn, "duplicate_decisions", row)
+    return lost
+
+
+def _put_bare_rows_back(conn: sqlite3.Connection, tombstone: sqlite3.Row, source: str) -> None:
+    # A tombstone from before snapshots only holds the file itself, so artifacts need a re-peek or rescan.
+    name = tombstone["filename"]
+    conn.execute(queries.INSERT_BARE_FILE, (
+        tombstone["file_id"], tombstone["collection_id"], name, tombstone["size_bytes"], source, tombstone["external_key"],
+    ))
+    if tombstone["original_path"]:
+        conn.execute(queries.INSERT_BARE_DOWNLOAD, (
+            tombstone["file_id"], tombstone["collection_id"], name, name, f"files/{name}", tombstone["size_bytes"],
+            tombstone["size_bytes"], Path(name).suffix.lower(), tombstone["original_path"], tombstone["sha256"],
+        ))
+
+
+def restore_file(conn: sqlite3.Connection, tombstone_id: int) -> dict[str, Any]:
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
+    tombstone = conn.execute(queries.SELECT_TOMBSTONE, (tombstone_id,)).fetchone()
+    if not tombstone:
+        raise DeleteRefused("That file can no longer be restored.", 404)
+    collection = conn.execute(queries.SELECT_COLLECTION, (tombstone["collection_id"],)).fetchone()
+    if not collection:
+        raise DeleteRefused("Its collection is no longer in the catalog.", 409)
+
+    held = Path(tombstone["pending_path"]) if tombstone["pending_path"] else None
+    target = Path(tombstone["original_path"]) if tombstone["original_path"] else None
+    if held and target:
+        root = _vault_root(conn)
+        if not target.resolve().is_relative_to(root):
+            raise DeleteRefused(OUTSIDE_REASON)
+        if not held.is_file():
+            raise DeleteRefused("The held file is missing from .Pending-Deletion.", 409)
+        if target.exists():
+            raise DeleteRefused("Something else is now at its old path, so nothing was restored.", 409)
+
+    snapshot = json.loads(tombstone["snapshot_json"]) if tombstone["snapshot_json"] else None
+    back = False
+    try:
+        with conn:
+            lost = _put_rows_back(conn, snapshot["rows"]) if snapshot else 0
+            if not snapshot:
+                _put_bare_rows_back(conn, tombstone, collection["source"])
+            conn.execute(queries.UPDATE_RESTORED, (tombstone_id,))
+            if held and target:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(held), target)
+                back = True
+                # The hold reset this date, and a reconcile compares it against the catalog.
+                if snapshot and snapshot.get("modified"):
+                    os.utime(target, (snapshot["modified"], snapshot["modified"]))
+    except (OSError, sqlite3.Error, ValueError) as e:
+        if back and held and target and target.exists():
+            shutil.move(str(target), held)
+        raise DeleteRefused(f"It couldn't be restored: {e}", 500) from e
+
+    if held and held.parent.is_dir() and not any(held.parent.iterdir()):
+        held.parent.rmdir()
+    result = {
+        "success": True, "file_id": tombstone["file_id"], "filename": tombstone["filename"],
+        "path": tombstone["original_path"], "artifacts_lost": lost, "partial": snapshot is None,
+    }
+    inactive_log.resolve(conn, inactive_log.FILE, tombstone["file_id"], inactive_log.DELETED_DUPLICATE)
+    conn.commit()
+    audit.record(conn, "duplicate_restore", False, result)
+    log_layer("storage", logging.WARNING, f"Restored file #{tombstone['file_id']} ({tombstone['filename']})")
+    return result
+
+
+def listing(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Everything that can still be restored, and which of it could be purged today."""
+    conn.row_factory = sqlite3.Row
+    online = _vault_root_or_none(conn) is not None
+    items = []
+    for row in conn.execute(queries.SELECT_RESTORABLE).fetchall():
+        path = row["pending_path"]
+        age = _age_days(Path(path)) if path and online else None
+        items.append({
+            "id": row["id"], "filename": row["filename"], "collection": row["collection_name"],
+            "original_path": row["original_path"], "size_bytes": row["size_bytes"], "deleted_at": row["deleted_at"],
+            "held": bool(path), "age_days": int(age) if age is not None else None,
+            "can_purge": bool(path) and online and (age is None or age >= WAIT_DAYS),
+        })
+    return {"success": True, "online": online, "wait_days": WAIT_DAYS, "items": items}
 
 
 def summary(conn: sqlite3.Connection) -> dict[str, Any]:

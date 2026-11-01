@@ -333,6 +333,171 @@ class DeleteTests(Case):
         self.assertEqual(result["orphan_directories"], [])
 
 
+class RestoreTests(Case):
+    def deleted(self):
+        self.twins()
+        os.utime(self.first_path, (1_600_000_000, 1_600_000_000))
+        pending_deletion.delete_file(self.conn, self.first)
+        return self.conn.execute("SELECT id FROM deleted_files").fetchone()[0]
+
+    def rows(self):
+        out = {}
+        for table in pending_deletion.SNAPSHOT_TABLES:
+            out[table] = [dict(r) for r in self.conn.execute(f"SELECT * FROM {table} WHERE file_id = ? ORDER BY id" if table not in ("model_files",) else f"SELECT * FROM {table} WHERE file_id = ?", (self.first,))]
+        return out
+
+    def test_the_file_returns_with_its_old_date_and_its_catalog_rows(self):
+        self.twins()
+        os.utime(self.first_path, (1_600_000_000, 1_600_000_000))
+        model = self.conn.execute("SELECT id FROM models WHERE id = ?", (self.a,)).fetchone()[0]
+        with self.conn:
+            member = self.conn.execute(
+                "INSERT INTO file_archive_members (file_id, internal_path, filename) VALUES (?, 'a/b.stl', 'b.stl')", (self.first,),
+            ).lastrowid
+            self.conn.execute(
+                "INSERT INTO model_artifacts (model_id, file_id, archive_member_id, path, filename, size_bytes) VALUES (?, ?, ?, 'a/b.stl', 'b.stl', 5)",
+                (model, self.first, member),
+            )
+        before = self.rows()
+        pending_deletion.delete_file(self.conn, self.first)
+        self.assertEqual(self.count("model_artifacts"), 0)
+        tombstone = self.conn.execute("SELECT id FROM deleted_files").fetchone()[0]
+        result = pending_deletion.restore_file(self.conn, tombstone)
+        self.assertEqual((result["artifacts_lost"], result["partial"]), (0, False))
+        self.assertEqual(self.rows(), before)
+        self.assertEqual(self.first_path.read_bytes(), b"solid")
+        self.assertEqual(self.first_path.stat().st_mtime, 1_600_000_000)
+
+    def test_restoring_clears_the_held_folder_and_counts(self):
+        tombstone = self.deleted()
+        pending_deletion.restore_file(self.conn, tombstone)
+        self.assertEqual(list((self.vault / ".Pending-Deletion").iterdir()), [])
+        self.assertEqual(pending_deletion.summary(self.conn)["count"], 0)
+        self.assertEqual(pending_deletion.listing(self.conn)["items"], [])
+
+    def test_a_decision_about_the_pair_comes_back(self):
+        self.twins()
+        duplicates.decide(self.conn, self.first, self.second, "keep")
+        pending_deletion.delete_file(self.conn, self.first)
+        pending_deletion.restore_file(self.conn, 1)
+        self.assertEqual(self.pairs(), [])
+
+    def test_the_inactive_note_clears_and_the_restore_is_audited(self):
+        tombstone = self.deleted()
+        pending_deletion.restore_file(self.conn, tombstone)
+        self.assertIsNotNone(self.conn.execute("SELECT resolved_at FROM inactive_log").fetchone()[0])
+        self.assertEqual(self.conn.execute("SELECT action FROM audit_log ORDER BY id DESC").fetchone()[0], "duplicate_restore")
+
+    def test_it_cant_be_restored_twice(self):
+        tombstone = self.deleted()
+        pending_deletion.restore_file(self.conn, tombstone)
+        with self.assertRaises(pending_deletion.DeleteRefused) as caught:
+            pending_deletion.restore_file(self.conn, tombstone)
+        self.assertEqual(caught.exception.code, 404)
+
+    def test_a_purged_file_cant_be_restored(self):
+        tombstone = self.deleted()
+        held = Path(self.conn.execute("SELECT pending_path FROM deleted_files").fetchone()[0])
+        os.utime(held, (time.time() - 20 * 86400,) * 2)
+        pending_deletion.purge(self.conn, confirm=True, ids=[tombstone])
+        with self.assertRaises(pending_deletion.DeleteRefused):
+            pending_deletion.restore_file(self.conn, tombstone)
+
+    def test_something_new_at_the_old_path_is_never_overwritten(self):
+        tombstone = self.deleted()
+        self.first_path.write_bytes(b"newer")
+        with self.assertRaises(pending_deletion.DeleteRefused) as caught:
+            pending_deletion.restore_file(self.conn, tombstone)
+        self.assertEqual((caught.exception.code, self.first_path.read_bytes()), (409, b"newer"))
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM model_files WHERE file_id = ?", (self.first,)).fetchone()[0], 0)
+
+    def test_a_missing_old_folder_is_recreated(self):
+        tombstone = self.deleted()
+        self.first_path.parent.rmdir()
+        pending_deletion.restore_file(self.conn, tombstone)
+        self.assertTrue(self.first_path.is_file())
+
+    def test_a_failed_catalog_write_leaves_the_file_held(self):
+        tombstone = self.deleted()
+        held = Path(self.conn.execute("SELECT pending_path FROM deleted_files").fetchone()[0])
+        with self.conn:
+            self.conn.execute("CREATE TRIGGER stop BEFORE INSERT ON model_files BEGIN SELECT RAISE(ABORT, 'no'); END")
+        with self.assertRaises(pending_deletion.DeleteRefused):
+            pending_deletion.restore_file(self.conn, tombstone)
+        self.assertTrue(held.is_file())
+        self.assertFalse(self.first_path.exists())
+        self.assertEqual(pending_deletion.summary(self.conn)["count"], 1)
+
+    def test_a_failed_move_undoes_the_catalog_rows(self):
+        tombstone = self.deleted()
+        with patch("desync_archival.services.pending_deletion.shutil.move", side_effect=OSError("disk")), \
+                self.assertRaises(pending_deletion.DeleteRefused):
+            pending_deletion.restore_file(self.conn, tombstone)
+        self.assertIsNone(self.conn.execute("SELECT 1 FROM model_files WHERE file_id = ?", (self.first,)).fetchone())
+
+    def test_an_offline_vault_is_refused(self):
+        tombstone = self.deleted()
+        with self.conn:
+            self.conn.execute("UPDATE app_settings SET value = '/nowhere' WHERE key = 'download_root_path'")
+        with self.assertRaises(pending_deletion.DeleteRefused) as caught:
+            pending_deletion.restore_file(self.conn, tombstone)
+        self.assertEqual(caught.exception.code, 503)
+        listed = pending_deletion.listing(self.conn)
+        self.assertEqual((listed["online"], listed["items"][0]["can_purge"]), (False, False))
+
+    def test_a_gone_collection_is_refused(self):
+        tombstone = self.deleted()
+        with self.conn:
+            self.conn.execute("UPDATE deleted_files SET collection_id = 999999")
+        with self.assertRaisesRegex(pending_deletion.DeleteRefused, "collection"):
+            pending_deletion.restore_file(self.conn, tombstone)
+
+    def test_an_artifact_whose_model_went_is_counted(self):
+        self.twins()
+        with self.conn:
+            self.conn.execute("INSERT INTO model_artifacts (model_id, file_id, path, filename, size_bytes) VALUES (?, ?, 'x', 'x', 5)", (self.a, self.first))
+        pending_deletion.delete_file(self.conn, self.first)
+        snapshot = self.conn.execute("SELECT snapshot_json FROM deleted_files").fetchone()[0].replace(f'"model_id": {self.a}, "file_id"', '"model_id": 987654, "file_id"')
+        with self.conn:
+            self.conn.execute("UPDATE deleted_files SET snapshot_json = ?", (snapshot,))
+        self.assertEqual(pending_deletion.restore_file(self.conn, 1)["artifacts_lost"], 1)
+
+    def test_a_tombstone_from_before_snapshots_still_restores_the_file(self):
+        tombstone = self.deleted()
+        with self.conn:
+            self.conn.execute("UPDATE deleted_files SET snapshot_json = NULL")
+        result = pending_deletion.restore_file(self.conn, tombstone)
+        self.assertTrue(result["partial"])
+        self.assertTrue(self.first_path.is_file())
+        row = self.conn.execute("SELECT vault_path, sha256 FROM downloaded_files WHERE file_id = ?", (self.first,)).fetchone()
+        self.assertEqual(tuple(row), (str(self.first_path), "abc"))
+
+    def test_a_catalog_only_file_can_be_restored(self):
+        one = self.collection("Alpha")
+        with self.conn:
+            file_id = self.conn.execute("INSERT INTO model_files (model_id, filename, size_bytes) VALUES (?, 'x.stl', 5)", (one,)).lastrowid
+        pending_deletion.delete_file(self.conn, file_id)
+        item = pending_deletion.listing(self.conn)["items"][0]
+        self.assertEqual((item["held"], item["can_purge"]), (False, False))
+        pending_deletion.restore_file(self.conn, item["id"])
+        self.assertIsNotNone(self.conn.execute("SELECT 1 FROM model_files WHERE file_id = ?", (file_id,)).fetchone())
+
+    def test_listing_marks_what_can_be_purged(self):
+        self.deleted()
+        self.assertFalse(pending_deletion.listing(self.conn)["items"][0]["can_purge"])
+        held = Path(self.conn.execute("SELECT pending_path FROM deleted_files").fetchone()[0])
+        os.utime(held, (time.time() - 20 * 86400,) * 2)
+        item = pending_deletion.listing(self.conn)["items"][0]
+        self.assertEqual((item["can_purge"], item["age_days"]), (True, 20))
+
+    def test_the_route_waits_for_downloads(self):
+        tombstone = self.deleted()
+        downloads = MagicMock(active_downloads={1: {}})
+        _, status = routes.handle_post_pending_deletion_restore(self.conn, downloads, {"id": tombstone}, {})
+        self.assertEqual(status, 409)
+        self.assertFalse(self.first_path.exists())
+
+
 class PurgeTests(Case):
     def held(self, days=20):
         self.twins()

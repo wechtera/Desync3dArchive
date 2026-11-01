@@ -577,6 +577,14 @@ export async function fetchPendingDeletion() {
   return request('/api/pending-deletion');
 }
 
+export async function fetchPendingItems() {
+  return request('/api/pending-deletion/items');
+}
+
+export async function restorePendingItem(id) {
+  return postJson('/api/pending-deletion/restore', { id });
+}
+
 export async function purgePendingDeletion(body) {
   return postJson('/api/pending-deletion/purge', body);
 }

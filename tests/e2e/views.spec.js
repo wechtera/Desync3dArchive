@@ -327,15 +327,23 @@ test.describe('duplicate report', () => {
     expect(page.pageErrors).toEqual([]);
   });
 
-  test('purging pending deletion lists files and asks twice', async ({ page }) => {
+  test('pending deletion restores, and purges after asking twice', async ({ page }) => {
     const bodies = [];
+    let restored = null;
+    let items = [
+      { id: 5, filename: 'old.stl', collection: 'Pack', original_path: '/vault/old.stl', size_bytes: 1024, held: true, age_days: 20, can_purge: true },
+      { id: 6, filename: 'new.stl', collection: 'Pack', original_path: '/vault/new.stl', size_bytes: 1024, held: true, age_days: 2, can_purge: false },
+    ];
     await page.route('**/api/pending-deletion', (route) => route.fulfill({ json: { count: 2, size_bytes: 2048, wait_days: 14 } }));
+    await page.route('**/api/pending-deletion/items', (route) => route.fulfill({ json: { success: true, online: true, wait_days: 14, items } }));
+    await page.route('**/api/pending-deletion/restore', (route) => {
+      restored = route.request().postDataJSON();
+      items = items.filter((item) => item.id !== restored.id);
+      return route.fulfill({ json: { success: true, artifacts_lost: 0, partial: false } });
+    });
     await page.route('**/api/pending-deletion/purge', (route) => {
       bodies.push(route.request().postDataJSON());
-      return route.fulfill({ json: {
-        success: true, purged: 1, waiting: 1, reclaimable_bytes: 1024, wait_days: 14,
-        items: [{ id: 5, filename: 'old.stl', collection: 'Pack', original_path: '/vault/old.stl', size_bytes: 1024, age_days: 20 }],
-      } });
+      return route.fulfill({ json: { success: true, purged: 1 } });
     });
     const dialogs = [];
     page.on('dialog', (dialog) => { dialogs.push(dialog.message()); dialog.accept(); });
@@ -343,12 +351,16 @@ test.describe('duplicate report', () => {
     await page.evaluate(() => window.switchTab('settings'));
     await expect(page.locator('#pending-deletion-status')).toContainText('2 files');
     await page.locator('#btn-purge-pending').click();
-    await expect(page.locator('#pending-purge-list')).toContainText('old.stl');
-    expect(bodies).toEqual([{}]);
+    await expect(page.locator('#pending-purge-list tbody tr')).toHaveCount(2);
+    await expect(page.locator('#btn-confirm-pending-purge')).toHaveText('Delete 1 Files');
+    await page.locator('[data-pending="6"] .pending-restore').click();
+    await expect.poll(() => restored).toEqual({ id: 6 });
+    await expect(page.locator('#pending-purge-list tbody tr')).toHaveCount(1);
+    expect(dialogs).toHaveLength(0);
     await page.locator('#btn-confirm-pending-purge').click();
-    await expect.poll(() => bodies.length).toBe(2);
+    await expect.poll(() => bodies.length).toBe(1);
     expect(dialogs).toHaveLength(1);
-    expect(bodies[1]).toEqual({ confirm: true, ids: [5] });
+    expect(bodies[0]).toEqual({ confirm: true, ids: [5] });
   });
 });
 

@@ -11,6 +11,8 @@ import {
   fetchHealth,
   fetchLocations,
   fetchPendingDeletion,
+  fetchPendingItems,
+  restorePendingItem,
   purgePendingDeletion,
   postSchedules,
   fetchBackups,
@@ -232,37 +234,67 @@ async function runPendingPurge(items) {
   try {
     const res = await purgePendingDeletion({ confirm: true, ids: items.map((item) => item.id) });
     showToast(`Purged ${res.purged} files.`);
-    window.closeModal('pending-purge-modal');
+    await drawPendingDeletion();
     loadPendingDeletion();
   } catch (err) {
     alert(`Purge failed: ${err.message}`);
   }
 }
 
-export async function openPendingPurge() {
-  const body = document.getElementById('pending-purge-body');
+async function restoreItem(item) {
   try {
-    const { items, waiting, reclaimable_bytes: bytes, wait_days: days } = await purgePendingDeletion({});
-    render(html`
-      <p class="font-sm">${items.length
-        ? `${items.length} files, ${formatBytes(bytes)}, were moved over ${days} days ago and can be purged.`
-        : `Nothing has been waiting over ${days} days yet.`}
-        ${waiting ? ` ${waiting} newer files stay in the folder.` : ''}</p>
-      ${items.length ? html`
-        <table class="help-table" id="pending-purge-list">
-          <thead><tr><th>File</th><th>Collection</th><th>Size</th><th>Days</th></tr></thead>
-          <tbody>
-            ${items.map((item) => html`<tr>
-              <td><strong>${item.filename}</strong><div class="font-mono font-xs text-dim location-path">${item.original_path}</div></td>
-              <td>${item.collection}</td><td>${formatBytes(item.size_bytes)}</td><td>${item.age_days}</td>
-            </tr>`)}
-          </tbody>
-        </table>
-        <div class="flex gap-2 mt-2">
-          <button type="button" class="btn-pill btn-action-cancel" id="btn-confirm-pending-purge" @click=${() => runPendingPurge(items)}>Delete ${items.length} Files</button>
-        </div>
-      ` : nothing}
-    `, body);
+    const res = await restorePendingItem(item.id);
+    const notes = [];
+    if (res.artifacts_lost) notes.push(`${res.artifacts_lost} artifacts belonged to models that are gone`);
+    if (res.partial) notes.push('its artifacts need a re-peek or rescan');
+    showToast(`Restored ${item.filename}${notes.length ? `, but ${notes.join(' and ')}` : ''}.`);
+    await drawPendingDeletion();
+    loadPendingDeletion();
+    window.loadDuplicateResults?.();
+  } catch (err) {
+    alert(`Restore failed: ${err.message}`);
+  }
+}
+
+function ageOf(item, days) {
+  if (!item.held) return 'Catalog only, no file held';
+  if (item.age_days === null) return 'Unknown';
+  return item.can_purge ? `${item.age_days} days, can be purged` : `${item.age_days} of ${days} days`;
+}
+
+async function drawPendingDeletion() {
+  const body = document.getElementById('pending-purge-body');
+  const { items, online, wait_days: days } = await fetchPendingItems();
+  const ready = items.filter((item) => item.can_purge);
+  render(html`
+    <p class="font-sm">
+      ${items.length ? `${items.length} files can be restored. ${ready.length} of them can be purged, having waited ${days} days.` : 'Nothing is pending deletion.'}
+      ${online ? '' : ' The vault is offline, so nothing can be restored or purged until it returns.'}
+    </p>
+    ${items.length ? html`
+      <table class="help-table" id="pending-purge-list">
+        <thead><tr><th>File</th><th>Collection</th><th>Size</th><th>Waited</th><th></th></tr></thead>
+        <tbody>
+          ${items.map((item) => html`<tr data-pending=${item.id}>
+            <td><strong>${item.filename}</strong><div class="font-mono font-xs text-dim location-path">${item.original_path || 'Not downloaded'}</div></td>
+            <td>${item.collection}</td><td>${formatBytes(item.size_bytes)}</td><td>${ageOf(item, days)}</td>
+            <td><button type="button" class="btn-pill font-xs pending-restore" ?disabled=${!online && item.held}
+              title=${!online && item.held ? 'The vault is offline.' : 'Puts the file back where it was.'} @click=${() => restoreItem(item)}>Restore</button></td>
+          </tr>`)}
+        </tbody>
+      </table>
+    ` : nothing}
+    ${ready.length ? html`
+      <div class="flex gap-2 mt-2">
+        <button type="button" class="btn-pill btn-action-cancel" id="btn-confirm-pending-purge" @click=${() => runPendingPurge(ready)}>Delete ${ready.length} Files</button>
+      </div>
+    ` : nothing}
+  `, body);
+}
+
+export async function openPendingPurge() {
+  try {
+    await drawPendingDeletion();
     window.openModal('pending-purge-modal');
   } catch (err) {
     alert(`Could not read pending deletion: ${err.message}`);
