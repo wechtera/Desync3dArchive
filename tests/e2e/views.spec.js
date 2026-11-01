@@ -853,7 +853,7 @@ test.describe('settings', () => {
     const urls = [];
     let stashed = null;
     const documents = [
-      { key: 'file-1', title: 'Guide', filename: 'guide.pdf', kind: 'Painting guide', creator: 'Maker', collection: 'Pack', collection_id: 4, source: 'MyMiniFactory', size_bytes: 5, state: 'on_disk', preview_url: '' },
+      { key: 'file-1', title: 'Guide', filename: 'guide.pdf', kind: 'Painting guide', creator: 'Maker', collection: 'Pack', collection_id: 4, source: 'MyMiniFactory', size_bytes: 5, state: 'on_disk', preview_url: '/previews/documents/file-1.jpg' },
       { key: 'file-2', title: 'Dragonseekers (PDF)', filename: 'Dragonseekers.zip', kind: 'Other', creator: 'Maker', collection: 'Dragonseekers (PDF)', collection_id: 5, source: 'MyMiniFactory', size_bytes: 5, state: 'unread', preview_url: '' },
     ];
     await page.route('**/api/documents?*', (route) => {
@@ -872,6 +872,11 @@ test.describe('settings', () => {
     await expect(page.locator('[data-key="file-2"] .document-stash')).toHaveCount(0);
     await page.locator('[data-key="file-1"] .document-stash').click();
     await expect.poll(() => stashed).toEqual({ key: 'file-1' });
+    await expect(page.locator('[data-key="file-1"] img')).toHaveAttribute('src', '/previews/documents/file-1.jpg');
+    await page.route('**/api/documents/file-1/file', (route) => route.fulfill({ contentType: 'application/pdf', body: '%PDF-1.4' }));
+    const [opened] = await Promise.all([page.waitForEvent('popup'), page.locator('[data-key="file-1"] a').click()]);
+    expect(opened.url()).toContain('/api/documents/file-1/file');
+    await opened.close();
     await page.locator('#document-kind').selectOption('Painting guide');
     await expect.poll(() => urls.at(-1)).toContain('kind=Painting+guide');
   });

@@ -42,11 +42,18 @@ async function queueCollection(doc) {
   }
 }
 
+// safeUrl only passes full web links, so it would blank our own /previews/ paths. A cover from a
+// collection is the part that came from outside.
+function coverOf(doc) {
+  const url = doc.preview_url || '';
+  return url.startsWith('/previews/') ? url : safeUrl(url) || '/previews/none';
+}
+
 function card(doc) {
   const stored = doc.state === 'on_disk' || doc.state === 'in_archive';
   return html`
     <article class="document-card" data-key=${doc.key}>
-      <img class="document-cover" src=${safeUrl(doc.preview_url || '/previews/none')} alt="" loading="lazy" @error=${imageFallback('/previews/none')}>
+      <img class="document-cover" src=${coverOf(doc)} alt="" loading="lazy" @error=${imageFallback('/previews/none')}>
       <div class="document-body">
         <strong class="document-title">${doc.title}</strong>
         <span class="font-xs text-dim">${doc.kind} · ${doc.creator || doc.source}</span>
@@ -54,7 +61,7 @@ function card(doc) {
         <span class="font-xs text-dim">${STATE_LABELS[doc.state]}${doc.size_bytes ? ` · ${formatBytes(doc.size_bytes)}` : ''}</span>
         <div class="document-actions">
           ${stored ? html`
-            <a class="btn-pill font-xs" href=${safeUrl(`/api/documents/${doc.key}/file`)} target="_blank" rel="noopener">Open</a>
+            <a class="btn-pill font-xs" href=${`/api/documents/${encodeURIComponent(doc.key)}/file`} target="_blank" rel="noopener">Open</a>
             <button type="button" class="btn-pill font-xs document-stash" @click=${() => addToStash(doc)}>Add to Stash</button>
           ` : html`
             <button type="button" class="btn-pill font-xs document-queue" @click=${() => queueCollection(doc)}>Queue Download</button>
