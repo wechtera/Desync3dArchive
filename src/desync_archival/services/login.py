@@ -13,6 +13,7 @@ import threading
 import time
 from pathlib import Path
 
+from desync_archival import settings as app_config
 from desync_archival.services import secret_store
 from desync_archival.services.logger import logger
 
@@ -56,12 +57,12 @@ def set_password(password: str) -> Path:
     if len(password) < MIN_PASSWORD_LENGTH:
         raise WeakPasswordError(f"Use at least {MIN_PASSWORD_LENGTH} characters.")
 
-    data = secret_store.read_file()
-    data["login"] = hash_password(password)
-    path = secret_store.write_file(data)
+    hashed = hash_password(password)
+    with secret_store.editing_file() as data:
+        data["login"] = hashed
     clear_sessions()
     logger.warning("App password changed. All sessions were signed out.")
-    return path
+    return app_config.secrets_file()
 
 
 def has_password() -> bool:

@@ -4,10 +4,14 @@ A value in the file wins. During the transition a key missing from the file fall
 app_settings. Writes always go to the file, so a new sign-in can't be hidden by an older value.
 """
 
+import fcntl
 import json
 import os
 import sqlite3
+import tempfile
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from desync_archival import settings as app_config
@@ -38,28 +42,77 @@ class SecretsError(RuntimeError):
 
 
 def read_file(path: Path | None = None) -> dict:
-    """Reads the secrets file. Any failure reads as empty."""
+    """Reads the secrets file. Only a missing file reads as empty.
+
+    Raises:
+        SecretsError: The file exists but can't be read or parsed. Treating that as empty
+            would let the next write replace the password hash and every token.
+    """
+    path = path or app_config.secrets_file()
     try:
-        return json.loads((path or app_config.secrets_file()).read_text(encoding="utf-8"))
-    # FIXME(R-09): a failed read looks empty, and save() then replaces the whole file, password hash included.
-    except (OSError, ValueError):
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
         return {}
+    except OSError as e:
+        raise SecretsError(f"Can't read the secrets file: {e.strerror or type(e).__name__}") from e
+    # Never put the parse error's text here. It can quote the file.
+    except ValueError:
+        raise SecretsError("The secrets file isn't valid JSON") from None
+    if not isinstance(data, dict):
+        raise SecretsError("The secrets file doesn't hold a JSON object")
+    return data
 
 
 def write_file(data: dict) -> Path:
-    """Replaces the secrets file through a 0600 temp file."""
+    """Replaces the secrets file through a unique 0600 temp file, synced before the rename."""
     path = app_config.secrets_file()
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    temp = path.with_suffix(".tmp")
-    descriptor = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        json.dump(data, handle)
-    temp.replace(path)
+    descriptor, temp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(data, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+    except BaseException:
+        Path(temp).unlink(missing_ok=True)
+        raise
     return path
 
 
+@contextmanager
+def _exclusive() -> Iterator[None]:
+    """One writer across threads and processes, because `dbtool` runs beside the server."""
+    # NOTE: a sidecar, since write_file replaces the secrets file and a lock on it would go too.
+    # flock belongs to the open file rather than the thread, so `_lock` is still needed.
+    # POSIX only, so E40's Windows work needs another lock here.
+    path = app_config.secrets_file()
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with _lock:
+        descriptor = os.open(path.with_suffix(".lock"), os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(descriptor)
+
+
+@contextmanager
+def editing_file() -> Iterator[dict]:
+    """The file's contents, written back when the block ends. A failed read stops the write."""
+    with _exclusive():
+        data = read_file()
+        yield data
+        write_file(data)
+
+
 def load() -> dict[str, str]:
-    return read_file().get("settings", {})
+    """Settings from the file. Reads run constantly, so a failed one logs and reads as empty."""
+    try:
+        return read_file().get("settings", {})
+    except SecretsError as e:
+        logger.error(f"{e}. Secrets read as empty until this is fixed, and saving is refused.")
+        return {}
 
 
 def overlay(settings: dict) -> dict:
@@ -71,10 +124,8 @@ def overlay(settings: dict) -> dict:
 def save(mapping: dict[str, str]) -> None:
     if not mapping:
         return
-    with _lock:
-        data = read_file()
+    with editing_file() as data:
         data.setdefault("settings", {}).update({key: str(value) for key, value in mapping.items()})
-        write_file(data)
     logger.info(f"Saved {len(mapping)} secrets to the secrets file")
 
 
