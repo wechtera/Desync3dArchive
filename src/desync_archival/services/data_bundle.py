@@ -58,7 +58,7 @@ def export_bundle(db_path: Path, destination: Path, with_secrets: bool = False) 
     destination.mkdir(parents=True, exist_ok=True)
 
     database = destination / DATABASE
-    backup._copy_database(db_path, database, journal_mode="DELETE")
+    backup.copy_database(db_path, database, journal_mode="DELETE")
     counts = backup.verify(database)
     with tarfile.open(destination / METADATA, "w:gz") as archive:
         if app_config.metadata_dir().is_dir():

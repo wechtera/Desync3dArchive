@@ -138,3 +138,123 @@ class SecretsR09Tests(TempCase):
 
     def test_the_secrets_path_is_still_the_setting(self):
         self.assertEqual(app_config.secrets_file(), self.path.resolve())
+
+
+class MigrationR08Tests(TempCase):
+    def setUp(self):
+        super().setUp()
+        self.data = self.root / "data"
+        self.data.mkdir()
+        self.db = self.data / "library.db"
+        env = patch.dict(os.environ, {"DESYNC_DATA_DIR": str(self.data), "DESYNC_BACKUP_DIR": str(self.root / "backups")})
+        env.start()
+        self.addCleanup(env.stop)
+        self.steps = migrations.load_migrations()
+        conn = sqlite3.connect(self.db)
+        conn.executescript(self.steps[0][1].read_text(encoding="utf-8"))
+        conn.execute("INSERT INTO stashes (name) VALUES ('Queue')")
+        conn.execute("PRAGMA user_version = 1")
+        conn.commit()
+        conn.close()
+
+    def with_extra_step(self, sql):
+        folder = self.root / "migrations"
+        folder.mkdir()
+        for _, path in self.steps:
+            shutil.copy(path, folder)
+        (folder / f"{len(self.steps) + 1:04d}_extra.sql").write_text(sql, encoding="utf-8")
+        return patch.object(migrations, "MIGRATIONS_DIR", folder)
+
+    def version(self):
+        conn = sqlite3.connect(self.db)
+        try:
+            return migrations.current_version(conn)
+        finally:
+            conn.close()
+
+    def stashes(self):
+        conn = sqlite3.connect(self.db)
+        try:
+            return conn.execute("SELECT COUNT(*) FROM stashes").fetchone()[0]
+        finally:
+            conn.close()
+
+    def leftovers(self):
+        return sorted(p.name for p in self.data.iterdir() if p.name != "library.db")
+
+    def test_a_row_count_failure_leaves_the_old_database(self):
+        with self.with_extra_step("DELETE FROM stashes;"), self.assertRaises(migrations.MigrationError) as caught:
+            migrations.migrate_database(self.db)
+        self.assertIn("stashes", str(caught.exception))
+        self.assertEqual(self.version(), 1)
+        self.assertEqual(self.stashes(), 1)
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_broken_reference_leaves_the_old_database(self):
+        # An earlier step leaves foreign keys on, so this one has to turn them off to do the damage.
+        sql = (
+            f"{migrations.NO_TRANSACTION}\nPRAGMA foreign_keys = OFF;\n"
+            "CREATE TABLE child (parent INTEGER REFERENCES stashes(id));\nINSERT INTO child VALUES (999);\n"
+        )
+        with self.with_extra_step(sql), self.assertRaises(migrations.MigrationError) as caught:
+            migrations.migrate_database(self.db)
+        self.assertIn("broken references", str(caught.exception))
+        self.assertEqual(self.version(), 1)
+        self.assertEqual(self.leftovers(), [])
+
+    def test_bad_sql_undoes_the_steps_before_it_too(self):
+        with self.with_extra_step("NOT VALID SQL;"), self.assertRaises(sqlite3.Error):
+            migrations.migrate_database(self.db)
+        self.assertEqual(self.version(), 1)
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_failed_run_can_be_rerun(self):
+        with self.with_extra_step("DELETE FROM stashes;"), self.assertRaises(migrations.MigrationError):
+            migrations.migrate_database(self.db)
+        result = migrations.migrate_database(self.db)
+        self.assertEqual((result["from"], result["to"]), (1, migrations.latest_version()))
+        self.assertEqual(self.stashes(), 1)
+
+    def test_success_crosses_the_no_transaction_step_and_ends_in_wal(self):
+        self.assertIn(migrations.NO_TRANSACTION, self.steps[1][1].read_text(encoding="utf-8"))
+        result = migrations.migrate_database(self.db)
+        self.assertEqual(result["to"], migrations.latest_version())
+        conn = sqlite3.connect(self.db)
+        self.assertEqual(conn.execute("PRAGMA journal_mode").fetchone()[0], "wal")
+        self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+        conn.close()
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_database_past_the_wal_step_stays_in_wal(self):
+        conn = sqlite3.connect(self.db)
+        conn.executescript(self.steps[1][1].read_text(encoding="utf-8"))
+        conn.execute("PRAGMA user_version = 2")
+        conn.close()
+        migrations.migrate_database(self.db)
+        conn = sqlite3.connect(self.db)
+        self.assertEqual(conn.execute("PRAGMA journal_mode").fetchone()[0], "wal")
+        conn.close()
+
+    def test_the_file_keeps_its_permissions(self):
+        self.db.chmod(0o600)
+        migrations.migrate_database(self.db)
+        self.assertEqual(stat.S_IMODE(self.db.stat().st_mode), 0o600)
+
+    def test_a_database_something_else_has_open_is_refused(self):
+        # A swap would leave that process writing to the old file, and its writes would vanish.
+        holder = sqlite3.connect(self.db)
+        holder.execute("PRAGMA journal_mode = WAL")
+        holder.execute("INSERT INTO stashes (name) VALUES ('Second')")
+        holder.commit()
+        with self.assertRaises(migrations.MigrationError) as caught:
+            migrations.migrate_database(self.db)
+        self.assertIn("still open", str(caught.exception))
+        holder.close()
+        self.assertEqual(self.version(), 1)
+        migrations.migrate_database(self.db)
+        self.assertEqual(self.stashes(), 2)
+
+    def test_a_backup_is_still_taken_first(self):
+        result = migrations.migrate_database(self.db)
+        self.assertTrue(Path(result["backup"]).is_file())
+        self.assertEqual(backup.row_counts(Path(result["backup"]))["stashes"], 1)

@@ -4,7 +4,9 @@ The app never migrates a database on its own. If the schema is behind, it refuse
 applying migrations is an explicit command. On production that command also needs a confirmation.
 """
 
+import os
 import re
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -131,8 +133,45 @@ def require_current(conn: sqlite3.Connection) -> None:
         )
 
 
+def _beside(db_path: Path, suffix: str) -> Path:
+    return db_path.with_name(db_path.name + suffix)
+
+
+def _remove_copy(work: Path) -> None:
+    for path in (work, _beside(work, "-wal"), _beside(work, "-shm")):
+        path.unlink(missing_ok=True)
+
+
+def _swap_in(work: Path, db_path: Path) -> None:
+    shutil.copymode(db_path, work)
+    # Read-only connections leave empty ones behind. A stale -wal beside the new file would be
+    # replayed into it, so they go first.
+    for suffix in ("-wal", "-shm"):
+        _beside(work, suffix).unlink(missing_ok=True)
+        _beside(db_path, suffix).unlink(missing_ok=True)
+    os.replace(work, db_path)
+
+
+def _check_row_counts(work: Path, before_counts: dict[str, int], before_version: int, backup_path: Path | None) -> None:
+    after_counts = backup.verify(work)
+    renames: dict[str, str] = {
+        old: new for version, table_map in TABLE_RENAMES.items() if before_version < version for old, new in table_map.items()
+    }
+    changed = sorted(table for table, count in before_counts.items() if after_counts.get(renames.get(table, table)) != count)
+    if changed:
+        raise MigrationError(f"Row counts changed during migration: {changed}. Backup: {backup_path}")
+
+
 def migrate_database(db_path: Path, confirm_production: bool = False) -> dict[str, object]:
-    """Backs up, applies pending migrations and checks that no table lost or gained rows."""
+    """Backs up, migrates a copy, checks it, and only then swaps it in.
+
+    Steps commit as they go, so checking in place would be too late: a failure would leave the new
+    schema behind, a rerun would report nothing to do, and the app would start on it.
+
+    Raises:
+        MigrationError: The checks failed, or something else has the database open. Either way
+            the original is untouched.
+    """
     if app_config.is_production() and not confirm_production:
         raise MigrationError("Refusing to migrate production without --confirm-production")
     app_config.check_path(db_path)
@@ -140,25 +179,36 @@ def migrate_database(db_path: Path, confirm_production: bool = False) -> dict[st
     conn = sqlite3.connect(db_path)
     try:
         before_version = current_version(conn)
-        if before_version > latest_version():
-            raise MigrationError(f"Database version {before_version} is newer than this app")
-        if before_version == latest_version():
-            return {"from": before_version, "to": before_version, "backup": None}
-
-        before_counts = backup.row_counts(db_path)
-        backup_path = backup.create_backup(db_path) if before_counts else None
-        after_version = apply_pending(conn)
-        broken = conn.execute("PRAGMA foreign_key_check").fetchall()
-        if broken:
-            raise MigrationError(f"{len(broken)} broken references after migration. Backup: {backup_path}")
+        journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
     finally:
         conn.close()
+    if before_version > latest_version():
+        raise MigrationError(f"Database version {before_version} is newer than this app")
+    if before_version == latest_version():
+        return {"from": before_version, "to": before_version, "backup": None}
 
-    # FIXME(R-08): these checks run after COMMIT. A failure leaves the new schema in place, and a rerun reports nothing to do.
-    after_counts = backup.verify(db_path)
-    renames = {old: new for version, table_map in TABLE_RENAMES.items() if before_version < version for old, new in table_map.items()}
-    changed = sorted(t for t, count in before_counts.items() if after_counts.get(renames.get(t, t)) != count)
-    if changed:
-        raise MigrationError(f"Row counts changed during migration: {changed}. Backup: {backup_path}")
+    # The last connection to close removes the -wal file, and ours just closed. One still here means
+    # another process has the database, and it would keep writing to the old file after the swap.
+    if _beside(db_path, "-wal").exists():
+        raise MigrationError(f"{db_path.name} is still open in another process. Stop it first.")
+
+    before_counts = backup.row_counts(db_path)
+    backup_path = backup.create_backup(db_path) if before_counts else None
+    work = _beside(db_path, ".migrating")
+    _remove_copy(work)
+    try:
+        backup.copy_database(db_path, work, journal_mode)
+        conn = sqlite3.connect(work)
+        try:
+            after_version = apply_pending(conn)
+            broken = conn.execute("PRAGMA foreign_key_check").fetchall()
+        finally:
+            conn.close()
+        if broken:
+            raise MigrationError(f"{len(broken)} broken references after migration. Backup: {backup_path}")
+        _check_row_counts(work, before_counts, before_version, backup_path)
+        _swap_in(work, db_path)
+    finally:
+        _remove_copy(work)
     logger.info(f"Migrated {db_path.name} from version {before_version} to {after_version}")
     return {"from": before_version, "to": after_version, "backup": backup_path}

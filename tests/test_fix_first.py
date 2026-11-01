@@ -440,14 +440,14 @@ class R06Backups(BackupCase):
         return tasks
 
     def test_a_write_during_the_backup_doesnt_fail_it(self):
-        real_copy = backup._copy_database
+        real_copy = backup.copy_database
 
         def copy_then_write(source, target, journal_mode):
             real_copy(source, target, journal_mode)
             with self.conn:
                 self.conn.execute("INSERT INTO audit_log (action, dry_run, outcome) VALUES ('download', 0, 'ok')")
 
-        with patch("desync_archival.backup._copy_database", side_effect=copy_then_write):
+        with patch("desync_archival.backup.copy_database", side_effect=copy_then_write):
             self.assertTrue(backup.create_backup(self.db).is_file())
 
     def test_a_damaged_copy_is_still_refused(self):

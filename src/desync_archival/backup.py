@@ -51,7 +51,7 @@ def verify(path: Path, expected: dict[str, int] | None = None) -> dict[str, int]
     return counts
 
 
-def _copy_database(source_path: Path, target_path: Path, journal_mode: str) -> None:
+def copy_database(source_path: Path, target_path: Path, journal_mode: str) -> None:
     """Copies with SQLite's backup API. Backups use DELETE mode so each one is a single file."""
     source = _open_read_only(source_path)
     target = sqlite3.connect(target_path)
@@ -189,7 +189,7 @@ def create_backup(db_path: Path, keep: int = DEFAULT_RETENTION, full: bool = Fal
 
     os.close(os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
     try:
-        _copy_database(db_path, temp, journal_mode="DELETE")
+        copy_database(db_path, temp, journal_mode="DELETE")
         # Only the copy is checked. Comparing it with the live database fails on any write in between,
         # such as a download's audit row, and SQLite's backup API already gives one consistent snapshot.
         counts = verify(temp)
@@ -223,7 +223,7 @@ def restore(backup_path: Path, target: Path) -> dict[str, int]:
     target.parent.mkdir(parents=True, exist_ok=True)
     os.close(os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
     try:
-        _copy_database(backup_path, target, journal_mode="WAL")
+        copy_database(backup_path, target, journal_mode="WAL")
         verify(target, expected=counts)
     except BaseException:
         target.unlink(missing_ok=True)
