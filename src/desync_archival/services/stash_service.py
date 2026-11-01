@@ -398,7 +398,7 @@ class StashService:
             return _execute(local_conn)
 
     def get_active_stash(self, conn: Optional[sqlite3.Connection] = None) -> Optional[Dict[str, Any]]:
-        """Returns the currently active stash with aggregated counts and sizes, if one is designated."""
+        """The active stash with aggregated counts and sizes, if one is designated."""
         query = """
             SELECT 
                 s.id, s.name, s.description, s.is_active, s.created_at, s.updated_at,

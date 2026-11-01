@@ -108,7 +108,6 @@ def handle_post_downloads_queue(
                 conn.execute(queries.POST_DOWNLOADS_QUEUE_4, (mid_int, total_files, total_bytes))
             queued_count += 1
 
-    # Add to the bottom of handle_post_downloads_queue right before return:
     if download_manager:
         if not download_manager.is_running:
             download_manager.start()

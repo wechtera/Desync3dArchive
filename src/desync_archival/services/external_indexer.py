@@ -159,7 +159,7 @@ class ExternalLibraryIndexer:
         return conn
 
     def _read_release(self, release_dir: Path, root: Path) -> tuple[list[str], list[str], list[str]]:
-        """Returns the folders to learn from, the topmost ones holding model files, and every model file."""
+        """Folders to learn from, the topmost ones holding model files, and every model file."""
         folders: list[str] = []
         holding: list[str] = []
         files: list[str] = []

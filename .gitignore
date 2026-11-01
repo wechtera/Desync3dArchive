@@ -78,3 +78,7 @@ logs/
 *.swp
 *.swo
 *~
+
+# Working notes stay on disk and out of the repository.
+docs/
+CLAUDE.md

@@ -1226,7 +1226,6 @@ export async function realignAllPaths() {
   }
 }
 
-// Add the backfill controller function:
 export async function triggerArchiveInspectionSweep() {
   const btn = document.getElementById('btn-backfill-archives');
   if (btn) {

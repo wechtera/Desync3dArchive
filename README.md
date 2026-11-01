@@ -2,10 +2,6 @@
 
 A single-user, local-first archive and asset manager for a MyMiniFactory (MMF) 3D-printing library. It discovers the models you own, catalogs them in SQLite, archives the files to a NAS vault, and builds slicer-ready folders for printing.
 
-This project replaces `scrapepage`, which stays frozen in the sibling directory for reference and rollback.
-
-**Status:** Production cut over on 2026-10-31 and runs from `~/DESYNC_Data` on code from `migration/09-cutover`, which is not merged yet. Run production commands through `scripts/production.sh`. Remaining steps are in [docs/Archeology/CUTOVER.md](docs/Archeology/CUTOVER.md). Start with [docs/Archeology/HANDOFF.md](docs/Archeology/HANDOFF.md).
-
 ## Prerequisites
 
 | Tool | Needed for | Install on macOS |
@@ -174,15 +170,10 @@ DESYNC_3D_Archival/
   scripts/      Project scripts, including link_tools.sh
   tests/        Test suite, with browser tests in tests/e2e/
   tools/        Symlinks to local installations only
-  docs/
-    Archeology/ Migration state, findings, stack decisions and step prompts
-    ai/         Project history
 ```
 
 ## Development
 
-Migration work runs one step at a time, on the branch named in [docs/Archeology/MIGRATION_PROMPTS.md](docs/Archeology/MIGRATION_PROMPTS.md). The project rules are in [docs/Archeology/README.md](docs/Archeology/README.md).
-
 This repository has no remote yet, and all commits are local.
 
-Open questions go in [docs/Archeology/Questions.md](docs/Archeology/Questions.md), and enhancement ideas go in [docs/Archeology/Enhancements.md](docs/Archeology/Enhancements.md).
+Run `./check.sh` before committing. It covers tests, lint, types and dependency audits.

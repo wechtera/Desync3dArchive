@@ -48,7 +48,7 @@ def handle_get_reconcile_status(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
-    """Returns live task progress if running, or the latest completed audit report."""
+    """Live task progress if running, or the latest completed audit report."""
     reconciler, task_mgr = _get_managers(conn)
     active_task = task_mgr.get_active_task()
 

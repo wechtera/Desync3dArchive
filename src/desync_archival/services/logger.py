@@ -122,7 +122,6 @@ class UILogHandler(logging.Handler):
 
 
 def get_ui_logs(tail: int = 200) -> List[str]:
-    """Returns the latest log lines from the in-memory ring buffer."""
     with _BUFFER_LOCK:
         if tail >= len(_UI_LOG_BUFFER):
             return list(_UI_LOG_BUFFER)
@@ -241,7 +240,6 @@ def set_logging_config(level_name: str, enabled_layers: List[str]):
 
 
 def get_logging_config() -> Dict[str, Any]:
-    """Returns the current logging configuration."""
     with _CONFIG_LOCK:
         return {
             "level": logging.getLevelName(_ACTIVE_LEVEL),

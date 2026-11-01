@@ -364,7 +364,7 @@ class MeshRenderer:
             elif vp.exists() and vp.is_file() and vp.suffix.lower() == ".stl":
                 return vp
 
-        # Check loose downloaded STLs
+        # Loose files before archives, because extracting costs real time on the NAS.
         loose_rows = conn.execute("""
             SELECT df.vault_path, df.staging_path
             FROM downloaded_files df
@@ -379,7 +379,6 @@ class MeshRenderer:
                     if c.exists() and c.is_file() and c.suffix.lower() == ".stl":
                         return c
 
-        # Check archives recorded for this model
         arc_rows = conn.execute("""
             SELECT df.file_id, df.vault_path, df.staging_path
             FROM downloaded_files df

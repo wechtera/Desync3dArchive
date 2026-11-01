@@ -14,7 +14,7 @@ def handle_get_storage_status(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
-    """Returns independent capacity, health, and mount state for both NAS and staging storage."""
+    """Capacity, health and mount state for both NAS and staging storage."""
     if not download_manager:
         return {"error": "DownloadManager instance uninitialized"}, 500
 

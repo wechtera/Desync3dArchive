@@ -506,7 +506,7 @@ def handle_post_model_render_view(
     scratch_dir: Optional[Path] = None
 
     try:
-        # Check if model has loose files in its vault folder
+        # Cheapest source first. Archives come last because they need extracting to a scratch dir.
         if model["vault_path"]:
             v_path = Path(model["vault_path"])
             if v_path.exists() and v_path.is_dir():
@@ -514,7 +514,6 @@ def handle_post_model_render_view(
             elif v_path.exists() and v_path.is_file() and v_path.suffix.lower() == ".stl":
                 candidate_stl = v_path
 
-        # Check loose downloaded STL files recorded in SQLite
         if not candidate_stl:
             file_rows = conn.execute(queries.POST_MODEL_RENDER_VIEW_2, (model_id,)).fetchall()
 
@@ -528,7 +527,6 @@ def handle_post_model_render_view(
                 if candidate_stl:
                     break
 
-        # Check inside downloaded archives (.zip, .rar, .7z)
         if not candidate_stl:
             scratch_dir = Path(tempfile.gettempdir()) / f".desync_scratch_{uuid.uuid4().hex[:12]}"
             scratch_dir.mkdir(parents=True, exist_ok=True)
