@@ -96,6 +96,11 @@ class LibraryApproveBody(RequestBody):
     ready_only: bool | None = None
 
 
+class ModelStashBody(RequestBody):
+    scale: str | None = None
+    support: str | None = None
+
+
 class ArchiveReviewBody(RequestBody):
     cards: list[dict[str, Any]] | None = None
     reviewed: bool | None = None

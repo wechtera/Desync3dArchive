@@ -50,7 +50,7 @@ class ProductionGuardTests(GuardBase):
 
     def test_default_locations_are_protected(self):
         with self.assertRaises(settings.ProductionPathError):
-            settings.check_path(REPO_ROOT.parent / "scrapepage" / "library.db")
+            settings.check_path(REPO_ROOT.parent / "scrapepage_deprecated" / "library.db")
         with self.assertRaises(settings.ProductionPathError):
             settings.check_path(Path.home() / "DESYNC_Data")
 
@@ -181,7 +181,7 @@ class ProcessRefusalTests(unittest.TestCase):
         )
 
     def test_app_refuses_to_import_with_production_data_dir(self):
-        result = self._import_app(str(REPO_ROOT.parent / "scrapepage"), "development")
+        result = self._import_app(str(REPO_ROOT.parent / "scrapepage_deprecated"), "development")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ProductionPathError", result.stderr)
 

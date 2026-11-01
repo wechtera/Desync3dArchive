@@ -149,9 +149,9 @@ Code and data are kept apart, and no data belongs in this repository.
 |---|---|
 | `~/DESYNC_Data_dev` | Development copy, safe to reset |
 | `~/DESYNC_Data` | Production |
-| `../scrapepage` | The old app's data, kept for reference. Its secrets were wiped on 2026-10-31, so reload them before running it |
+| `../scrapepage_deprecated` | Deprecated. The old app's data, kept for reference. Its secrets are wiped, so reload them before running it |
 
-Never point a development run at `../scrapepage` or `~/DESYNC_Data`.
+Never point a development run at `../scrapepage_deprecated` or `~/DESYNC_Data`.
 
 ## Project layout
 

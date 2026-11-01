@@ -3102,3 +3102,5 @@ pre, .task-log-viewer, .console-output {
 .review-row-suspect { background: rgba(224, 79, 79, 0.45); font-weight: 600; }
 .review-card-flagged { border-left: 3px solid var(--warning, #c9a227); }
 .review-card-focus { border-left-color: #4fa3e0; background: rgba(79, 163, 224, 0.1); }
+.model-source-link { display: inline-block; text-decoration: none; }
+.model-print-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }

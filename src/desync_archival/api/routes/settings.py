@@ -562,6 +562,22 @@ def handle_get_catalog_model(
     return (found, 200) if found else ({"success": False, "error": "Model not found."}, 404)
 
 
+def handle_post_catalog_model_stash(
+    conn: sqlite3.Connection,
+    model_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    data = body or {}
+    try:
+        result = catalog_browse.stash_selection(conn, model_id, str(data.get("scale") or ""), str(data.get("support") or ""))
+    except ValueError as e:
+        return {"success": False, "error": str(e)}, 409
+    log_layer("storage", logging.INFO, f"Model #{model_id}: stashed {result['added']} of {result['matched']} artifacts")
+    return result, 200
+
+
 def handle_get_model_group(
     conn: sqlite3.Connection,
     group_id: int,

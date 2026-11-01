@@ -10,6 +10,7 @@ from db_helper import create_database
 from desync_archival.services import archive_review, catalog_browse, catalog_levels
 from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.library_review import ReviewError
+from desync_archival.services.stash_service import StashService
 
 
 class LevelsCase(unittest.TestCase):
@@ -212,6 +213,37 @@ class OrphanLinkTests(BuildCase):
             self.conn.execute("INSERT INTO catalog_model_tags (catalog_model_id, tag) VALUES (9999, 'x')")
         self.assertEqual(catalog_levels.clean_orphan_links(self.conn), 2)
         self.assertEqual(self.one("SELECT COUNT(*) FROM model_group_members")[0], keep)
+
+
+class StashSelectionTests(BuildCase):
+    def setUp(self):
+        super().setUp()
+        self.conn.row_factory = sqlite3.Row
+        self.archive(self.collection, self.GHOULS)
+        self.build()
+        with self.conn:
+            self.conn.execute("INSERT INTO stashes (name, is_active) VALUES ('s', 1)")
+        self.model = catalog_browse.list_models(self.conn, "Ghoul A")["models"][0]["id"]
+
+    def stash(self, **picked):
+        with patch.object(StashService, "verify_on_storage"), \
+                patch.object(StashService, "_verify_archive_member_downloaded"):
+            return catalog_browse.stash_selection(self.conn, self.model, **picked)
+
+    def test_only_the_chosen_support_type_goes_in(self):
+        self.assertEqual(self.stash(scale="32mm", support="unsupported")["matched"], 1)
+
+    def test_no_choice_means_every_artifact(self):
+        self.assertEqual(self.stash()["matched"], 2)
+
+    def test_a_size_with_nothing_matches_nothing(self):
+        self.assertEqual(self.stash(scale="75mm")["added"], 0)
+
+    def test_no_active_stash_is_refused(self):
+        with self.conn:
+            self.conn.execute("UPDATE stashes SET is_active = 0")
+        with self.assertRaisesRegex(ValueError, "active stash"):
+            catalog_browse.stash_selection(self.conn, self.model)
 
 
 class PeekTests(unittest.TestCase):

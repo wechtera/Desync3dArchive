@@ -115,7 +115,7 @@ def allowed_hosts() -> set[str]:
 
 def protected_paths() -> list[Path]:
     _load()
-    paths = [REPO_ROOT.parent / "scrapepage", Path.home() / "DESYNC_Data"]
+    paths = [REPO_ROOT.parent / "scrapepage_deprecated", Path.home() / "DESYNC_Data"]
     configured = os.environ.get("DESYNC_PROTECTED_PATHS", "")
     paths.extend(Path(item).expanduser() for item in configured.split(":") if item.strip())
     return [path.resolve() for path in paths]

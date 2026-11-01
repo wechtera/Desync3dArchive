@@ -286,7 +286,7 @@ def build(
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, default=repo_root.parent / "scrapepage")
+    parser.add_argument("--source", type=Path, default=repo_root.parent / "scrapepage_deprecated")
     parser.add_argument("--dest", type=Path, default=Path.home() / "DESYNC_Data_dev")
     parser.add_argument(
         "--protect",

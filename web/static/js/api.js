@@ -516,6 +516,14 @@ export async function fetchCatalogModel(modelId) {
   return request(`/api/catalog-models/${modelId}`);
 }
 
+export async function stashModelSelection(modelId, payload) {
+  return request(`/api/catalog-models/${modelId}/stash`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function fetchModelGroup(groupId) {
   return request(`/api/model-groups/${groupId}`);
 }

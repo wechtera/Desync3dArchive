@@ -4,6 +4,7 @@ import sqlite3
 from typing import Any
 
 from desync_archival.services.catalog_levels import MERGED, SKIPPED
+from desync_archival.services.stash_service import StashService
 
 PAGE_SIZE = 48
 
@@ -100,6 +101,7 @@ def model_detail(conn: sqlite3.Connection, model_id: int) -> dict[str, Any] | No
         **_summary(conn, row), **(dict(first) if first else {}), "tags": tags,
         "artifacts": sorted(unique.values(), key=lambda a: (a["scale"] or "", a["filename"].lower())),
         "total_bytes": sum(a["size_bytes"] or 0 for a in unique.values()),
+        "scales": sorted({a["scale"] for a in unique.values() if a["scale"]}),
     }
 
 
@@ -115,3 +117,32 @@ def group_detail(conn: sqlite3.Connection, group_id: int) -> dict[str, Any] | No
         WHERE g.group_id = ? AND m.state NOT IN (?, ?) ORDER BY m.name COLLATE NOCASE;
     """, (group_id, MERGED, SKIPPED)).fetchall()
     return {**dict(group), "models": [_summary(conn, r) for r in rows]}
+
+
+def stash_selection(conn: sqlite3.Connection, model_id: int, scale: str = "", support: str = "") -> dict[str, Any]:
+    """Stashes the artifacts of one size and support type, not every copy of a model.
+
+    Goes in as ordinary artifact items, so export needs no new rules. An item that can't go in,
+    such as one in an archive that isn't downloaded, is counted and doesn't stop the rest.
+    """
+    service = StashService()
+    stash = service.get_active_stash(conn=conn)
+    model = model_detail(conn, model_id)
+    if not stash or not model:
+        raise ValueError("Pick an active stash first." if model else "Model not found.")
+    picked = [
+        a for a in model["artifacts"]
+        if (not scale or a["scale"] == scale) and (not support or bool(a["supported"]) == (support == "supported"))
+    ]
+    added, skipped = 0, []
+    for artifact in picked:
+        member = artifact["archive_member_id"]
+        try:
+            service.add_to_stash(
+                stash["id"], "archive_member" if member else "file", artifact["collection_id"],
+                file_id=artifact["file_id"], submodel_id=artifact["submodel_id"], archive_member_id=member, conn=conn,
+            )
+            added += 1
+        except (ValueError, sqlite3.Error) as e:
+            skipped.append(f"{artifact['filename']}: {e}")
+    return {"success": True, "stash": stash["name"], "matched": len(picked), "added": added, "skipped": skipped[:5]}

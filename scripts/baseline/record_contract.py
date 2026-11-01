@@ -466,7 +466,7 @@ def main() -> int:
     parser.add_argument("--accept", nargs="+", default=[], help="Rewrite only these snapshots from the current app")
     parser.add_argument("--measure", type=Path, help="Write the migrated app's timings to this file")
     parser.add_argument("--dest", type=Path, default=Path.home() / "DESYNC_Data_dev")
-    parser.add_argument("--source-db", type=Path, default=REPO_ROOT.parent / "scrapepage" / "library.db")
+    parser.add_argument("--source-db", type=Path, default=REPO_ROOT.parent / "scrapepage_deprecated" / "library.db")
     args = parser.parse_args()
     dest = args.dest.resolve()
     with preserved_dev_storage(dest):

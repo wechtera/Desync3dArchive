@@ -655,8 +655,8 @@ test.describe('settings', () => {
   test('a model leads to its group, and a variant leads back to a model', async ({ page }) => {
     const variant = { ...browseModel, id: 8, name: 'Ghul B' };
     await page.route('**/api/catalog-models?*', (route) => route.fulfill({ json: { models: [browseModel], total: 1, page: 1, page_size: 48 } }));
-    await page.route('**/api/catalog-models/7', (route) => route.fulfill({ json: { ...browseModel, tags: ['undead'], artifacts: [{ id: 1, filename: '32mm_Ghul_A.stl', scale: '32mm', supported: 0, hollow: 0, size_bytes: 10, file_id: 5, archive_member_id: 6, collection_id: 3 }] } }));
-    await page.route('**/api/catalog-models/8', (route) => route.fulfill({ json: { ...variant, tags: [], artifacts: [] } }));
+    await page.route('**/api/catalog-models/7', (route) => route.fulfill({ json: { ...browseModel, tags: ['undead'], scales: ['32mm'], artifacts: [{ id: 1, filename: '32mm_Ghul_A.stl', scale: '32mm', supported: 0, hollow: 0, size_bytes: 10, file_id: 5, archive_member_id: 6, collection_id: 3 }] } }));
+    await page.route('**/api/catalog-models/8', (route) => route.fulfill({ json: { ...variant, tags: [], scales: [], artifacts: [] } }));
     await page.route('**/api/model-groups/4', (route) => route.fulfill({ json: { id: 4, name: 'Ghul', models: [browseModel, variant] } }));
     await page.goto('/');
     await page.evaluate(() => window.switchTab('browse'));
@@ -665,6 +665,10 @@ test.describe('settings', () => {
 
     await expect(page.locator('#model-view-facts')).toContainText('Maker');
     await expect(page.locator('#browse-model-view')).toContainText('undead');
+    await expect(page.locator('#model-stash-selection')).toHaveText('Stash 1 Artifacts');
+    await page.locator('#model-stash-support').selectOption('supported');
+    await expect(page.locator('#model-stash-selection')).toHaveText('Stash 0 Artifacts');
+    await page.locator('#model-stash-support').selectOption('');
     await page.locator('.artifact-stash').click();
     await expect(page.locator('#modal-add-to-stash-backdrop')).toBeVisible();
     await page.evaluate(() => { document.getElementById('modal-add-to-stash-backdrop').style.display = 'none'; });

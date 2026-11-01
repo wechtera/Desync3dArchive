@@ -5,12 +5,14 @@
 
 import { formatBytes } from '../utils.js';
 import { html, imageFallback, nothing, render, safeUrl } from '../template.js';
-import { fetchCatalogModel, fetchCatalogModels, fetchModelGroup } from '../api.js';
+import { fetchCatalogModel, fetchCatalogModels, fetchModelGroup, stashModelSelection } from '../api.js';
+import { showToast } from './settings.js';
 
 const SEARCH_DELAY_MS = 250;
 
 let page = 1;
 let searchTimer = null;
+let shownModel = null;
 
 function card(model, onClick) {
   return html`
@@ -48,8 +50,36 @@ function artifactLine(artifact) {
   `;
 }
 
+function selection() {
+  return {
+    scale: document.getElementById('model-stash-scale')?.value || '',
+    support: document.getElementById('model-stash-support')?.value || '',
+  };
+}
+
+function countSelection() {
+  const { scale, support } = selection();
+  const count = shownModel.artifacts.filter(a => (!scale || a.scale === scale)
+    && (!support || Boolean(a.supported) === (support === 'supported'))).length;
+  const button = document.getElementById('model-stash-selection');
+  button.textContent = `Stash ${count} Artifacts`;
+  button.disabled = !count;
+}
+
+async function stashSelection() {
+  try {
+    const res = await stashModelSelection(shownModel.id, selection());
+    const left = res.matched - res.added;
+    showToast(`Added ${res.added} to ${res.stash}.${left ? ` ${left} couldn't be added.` : ''}`);
+    window.checkHealth?.();
+  } catch (err) {
+    alert(`Could not stash: ${err.message}`);
+  }
+}
+
 export async function openBrowseModel(modelId) {
   const model = await fetchCatalogModel(modelId);
+  shownModel = model;
   document.getElementById('model-view-title').textContent = model.name;
   const facts = [
     ['Creator', model.designer_name],
@@ -71,11 +101,23 @@ export async function openBrowseModel(modelId) {
               <button type="button" class="browse-link browse-group-link" @click=${() => openBrowseGroup(g.id)}>${g.name}</button>
             `)}</p>
           ` : nothing}
-          ${model.url ? html`<p class="font-sm"><a href=${safeUrl(model.url)} target="_blank" rel="noopener noreferrer">View source page</a></p>` : nothing}
+          ${model.url ? html`<p><a class="btn-pill font-xs model-source-link" href=${safeUrl(model.url)} target="_blank" rel="noopener noreferrer">View Source Page</a></p>` : nothing}
           ${model.tags.length ? html`<div class="model-view-tags">${model.tags.map(t => html`<span class="badge font-xs">${t}</span>`)}</div>` : nothing}
         </div>
       </div>
       ${model.artifacts.length ? html`
+        <div class="model-print-choice">
+          <select id="model-stash-scale" aria-label="Scale" @change=${countSelection}>
+            <option value="">All sizes</option>
+            ${model.scales.map(s => html`<option value=${s}>${s}</option>`)}
+          </select>
+          <select id="model-stash-support" aria-label="Support" @change=${countSelection}>
+            <option value="">Supported and unsupported</option>
+            <option value="supported">Supported</option>
+            <option value="unsupported">Unsupported</option>
+          </select>
+          <button type="button" class="btn-pill btn-action-primary font-xs" id="model-stash-selection" @click=${stashSelection}>Stash ${model.artifacts.length} Artifacts</button>
+        </div>
         <table class="table-compact">
           <thead><tr><th>Artifact</th><th>Print</th><th>Size</th><th>Stash</th></tr></thead>
           <tbody>${model.artifacts.map(artifactLine)}</tbody>
