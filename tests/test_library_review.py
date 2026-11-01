@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from desync_archival.services import library_review
+from desync_archival.services import catalog_review, library_review
 from desync_archival.services.library_review import ReviewError
 from tests.test_library_scan import SOLID, ScanCase
 
@@ -305,6 +305,73 @@ class LevelsTests(ReviewCase):
         self.indexer.rescan_known(1)
         self.assertEqual(self.count("SELECT COUNT(*) FROM model_artifacts WHERE filename = 'ring_a.stl'"), 0)
         self.assertEqual(self.count("SELECT COUNT(*) FROM model_artifacts WHERE filename = 'ring_b.stl'"), 1)
+
+
+class EditAddedTests(ReviewCase):
+    def setUp(self):
+        super().setUp()
+        self.add_all()
+        self.conn = self.connect()
+        self.addCleanup(self.conn.close)
+
+    def view(self):
+        return catalog_review.view(self.conn, 1, self.release)
+
+    def card(self, cards, name):
+        return next(c for c in cards if c["name"] == name)
+
+    def test_added_models_can_be_renamed_and_the_collection_follows(self):
+        cards = catalog_review.view(self.conn, 1, self.release)["cards"]
+        self.card(cards, "Rings")["name"] = "Magic Rings"
+        catalog_review.save(self.conn, 1, self.release, cards)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE name = 'Magic Rings'"), 1)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE name = 'Magic Rings'"), 1)
+
+    def test_a_split_keeps_the_id_and_a_rescan_does_not_undo_it(self):
+        cards = catalog_review.view(self.conn, 1, self.release)["cards"]
+        rings = self.card(cards, "Rings")
+        moved = next(p for p in rings["paths"] if p.endswith("ring_b.stl"))
+        rings["paths"].remove(moved)
+        catalog_review.save(self.conn, 1, self.release, [*cards, {"name": "Ring B", "paths": [moved]}])
+        self.indexer.rescan_known(1)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM model_artifacts WHERE filename = 'ring_b.stl'"), 1)
+        owner = self.rows("SELECT m.name FROM models m JOIN model_artifacts a ON a.model_id = m.id WHERE a.filename = 'ring_b.stl'")
+        self.assertEqual(owner[0][0], "Ring B")
+        self.assertEqual(self.rows("SELECT id FROM models WHERE name = 'Rings'")[0][0], int(rings["key"]))
+
+    def test_a_merge_redirects_the_old_id(self):
+        cards = catalog_review.view(self.conn, 1, self.release)["cards"]
+        rings, vox = self.card(cards, "Rings"), self.card(cards, "Voxshax")
+        vox["paths"] += rings["paths"]
+        catalog_review.save(self.conn, 1, self.release, [c for c in cards if c is not rings])
+        row = self.rows("SELECT state, merged_into FROM models WHERE id = ?", int(rings["key"]))[0]
+        self.assertEqual(tuple(row), ("merged", int(vox["key"])))
+
+    def test_a_file_with_no_card_is_refused(self):
+        cards = catalog_review.view(self.conn, 1, self.release)["cards"]
+        with self.assertRaisesRegex(ReviewError, "no card"):
+            catalog_review.save(self.conn, 1, self.release, cards[1:])
+
+
+class RenameTests(ReviewCase):
+    def test_a_renamed_folder_is_flagged_and_a_link_keeps_the_id(self):
+        self.add_all()
+        old = self.rows("SELECT id FROM collections WHERE name = 'Rings'")[0][0]
+        rings = self.root / self.release / "Rings"
+        rings.rename(self.root / self.release / "Circlets")
+        self.indexer.rescan_known(1)
+        self.assertEqual(self.rows("SELECT is_active FROM collections WHERE id = ?", old)[0][0], 0)
+        self.indexer.preview_library(1)
+        cards = self.view()["cards"]
+        moved = next(c for c in cards if c["name"] == "Circlets")
+        self.assertIn(f"(#{old})", " ".join(moved["flags"]))
+        moved["relink"] = old
+        self.save(cards)
+        self.add_all()
+        row = self.rows("SELECT is_active, external_key FROM collections WHERE id = ?", old)[0]
+        self.assertEqual(row[0], 1)
+        self.assertTrue(row[1].endswith("circlets"))
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE name = 'Circlets'"), 0)
 
 
 class CarveTests(unittest.TestCase):

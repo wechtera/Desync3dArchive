@@ -14,6 +14,7 @@ from desync_archival.services import (
     data_bundle,
     login,
     secret_store,
+    tags,
 )
 
 
@@ -71,6 +72,8 @@ def main() -> int:
     repeek = commands.add_parser("repeek-broken")
     repeek.add_argument("--confirm-production", action="store_true")
     commands.add_parser("backup")
+    tidy = commands.add_parser("clean-tags")
+    tidy.add_argument("--confirm-production", action="store_true")
     export = commands.add_parser("export")
     export.add_argument("destination", type=Path)
     export.add_argument("--with-secrets", action="store_true")
@@ -124,6 +127,16 @@ def main() -> int:
             print(archive_peeker.repeek_broken(db_path))
         elif args.command == "backup":
             print(f"backup written: {backup.create_backup(db_path, full=True)}")
+        elif args.command == "clean-tags":
+            if settings.is_production() and not args.confirm_production:
+                raise migrations.MigrationError("Refusing to clean tags in production without --confirm-production")
+            refuse_if_app_running()
+            print(f"backup written: {backup.create_backup(db_path)}")
+            conn = sqlite3.connect(db_path)
+            try:
+                print(tags.clean_up(conn))
+            finally:
+                conn.close()
         elif args.command == "export":
             print(data_bundle.export_bundle(db_path, args.destination.resolve(), args.with_secrets))
         elif args.command == "import":

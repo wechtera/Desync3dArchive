@@ -3297,3 +3297,16 @@ select, input[type="text"] { font-size: 0.9rem; }
 .audit-detail { max-width: 52vw; max-height: 220px; overflow: auto; font-size: 0.78rem; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); }
 .import-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) auto; gap: 12px; align-items: end; }
 .import-form label { display: flex; flex-direction: column; gap: 4px; color: var(--text-dim); font-size: 0.85rem; }
+
+/* Tags */
+#tags-page { margin-bottom: 24px; }
+.tag-toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.tag-toolbar input { flex: 1; min-width: 180px; }
+.tag-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.tag-chip { display: inline-flex; align-items: center; gap: 4px; }
+.tag-remove { background: none; border: 0; color: var(--text-dim); cursor: pointer; font: inherit; padding: 0 2px; }
+.tag-remove:hover { color: var(--danger); }
+.tag-picker { display: flex; gap: 6px; margin: 8px 0; align-items: center; max-width: 340px; }
+.tag-picker input { flex: 1; min-width: 0; height: 30px; padding: 4px 8px; }
+.preview-edit-added { margin-left: 8px; }
+#view-stashes { padding-top: 0; }

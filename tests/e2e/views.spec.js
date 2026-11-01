@@ -783,7 +783,8 @@ test.describe('settings', () => {
     await page.route('**/api/audit-history?*', (route) => route.fulfill({ json: { actions: ['delete_orphans'], entries: [{ id: 1, action: 'delete_orphans', dry_run: 1, outcome: 'ok', detail: HOSTILE, created_at: '2026-10-31 12:00:00' }] } }));
     await page.goto('/#settings');
     await page.locator('[data-settings-tab-btn="audit"]').click();
-    await expect(page.locator('#audit-table')).toContainText('Dry run');
+    await expect(page.locator('#audit-history-panel #audit-table')).toContainText('Dry run');
+    await expect(page.locator('#audit-panel')).not.toContainText('Dry run');
     await expect(page.locator('body img[src="x"]')).toHaveCount(0);
   });
 
@@ -799,6 +800,24 @@ test.describe('settings', () => {
     await page.locator('#import-path').fill('/tmp/dragon.stl');
     await page.locator('#btn-import-file').click();
     await expect.poll(() => sent?.path).toBe('/tmp/dragon.stl');
+  });
+
+  test('tags are managed on their own page under stashes', async ({ page }) => {
+    const sent = [];
+    await page.route('**/api/tags*', (route) => {
+      if (route.request().method() === 'POST') {
+        sent.push(route.request().postDataJSON());
+        return route.fulfill({ json: { success: true } });
+      }
+      return route.fulfill({ json: { tags: [{ name: 'undead', uses: 3 }], total: 1 } });
+    });
+    await page.goto('/');
+    await page.evaluate(() => window.switchTab('stashes'));
+    await page.locator('#stash-tab-tags').click();
+    await expect(page.locator('#tags-table')).toContainText('undead');
+    await page.locator('#tag-new').fill('Big Boss');
+    await page.locator('#btn-tag-create').click();
+    await expect.poll(() => sent[0]?.action).toBe('create');
   });
 
   test('manage tabs group downloads and external sources', async ({ page }) => {

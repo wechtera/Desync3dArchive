@@ -5,7 +5,9 @@
 
 import { formatBytes } from '../utils.js';
 import { html, imageFallback, nothing, render, safeUrl } from '../template.js';
-import { fetchCatalogModel, fetchCatalogModels, fetchModelGroup, stashModelSelection } from '../api.js';
+import {
+  fetchCatalogModel, fetchCatalogModels, fetchModelGroup, fetchTags, postGroupTag, postModelTag, stashModelSelection,
+} from '../api.js';
 import { ensureRenderStyles, renderSTLViewDropdown } from './models.js';
 import { showToast } from './settings.js';
 
@@ -52,6 +54,36 @@ function artifactLine(artifact) {
       <td><button type="button" class="btn-pill font-xs artifact-stash" @click=${() => stashArtifact(artifact)}>+ Stash</button></td>
     </tr>
   `;
+}
+
+// Hints only, and the server refuses anything else: a new tag starts on the Tags page.
+function tagPicker(add, done) {
+  const hint = async (event) => {
+    const { tags } = await fetchTags(event.target.value.trim(), true);
+    render(tags.map(t => html`<option value=${t.name}></option>`), document.getElementById('tag-hints'));
+  };
+  const submit = async () => {
+    const box = document.getElementById('tag-add');
+    if (!box.value.trim()) return;
+    try {
+      await add(box.value.trim());
+      await done();
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  return html`
+    <div class="tag-picker">
+      <input type="text" id="tag-add" list="tag-hints" placeholder="Add a tag" aria-label="Add a tag" spellcheck="false" @input=${hint}>
+      <datalist id="tag-hints"></datalist>
+      <button type="button" class="btn-pill font-xs" id="tag-add-button" @click=${submit}>Add</button>
+    </div>
+  `;
+}
+
+async function removeTag(modelId, name) {
+  await postModelTag(modelId, { name, action: 'remove' });
+  await openBrowseModel(modelId);
 }
 
 function selection() {
@@ -113,7 +145,12 @@ export async function openBrowseModel(modelId) {
             `)}</p>
           ` : nothing}
           ${model.url ? html`<p><a class="btn-pill font-xs model-source-link" href=${safeUrl(model.url)} target="_blank" rel="noopener noreferrer">View Source Page</a></p>` : nothing}
-          ${model.tags.length ? html`<div class="model-view-tags">${model.tags.map(t => html`<span class="badge font-xs">${t}</span>`)}</div>` : nothing}
+          <div class="model-view-tags" id="model-tags">
+            ${model.tags.map(t => html`
+              <span class="badge font-xs tag-chip">${t}<button type="button" class="tag-remove" aria-label=${`Remove ${t}`} @click=${() => removeTag(model.id, t)}>×</button></span>
+            `)}
+          </div>
+          ${tagPicker((name) => postModelTag(model.id, { name, action: 'add' }), () => openBrowseModel(model.id))}
         </div>
       </div>
       ${model.artifacts.length ? html`
@@ -144,6 +181,7 @@ export async function openBrowseGroup(groupId) {
   const group = await fetchModelGroup(groupId);
   document.getElementById('model-view-title').textContent = group.name;
   render(html`
+    ${tagPicker((name) => postGroupTag(group.id, { name }), () => showToast(`Added to ${group.models.length} models.`))}
     <div class="browse-grid" id="browse-group-view">
       ${group.models.map(m => card(m, () => openBrowseModel(m.id)))}
     </div>

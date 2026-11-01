@@ -1,3 +1,4 @@
+import './views/tags.js';
 import { loadBrowse } from './views/browse.js';
 import { bindActions } from './actions.js';
 import {

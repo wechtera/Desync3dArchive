@@ -207,7 +207,7 @@ export function switchSettingsTab(tab) {
 }
 
 export async function loadAuditHistory(action = '') {
-  const panel = document.getElementById('audit-panel');
+  const panel = document.getElementById('audit-history-panel');
   if (!panel) return;
   try {
     const { entries, actions } = await fetchAuditHistory(action);

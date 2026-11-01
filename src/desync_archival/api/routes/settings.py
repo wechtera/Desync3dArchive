@@ -22,12 +22,14 @@ from desync_archival.services import (
     audit,
     auth_service,
     catalog_browse,
+    catalog_review,
     file_import,
     image_worker,
     inactive_log,
     jobs,
     library_review,
     secret_store,
+    tags,
 )
 from desync_archival.services.external_indexer import (
     FULL,
@@ -592,6 +594,95 @@ def handle_get_model_group(
 ) -> tuple[dict[str, Any], int]:
     found = catalog_browse.group_detail(conn, group_id)
     return (found, 200) if found else ({"success": False, "error": "Group not found."}, 404)
+
+
+def _tag_action(action) -> tuple[dict[str, Any], int]:
+    try:
+        return {"success": True, "result": action()}, 200
+    except tags.TagRefused as e:
+        return {"success": False, "error": str(e)}, 400
+
+
+def handle_get_tags(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    query = params or {}
+    limit = tags.SUGGESTION_LIMIT if (query.get("hints") or [""])[0] else tags.PAGE_LIMIT
+    return tags.listing(conn, (query.get("q") or [""])[0], limit), 200
+
+
+def handle_post_tags(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    data = body or {}
+    name, action = str(data.get("name") or ""), str(data.get("action") or "")
+    if action == "create":
+        return _tag_action(lambda: tags.create(conn, name))
+    if action == "rename":
+        return _tag_action(lambda: tags.rename(conn, name, str(data.get("new_name") or "")))
+    if action == "delete":
+        return _tag_action(lambda: tags.delete(conn, name))
+    return {"success": False, "error": f"Unknown action '{action}'"}, 400
+
+
+def handle_post_model_tags(
+    conn: sqlite3.Connection,
+    model_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    data = body or {}
+    name = str(data.get("name") or "")
+    if data.get("action") == "remove":
+        return _tag_action(lambda: tags.remove_from_model(conn, model_id, name))
+    return _tag_action(lambda: tags.add_to_model(conn, model_id, name))
+
+
+def handle_post_group_tags(
+    conn: sqlite3.Connection,
+    group_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    return _tag_action(lambda: tags.add_to_group(conn, group_id, str((body or {}).get("name") or "")))
+
+
+def handle_get_catalog_review(
+    conn: sqlite3.Connection,
+    library_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    try:
+        return catalog_review.view(conn, library_id, ((params or {}).get("name") or [""])[0]), 200
+    except library_review.ReviewError as e:
+        return {"success": False, "error": str(e)}, 409
+
+
+def handle_post_catalog_review(
+    conn: sqlite3.Connection,
+    library_id: int,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    data = body or {}
+    release = str(data.get("release") or "")
+    try:
+        result = catalog_review.save(conn, library_id, release, data.get("cards") or [])
+    except library_review.ReviewError as e:
+        return {"success": False, "error": str(e)}, 409
+    log_layer("storage", logging.INFO, f"Library #{library_id}: added models in {release} changed: {result}")
+    return result, 200
 
 
 def handle_post_import_file(

@@ -19,6 +19,8 @@ ADDED = "added"
 GONE = "gone"
 
 NEW_SINCE_REVIEW = "New since your review"
+RENAME_MIN_FILES = 2  # One shared file name like body.stl proves nothing.
+RENAME_SHARE = 0.8
 DEFAULT_CATEGORY = "Miniatures"
 
 
@@ -145,7 +147,7 @@ def write_candidates(
             queries.INSERT_LIBRARY_CANDIDATES,
             (library_id, run_id, rel_path, release, card["name"], card["category"], json.dumps(paths),
              json.dumps(carved[card["key"]]), SKIPPED if card.get("skip") else PROPOSED,
-             card.get("group") or "", json.dumps(card.get("tags") or [])),
+             card.get("group") or "", json.dumps(card.get("tags") or []), card.get("relink")),
         )
 
 
@@ -174,6 +176,7 @@ def _clean(cards: list[dict], paths: set[str], locked: set[str], release: str, t
             "key": key, "name": name, "category": str(card.get("category") or "").strip() or DEFAULT_CATEGORY,
             "paths": claimed, "skip": bool(card.get("skip")), "flags": [str(f) for f in card.get("flags") or []],
             "group": str(card.get("group") or "").strip(), "tags": [str(t) for t in card.get("tags") or []],
+            "relink": int(card["relink"]) if card.get("relink") else None,
         })
     return clean
 
@@ -249,6 +252,25 @@ def reset(conn: sqlite3.Connection, library_id: int, release: str) -> dict[str, 
         )
         write_candidates(conn, library_id, latest[0], release, cards, set(tree["files"]))
     return {"success": True, "cards": len(cards)}
+
+
+def flag_renames(conn: sqlite3.Connection, library_id: int, report: dict[str, Any], trees: dict[str, dict]) -> None:
+    """A folder rename looks like a new model and a lost one. Matching files suggest the link."""
+    lost = {
+        row[0]: (row[1], {r[0] for r in conn.execute(queries.SELECT_COLLECTION_FILENAMES, (row[0],)).fetchall()})
+        for row in conn.execute(queries.SELECT_INACTIVE_LINKED, (library_id,)).fetchall()
+    }
+    lost = {key: value for key, value in lost.items() if len(value[1]) >= RENAME_MIN_FILES}
+    if not lost:
+        return
+    for entry in report["releases"]:
+        files = trees.get(entry["name"], {}).get("files", [])
+        for item in entry["new"]:
+            names = {f.rpartition("/")[2].lower() for f in files if any(f.startswith(f"{d}/") for d in item["folders"])}
+            for collection_id, (name, old) in lost.items():
+                if names and len(names & old) / len(names | old) >= RENAME_SHARE:
+                    item.setdefault("flags", []).append(f"Looks like a rename of {name} (#{collection_id})")
+                    break
 
 
 def merge_preview(conn: sqlite3.Connection, library_id: int, run_id: int, report: dict[str, Any], trees: dict[str, dict]) -> set[str]:

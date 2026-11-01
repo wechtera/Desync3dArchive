@@ -401,10 +401,10 @@ class ExternalLibraryIndexer:
                 tags.update(scales)
                 if category == "Busts":
                     tags.add("bust")
-                # Add only. A repeat is ignored by a trigger, and tags are never removed.
+                # Add only. Triggers ignore a repeat, and anything a person took off.
                 conn.executemany(
                     queries.INSERT_COLLECTION_TAGS,
-                    [(model_id, tag.strip()) for tag in tags if tag.strip()],
+                    [(model_id, catalog_levels.clean_tag(tag)) for tag in tags if tag.strip()],
                 )
                 self._record_job(conn, model_id, str(model_dir), len(found), sum(size for _, size, _ in found))
 
@@ -626,6 +626,7 @@ class ExternalLibraryIndexer:
                 conn.execute(queries.DELETE_LIBRARY_CANDIDATES_BY_LIBRARY_ID, (library_id, PROPOSED))
                 for name, tree in trees.items():
                     library_review.save_tree(conn, library_id, run_id, name, tree)
+                library_review.flag_renames(conn, library_id, report, trees)
                 reviewed = library_review.merge_preview(conn, library_id, run_id, report, trees)
                 decided = {
                     r[0] for r in conn.execute(
@@ -724,6 +725,11 @@ class ExternalLibraryIndexer:
                         queries.SELECT_COLLECTIONS_BY_SOURCE_VAULT_PATH,
                         (key, str(root / folders[0])),
                     ).fetchone()
+                    if candidate["relink_id"]:
+                        # A confirmed rename: same model, same ID, new home.
+                        existing = conn.execute(queries.SELECT_COLLECTION_BY_ID, (candidate["relink_id"],)).fetchone()
+                        with conn:
+                            conn.execute(queries.DELETE_MODEL_FOLDERS, (candidate["relink_id"],))
                     if existing and existing["external_key"] != key:
                         with conn:
                             conn.execute(queries.UPDATE_COLLECTIONS_EXTERNAL_KEY_BY_ID, (key, existing["id"]))

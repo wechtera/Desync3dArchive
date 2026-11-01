@@ -145,7 +145,7 @@ INSERT_LIBRARY_CANDIDATES = (
 UPDATE_LIBRARY_CANDIDATES_STATUS_BY_LIBRARY_ID_V2 = "UPDATE library_candidates SET status = ? WHERE library_id = ? AND status = ?;"
 
 SELECT_LIBRARY_CANDIDATES_BY_LIBRARY_ID = (
-    "SELECT id, rel_path, name, category, folders_json, exclude_json, group_name, tags_json, release_name"
+    "SELECT id, rel_path, name, category, folders_json, exclude_json, group_name, tags_json, release_name, relink_id"
     " FROM library_candidates"
     " WHERE library_id = ? AND status = ? ORDER BY rel_path;"
 )
@@ -166,3 +166,6 @@ SELECT_COLLECTIONS_BY_LIBRARY_ID_SOURCE = """
 COUNT_COLLECTIONS_BY_LIBRARY_ID_V2 = "SELECT COUNT(*) FROM collections WHERE library_id = ?;"
 
 SELECT_EXTERNAL_LIBRARIES_BY_ID_V2 = "SELECT id, name, path FROM external_libraries WHERE id = ?;"
+
+SELECT_COLLECTION_BY_ID = "SELECT * FROM collections WHERE id = ?;"
+DELETE_MODEL_FOLDERS = "DELETE FROM library_model_folders WHERE model_id = ?;"

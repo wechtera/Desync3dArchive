@@ -30,7 +30,7 @@ DELETE_LIBRARY_CANDIDATES_BY_LIBRARY_ID = "DELETE FROM library_candidates WHERE 
 
 INSERT_LIBRARY_CANDIDATES = (
     "INSERT INTO library_candidates (library_id, run_id, rel_path, release_name, name, category, folders_json,"
-    " exclude_json, status, group_name, tags_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
+    " exclude_json, status, group_name, tags_json, relink_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"
 )
 
 SELECT_LIBRARY_SCAN_RUNS_BY_LIBRARY_ID = (
@@ -45,3 +45,10 @@ UPDATE_LIBRARY_CANDIDATES_STATUS_BY_LIBRARY_ID = "UPDATE library_candidates SET 
 COUNT_LIBRARY_CANDIDATES_BY_LIBRARY_ID = "SELECT COUNT(*) FROM library_candidates WHERE library_id = ? AND status = ?;"
 
 SELECT_LIBRARY_CANDIDATES_REL_PATH_BY_LIBRARY_ID = "SELECT rel_path FROM library_candidates WHERE library_id = ? AND status IN (?, ?);"
+
+
+SELECT_INACTIVE_LINKED = """
+    SELECT c.id, c.name FROM collections c
+    WHERE c.library_id = ? AND c.source = 'external' AND c.is_active = 0;
+"""
+SELECT_COLLECTION_FILENAMES = "SELECT lower(filename) FROM model_files WHERE model_id = ?;"

@@ -49,6 +49,16 @@ add_route(router, "GET", "/api/catalog-models/{model_id:int}", with_path_id(hand
 add_route(router, "POST", "/api/catalog-models/{model_id:int}/stash",
           with_path_id(handlers.handle_post_catalog_model_stash, "model_id"), schemas.ModelStashBody)
 add_route(router, "GET", "/api/model-groups/{group_id:int}", with_path_id(handlers.handle_get_model_group, "group_id"))
+add_route(router, "GET", "/api/tags", plain(handlers.handle_get_tags))
+add_route(router, "POST", "/api/tags", plain(handlers.handle_post_tags), schemas.TagBody)
+add_route(router, "POST", "/api/catalog-models/{model_id:int}/tags",
+          with_path_id(handlers.handle_post_model_tags, "model_id"), schemas.TagBody)
+add_route(router, "POST", "/api/model-groups/{group_id:int}/tags",
+          with_path_id(handlers.handle_post_group_tags, "group_id"), schemas.TagBody)
+add_route(router, "GET", "/api/settings/libraries/{library_id:int}/catalog-review",
+          with_path_id(handlers.handle_get_catalog_review, "library_id"))
+add_route(router, "POST", "/api/settings/libraries/{library_id:int}/catalog-review",
+          with_path_id(handlers.handle_post_catalog_review, "library_id"), schemas.LibraryReviewBody)
 add_route(router, "POST", "/api/import-file", plain(handlers.handle_post_import_file), schemas.ImportFileBody)
 add_route(router, "GET", "/api/audit-history", plain(handlers.handle_get_audit_history))
 add_route(router, "GET", "/api/backups", with_tasks(handlers.handle_get_backups))

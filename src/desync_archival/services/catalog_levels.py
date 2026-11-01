@@ -39,6 +39,9 @@ def sync_loose_artifacts(conn: sqlite3.Connection, model_id: int, name: str, roo
     )
     file_ids = dict(conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID, (model_id,)).fetchall())
     by_key = dict(conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID_V2, (model_id,)).fetchall())
+    # By file, not by model: a review can move an artifact to another model, and a rescan must not
+    # put a second copy back on this one.
+    existing = {r[1]: r[0] for r in conn.execute(queries.SELECT_LOOSE_ARTIFACTS_OF_COLLECTION, (model_id,)).fetchall()}
     seen = set()
     for path, size, _ in found:
         if not path.name.lower().endswith(model_resolver.PRINTABLE):
@@ -49,16 +52,16 @@ def sync_loose_artifacts(conn: sqlite3.Connection, model_id: int, name: str, roo
         if file_id is None:
             continue
         seen.add(file_id)
+        if file_id in existing:
+            continue
         scale, supported, hollow = _attributes(rel_path)
         conn.execute(
             queries.INSERT_MODEL_ARTIFACTS,
             (model_id, file_id, rel_path, path.name, size, scale, supported, hollow),
         )
-    for row in conn.execute(
-        queries.SELECT_MODEL_ARTIFACTS_BY_MODEL_ID, (model_id,)
-    ).fetchall():
-        if row[1] not in seen:
-            conn.execute(queries.DELETE_MODEL_ARTIFACTS_BY_ID, (row[0],))
+    for file_id, artifact_id in existing.items():
+        if file_id not in seen:
+            conn.execute(queries.DELETE_MODEL_ARTIFACTS_BY_ID, (artifact_id,))
 
 
 def file_under_release(
@@ -101,7 +104,7 @@ def _group_id(conn: sqlite3.Connection, collection_id: int, name: str) -> int:
 
 def clean_tag(tag: str) -> str:
     # One word only: a tag from any source with spaces rolls into the dashed form.
-    return re.sub(r"\s+", "-", tag.strip().lower())
+    return re.sub(r"[\s-]+", "-", tag.strip().lower()).strip("-")
 
 
 def _add_artifacts(conn: sqlite3.Connection, model_id: int, entries: list[sqlite3.Row]) -> None:

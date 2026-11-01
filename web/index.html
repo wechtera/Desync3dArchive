@@ -595,7 +595,12 @@
 
   <!-- View 5: Stashes Workspace -->
   <div id="view-stashes" style="display:none;">
-    <div class="stash-layout-container">
+    <div class="sub-tabs" role="tablist" aria-label="Stash sections">
+      <button class="sub-btn active" id="stash-tab-stashes" data-click="switchStashSection" data-args='["stashes"]'>Stashes</button>
+      <button class="sub-btn" id="stash-tab-tags" data-click="switchStashSection" data-args='["tags"]'>Tags</button>
+    </div>
+    <div id="tags-page" style="display:none;"></div>
+    <div class="stash-layout-container" id="stash-section">
       <aside class="stash-sidebar">
         <div class="stash-sidebar-header">
           <div>
@@ -803,7 +808,7 @@
       <!-- Card 4: Diagnostic Logging & Subsystem Layers -->
       <div class="settings-panel" id="backups-panel" data-settings-tab="backups" hidden></div>
 
-      <div class="settings-panel" id="audit-panel" data-settings-tab="audit" hidden></div>
+      <div class="settings-panel" id="audit-history-panel" data-settings-tab="audit" hidden></div>
 
       <div class="settings-panel" data-settings-tab="logging" hidden>
         <div class="settings-panel-header">

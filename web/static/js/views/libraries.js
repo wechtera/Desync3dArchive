@@ -15,6 +15,8 @@ import {
   fetchLibraryRelease,
   saveLibraryReview,
   fetchArchiveQueue,
+  fetchCatalogReview,
+  saveCatalogReview,
   importFile,
   fetchArchiveReview,
   saveArchiveReview,
@@ -41,7 +43,7 @@ function flaggedUnreviewed(report) {
 
 // Unreviewed trouble first, so the job shrinks from the top as releases get done.
 function reviewQueue(report) {
-  const worth = (report?.releases || []).filter(r => r.new.length || r.overlaps.length || r.empty.length || r.low_confidence.length);
+  const worth = (report?.releases || []).filter(r => r.new.length || r.added || r.known || r.overlaps.length || r.empty.length || r.low_confidence.length);
   return [...worth].sort((a, b) =>
     Number(a.reviewed) - Number(b.reviewed)
     || (flagsIn(b) + b.low_confidence.length) - (flagsIn(a) + a.low_confidence.length)
@@ -323,6 +325,7 @@ async function loadLibraryPreview(lib) {
                 <td>${r.new.length ? html`<input type="checkbox" class="preview-release-check" data-release=${r.name} checked>` : nothing}</td>
                 <td>
                   ${r.new.length ? html`<button type="button" class="link-btn preview-release-open" data-release=${r.name} @click=${() => openReview(lib, r.name)}>${r.name}</button>` : r.name}
+                  ${r.added || r.known ? html`<button type="button" class="btn-pill font-xs preview-edit-added" @click=${() => openAddedReview(lib, r.name)}>Edit Added</button>` : nothing}
                   ${r.new.length ? html`
                     <details class="preview-models">
                       <summary>${r.new.length} models</summary>
@@ -463,6 +466,13 @@ function concernOf(flag) {
       ask: `May be a piece of ${part[1]}, not its own model. If so, merge it. If it's its own design, leave it.`,
     };
   }
+  const rename = flag.match(/^Looks like a rename of (.+) \(#(\d+)\)$/);
+  if (rename) {
+    return {
+      label: 'Possible rename', relink: Number(rename[2]), terms: [],
+      ask: `Its files match ${rename[1]}, which went inactive. Link it to keep that model's ID, cover and history.`,
+    };
+  }
   const parent = flag.match(/^Named from a parent folder, but its folder says (.+)$/);
   if (parent) {
     const names = parent[1].split(', ');
@@ -519,6 +529,12 @@ function concernGroups() {
   return [...groups.values()];
 }
 
+function linkRename(group) {
+  group.cards[0].relink = group.relink;
+  review.dirty = true;
+  drawReview();
+}
+
 function mergeInto(group) {
   const target = review.cards.find(c => c.name === group.other);
   if (!target) return;
@@ -544,6 +560,10 @@ function drawConcerns() {
             ${group.cards.map(card => html`
               <button type="button" class=${`review-concern-chip ${card.key === review.focus ? 'review-concern-focus' : ''}`} @click=${() => focusCard(card)}>${card.name}</button>
             `)}
+            ${group.relink ? html`
+              <button type="button" class="btn-pill font-xs review-link" ?disabled=${group.cards[0].relink === group.relink}
+                @click=${() => linkRename(group)}>${group.cards[0].relink === group.relink ? 'Linked' : 'Link to Old Model'}</button>
+            ` : nothing}
             ${group.label === 'Possible part' ? html`
               <button type="button" class="btn-pill font-xs review-merge" @click=${() => mergeInto(group)}>Merge ${group.cards.length > 1 ? `all ${group.cards.length}` : ''} into ${group.other}</button>
             ` : nothing}
@@ -728,6 +748,16 @@ function openReview(lib, release, focusPath = '') {
     },
     again: () => openReview(lib, release),
   }, focusPath.slice(release.length + 1));
+}
+
+function openAddedReview(lib, release) {
+  return showReview({
+    load: () => fetchCatalogReview(lib.id, release),
+    save: (cards) => saveCatalogReview(lib.id, { release, cards }),
+    refresh: () => loadLibraryPreview(lib),
+    next: () => null,
+    again: () => openAddedReview(lib, release),
+  });
 }
 
 function openArchiveReview(collectionId) {

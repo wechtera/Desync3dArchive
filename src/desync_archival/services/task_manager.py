@@ -32,6 +32,7 @@ from desync_archival import settings as app_config
 from desync_archival.db.queries import task_manager as queries
 from desync_archival.services import (
     auth_service,
+    catalog_levels,
     identity,
     inactive_log,
     jobs,
@@ -964,7 +965,7 @@ class TaskManager:
                             if tag_rows:
                                 conn.executemany(
                                     queries.INSERT_COLLECTION_TAGS,
-                                    [(local_id, tag) for _, tag in tag_rows],
+                                    [(local_id, catalog_levels.clean_tag(tag)) for _, tag in tag_rows],
                                 )
 
                             identity.save_mmf_files(

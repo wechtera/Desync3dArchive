@@ -96,6 +96,12 @@ class LibraryApproveBody(RequestBody):
     ready_only: bool | None = None
 
 
+class TagBody(RequestBody):
+    name: str
+    action: str | None = None
+    new_name: str | None = None
+
+
 class ImportFileBody(RequestBody):
     path: str
     name: str | None = None

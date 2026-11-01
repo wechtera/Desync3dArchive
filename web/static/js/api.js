@@ -492,6 +492,19 @@ export async function saveLibraryReview(libraryId, payload) {
   });
 }
 
+const postJson = (url, payload) => request(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(payload)
+});
+
+export const fetchTags = (search, hints = false) => request(`/api/tags?q=${encodeURIComponent(search)}${hints ? '&hints=1' : ''}`);
+export const postTag = (payload) => postJson('/api/tags', payload);
+export const postModelTag = (modelId, payload) => postJson(`/api/catalog-models/${modelId}/tags`, payload);
+export const postGroupTag = (groupId, payload) => postJson(`/api/model-groups/${groupId}/tags`, payload);
+export const fetchCatalogReview = (libraryId, release) => request(`/api/settings/libraries/${libraryId}/catalog-review?name=${encodeURIComponent(release)}`);
+export const saveCatalogReview = (libraryId, payload) => postJson(`/api/settings/libraries/${libraryId}/catalog-review`, payload);
+
 export async function importFile(payload) {
   return request('/api/import-file', {
     method: 'POST',

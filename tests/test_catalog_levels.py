@@ -16,6 +16,7 @@ from desync_archival.services import (
     catalog_levels,
     file_import,
     jobs,
+    tags,
 )
 from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.library_review import ReviewError
@@ -708,4 +709,81 @@ class ImportTests(BuildCase):
             self.conn.execute("UPDATE app_settings SET value = '/nowhere/at/all' WHERE key = 'download_root_path'")
         with self.assertRaisesRegex(file_import.ImportRefused, "isn't available"):
             self.bring()
+
+
+class TagTests(BuildCase):
+    def setUp(self):
+        super().setUp()
+        self.conn.row_factory = sqlite3.Row
+        self.archive(self.collection, self.GHOULS)
+        self.build()
+        self.model = catalog_browse.list_models(self.conn, "Ghoul A")["models"][0]["id"]
+        with self.conn:
+            self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (?, 'undead')", (self.collection,))
+
+    def tags_of(self):
+        return catalog_browse.model_detail(self.conn, self.model)["tags"]
+
+    def test_an_import_registers_and_rolls_into_an_existing_tag(self):
+        self.assertEqual(self.one("SELECT COUNT(*) FROM tags WHERE name = 'undead'")[0], 1)
+        other = self.add_collection("Other", "1/o")
+        with self.conn:
+            self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (?, 'undead')", (other,))
+        self.assertEqual(self.one("SELECT COUNT(*) FROM tags WHERE name = 'undead'")[0], 1)
+
+    def test_only_an_existing_tag_can_be_added(self):
+        with self.assertRaisesRegex(tags.TagRefused, "isn't a tag"):
+            tags.add_to_model(self.conn, self.model, "brand-new")
+
+    def test_a_created_tag_can_be_added_and_is_one_word(self):
+        self.assertEqual(tags.create(self.conn, "  Big Boss "), "big-boss")
+        tags.add_to_model(self.conn, self.model, "big boss")
+        self.assertIn("big-boss", self.tags_of())
+
+    def test_a_removed_tag_stays_removed_after_a_rescan(self):
+        tags.remove_from_model(self.conn, self.model, "undead")
+        self.assertNotIn("undead", self.tags_of())
+        with self.conn:
+            self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (?, 'undead')", (self.collection,))
+        self.assertNotIn("undead", self.tags_of())
+
+    def test_adding_a_removed_tag_back_on_purpose_works(self):
+        tags.remove_from_model(self.conn, self.model, "undead")
+        tags.add_to_model(self.conn, self.model, "undead")
+        self.assertIn("undead", self.tags_of())
+
+    def test_a_deleted_tag_never_returns(self):
+        tags.delete(self.conn, "undead")
+        with self.conn:
+            self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (?, 'undead')", (self.collection,))
+        self.assertNotIn("undead", self.tags_of())
+
+    def test_a_rename_merges_and_blocks_the_old_spelling(self):
+        tags.create(self.conn, "ghoulish")
+        tags.rename(self.conn, "undead", "ghoulish")
+        self.assertIn("ghoulish", self.tags_of())
+        self.assertNotIn("undead", [t["name"] for t in tags.listing(self.conn)["tags"]])
+
+    def test_a_tag_reaches_every_model_in_a_group(self):
+        tags.create(self.conn, "pack")
+        group = self.one("SELECT id FROM model_groups WHERE name = 'Ghoul'")[0]
+        self.assertEqual(tags.add_to_group(self.conn, group, "pack"), 2)
+
+    def test_dashes_collapse_and_symbols_count_as_junk(self):
+        self.assertEqual(catalog_levels.clean_tag("01 - Orconspiracy"), "01-orconspiracy")
+        with self.conn:
+            self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (?, '&')", (self.collection,))
+            self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (?, '01---old')", (self.collection,))
+        tags.clean_up(self.conn)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM collection_tags WHERE tag = '&'")[0], 0)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM collection_tags WHERE tag = '01-old'")[0], 1)
+
+    def test_clean_up_removes_junk_and_respells(self):
+        with self.conn:
+            self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (?, 'of')", (self.collection,))
+            self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (?, 'loot studios')", (self.collection,))
+        result = tags.clean_up(self.conn)
+        self.assertEqual(result["junk_removed"], 1)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM collection_tags WHERE tag = 'loot-studios'")[0], 1)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM collection_tags WHERE tag = 'of'")[0], 0)
 
