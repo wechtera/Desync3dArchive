@@ -103,6 +103,11 @@ class ListingTests(DocumentCase):
         doc = self.docs()["documents"][0]
         self.assertEqual((doc["title"], doc["state"]), ("Dragonseekers (PDF)", "unread"))
 
+    def test_markup_at_the_start_of_a_title_is_dropped(self):
+        self.listed_file(self.collection("# PDF - Marshes"), "marshes.zip")
+        self.assertEqual(self.docs()["documents"][0]["title"], "PDF - Marshes")
+        self.assertEqual(self.docs()["documents"][0]["filename"], "marshes.zip")
+
     def test_a_peeked_archive_replaces_that_entry_with_its_pdfs(self):
         collection = self.collection("Dragonseekers (PDF)")
         file_id = self.listed_file(collection, "Dragonseekers.zip", self.base / "Dragonseekers.zip")

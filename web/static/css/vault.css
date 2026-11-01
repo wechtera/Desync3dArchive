@@ -3368,3 +3368,5 @@ select, input[type="text"] { font-size: 0.9rem; }
 .document-title { font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
 .document-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 8px; }
 .document-pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin: 18px 0; }
+#document-results { padding: 0 var(--gutter); }
+.document-origin { overflow-wrap: anywhere; }

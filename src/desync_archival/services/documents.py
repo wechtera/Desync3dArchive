@@ -65,6 +65,11 @@ def _title(filename: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[_-]+", " ", Path(filename).stem)).strip() or filename
 
 
+def _clean_collection_name(name: str) -> str:
+    # MMF titles often open with markup like "# PDF - ", which reads as noise on a card.
+    return re.sub(r"^[#*\s]+", "", name).strip() or name
+
+
 def _rows(conn: sqlite3.Connection) -> Iterator[dict[str, Any]]:
     conn.row_factory = sqlite3.Row
     for query in (queries.SELECT_PDF_FILES, queries.SELECT_PDF_MEMBERS, queries.SELECT_UNREAD_PDF_PRODUCTS):
@@ -79,7 +84,7 @@ def _rows(conn: sqlite3.Connection) -> Iterator[dict[str, Any]]:
                 state, name = UNREAD, row["filename"]
             yield {
                 "key": f"member-{member}" if member else f"file-{row['file_id']}",
-                "title": _title(name) if pdf or member else row["collection"],
+                "title": _title(name) if pdf or member else _clean_collection_name(row["collection"]),
                 "filename": name,
                 "kind": _kind(f"{name} {row['collection']}"),
                 "creator": row["creator"] or "",

@@ -50,7 +50,7 @@ function card(doc) {
       <div class="document-body">
         <strong class="document-title">${doc.title}</strong>
         <span class="font-xs text-dim">${doc.kind} · ${doc.creator || doc.source}</span>
-        <span class="font-xs text-dim">${doc.collection}</span>
+        <span class="font-xs text-dim document-origin">${doc.state === 'unread' ? doc.filename : doc.collection}</span>
         <span class="font-xs text-dim">${STATE_LABELS[doc.state]}${doc.size_bytes ? ` · ${formatBytes(doc.size_bytes)}` : ''}</span>
         <div class="document-actions">
           ${stored ? html`
