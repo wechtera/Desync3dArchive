@@ -162,9 +162,29 @@ class DiskAdopter:
         return True
 
 
+def queue_models(conn: sqlite3.Connection, download_manager: Any, model_ids: list[int]) -> int:
+    queued = 0
+    with conn:
+        for model_id in model_ids:
+            files, size = conn.execute(queries.COUNT_MODEL_FILES_FOR_QUEUE, (model_id,)).fetchone()
+            if not conn.execute(queries.UPDATE_DOWNLOAD_JOBS_FOR_QUEUE, (files or 0, size or 0, model_id)).rowcount:
+                conn.execute(queries.INSERT_DOWNLOAD_JOBS_FOR_QUEUE, (model_id, files or 0, size or 0))
+            queued += 1
+    if download_manager:
+        if not download_manager.is_running:
+            download_manager.start()
+        elif download_manager.is_paused:
+            download_manager.resume()
+    return queued
+
+
 class StorageManager:
+    # The UI asks every few seconds, and a dropped mount showing for this long does no harm.
+    METRICS_SECONDS = 30.0
+
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path).resolve()
+        self._metrics: tuple[float, dict[str, Any]] | None = None
 
     def _get_setting(self, key: str) -> str:
         with sqlite3.connect(str(self.db_path)) as conn:
@@ -202,7 +222,14 @@ class StorageManager:
         folder_name = f"[{model_id}] {clean_model}"
         return root / clean_designer / clean_cat / folder_name / "files"
 
-    def get_disk_metrics(self) -> Dict[str, Any]:
+    def get_disk_metrics(self) -> dict[str, Any]:
+        if self._metrics and time.monotonic() - self._metrics[0] < self.METRICS_SECONDS:
+            return self._metrics[1]
+        metrics = self._read_disk_metrics()
+        self._metrics = (time.monotonic(), metrics)
+        return metrics
+
+    def _read_disk_metrics(self) -> dict[str, Any]:
         metrics = {
             "nas": {"configured": False, "mounted": False, "total_bytes": 0, "free_bytes": 0, "path": "", "error": None},
             "local": {"configured": False, "mounted": False, "total_bytes": 0, "free_bytes": 0, "path": "", "error": None},

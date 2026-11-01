@@ -4,6 +4,7 @@ Supports both 2-tuple JSON responses and 3-tuple binary image streams.
 """
 
 import json
+import logging
 import mimetypes
 import re
 import sqlite3
@@ -24,7 +25,7 @@ from starlette.datastructures import MutableHeaders
 
 from desync_archival import migrations
 from desync_archival import settings as app_config
-from desync_archival.services import image_worker, jobs, login
+from desync_archival.services import image_worker, jobs, login, scheduler
 from desync_archival.services.db import get_db_connection, seed_default_settings
 from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
 from desync_archival.services.logger import log_context, logger
@@ -57,6 +58,11 @@ def get_db() -> sqlite3.Connection:
 
 
 class RequestLoggingMiddleware:
+    POLLED_PATHS = frozenset({
+        "/api/tasks/status", "/api/downloads/status", "/api/storage/status", "/api/stashes/active",
+        "/api/auth/status", "/api/health", "/healthz",
+    })
+
     """Gives every request a request_id and logs its outcome.
 
     Query strings are left out of the log line because they can carry credentials.
@@ -83,7 +89,9 @@ class RequestLoggingMiddleware:
                 await self.app(scope, receive, capture_status)
             finally:
                 duration_ms = (time.perf_counter() - started) * 1000
-                logger.info(f"{scope['method']} {scope['path']} {status['code']} {duration_ms:.1f}ms")
+                # The UI polls these every few seconds, which buried everything else in vault.log.
+                quiet = scope["path"] in self.POLLED_PATHS and status["code"] < 400
+                logger.log(logging.DEBUG if quiet else logging.INFO, f"{scope['method']} {scope['path']} {status['code']} {duration_ms:.1f}ms")
 
 
 class BodyTooLargeError(Exception):
@@ -196,7 +204,7 @@ class LoginMiddleware:
     # The callback page must stay open: SameSite=Strict cookies are not sent on the redirect back
     # from MMF. It holds no data, and storing the token still needs a session.
     PUBLIC_PATHS = frozenset({
-        "/login", "/api/login", "/api/session", "/api/auth/callback",
+        "/login", "/api/login", "/api/session", "/api/auth/callback", "/healthz",
         "/static/css/vault.css", "/static/js/login.js", "/static/js/auth_callback.js",
     })
 
@@ -308,12 +316,26 @@ def start_managers() -> None:
 
 
 def backup_schedule() -> None:
-    """Checks hourly, so a monthly backup missed while the app was busy or off still happens."""
+    """Backups check hourly, so one missed while the app was busy or off still happens."""
     wait = jobs.FIRST_BACKUP_CHECK_SECONDS
+    since_backup_check = jobs.BACKUP_CHECK_SECONDS
     while not schedule_stop.wait(wait):
-        wait = jobs.BACKUP_CHECK_SECONDS
-        if task_manager:
-            task_manager.run_scheduled_backup()
+        wait = jobs.SCHEDULE_CHECK_SECONDS
+        if not task_manager:
+            continue
+        # This thread is the only thing running the schedules, so one bad tick must not end it.
+        try:
+            if since_backup_check >= jobs.BACKUP_CHECK_SECONDS:
+                since_backup_check = 0
+                task_manager.run_scheduled_backup()
+            since_backup_check += wait
+            conn = get_db_connection(DB_PATH)
+            try:
+                scheduler.tick(conn, task_manager, download_manager)
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001
+            logger.exception("[Server] A scheduled check failed")
 
 
 def stop_managers() -> None:
@@ -349,6 +371,11 @@ def create_app(manage_workers: bool = True) -> FastAPI:
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "DELETE"])
     def api_not_found(request: Request) -> Response:
         return JSONResponse({"error": f"Route not found: {request.method} {request.url.path}"}, 404)
+
+    # Says only that the process answers, so it's safe to leave open for a container or monitor.
+    @app.get("/healthz")
+    def healthz() -> dict[str, str]:
+        return {"status": "ok"}
 
     @app.get("/previews/{rel_path:path}")
     def previews(rel_path: str) -> Response:

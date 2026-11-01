@@ -63,3 +63,5 @@ DELETE_DOWNLOAD_AUDIT_LOG_BY_LOGGED_AT = "DELETE FROM download_audit_log WHERE l
 DELETE_PIPELINE_TASKS_BY_STATUS = "DELETE FROM pipeline_tasks WHERE status IN ('completed', 'failed', 'cancelled') AND completed_at < datetime('now', ?);"
 
 SELECT_APP_SETTINGS_BY_KEY = "SELECT key, value FROM app_settings WHERE key = 'stash_download_path';"
+
+SUM_VAULT_FILES = "SELECT COUNT(*), COALESCE(SUM(actual_bytes), 0) FROM downloaded_files WHERE vault_path LIKE ?;"

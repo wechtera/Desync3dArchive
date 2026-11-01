@@ -3341,3 +3341,21 @@ select, input[type="text"] { font-size: 0.9rem; }
   .location-row { grid-template-columns: 1fr; }
 }
 .location-panel { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border-dim); }
+
+/* Health */
+.health-list { margin-top: 8px; }
+.health-row { display: grid; grid-template-columns: 12px minmax(170px, 1fr) 3fr; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border-dim); }
+.health-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text-muted); }
+.health-dot.health-ok { background: var(--accent); }
+.health-dot.health-warning { background: #d9b45b; }
+.health-dot.health-problem { background: #d9705b; }
+.health-state { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border-dim); }
+.health-heading { margin: 26px 0 8px; font-size: 15px; }
+.schedule-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.schedule-form fieldset { border: 1px solid var(--border-dim); border-radius: 10px; padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+.schedule-form legend { padding: 0 6px; font-size: 13px; }
+.schedule-form label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+.schedule-form input[type=number] { width: 76px; }
+.schedule-form select { min-width: 0; max-width: 100%; }
+.schedule-form .settings-actions-bar { grid-column: 1 / -1; }
+.tab-btn.nav-attention::after { content: ""; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: #d9b45b; vertical-align: middle; }

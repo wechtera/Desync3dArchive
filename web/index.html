@@ -638,6 +638,7 @@
       <button type="button" class="sub-btn active" role="tab" aria-selected="true" data-settings-tab-btn="usage" data-click="switchSettingsTab" data-args='["usage"]'>Disk Usage</button>
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="libraries" data-click="switchSettingsTab" data-args='["libraries"]'>Libraries</button>
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="directories" data-click="switchSettingsTab" data-args='["directories"]'>Directories</button>
+      <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="health" data-click="switchSettingsTab" data-args='["health"]'>Health</button>
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="workers" data-click="switchSettingsTab" data-args='["workers"]'>Workers</button>
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="backups" data-click="switchSettingsTab" data-args='["backups"]'>Backups</button>
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="audit" data-click="switchSettingsTab" data-args='["audit"]'>Audit</button>
@@ -739,6 +740,10 @@
         </div>
 
         <div class="location-panel" id="locations-panel"></div>
+      </div>
+
+      <div class="settings-panel" data-settings-tab="health" hidden>
+        <div id="health-panel"></div>
       </div>
 
       <!-- Card 3: Worker Engine Tuning & I/O Buffers -->

@@ -8,7 +8,9 @@ import { formatBytes, parseServerTime } from '../utils.js';
 import { appendToBody, html, imageFallback, nothing, render, safeUrl, stopPropagation } from '../template.js';
 import {
   fetchAuditHistory,
+  fetchHealth,
   fetchLocations,
+  postSchedules,
   fetchBackups,
   postBackups,
   fetchExternalLibraries,
@@ -79,6 +81,7 @@ export async function loadSettingsView() {
     loadSettings(),
     loadDirectoryUsage(),
     loadLocations(),
+    loadHealth(),
     loadLibraryUsage(),
     loadAuthStatus(),
     loadSessionStatus(),
@@ -206,6 +209,89 @@ export function switchSettingsTab(tab) {
     btn.classList.toggle('active', selected);
     btn.setAttribute('aria-selected', selected ? 'true' : 'false');
   });
+}
+
+async function saveSchedules(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  try {
+    await postSchedules({
+      sync_enabled: form.has('sync_enabled'),
+      sync_interval_days: Number(form.get('sync_interval_days')),
+      sync_auto_download: form.has('sync_auto_download'),
+      integrity_enabled: form.has('integrity_enabled'),
+      integrity_interval_days: Number(form.get('integrity_interval_days')),
+      integrity_mode: form.get('integrity_mode'),
+    });
+    showToast('Schedules saved.');
+    loadHealth();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+export async function loadHealth() {
+  const panel = document.getElementById('health-panel');
+  if (!panel) return;
+  try {
+    const { status, checks, jobs, schedules: chosen } = await fetchHealth();
+    const on = (key) => chosen[key] === '1';
+    render(html`
+      <div class="settings-panel-header">
+        <div>
+          <h2 class="settings-panel-title">Health</h2>
+          <div class="settings-panel-subtitle">Read from the catalog, so checking never walks the NAS.</div>
+        </div>
+        <span class="health-state health-${status}" id="health-overall">${status === 'ok' ? 'All good' : status === 'warning' ? 'Needs attention' : 'Problem'}</span>
+      </div>
+      <div class="health-list">
+        ${checks.map(c => html`
+          <div class="health-row" data-check=${c.key}>
+            <span class="health-dot health-${c.state}"></span>
+            <strong class="font-sm">${c.label}</strong>
+            <span class="font-sm text-dim">${c.detail}</span>
+          </div>
+        `)}
+      </div>
+
+      <h3 class="health-heading">Schedules</h3>
+      <form id="schedule-form" class="schedule-form" @submit=${saveSchedules}>
+        <fieldset>
+          <legend>Library sync</legend>
+          <label><input type="checkbox" name="sync_enabled" .checked=${on('sync_enabled')}> Scrape MMF and add new purchases</label>
+          <label>Every <input type="number" name="sync_interval_days" min="1" max="365" .value=${chosen.sync_interval_days}> days</label>
+          <label><input type="checkbox" name="sync_auto_download" .checked=${on('sync_auto_download')}> Queue new collections for download</label>
+          <span class="form-help-text">Needs a current MMF sign-in and cookies. A Cloudflare check can stop it, and Health will say so.</span>
+        </fieldset>
+        <fieldset>
+          <legend>Integrity check</legend>
+          <label><input type="checkbox" name="integrity_enabled" .checked=${on('integrity_enabled')}> Check the vault against the catalog</label>
+          <label>Every <input type="number" name="integrity_interval_days" min="1" max="365" .value=${chosen.integrity_interval_days}> days</label>
+          <label>Type
+            <select name="integrity_mode" .value=${chosen.integrity_mode}>
+              <option value="fast" ?selected=${chosen.integrity_mode === 'fast'}>Fast: files exist, sizes match</option>
+              <option value="deep" ?selected=${chosen.integrity_mode === 'deep'}>Deep: reads every file on the NAS</option>
+              <option value="reverse" ?selected=${chosen.integrity_mode === 'reverse'}>Reverse: finds orphans on the NAS</option>
+            </select>
+          </label>
+          <span class="form-help-text">These are the jobs that do read the NAS. Deep can take a long time.</span>
+        </fieldset>
+        <div class="settings-actions-bar"><button type="submit" class="btn-pill btn-action-queue">Save Schedules</button></div>
+      </form>
+
+      <h3 class="health-heading">Jobs, Last 30 Days</h3>
+      ${jobs.length ? html`
+        <table class="help-table" id="health-jobs">
+          <thead><tr><th>Job</th><th>Runs</th><th>Failed</th><th>Average</th></tr></thead>
+          <tbody>
+            ${jobs.map(j => html`<tr><td>${j.task_type}</td><td>${j.runs}</td><td>${j.failed}</td><td>${j.average_seconds == null ? '' : `${Math.round(j.average_seconds / 60)} min`}</td></tr>`)}
+          </tbody>
+        </table>
+      ` : html`<p class="text-dim font-sm">No finished jobs yet.</p>`}
+    `, panel);
+  } catch (err) {
+    render(html`<div class="table-msg text-alert">Failed loading health: ${err.message}</div>`, panel);
+  }
 }
 
 export async function loadLocations() {

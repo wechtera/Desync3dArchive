@@ -549,6 +549,14 @@ export async function fetchCatalogModels(search, page, tag = '') {
   return request(`/api/catalog-models?q=${encodeURIComponent(search)}&page=${page}&tag=${encodeURIComponent(tag)}`);
 }
 
+export async function fetchHealth() {
+  return request('/api/health');
+}
+
+export async function postSchedules(body) {
+  return postJson('/api/schedules', body);
+}
+
 export async function fetchLocations() {
   return request('/api/settings/locations');
 }

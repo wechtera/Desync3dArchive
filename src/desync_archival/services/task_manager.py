@@ -704,6 +704,10 @@ class TaskManager:
 
             process.wait()
             return_code = process.returncode
+            if return_code == 0 and not self._cancel_requested and cookies_dest.exists():
+                with self._get_db() as conn:
+                    renewed = auth_service.keep_fresh_cookies(conn, cookies_dest.read_text(encoding="utf-8"))
+                self._append_log(task_id, f"Saved {renewed} renewed session cookies.")
             cookies_dest.unlink(missing_ok=True)
 
             if self._cancel_requested:

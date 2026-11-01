@@ -3,6 +3,7 @@ services/auth_service.py - MyMiniFactory Native OAuth 2.0 account profile and to
 Instrumented with dynamic topic-based subsystem logging ('http').
 """
 
+import json
 import logging
 import sqlite3
 import time
@@ -80,6 +81,33 @@ def get_auth_status(conn: sqlite3.Connection) -> dict[str, Any]:
         "client_id": client_id,
         "redirect_uri": get_redirect_uri(conn),
     }
+
+
+def keep_fresh_cookies(conn: sqlite3.Connection, refreshed: str) -> int:
+    """Saves what a finished scrape renewed, and returns how many changed.
+
+    Cookies the scrape didn't return are kept, because it only reports the ones the browser held.
+    """
+    try:
+        fresh = json.loads(refreshed)
+        stored = json.loads(get_setting(conn, "cookies_json", "") or "[]")
+    except ValueError:
+        return 0
+    if not isinstance(fresh, list) or not isinstance(stored, list):
+        return 0
+    by_name = {str(c.get("name", "")).lower(): c for c in stored if isinstance(c, dict)}
+    changed = 0
+    for cookie in fresh:
+        if not isinstance(cookie, dict) or not cookie.get("name") or not cookie.get("value"):
+            continue
+        known = by_name.get(str(cookie["name"]).lower())
+        if known is None or known.get("value") != cookie["value"]:
+            by_name[str(cookie["name"]).lower()] = cookie
+            changed += 1
+    if changed:
+        with conn:
+            set_settings(conn, {"cookies_json": json.dumps(list(by_name.values())), "cookies_saved_at": str(time.time())})
+    return changed
 
 
 def get_redirect_uri(conn: sqlite3.Connection) -> str:

@@ -826,6 +826,29 @@ test.describe('settings', () => {
     await expect(panel).toContainText('Not set');
   });
 
+  test('health shows checks and saves schedules', async ({ page }) => {
+    let sent = null;
+    await page.route('**/api/health', (route) => route.fulfill({ json: {
+      status: 'warning', jobs: [],
+      checks: [{ key: 'sign_in', label: 'MMF sign-in', state: 'warning', detail: 'Expires in 5 hours.' }],
+      schedules: { sync_enabled: '0', sync_interval_days: '7', sync_auto_download: '0', integrity_enabled: '0', integrity_interval_days: '30', integrity_mode: 'fast' },
+    } }));
+    await page.route('**/api/schedules', (route) => {
+      sent = route.request().postDataJSON();
+      return route.fulfill({ json: { success: true, schedules: {} } });
+    });
+    await page.goto('/');
+    await expect(page.locator('#nav-tab-settings')).toHaveClass(/nav-attention/);
+    await page.evaluate(() => window.switchTab('settings'));
+    await page.locator('[data-settings-tab-btn="health"]').click();
+    await expect(page.locator('#health-overall')).toHaveText('Needs attention');
+    await expect(page.locator('#health-panel')).toContainText('Expires in 5 hours.');
+    await page.locator('input[name="sync_enabled"]').check();
+    await page.locator('input[name="sync_interval_days"]').fill('3');
+    await page.getByRole('button', { name: 'Save Schedules' }).click();
+    await expect.poll(() => sent).toMatchObject({ sync_enabled: true, sync_interval_days: 3, integrity_enabled: false });
+  });
+
   test('help explains the server settings file', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => window.switchTab('help'));

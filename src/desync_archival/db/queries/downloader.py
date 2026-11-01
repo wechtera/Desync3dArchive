@@ -178,3 +178,17 @@ SELECT_APP_SETTINGS_VALUE_BY_KEY_V3 = "SELECT value FROM app_settings WHERE key 
 SELECT_DOWNLOAD_JOBS = """
                 SELECT status, COUNT(*) as c FROM download_jobs GROUP BY status;
             """
+
+COUNT_MODEL_FILES_FOR_QUEUE = "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM model_files WHERE model_id = ?;"
+
+UPDATE_DOWNLOAD_JOBS_FOR_QUEUE = """
+                UPDATE download_jobs
+                SET status = 'pending', total_files = ?, total_bytes = ?,
+                    enqueued_at = CURRENT_TIMESTAMP, error_message = NULL
+                WHERE model_id = ?;
+            """
+
+INSERT_DOWNLOAD_JOBS_FOR_QUEUE = """
+                INSERT INTO download_jobs (model_id, status, total_files, total_bytes, enqueued_at)
+                VALUES (?, 'pending', ?, ?, CURRENT_TIMESTAMP);
+            """

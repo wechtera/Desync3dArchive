@@ -2,7 +2,7 @@ import sqlite3
 from typing import Any, Optional
 
 from desync_archival.db.queries import downloads as queries
-from desync_archival.services.downloader import DownloadManager
+from desync_archival.services.downloader import DownloadManager, queue_models
 
 
 def handle_get_downloads_status(
@@ -89,30 +89,13 @@ def handle_post_downloads_queue(
     if not model_ids:
         return {"error": "No model IDs provided"}, 400
 
-    queued_count = 0
-    with conn:
-        for mid in model_ids:
-            try:
-                mid_int = int(mid)
-            except (ValueError, TypeError):
-                continue
-
-            file_stats = conn.execute(
-                queries.COUNT_MODEL_FILES_BY_MODEL_ID,
-                (mid_int,),
-            ).fetchone()
-            total_files = file_stats[0] or 0
-            total_bytes = file_stats[1] or 0
-
-            if not conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_MODEL_ID, (total_files, total_bytes, mid_int)).rowcount:
-                conn.execute(queries.INSERT_DOWNLOAD_JOBS, (mid_int, total_files, total_bytes))
-            queued_count += 1
-
-    if download_manager:
-        if not download_manager.is_running:
-            download_manager.start()
-        elif download_manager.is_paused:
-            download_manager.resume()
+    clean_ids = []
+    for mid in model_ids:
+        try:
+            clean_ids.append(int(mid))
+        except (ValueError, TypeError):
+            continue
+    queued_count = queue_models(conn, download_manager, clean_ids)
 
     return {"success": True, "queued_count": queued_count}, 200
 

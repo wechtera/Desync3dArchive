@@ -17,12 +17,12 @@
           "size_bytes": 20
         },
         {
-          "file_count": 3,
-          "formatted_size": "60 B",
+          "file_count": 162,
+          "formatted_size": "57.87 GB",
           "key": "nas",
           "name": "NAS Target Vault",
           "path": "<DEV>/nas/vault",
-          "size_bytes": 60
+          "size_bytes": 62140291214
         },
         {
           "file_count": 0,
@@ -83,12 +83,12 @@
           "size_bytes": 20
         },
         {
-          "file_count": 3,
-          "formatted_size": "60 B",
+          "file_count": 162,
+          "formatted_size": "57.87 GB",
           "key": "nas",
           "name": "NAS Target Vault",
           "path": "<DEV>/nas/vault",
-          "size_bytes": 60
+          "size_bytes": 62140291214
         },
         {
           "file_count": 0,

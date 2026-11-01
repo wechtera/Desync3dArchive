@@ -4,6 +4,7 @@ import { bindActions } from './actions.js';
 import {
   fetchMetrics,
   fetchStorageStatus,
+  fetchHealth,
   saveStorageConfig as apiSaveStorageConfig,
   fetchDownloadsStatus,
   fetchActiveStash
@@ -372,6 +373,17 @@ export async function checkHealth() {
   }
 }
 
+// An expired sign-in only showed in the logs, so the Settings tab now carries a marker.
+async function markSettingsAttention() {
+  try {
+    const { status } = await fetchHealth();
+    document.getElementById('nav-tab-settings')?.classList.toggle('nav-attention', status !== 'ok');
+  } catch (err) {
+    console.warn('Health summary unavailable:', err);
+  }
+  setTimeout(markSettingsAttention, 300000);
+}
+
 // -----------------------------------------------------------------------------
 // Modals & Storage Form Handlers
 // -----------------------------------------------------------------------------
@@ -662,6 +674,7 @@ function initApp() {
   switchTab(initialTab);
   loadMetrics();
   checkHealth();
+  markSettingsAttention();
 }
 
 // When a session ends, every view's next request lands here. MMF's own 401s lack this header.
