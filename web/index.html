@@ -80,7 +80,7 @@
       <div class="stat-value" id="stat-creators">-</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Total Models</div>
+      <div class="stat-label">Collections</div>
       <div class="stat-value" id="stat-models">-</div>
       <div class="stat-sub" id="stat-supported">-</div>
     </div>
@@ -190,18 +190,24 @@
 
   <!-- View 4: Downloads Management Tab ("Manage / Retrieve / Reconcile Assets") -->
   <div id="view-downloads" style="display:none;">
-    <div class="sub-tabs">
-      <button class="sub-btn active" data-click="switchDownloadSubView" data-args='["pending"]'>Pending &amp; Queue Explorer</button>
+    <div class="sub-tabs" role="tablist" aria-label="Manage sections">
+      <button class="sub-btn active" id="group-sync" data-group="sync" data-click="switchDownloadGroup" data-args='["sync"]'>MMF Sync</button>
+      <button class="sub-btn" id="group-download" data-group="download" data-click="switchDownloadGroup" data-args='["download"]'>Download MMF</button>
+      <button class="sub-btn" id="group-external" data-group="external" data-click="switchDownloadGroup" data-args='["external"]'>External Vault</button>
+      <button class="sub-btn" id="group-reconcile" data-group="reconcile" data-click="switchDownloadGroup" data-args='["reconcile"]'>Vault Reconcile</button>
+    </div>
+    <div class="sub-tabs sub-tabs-minor" id="minor-download" style="display:none;">
+      <button class="sub-btn" data-click="switchDownloadSubView" data-args='["pending"]'>Pending &amp; Queue Explorer</button>
       <button class="sub-btn" data-click="switchDownloadSubView" data-args='["active"]'>Active Transfers</button>
       <button class="sub-btn" data-click="switchDownloadSubView" data-args='["history"]'>History &amp; Audit Log</button>
-      <button class="sub-btn" data-click="switchDownloadSubView" data-args='["reconcile"]'>Vault Reconcile</button>
-      <button class="sub-btn" data-click="switchDownloadSubView" data-args='["sync"]'>MMF Sync</button>
+    </div>
+    <div class="sub-tabs sub-tabs-minor" id="minor-external" style="display:none;">
       <button class="sub-btn" id="sub-btn-libraries" data-click="switchDownloadSubView" data-args='["libraries"]'>Linked Libraries</button>
       <button class="sub-btn" id="sub-btn-archives" data-click="switchDownloadSubView" data-args='["archives"]'>Archive Review</button>
     </div>
 
     <!-- Sub-View A: Pending / Bulk Selection -->
-    <div id="sub-dl-pending">
+    <div id="sub-dl-pending" style="display:none;">
       <div class="controls">
         <input type="text" id="pending-search" class="search-box" placeholder="Filter models...">
         <select id="pending-creator-filter" data-change="resetPendingPageAndLoad"><option value="">All Creators</option></select>
@@ -501,7 +507,7 @@
       </div>
     </div>
 
-    <div id="sub-dl-sync" style="display:none;">
+    <div id="sub-dl-sync">
       <div class="audit-panel panel-spaced" style="margin: 16px 24px 20px 24px;">
         <div class="audit-header">
           <div>
@@ -610,6 +616,7 @@
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="libraries" data-click="switchSettingsTab" data-args='["libraries"]'>Libraries</button>
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="directories" data-click="switchSettingsTab" data-args='["directories"]'>Directories</button>
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="workers" data-click="switchSettingsTab" data-args='["workers"]'>Workers</button>
+      <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="backups" data-click="switchSettingsTab" data-args='["backups"]'>Backups</button>
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="logging" data-click="switchSettingsTab" data-args='["logging"]'>Logging</button>
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="mmf" data-click="switchSettingsTab" data-args='["mmf"]'>MMF Sign-In</button>
       <button type="button" class="sub-btn" role="tab" aria-selected="false" data-settings-tab-btn="cookies" data-click="switchSettingsTab" data-args='["cookies"]'>Session &amp; Cookies</button>
@@ -775,6 +782,8 @@
       </div>
 
       <!-- Card 4: Diagnostic Logging & Subsystem Layers -->
+      <div class="settings-panel" id="backups-panel" data-settings-tab="backups" hidden></div>
+
       <div class="settings-panel" data-settings-tab="logging" hidden>
         <div class="settings-panel-header">
           <div>

@@ -5,11 +5,14 @@ Instrumented with dynamic topic-based subsystem logging ('sql').
 
 import logging
 import math
+import re
 import sqlite3
 from datetime import datetime
 from typing import Any, Optional
 
 from desync_archival.services.logger import log_layer
+
+MONTH = re.compile(r"\d{4}-\d{2}")
 
 
 def calculate_month_sequence(start_month: str, end_month: str) -> list[str]:
@@ -149,7 +152,10 @@ def compute_catalog_audit(conn: sqlite3.Connection, designer: Optional[str] = No
     if not rows:
         return {"designer": designer, "has_data": False}
 
-    month_data = {r["release_month"]: int(r["model_count"]) for r in rows if r["release_month"]}
+    # Undated linked releases hold "Unassigned", which has no place in a calendar of gaps.
+    month_data = {
+        r["release_month"]: int(r["model_count"]) for r in rows if MONTH.fullmatch(r["release_month"] or "")
+    }
     present_months = sorted(month_data.keys())
     if not present_months:
         return {"designer": designer, "has_data": False}

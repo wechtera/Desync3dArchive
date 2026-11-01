@@ -150,6 +150,12 @@ def calculate_metrics_and_anomalies(counts_by_month: dict[str, int]):
 
 
 class TestReleaseAnalytics(unittest.TestCase):
+    def test_undated_releases_stay_out_of_the_calendar(self):
+        from desync_archival.services import analytics
+
+        self.assertIsNone(analytics.MONTH.fullmatch("Unassigned"))
+        self.assertIsNotNone(analytics.MONTH.fullmatch("2026-10"))
+
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
         init_test_db(self.conn)

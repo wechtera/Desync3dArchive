@@ -68,7 +68,7 @@ export async function loadExternalLibraries() {
     </div>
     <div id="library-preview-container"></div>
     <div id="library-image-queue" class="mt-3"></div>
-    <div class="mt-4 pt-3" style="border-top: 1px solid #262635;">
+    <div class="mt-4 pt-3" style="border-top: 1px solid var(--border-dim);">
       <h3 class="font-bold font-md mb-2 text-accent">Register New In-Place Library</h3>
       <div class="settings-form-row two-col">
         <div class="settings-field-group">
@@ -303,7 +303,7 @@ async function loadLibraryPreview(lib) {
   const flagged = (report?.releases || []).reduce((sum, r) => sum + flagsIn(r), 0);
   const unread = flaggedUnreviewed(report);
   render(html`
-    <div class="mt-4 pt-3" style="border-top: 1px solid #262635;">
+    <div class="mt-4 pt-3" style="border-top: 1px solid var(--border-dim);">
       <h3 class="font-bold font-md mb-2 text-accent">Preview for ${lib.name}</h3>
       ${report ? html`
         <p class="text-dim font-sm" id="library-preview-summary">
@@ -386,7 +386,7 @@ export async function loadImageQueue() {
   const data = await fetchImageQueue();
   const counts = data.counts;
   render(html`
-    <div class="mt-4 pt-3" style="border-top: 1px solid #262635;">
+    <div class="mt-4 pt-3" style="border-top: 1px solid var(--border-dim);">
       <h3 class="font-bold font-md mb-2 text-accent">Background Images</h3>
       <p class="text-dim font-sm" id="image-queue-summary">
         ${IMAGE_STATES[data.state] || data.state}. ${counts.pending} waiting, ${counts.done} done,

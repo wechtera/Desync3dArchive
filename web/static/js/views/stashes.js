@@ -372,7 +372,7 @@ function showExportSuccessModal(exportData) {
       <div class="modal-card" style="background:var(--bg-card, #1e1e24); border:1px solid var(--border-color, #333); border-radius:8px; max-width:640px; width:90%; padding:24px; box-shadow:0 12px 32px rgba(0,0,0,0.5);">
         <div class="flex items-center justify-between mb-3">
           <h3 class="text-main font-bold font-lg" style="margin:0; display:flex; align-items:center; gap:8px;">
-            <span style="color:#10b981;">&#10004;</span> Slicer Print Queue Ready
+            <span style="color:var(--accent);">&#10004;</span> Slicer Print Queue Ready
           </h3>
           <button type="button" class="btn-icon" @click=${() => closeExportSuccessModal()} style="background:transparent; border:none; color:var(--text-dim, #888); font-size:18px; cursor:pointer;">&times;</button>
         </div>
@@ -424,7 +424,7 @@ export async function copyExportPath(textToCopy) {
     if (btn) {
       const original = btn.textContent;
       btn.textContent = 'Copied!';
-      btn.style.borderColor = '#10b981';
+      btn.style.borderColor = 'var(--accent)';
       setTimeout(() => {
         btn.textContent = original;
         btn.style.borderColor = '';

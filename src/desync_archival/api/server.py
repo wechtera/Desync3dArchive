@@ -40,10 +40,10 @@ PREVIEW_CACHE_CONTROL = "no-cache"
 PREVIEW_CONTENT_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 SVG_PLACEHOLDER = (
     b'<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200" viewBox="0 0 300 200">'
-    b'<rect width="300" height="200" fill="#1e1e24"/>'
-    b'<path d="M110 130 L150 80 L190 130 Z" fill="#3a3a46"/>'
-    b'<circle cx="130" cy="75" r="12" fill="#505060"/>'
-    b'<text x="150" y="160" font-family="sans-serif" font-size="12" fill="#888899" text-anchor="middle">No Preview Available</text>'
+    b'<rect width="300" height="200" fill="#1a221c"/>'
+    b'<path d="M110 130 L150 80 L190 130 Z" fill="#2c3830"/>'
+    b'<circle cx="130" cy="75" r="12" fill="#3a4a3f"/>'
+    b'<text x="150" y="160" font-family="sans-serif" font-size="12" fill="#96a48f" text-anchor="middle">No Preview Available</text>'
     b"</svg>"
 )
 

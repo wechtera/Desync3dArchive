@@ -492,6 +492,18 @@ export async function saveLibraryReview(libraryId, payload) {
   });
 }
 
+export async function fetchBackups() {
+  return request('/api/backups');
+}
+
+export async function postBackups(payload) {
+  return request('/api/backups', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function fetchArchiveQueue() {
   return request('/api/archive-review');
 }

@@ -45,6 +45,7 @@ import {
 import {
   // Pending & Queue Explorer
   switchDownloadSubView,
+  switchDownloadGroup,
   resetPendingPageAndLoad,
   changePendingPage,
   loadPendingModels,
@@ -497,6 +498,7 @@ Object.assign(window, {
 
   // === 6. Downloads: Pending & Queue Explorer ===
   switchDownloadSubView,
+  switchDownloadGroup,
   resetPendingPageAndLoad,
   changePendingPage,
   loadPendingModels,

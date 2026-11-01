@@ -7,6 +7,8 @@
 import { formatBytes, parseServerTime } from '../utils.js';
 import { appendToBody, html, imageFallback, nothing, render, safeUrl, stopPropagation } from '../template.js';
 import {
+  fetchBackups,
+  postBackups,
   fetchExternalLibraries,
   fetchInactive
 } from '../api.js';
@@ -190,6 +192,7 @@ export async function loadDirectoryUsage() {
 export function switchSettingsTab(tab) {
   if (tab === 'inactive') loadInactive();
   if (tab === 'libraries') loadLibraryUsage().catch(() => {});
+  if (tab === 'backups') loadBackups().catch(() => {});
   // Panels stay in the page while hidden, so a save still reads every field.
   document.querySelectorAll('[data-settings-tab]').forEach(panel => {
     panel.hidden = panel.dataset.settingsTab !== tab;
@@ -199,6 +202,73 @@ export function switchSettingsTab(tab) {
     btn.classList.toggle('active', selected);
     btn.setAttribute('aria-selected', selected ? 'true' : 'false');
   });
+}
+
+async function backupAction(payload, done) {
+  try {
+    showToast(done(await postBackups(payload)));
+    await loadBackups();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+export async function loadBackups() {
+  const panel = document.getElementById('backups-panel');
+  if (!panel) return;
+  let data;
+  try {
+    data = await fetchBackups();
+  } catch (err) {
+    render(html`<div class="table-msg text-alert">Failed loading backups: ${err.message}</div>`, panel);
+    return;
+  }
+  const savePaths = () => backupAction({
+    action: 'paths',
+    backup_dir: document.getElementById('backup-dir').value.trim(),
+    mirror_dir: document.getElementById('backup-mirror').value.trim(),
+  }, () => 'Backup folders saved.');
+  const mirrorState = !data.mirror_dir ? 'Not set' : data.mirror_online ? 'Online' : 'Offline, so copies wait for the next backup';
+  render(html`
+    <div class="settings-panel-header">
+      <div>
+        <h2 class="settings-panel-title">Backups</h2>
+        <div class="settings-panel-subtitle">Runs monthly. Holds the database and metadata.</div>
+      </div>
+      <button type="button" class="btn-pill btn-action-primary" id="btn-backup-now"
+        @click=${() => backupAction({ action: 'run' }, () => 'Backup started. Follow it on the Tasks tab.')}>Back Up Now</button>
+    </div>
+    <dl class="backup-facts" id="backup-facts">
+      <dt>Last backup</dt><dd>${data.last_backup_at || 'None yet'}</dd>
+      <dt>Result</dt><dd>${data.last_backup_result || '-'}</dd>
+      <dt>Second copy</dt><dd>${mirrorState}</dd>
+    </dl>
+    <div class="backup-paths">
+      <label>Backup folder <input type="text" id="backup-dir" .value=${data.backup_dir} spellcheck="false"></label>
+      <label>Second copy folder <input type="text" id="backup-mirror" .value=${data.mirror_dir} spellcheck="false"></label>
+      <button type="button" class="btn-pill" id="btn-backup-paths" @click=${savePaths}>Save Folders</button>
+    </div>
+    ${data.backups.length ? html`
+      <table class="table-compact">
+        <thead><tr><th>Backup</th><th>Size</th><th>Metadata</th><th>Second copy</th><th></th></tr></thead>
+        <tbody>
+          ${data.backups.map(b => html`
+            <tr>
+              <td class="font-mono font-xs">${b.name}</td>
+              <td class="font-mono font-xs">${formatBytes(b.size_bytes)}</td>
+              <td>${b.has_metadata ? 'Yes' : 'No'}</td>
+              <td>${b.mirrored ? 'Yes' : 'No'}</td>
+              <td><button type="button" class="btn-pill font-xs" @click=${() => backupAction({ action: 'verify', name: b.name },
+                res => `${b.name} is good: ${res.rows.toLocaleString()} rows in ${res.tables} tables.`)}>Check</button></td>
+            </tr>
+          `)}
+        </tbody>
+      </table>
+    ` : html`<div class="table-msg text-dim">No backups yet.</div>`}
+    <p class="backup-note">
+      To restore, stop the app, then run <code>dbtool restore BACKUP NEW_PATH</code>. Second copies don't include secrets, so reload cookies after restoring one.
+    </p>
+  `, panel);
 }
 
 export async function loadLibraryUsage() {
@@ -648,6 +718,7 @@ Object.assign(window, {
   refreshDirectoryUsage,
   loadDirectoryUsage,
   loadLibraryUsage,
+  loadBackups,
   loadInactive,
   loadAuthStatus,
   loadLoggingSettings,

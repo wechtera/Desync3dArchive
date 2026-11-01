@@ -501,6 +501,7 @@ test.describe('settings', () => {
       return route.fulfill({ json: { success: true, task_id: 4 } });
     });
     await page.goto('/#downloads');
+    await page.locator('#group-external').click();
     await page.locator('#sub-btn-libraries').click();
 
     await expect(page.locator('#library-preview-summary')).toContainText('2 new, 1 already known, 1 overlapping');
@@ -543,6 +544,7 @@ test.describe('settings', () => {
     await page.route('**/api/settings/libraries/2/preview/release*', (route) => route.fulfill({ json: reviewRelease }));
     await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true }], total: 1 });
     await page.goto('/#downloads');
+    await page.locator('#group-external').click();
     await page.locator('#sub-btn-libraries').click();
   }
 
@@ -562,6 +564,7 @@ test.describe('settings', () => {
       return route.fulfill({ json: { success: true, task_id: 4 } });
     });
     await page.goto('/#downloads');
+    await page.locator('#group-external').click();
     await page.locator('#sub-btn-libraries').click();
     await page.locator('.preview-release-check[data-release="Calm"]').uncheck();
     await page.locator('#btn-approve-ready').click();
@@ -598,6 +601,7 @@ test.describe('settings', () => {
     await page.route('**/api/settings/libraries/2/preview/release*', (route) => route.fulfill({ json: release }));
     await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true }], total: 1 });
     await page.goto('/#downloads');
+    await page.locator('#group-external').click();
     await page.locator('#sub-btn-libraries').click();
     await page.locator('.preview-release-open').first().click();
     await expect(page.locator('#review-concerns')).toContainText('Possible duplicate');
@@ -702,6 +706,7 @@ test.describe('settings', () => {
       } });
     });
     await page.goto('/#downloads');
+    await page.locator('#group-external').click();
     await page.locator('#sub-btn-archives').click();
     await expect(page.locator('#archive-queue-summary')).toContainText('0 of 1');
     await page.locator('.archive-review-open').click();
@@ -734,6 +739,37 @@ test.describe('settings', () => {
     expect(await page.evaluate(() => window.renderedBox.querySelector('img.submodel-thumb').src)).toContain('blob:');
   });
 
+  test('the backups tab shows state, runs a backup and checks one', async ({ page }) => {
+    await mock(page, '/api/backups', {
+      backup_dir: '/b', mirror_dir: '/nas/b', mirror_online: true, last_backup_at: '2026-10-31', last_backup_result: 'OK',
+      backups: [{ name: 'library-20261031-000000-000000.db', size_bytes: 100, mirrored: true, has_metadata: true }],
+    });
+    const sent = [];
+    await page.route('**/api/backups', (route) => {
+      if (route.request().method() !== 'POST') return route.fallback();
+      sent.push(route.request().postDataJSON());
+      return route.fulfill({ json: { success: true, rows: 10, tables: 3 } });
+    });
+    await page.goto('/#settings');
+    await page.locator('[data-settings-tab-btn="backups"]').click();
+    await expect(page.locator('#backup-facts')).toContainText('Online');
+    await page.locator('#btn-backup-now').click();
+    await page.getByRole('button', { name: 'Check' }).click();
+    await expect.poll(() => sent.map((s) => s.action)).toEqual(['run', 'verify']);
+  });
+
+  test('manage tabs group downloads and external sources', async ({ page }) => {
+    await page.goto('/#downloads');
+    await expect(page.locator('#view-downloads > .sub-tabs').first().locator('.sub-btn')).toHaveText(['MMF Sync', 'Download MMF', 'External Vault', 'Vault Reconcile']);
+    await expect(page.locator('#sub-dl-sync')).toBeVisible();
+    await page.locator('#group-download').click();
+    await expect(page.locator('#sub-dl-pending')).toBeVisible();
+    await expect(page.locator('#minor-external')).toBeHidden();
+    await page.locator('#group-external').click();
+    await expect(page.locator('#sub-dl-libraries')).toBeVisible();
+    await expect(page.locator('#group-external')).toHaveClass(/active/);
+  });
+
   test('settings shows library disk figures but no library actions', async ({ page }) => {
     await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true, disk_formatted: '4 GB' }], total: 1 });
     await page.goto('/#settings');
@@ -753,6 +789,7 @@ test.describe('settings', () => {
       return route.fulfill({ json: { paused: false, state: 'storage_offline', counts: { pending: 3, done: 1, failed: 2, no_source: 4, skipped: 0 } } });
     });
     await page.goto('/#downloads');
+    await page.locator('#group-external').click();
     await page.locator('#sub-btn-libraries').click();
 
     await expect(page.locator('#image-queue-summary')).toContainText('Waiting for storage to come back. 3 waiting, 1 done');
@@ -782,6 +819,7 @@ test.describe('settings', () => {
     await page.route('**/api/settings/libraries/2/scan', (route) => { scanned = true; return route.fulfill({ json: { success: true, task_id: 1 } }); });
     page.on('dialog', (dialog) => dialog.accept());
     await page.goto('/#downloads');
+    await page.locator('#group-external').click();
     await page.locator('#sub-btn-libraries').click();
     await page.getByRole('button', { name: 'Full Rescan' }).first().click();
     await expect.poll(() => scanned).toBe(true);
@@ -812,6 +850,7 @@ test.describe('downloads', () => {
     await mock(page, '/api/models', pending);
     await mock(page, '/api/creators', [{ designer_name: HOSTILE, total_models: 1 }]);
     await page.goto('/#downloads');
+    await page.locator('#group-download').click();
   }
 
   test('pending models show as text, and queue by id', async ({ page }) => {

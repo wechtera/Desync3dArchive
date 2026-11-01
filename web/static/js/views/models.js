@@ -64,13 +64,13 @@ export function ensureRenderStyles() {
       gap: 4px;
       padding: 3px 8px;
       font-size: 11px;
-      background: #2a2a36;
-      border: 1px solid #3d3d4e;
-      color: #90caf9;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      color: var(--accent);
     }
     .btn-render-toggle:hover {
-      background: #363646;
-      border-color: #64b5f6;
+      background: var(--surface-highlight);
+      border-color: var(--border-strong);
     }
     .render-dropdown-menu {
       display: none;
@@ -78,8 +78,8 @@ export function ensureRenderStyles() {
       right: 0;
       top: calc(100% + 2px);
       min-width: 155px;
-      background: #181822;
-      border: 1px solid #333344;
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: 6px;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
       z-index: 1200;
@@ -94,15 +94,15 @@ export function ensureRenderStyles() {
       text-align: left;
       padding: 7px 12px;
       font-size: 11px;
-      color: #d1d5db;
+      color: var(--text-body);
       background: transparent;
       border: none;
       cursor: pointer;
       transition: background 0.15s, color 0.15s;
     }
     .render-dropdown-item:hover {
-      background: #28283a;
-      color: #60a5fa;
+      background: var(--accent-hover);
+      color: var(--accent);
     }
     .model-view-pills-row {
       display: flex;
@@ -119,9 +119,9 @@ export function ensureRenderStyles() {
       flex-wrap: wrap;
     }
     .ephemeral-view-pills .btn-pill.active {
-      background: #2563eb;
-      color: #ffffff;
-      border-color: #3b82f6;
+      background: var(--btn-primary-hover);
+      color: var(--text-main);
+      border-color: var(--border-strong);
     }
     .ephemeral-image-stage {
       min-height: 440px;
@@ -129,9 +129,9 @@ export function ensureRenderStyles() {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      background: #111116;
+      background: var(--bg);
       border-radius: 8px;
-      border: 1px solid #242432;
+      border: 1px solid var(--border-dim);
       overflow: hidden;
       padding: 12px;
     }
@@ -262,7 +262,7 @@ function updateModelsPagination(offset, currentCount) {
   const start = totalModelCount === 0 ? 0 : offset + 1;
   const end = offset + currentCount;
 
-  if (pageInfo) pageInfo.textContent = `Showing ${start}-${end} of ${totalModelCount.toLocaleString()} models`;
+  if (pageInfo) pageInfo.textContent = `Showing ${start}-${end} of ${totalModelCount.toLocaleString()} collections`;
   if (pageNum) pageNum.textContent = `Page ${currentModelPage} of ${totalPages}`;
   if (prevBtn) prevBtn.disabled = currentModelPage <= 1;
   if (nextBtn) nextBtn.disabled = currentModelPage >= totalPages;

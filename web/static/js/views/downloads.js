@@ -93,15 +93,31 @@ export function stopActiveTransfersPolling() {
   }
 }
 
+const DOWNLOAD_GROUPS = {
+  sync: ['sync'],
+  download: ['pending', 'active', 'history'],
+  external: ['libraries', 'archives'],
+  reconcile: ['reconcile'],
+};
+
+export function switchDownloadGroup(group) {
+  switchDownloadSubView(DOWNLOAD_GROUPS[group][0]);
+}
+
 export function switchDownloadSubView(subview) {
-  ['pending', 'active', 'history', 'reconcile', 'sync', 'libraries', 'archives'].forEach(sv => {
+  Object.values(DOWNLOAD_GROUPS).flat().forEach(sv => {
     const el = document.getElementById(`sub-dl-${sv}`);
     if (el) el.style.display = (sv === subview) ? 'block' : 'none';
   });
 
-  document.querySelectorAll('.sub-tabs .sub-btn').forEach(btn => {
-    const clickAttr = btn.getAttribute('data-args') || '';
-    btn.classList.toggle('active', clickAttr.includes(`"${subview}"`));
+  const group = Object.keys(DOWNLOAD_GROUPS).find(g => DOWNLOAD_GROUPS[g].includes(subview));
+  ['download', 'external'].forEach(name => {
+    const row = document.getElementById(`minor-${name}`);
+    if (row) row.style.display = name === group ? 'flex' : 'none';
+  });
+  document.querySelectorAll('#view-downloads .sub-tabs .sub-btn').forEach(btn => {
+    const active = btn.dataset.group ? btn.dataset.group === group : (btn.getAttribute('data-args') || '').includes(`"${subview}"`);
+    btn.classList.toggle('active', active);
   });
 
   if (subview === 'pending') {
@@ -128,6 +144,7 @@ export function switchDownloadSubView(subview) {
 }
 
 window.switchDownloadSubView = switchDownloadSubView;
+window.switchDownloadGroup = switchDownloadGroup;
 
 export async function populatePendingCreatorsFilter() {
   const select = document.getElementById('pending-creator-filter');
