@@ -40,7 +40,7 @@ UPDATE_DOWNLOAD_JOBS_STATUS_BY_MODEL_ID = """
                 UPDATE download_jobs
                 SET status = 'pending', total_files = ?, total_bytes = ?,
                     enqueued_at = CURRENT_TIMESTAMP, error_message = NULL
-                WHERE model_id = ?;
+                WHERE model_id = ? AND status NOT IN ('downloading', 'staging_complete', 'offloading');
             """
 
 INSERT_DOWNLOAD_JOBS = """

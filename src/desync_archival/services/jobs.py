@@ -65,4 +65,8 @@ def busy_reason(conn, download_manager=None) -> str | None:
     offloads = getattr(download_manager, "active_offloads", None)
     if isinstance(offloads, dict) and offloads:
         return "Files are moving to the vault. Wait for that to finish, then try again."
+    # The lists above miss a job waiting out an offload retry, whose staged files are the only copy.
+    live = conn.execute(queries.COUNT_LIVE_DOWNLOAD_JOBS).fetchone()[0]
+    if live:
+        return f"{live} downloads are in progress or waiting to reach the vault. Let them finish, then try again."
     return None

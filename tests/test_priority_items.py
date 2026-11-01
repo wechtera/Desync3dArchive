@@ -1232,6 +1232,37 @@ class BackfillP03Tests(TempCase):
         self.assertEqual(build.call_count, 1)
 
 
+class SecondReviewR17Tests(QueueR17Tests):
+    def test_a_live_job_row_counts_as_busy_with_idle_workers(self):
+        # Offload backoff leaves a staging_complete job in neither in-memory list.
+        self.job("staging_complete")
+        manager = MagicMock(active_downloads={}, active_offloads={})
+        self.assertIn("in progress", jobs.busy_reason(self.conn, manager))
+
+    def test_the_reset_route_refuses_while_a_job_is_live(self):
+        model = self.job("staging_complete")
+        response = self.client.post("/api/reconcile/reset", json={"model_ids": [model], "confirm": True})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.status(model), "staging_complete")
+
+    def test_the_reset_itself_leaves_live_jobs_alone(self):
+        live, failed = self.job("staging_complete"), self.job("failed")
+        with self.conn:
+            for file_id, model in ((91, live), (92, failed)):
+                self.conn.execute("INSERT INTO model_files (file_id, model_id, filename) VALUES (?, ?, 'f')", (file_id, model))
+                self.conn.execute(
+                    "INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path,"
+                    " actual_bytes) VALUES (?, ?, 'f', 'f', 'f', 1)", (file_id, model),
+                )
+        reconciler = object.__new__(VaultReconciler)
+        reconciler.db_path = server.DB_PATH
+        result = reconciler.reset_reconciliation_models([live, failed], dry_run=False)
+        self.assertEqual((result["reset_count"], result["skipped_live"]), (1, 1))
+        self.assertEqual(self.status(live), "staging_complete")
+        kept = self.conn.execute("SELECT COUNT(*) FROM downloaded_files WHERE model_id = ?", (live,)).fetchone()[0]
+        self.assertEqual(kept, 1)
+
+
 class SecondReviewR14Tests(BundleImportR14Tests):
     def setting(self, key, value):
         conn = sqlite3.connect(self.db)

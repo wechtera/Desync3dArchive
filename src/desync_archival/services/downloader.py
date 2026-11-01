@@ -302,6 +302,10 @@ class StorageManager:
         return metrics
 
 
+class StagedFileMissing(FileNotFoundError):
+    """A staged file a job needs is gone, so no retry can finish the job."""
+
+
 class DownloadManager:
     # The Active view polls every second, so a 4,000 model queue can't go in the answer each time.
     QUEUED_JOBS_PAGE = 200
@@ -993,6 +997,12 @@ class DownloadManager:
 
         try:
             self._process_nas_offload(worker_id, job, nas_root)
+        except StagedFileMissing as e:
+            # Only unfinished files are selected here, so waiting can't help. A job stuck in
+            # staging_complete would also hold every destructive action behind busy_reason.
+            log_layer("storage", logging.ERROR, f"Offloader #{worker_id}: Model #{model_id} can't finish: {e}")
+            with self._get_db() as conn:
+                conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V3, (f"NAS Offload Failed: {e}", job["id"]))
         except Exception as e:
             log_layer("storage", logging.ERROR, f"Offloader #{worker_id}: Transfer failed for Model #{model_id}: {e}")
             self._delay_offload(job)
@@ -1070,7 +1080,7 @@ class DownloadManager:
             cleaned_name = record["cleaned_filename"]
 
             if not staging_path or not staging_path.exists():
-                raise FileNotFoundError(f"Staged file missing at '{staging_path}'")
+                raise StagedFileMissing(f"Staged file missing at '{staging_path}'")
 
             # Measured here, because a job resumed by an older build recorded only its last attempt.
             expected_bytes = staging_path.stat().st_size

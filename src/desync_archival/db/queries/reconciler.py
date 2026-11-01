@@ -82,3 +82,8 @@ SELECT_DOWNLOADED_FILES_BY_MODEL_ID = "SELECT file_id, cleaned_filename FROM dow
 UPDATE_DOWNLOADED_FILES_VAULT_PATH_BY_FILE_ID = """
                                 UPDATE downloaded_files SET vault_path = ?, local_relative_path = ? WHERE file_id = ?;
                             """
+
+SELECT_LIVE_JOB_MODELS = """
+    SELECT model_id FROM download_jobs
+    WHERE model_id IN ({placeholders}) AND status IN ('downloading', 'staging_complete', 'offloading');
+"""

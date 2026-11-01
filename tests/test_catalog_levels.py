@@ -638,6 +638,7 @@ class BusyGuardTests(unittest.TestCase):
         self.conn = sqlite3.connect(":memory:")
         self.addCleanup(self.conn.close)
         self.conn.execute("CREATE TABLE pipeline_tasks (id INTEGER PRIMARY KEY, task_type TEXT, status TEXT)")
+        self.conn.execute("CREATE TABLE download_jobs (id INTEGER PRIMARY KEY, model_id INTEGER, status TEXT)")
 
     def test_idle_means_go(self):
         self.assertIsNone(jobs.busy_reason(self.conn, MagicMock(active_downloads={})))

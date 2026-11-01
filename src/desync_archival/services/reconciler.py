@@ -555,6 +555,10 @@ class VaultReconciler:
             return {"success": True, "dry_run": True, "would_reset": len(clean_ids), "file_records": files}
         with self._get_db() as conn:
             with conn:
+                # A live job's rows are what tracks its staged files, which may be the only copy.
+                live = {r[0] for r in conn.execute(queries.SELECT_LIVE_JOB_MODELS.format(placeholders=placeholders), clean_ids)}
+                clean_ids = [model_id for model_id in clean_ids if model_id not in live]
+                placeholders = ",".join("?" for _ in clean_ids)
                 conn.execute(f"DELETE FROM downloaded_files WHERE model_id IN ({placeholders});", clean_ids)
                 conn.execute(f"UPDATE collections SET vault_path = NULL WHERE id IN ({placeholders});", clean_ids)
                 conn.execute(f"""
@@ -565,7 +569,7 @@ class VaultReconciler:
                 for mid in clean_ids:
                     conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG, (mid,))
         log_layer("sql", logging.INFO, f"Reset {len(clean_ids)} reconciliation models for re-download: {clean_ids}")
-        return {"success": True, "reset_count": len(clean_ids)}
+        return {"success": True, "reset_count": len(clean_ids), "skipped_live": len(live)}
 
     def _orphan_refusal(self, target: Path, nas_root: Path, known_ids: dict, catalog_paths: list[str]) -> str | None:
         """Why a path can't go as an orphan. Checked at delete time, because an audit list goes stale."""
@@ -877,6 +881,8 @@ class VaultReconciler:
         if total == 0:
             log("No uninspected archive files found. All vault archives are indexed.")
             log_layer("archive", logging.INFO, "Archive peek backfill: 0 uninspected archives found.")
+            # Not wasted: a crash after the last peek leaves archives this query no longer selects.
+            peeker.finish_batch()
             return {
                 "success": True,
                 "total_archives": 0,
@@ -941,9 +947,8 @@ class VaultReconciler:
                 log_layer("archive", logging.ERROR, f"Archive peek exception for Model #{model_id}: {e}")
                 errors.append(f"Model #{model_id} ({cleaned_filename}): {err_msg}")
 
-        if inspected:
-            progress(100.0, f"Building the catalog from {inspected} archives...")
-            peeker.finish_batch()
+        progress(100.0, f"Building the catalog from {inspected} archives...")
+        peeker.finish_batch()
 
         summary = {
             "success": True,
