@@ -5,9 +5,11 @@ import can rewrite stored path prefixes.
 """
 
 import json
+import os
 import shutil
 import sqlite3
 import tarfile
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,17 @@ PREVIEWS = "previews.tar"  # Already JPEGs, so compressing 4 GB would take time 
 SECRETS = "secrets.json"
 MANIFEST = "MANIFEST.json"
 PATH_SETTINGS = ("download_root_path", "download_work_path", "stash_download_path", "metadata_backup_path")
+# Every column holding an absolute path outside the data folder. A test fails when a new path-like
+# column is on neither this list nor the test's list of relative ones.
+PATH_COLUMNS = (
+    ("collections", "vault_path"),
+    ("deleted_files", "original_path"),
+    ("deleted_files", "pending_path"),
+    ("download_jobs", "destination_path"),
+    ("downloaded_files", "staging_path"),
+    ("downloaded_files", "vault_path"),
+    ("external_libraries", "path"),
+)
 
 
 class BundleError(RuntimeError):
@@ -87,8 +100,87 @@ def _rewrite_prefix(conn: sqlite3.Connection, table: str, column: str, old: str,
     ).rowcount
 
 
+def _moved(value: Any, old: str, new: str) -> Any:
+    """Rewrites path strings anywhere inside decoded JSON."""
+    if isinstance(value, str):
+        return new + value[len(old):] if value == old or value.startswith(f"{old}/") else value
+    if isinstance(value, dict):
+        return {key: _moved(item, old, new) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_moved(item, old, new) for item in value]
+    return value
+
+
+def _rewrite_snapshots(conn: sqlite3.Connection, old: str, new: str) -> int:
+    """A held file's snapshot is what a restore puts back, so its paths have to move with it."""
+    changed = 0
+    for row_id, text in conn.execute(queries.SELECT_DELETED_FILE_SNAPSHOTS).fetchall():
+        snapshot = json.loads(text)
+        moved = _moved(snapshot, old, new)
+        if moved != snapshot:
+            conn.execute(queries.UPDATE_DELETED_FILE_SNAPSHOT, (json.dumps(moved), row_id))
+            changed += 1
+    return changed
+
+
+def _rewrite_paths(conn: sqlite3.Connection, old: str, new: str) -> int:
+    changed = sum(_rewrite_prefix(conn, table, column, old, new) for table, column in PATH_COLUMNS)
+    changed += _rewrite_snapshots(conn, old, new)
+    return changed + conn.execute(
+        f"UPDATE app_settings SET value = ?2 || substr(value, length(?1) + 1)"
+        f" WHERE key IN ({','.join(repr(k) for k in PATH_SETTINGS)}) AND (value = ?1 OR value LIKE ?1 || '/%');",
+        (old, new),
+    ).rowcount
+
+
+def _unpack(bundle: Path, staging: Path, path_map: dict[str, str]) -> int:
+    backup.restore(bundle / DATABASE, staging / DATABASE)
+    for name in (METADATA, PREVIEWS):
+        if (bundle / name).is_file():
+            with tarfile.open(bundle / name) as archive:
+                archive.extractall(staging, filter="data")
+    conn = sqlite3.connect(staging / DATABASE)
+    try:
+        with conn:
+            return sum(_rewrite_paths(conn, old.rstrip("/"), new.rstrip("/")) for old, new in path_map.items())
+    finally:
+        conn.close()
+
+
+def _move_into_place(staging: Path, data_dir: Path) -> None:
+    # The catalog goes last: it's what makes a rerun refuse, so it only appears once the rest is in.
+    for path in sorted(staging.iterdir(), key=lambda p: p.name == DATABASE):
+        target = data_dir / path.name
+        if target.is_dir():
+            shutil.copytree(path, target, dirs_exist_ok=True)
+        elif path.name in (DATABASE, "metadata", "previews"):
+            os.replace(path, target)
+
+
+def parse_path_map(values: list[str]) -> dict[str, str]:
+    """Reads `--map OLD=NEW` values.
+
+    Raises:
+        BundleError: A value isn't OLD=NEW.
+    """
+    path_map = {}
+    for value in values:
+        old, separator, new = value.partition("=")
+        if not (separator and old and new):
+            raise BundleError(f"--map needs OLD=NEW, and got {value!r}")
+        path_map[old] = new
+    return path_map
+
+
 def import_bundle(bundle: Path, data_dir: Path, path_map: dict[str, str]) -> dict[str, Any]:
-    """Sets up an empty data folder from a bundle. It refuses to replace an existing catalog."""
+    """Sets up an empty data folder from a bundle. It refuses to replace an existing catalog.
+
+    Everything is built in a temp folder inside the data folder, so a failure leaves no catalog
+    behind and the same command can run again.
+
+    Raises:
+        BundleError: The bundle can't be written or used.
+    """
     app_config.check_path(data_dir)
     if not (bundle / MANIFEST).is_file() or not (bundle / DATABASE).is_file():
         raise BundleError(f"{bundle} isn't a data bundle.")
@@ -96,28 +188,13 @@ def import_bundle(bundle: Path, data_dir: Path, path_map: dict[str, str]) -> dic
     if target.exists():
         raise BundleError(f"{target} already exists. Import only goes into an empty data folder.")
     data_dir.mkdir(parents=True, exist_ok=True)
-    backup.restore(bundle / DATABASE, target)
-    for name in (METADATA, PREVIEWS):
-        if (bundle / name).is_file():
-            with tarfile.open(bundle / name) as archive:
-                archive.extractall(data_dir, filter="data")
-
-    changed = 0
-    conn = sqlite3.connect(target)
+    staging = Path(tempfile.mkdtemp(dir=data_dir, prefix=".import-"))
     try:
-        with conn:
-            for old, new in path_map.items():
-                old, new = old.rstrip("/"), new.rstrip("/")
-                changed += _rewrite_prefix(conn, "external_libraries", "path", old, new)
-                changed += _rewrite_prefix(conn, "collections", "vault_path", old, new)
-                # FIXME(R-14): deleted_files, downloaded_files.staging_path and download_jobs.destination_path aren't rewritten.
-                changed += _rewrite_prefix(conn, "downloaded_files", "vault_path", old, new)
-                changed += conn.execute(
-                    f"UPDATE app_settings SET value = ?2 || substr(value, length(?1) + 1)"
-                    f" WHERE key IN ({','.join(repr(k) for k in PATH_SETTINGS)}) AND (value = ?1 OR value LIKE ?1 || '/%');",
-                    (old, new),
-                ).rowcount
+        changed = _unpack(bundle, staging, path_map)
+        _move_into_place(staging, data_dir)
+    except (OSError, sqlite3.Error, tarfile.TarError, backup.BackupError) as e:
+        raise BundleError(f"Import failed, so no catalog was added: {e}") from e
     finally:
-        conn.close()
+        shutil.rmtree(staging, ignore_errors=True)
     logger.info(f"Imported a data bundle into {data_dir}, {changed} paths rewritten")
     return {"success": True, "paths_rewritten": changed, "secrets_in_bundle": (bundle / SECRETS).is_file()}

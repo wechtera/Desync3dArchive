@@ -174,13 +174,12 @@ def main() -> int:
             if settings.is_production() and not args.confirm_production:
                 raise migrations.MigrationError("Refusing to import in production without --confirm-production")
             refuse_if_app_running()
-            print(data_bundle.import_bundle(args.bundle.resolve(), settings.data_dir(), dict(m.split("=", 1) for m in args.map)))
+            print(data_bundle.import_bundle(args.bundle.resolve(), settings.data_dir(), data_bundle.parse_path_map(args.map)))
         else:
             # Resolved because restore opens these as URIs, and those can't be relative.
             counts = backup.restore(args.backup_file.resolve(), args.target.resolve())
             print(f"restored {sum(counts.values())} rows to {args.target}")
-    # FIXME: BundleError and a bad --map value escape this as a traceback.
-    except (backup.BackupError, migrations.MigrationError, settings.SettingsError) as e:
+    except (backup.BackupError, data_bundle.BundleError, migrations.MigrationError, settings.SettingsError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     return 0

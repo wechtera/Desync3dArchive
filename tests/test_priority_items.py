@@ -258,3 +258,130 @@ class MigrationR08Tests(TempCase):
         result = migrations.migrate_database(self.db)
         self.assertTrue(Path(result["backup"]).is_file())
         self.assertEqual(backup.row_counts(Path(result["backup"]))["stashes"], 1)
+
+
+class BundleImportR14Tests(TempCase):
+    def setUp(self):
+        super().setUp()
+        self.data = self.root / "data"
+        (self.data / "metadata").mkdir(parents=True)
+        (self.data / "metadata" / "model_1.json").write_text("{}", encoding="utf-8")
+        (self.data / "previews" / "1").mkdir(parents=True)
+        (self.data / "previews" / "1" / "cover.jpg").write_bytes(b"jpeg")
+        self.db = self.data / "library.db"
+        create_database(self.db)
+        env = patch.dict(os.environ, {
+            "DESYNC_DATA_DIR": str(self.data), "DESYNC_BACKUP_DIR": str(self.root / "backups"),
+        })
+        env.start()
+        self.addCleanup(env.stop)
+        self.fresh = self.root / "fresh"
+        self.seed()
+        self.bundle = self.root / "bundle"
+        data_bundle.export_bundle(self.db, self.bundle)
+
+    def seed(self):
+        snapshot = json.dumps({"rows": {"downloaded_files": [{
+            "file_id": 9, "vault_path": "/old/vault/a/f.zip", "staging_path": "/old/vaultish/f.zip", "note": "/old/vault",
+            "actual_bytes": 3,
+        }]}, "modified": 1.5})
+        conn = sqlite3.connect(self.db)
+        with conn:
+            conn.execute("INSERT INTO external_libraries (name, path) VALUES ('Loot', '/old/vault/loot')")
+            model = conn.execute(
+                "INSERT INTO collections (name, source, vault_path, raw_backup_path) VALUES ('A', 'mmf', '/old/vault/a', 'metadata/1.json')"
+            ).lastrowid
+            conn.execute(
+                "INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path,"
+                " actual_bytes, vault_path, staging_path) VALUES (1, ?, 'f', 'f', 'f', 1, '/old/vault/a/f', '/old/stage/f')",
+                (model,),
+            )
+            conn.execute("INSERT INTO download_jobs (model_id, destination_path) VALUES (?, '/old/vault/a')", (model,))
+            conn.execute(
+                "INSERT INTO deleted_files (file_id, collection_id, filename, original_path, pending_path, snapshot_json)"
+                " VALUES (9, ?, 'f.zip', '/old/vault/a/f.zip', '/old/vault/.Pending-Deletion/9/f.zip', ?)",
+                (model, snapshot),
+            )
+        conn.close()
+
+    def fresh_rows(self, sql):
+        conn = sqlite3.connect(self.fresh / "library.db")
+        try:
+            return conn.execute(sql).fetchall()
+        finally:
+            conn.close()
+
+    def leftovers(self):
+        return sorted(p.name for p in self.fresh.iterdir()) if self.fresh.exists() else []
+
+    def test_every_path_column_is_accounted_for(self):
+        # A new column that stores a path has to choose a side here, or a moved install breaks silently.
+        conn = sqlite3.connect(self.db)
+        pattern = re.compile(r"path|_dir$|root|folder|location")
+        found = set()
+        for (table,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").fetchall():
+            found |= {(table, row[1]) for row in conn.execute(f'PRAGMA table_info("{table}")') if pattern.search(row[1])}
+        conn.close()
+        self.assertEqual(found - set(data_bundle.PATH_COLUMNS) - NOT_MOVED_WITH_A_BUNDLE, set())
+
+    def test_every_listed_column_moves(self):
+        result = data_bundle.import_bundle(self.bundle, self.fresh, {"/old/vault": "/new/vault", "/old/stage": "/new/stage"})
+        self.assertEqual(self.fresh_rows("SELECT path FROM external_libraries"), [("/new/vault/loot",)])
+        self.assertEqual(self.fresh_rows("SELECT vault_path, raw_backup_path FROM collections WHERE name = 'A'"), [("/new/vault/a", "metadata/1.json")])
+        self.assertEqual(self.fresh_rows("SELECT vault_path, staging_path FROM downloaded_files"), [("/new/vault/a/f", "/new/stage/f")])
+        self.assertEqual(self.fresh_rows("SELECT destination_path FROM download_jobs"), [("/new/vault/a",)])
+        self.assertEqual(
+            self.fresh_rows("SELECT original_path, pending_path FROM deleted_files"),
+            [("/new/vault/a/f.zip", "/new/vault/.Pending-Deletion/9/f.zip")],
+        )
+        self.assertEqual(result["paths_rewritten"], 8)
+
+    def test_paths_inside_a_held_files_snapshot_move(self):
+        data_bundle.import_bundle(self.bundle, self.fresh, {"/old/vault": "/new/vault"})
+        snapshot = json.loads(self.fresh_rows("SELECT snapshot_json FROM deleted_files")[0][0])
+        row = snapshot["rows"]["downloaded_files"][0]
+        self.assertEqual(row["vault_path"], "/new/vault/a/f.zip")
+        self.assertEqual(row["staging_path"], "/old/vaultish/f.zip", "a similar folder name must not match")
+        self.assertEqual(row["actual_bytes"], 3)
+        self.assertEqual(snapshot["modified"], 1.5)
+
+    def test_a_failed_unpack_leaves_nothing_and_can_be_rerun(self):
+        real = tarfile.open
+
+        def fail_on_previews(path, *args, **kwargs):
+            if Path(path).name == data_bundle.PREVIEWS:
+                raise tarfile.ReadError("damaged")
+            return real(path, *args, **kwargs)
+
+        with patch("tarfile.open", fail_on_previews), self.assertRaises(data_bundle.BundleError):
+            data_bundle.import_bundle(self.bundle, self.fresh, {})
+        self.assertEqual(self.leftovers(), [])
+        data_bundle.import_bundle(self.bundle, self.fresh, {})
+        self.assertTrue((self.fresh / "library.db").is_file())
+        self.assertTrue((self.fresh / "metadata" / "model_1.json").is_file())
+
+    def test_a_failed_rewrite_leaves_nothing_and_can_be_rerun(self):
+        failure = sqlite3.OperationalError("disk I/O error")
+        with patch.object(data_bundle, "_rewrite_prefix", side_effect=failure), self.assertRaises(data_bundle.BundleError):
+            data_bundle.import_bundle(self.bundle, self.fresh, {"/old/vault": "/new/vault"})
+        self.assertEqual(self.leftovers(), [])
+        self.assertTrue(data_bundle.import_bundle(self.bundle, self.fresh, {"/old/vault": "/new/vault"})["success"])
+
+    def test_a_data_folder_that_already_has_logs_is_fine(self):
+        (self.fresh / "logs").mkdir(parents=True)
+        (self.fresh / "logs" / "vault.log").write_text("x", encoding="utf-8")
+        data_bundle.import_bundle(self.bundle, self.fresh, {})
+        self.assertEqual(self.leftovers(), ["library.db", "logs", "metadata", "previews"])
+
+    def test_dbtool_reports_a_bad_map_without_a_traceback(self):
+        for value in ("no-equals", "=/new", "/old="):
+            with patch.object(sys, "argv", ["dbtool", "import", str(self.bundle), "--map", value]), \
+                    patch.object(dbtool, "refuse_if_app_running"), patch("sys.stderr") as stderr:
+                self.assertEqual(dbtool.main(), 1)
+            self.assertIn("--map", "".join(call.args[0] for call in stderr.write.call_args_list))
+
+    def test_dbtool_reports_a_bundle_error_without_a_traceback(self):
+        with patch.object(sys, "argv", ["dbtool", "import", str(self.root / "missing")]), \
+                patch.object(dbtool, "refuse_if_app_running"), patch("sys.stderr") as stderr:
+            self.assertEqual(dbtool.main(), 1)
+        self.assertIn("isn't a data bundle", "".join(call.args[0] for call in stderr.write.call_args_list))
