@@ -6,6 +6,7 @@
 import { formatBytes } from '../utils.js';
 import { html, imageFallback, nothing, render, safeUrl } from '../template.js';
 import { fetchCatalogModel, fetchCatalogModels, fetchModelGroup, stashModelSelection } from '../api.js';
+import { ensureRenderStyles, renderSTLViewDropdown } from './models.js';
 import { showToast } from './settings.js';
 
 const SEARCH_DELAY_MS = 250;
@@ -32,7 +33,7 @@ function stashArtifact(artifact) {
     item_type: inArchive ? 'archive_member' : 'file',
     model_id: artifact.collection_id,
     file_id: artifact.file_id,
-    submodel_id: artifact.submodel_id || 'null',
+    submodel_id: artifact.submodel_id || null,
     archive_member_id: artifact.archive_member_id,
     title: artifact.filename,
   });
@@ -45,6 +46,9 @@ function artifactLine(artifact) {
       <td class="font-mono font-xs">${artifact.filename}</td>
       <td class="font-xs">${traits.join(', ')}</td>
       <td class="font-mono font-xs">${formatBytes(artifact.size_bytes || 0)}</td>
+      <td>${artifact.filename.toLowerCase().endsWith('.stl')
+        ? renderSTLViewDropdown(artifact.archive_member_id != null ? 'archive_member' : 'file', artifact.archive_member_id ?? artifact.file_id, artifact.filename)
+        : html`<span class="text-dim font-xs">-</span>`}</td>
       <td><button type="button" class="btn-pill font-xs artifact-stash" @click=${() => stashArtifact(artifact)}>+ Stash</button></td>
     </tr>
   `;
@@ -57,13 +61,19 @@ function selection() {
   };
 }
 
-function countSelection() {
+function selectedArtifacts() {
   const { scale, support } = selection();
-  const count = shownModel.artifacts.filter(a => (!scale || a.scale === scale)
-    && (!support || Boolean(a.supported) === (support === 'supported'))).length;
+  return shownModel.artifacts.filter(a => (!scale || a.scale === scale)
+    && (!support || Boolean(a.supported) === (support === 'supported')));
+}
+
+// The table follows the dropdowns, so what you see is exactly what the button will stash.
+function showSelection() {
+  const picked = selectedArtifacts();
+  render(picked.map(artifactLine), document.getElementById('model-artifact-rows'));
   const button = document.getElementById('model-stash-selection');
-  button.textContent = `Stash ${count} Artifacts`;
-  button.disabled = !count;
+  button.textContent = `Stash ${picked.length} Artifacts`;
+  button.disabled = !picked.length;
 }
 
 async function stashSelection() {
@@ -78,6 +88,7 @@ async function stashSelection() {
 }
 
 export async function openBrowseModel(modelId) {
+  ensureRenderStyles();
   const model = await fetchCatalogModel(modelId);
   shownModel = model;
   document.getElementById('model-view-title').textContent = model.name;
@@ -107,11 +118,11 @@ export async function openBrowseModel(modelId) {
       </div>
       ${model.artifacts.length ? html`
         <div class="model-print-choice">
-          <select id="model-stash-scale" aria-label="Scale" @change=${countSelection}>
+          <select id="model-stash-scale" aria-label="Scale" @change=${showSelection}>
             <option value="">All sizes</option>
             ${model.scales.map(s => html`<option value=${s}>${s}</option>`)}
           </select>
-          <select id="model-stash-support" aria-label="Support" @change=${countSelection}>
+          <select id="model-stash-support" aria-label="Support" @change=${showSelection}>
             <option value="">Supported and unsupported</option>
             <option value="supported">Supported</option>
             <option value="unsupported">Unsupported</option>
@@ -119,12 +130,13 @@ export async function openBrowseModel(modelId) {
           <button type="button" class="btn-pill btn-action-primary font-xs" id="model-stash-selection" @click=${stashSelection}>Stash ${model.artifacts.length} Artifacts</button>
         </div>
         <table class="table-compact">
-          <thead><tr><th>Artifact</th><th>Print</th><th>Size</th><th>Stash</th></tr></thead>
-          <tbody>${model.artifacts.map(artifactLine)}</tbody>
+          <thead><tr><th>Artifact</th><th>Print</th><th>Size</th><th>Render</th><th>Stash</th></tr></thead>
+          <tbody id="model-artifact-rows"></tbody>
         </table>
       ` : html`<p class="text-dim font-sm">Contents unknown until this collection is peeked.</p>`}
     </div>
   `, document.getElementById('model-view-body'));
+  if (model.artifacts.length) showSelection();
   window.openModal('model-view-modal');
 }
 

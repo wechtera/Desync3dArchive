@@ -49,7 +49,7 @@ function isStlFilename(filename) {
 /**
  * Injects responsive CSS styles for the 6-view dropdowns and render lightbox.
  */
-function ensureRenderStyles() {
+export function ensureRenderStyles() {
   if (document.getElementById('render-engine-styles')) return;
   const style = document.createElement('style');
   style.id = 'render-engine-styles';
@@ -344,7 +344,7 @@ export function renderModelCard(m) {
 /**
  * Builds the 6-view "Render ▾" dropdown HTML for any STL component or archive member.
  */
-function renderSTLViewDropdown(sourceType, sourceId, title) {
+export function renderSTLViewDropdown(sourceType, sourceId, title) {
   const safeTitle = title || 'Component';
   return html`
     <div class="render-dropdown-wrap" @click=${stopPropagation}>
@@ -962,7 +962,7 @@ function renderRawArchiveTreeView(container, rawData) {
             item_type: 'archive_member',
             model_id: modelId,
             file_id: fileId,
-            submodel_id: entry.submodel_id || 'null',
+            submodel_id: entry.submodel_id || null,
             archive_member_id: entry.id || entry.archive_member_id || entry.member_id || 0,
             title: entry.filename
           })}>+ Stash</button>

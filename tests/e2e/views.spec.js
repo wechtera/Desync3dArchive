@@ -666,8 +666,11 @@ test.describe('settings', () => {
     await expect(page.locator('#model-view-facts')).toContainText('Maker');
     await expect(page.locator('#browse-model-view')).toContainText('undead');
     await expect(page.locator('#model-stash-selection')).toHaveText('Stash 1 Artifacts');
+    await expect(page.locator('#model-artifact-rows tr')).toHaveCount(1);
+    await expect(page.locator('#model-artifact-rows .btn-render-toggle')).toHaveCount(1);
     await page.locator('#model-stash-support').selectOption('supported');
     await expect(page.locator('#model-stash-selection')).toHaveText('Stash 0 Artifacts');
+    await expect(page.locator('#model-artifact-rows tr')).toHaveCount(0);
     await page.locator('#model-stash-support').selectOption('');
     await page.locator('.artifact-stash').click();
     await expect(page.locator('#modal-add-to-stash-backdrop')).toBeVisible();

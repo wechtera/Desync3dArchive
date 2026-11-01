@@ -45,7 +45,7 @@ export async function openAddToStashModal(itemContext, onSuccess = null) {
 
   const tierLabels = {
     model: 'COLLECTION',
-    file: 'ARCHIVE FILE',
+    file: 'FILE',
     submodel: 'MODEL',
     archive_member: 'ARTIFACT',
     bulk_models: 'BULK MODELS'
@@ -238,7 +238,8 @@ export async function executeAddToStash(stashId, stashName) {
       item_type: currentItemContext.item_type,
       model_id: currentItemContext.model_id,
       file_id: currentItemContext.file_id || null,
-      submodel_id: currentItemContext.submodel_id || null,
+      // Older callers pass the text 'null', which the API rightly refuses.
+      submodel_id: currentItemContext.submodel_id === 'null' ? null : currentItemContext.submodel_id || null,
       archive_member_id: currentItemContext.archive_member_id || null,
       notes: ''
     };

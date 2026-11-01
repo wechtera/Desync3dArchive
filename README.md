@@ -114,26 +114,42 @@ The app and the old app both use port 8080, so stop one before starting the othe
 
 ## LAN mode
 
-By default the app listens on loopback and has no login. To reach it from another computer:
+By default the app listens on this machine only, with no login. LAN mode lets other devices on your network reach it over HTTPS with a password. The app refuses to start in LAN mode without the password and both certificate files.
+
+**1. Set a password**, at least 8 characters:
 
 ```bash
-uv run python -m desync_archival.dbtool set-password   # at least 8 characters
-
-brew install mkcert
-mkcert -install
-mkcert vault.local 192.168.1.20   # use this server's hostname and address
+scripts/production.sh python -m desync_archival.dbtool set-password
 ```
 
-Then set these in `.env` and start the app as usual:
+**2. Make a certificate** for this machine's name and address. Find them with `scutil --get LocalHostName` and `ipconfig getifaddr en0`:
+
+```bash
+brew install mkcert
+mkcert -install
+mkdir -p ~/.config/desync-archival/tls && cd ~/.config/desync-archival/tls
+mkcert -cert-file vault.pem -key-file vault-key.pem MY-MAC.local 192.168.1.20 localhost 127.0.0.1
+```
+
+**3. Set these** in `~/.config/desync-archival/production.env`, using full paths:
 
 ```bash
 DESYNC_HOST=0.0.0.0
-DESYNC_ALLOWED_HOSTS=vault.local,192.168.1.20
-DESYNC_TLS_CERT=/full/path/to/vault.local+1.pem
-DESYNC_TLS_KEY=/full/path/to/vault.local+1-key.pem
+DESYNC_ALLOWED_HOSTS=MY-MAC.local,192.168.1.20
+DESYNC_TLS_CERT=/Users/you/.config/desync-archival/tls/vault.pem
+DESYNC_TLS_KEY=/Users/you/.config/desync-archival/tls/vault-key.pem
+DESYNC_REQUIRE_LOGIN=1
 ```
 
-The app refuses to start beyond loopback without the password and both certificate files. `DESYNC_ALLOWED_HOSTS` replaces the defaults, so list every name people will type, and include `localhost` if you still use it on the server. To trust the certificate on another computer, copy `rootCA.pem` from the folder `mkcert -CAROOT` prints and add it to that computer's trust store. Never copy `rootCA-key.pem`.
+**4. Restart** with `scripts/server.sh restart`, and allow incoming connections if macOS asks.
+
+**5. Open it** at `https://MY-MAC.local:8080` from any device on the network. `http://` no longer works in this mode, on this machine either.
+
+**6. Trust the certificate on other devices.** They'll show a warning until they trust mkcert's root certificate, which is `rootCA.pem` in the folder shown by `mkcert -CAROOT`. Copy only that file, never `rootCA-key.pem`, and install it on the device. On an iPhone, also turn it on under Settings > General > About > Certificate Trust Settings.
+
+If the address changes, reserve it in your router, or use the `.local` name. A new address needs a new certificate and an updated `DESYNC_ALLOWED_HOSTS`.
+
+To turn LAN mode off, set `DESYNC_HOST=127.0.0.1`, clear the other four values and restart.
 
 There is one password and no user accounts. It is stored as a salted scrypt hash in `~/.config/desync-archival/secrets.json`, mode 0600, outside the repository and data folder. Sessions last 30 days and live in memory, so restarting the app signs everyone out. Five wrong passwords from one address lock that address out for 15 minutes. Changing the password signs everyone out.
 
