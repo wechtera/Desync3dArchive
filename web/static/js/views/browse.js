@@ -207,7 +207,11 @@ export async function loadBrowse(nextPage = 1) {
   if (!container) return;
   page = nextPage;
   try {
-    const data = await fetchCatalogModels(box?.value.trim() || '', page, activeTag);
+    const creator = document.getElementById('browse-creator');
+    const data = await fetchCatalogModels(box?.value.trim() || '', page, activeTag, creator?.value || '');
+    if (creator && creator.options.length === 1) {
+      (data.creators || []).forEach(name => creator.add(new Option(name, name)));
+    }
     const pages = Math.max(1, Math.ceil(data.total / data.page_size));
     render(html`
       <div class="browse-summary-row">
@@ -231,5 +235,7 @@ document.addEventListener('input', (event) => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => loadBrowse(1), SEARCH_DELAY_MS);
 });
+
+document.getElementById('browse-creator')?.addEventListener('change', () => loadBrowse(1));
 
 Object.assign(window, { loadBrowse, openBrowseModel, openBrowseGroup, showTag });

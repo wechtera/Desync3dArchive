@@ -876,6 +876,20 @@ test.describe('settings', () => {
     await expect.poll(() => urls.at(-1)).toContain('kind=Painting+guide');
   });
 
+  test('models filter by creator', async ({ page }) => {
+    const urls = [];
+    await page.route('**/api/catalog-models?*', (route) => {
+      urls.push(route.request().url());
+      return route.fulfill({ json: { creators: ['Loot Studios', 'Maker'], models: [], total: 0, page: 1, page_size: 48 } });
+    });
+    await page.goto('/');
+    await page.evaluate(() => window.switchTab('browse'));
+    await expect(page.locator('#browse-creator option')).toHaveCount(3);
+    await page.locator('#browse-creator').selectOption('Loot Studios');
+    await expect.poll(() => urls.at(-1)).toContain('creator=Loot%20Studios');
+    await expect(page.locator('#browse-creator option')).toHaveCount(3);
+  });
+
   test('help explains the server settings file', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => window.switchTab('help'));

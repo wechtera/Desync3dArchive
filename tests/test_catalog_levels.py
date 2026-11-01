@@ -604,6 +604,19 @@ class BrowseTests(BuildCase):
         model = catalog_browse.list_models(self.conn, "Unique")["models"][0]
         self.assertEqual(len(catalog_browse.model_detail(self.conn, model["id"])["artifacts"]), 1)
 
+    def test_a_creator_filters_models_and_lists_every_creator(self):
+        other = self.add_collection("Other", "1/o")
+        with self.conn:
+            self.conn.execute("UPDATE collections SET designer_name = 'Maker B' WHERE id = ?", (other,))
+            self.conn.execute("UPDATE collections SET designer_name = 'Maker A' WHERE id = ?", (self.collection,))
+        everyone = catalog_browse.list_models(self.conn)
+        self.assertEqual(everyone["creators"], ["Maker A", "Maker B"])
+        narrowed = catalog_browse.list_models(self.conn, creator="Maker A")
+        self.assertGreater(narrowed["total"], 0)
+        self.assertLess(narrowed["total"], everyone["total"])
+        self.assertEqual(catalog_browse.list_models(self.conn, "Ghoul", creator="Maker B")["total"], 0)
+        self.assertEqual(catalog_browse.list_models(self.conn, creator="Maker A")["creators"], everyone["creators"])
+
     def test_a_tag_filters_models_including_inherited_tags(self):
         with self.conn:
             self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (?, 'undead')", (self.collection,))

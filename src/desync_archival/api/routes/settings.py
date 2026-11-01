@@ -567,7 +567,9 @@ def handle_get_models(
         page = int((query.get("page") or ["1"])[0])
     except ValueError:
         page = 1
-    return catalog_browse.list_models(conn, (query.get("q") or [""])[0].strip(), page, (query.get("tag") or [""])[0]), 200
+    return catalog_browse.list_models(
+        conn, (query.get("q") or [""])[0].strip(), page, (query.get("tag") or [""])[0], (query.get("creator") or [""])[0],
+    ), 200
 
 
 def handle_get_catalog_model(

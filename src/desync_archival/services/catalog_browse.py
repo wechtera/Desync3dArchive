@@ -34,6 +34,18 @@ _TAGGED = """
 """
 
 
+_BY_CREATOR = """
+    SELECT l.model_id FROM model_collections l
+        JOIN collections c ON c.id = l.collection_id WHERE c.is_active = 1 AND c.designer_name = ?
+"""
+_CREATORS = f"""
+    SELECT DISTINCT c.designer_name FROM collections c
+        JOIN model_collections l ON l.collection_id = c.id JOIN models m ON m.id = l.model_id
+    WHERE c.is_active = 1 AND c.designer_name != '' AND {_VISIBLE}
+    ORDER BY c.designer_name COLLATE NOCASE
+"""
+
+
 def _groups_of(conn: sqlite3.Connection, model_id: int) -> list[dict[str, Any]]:
     return [dict(r) for r in conn.execute(queries.SELECT_MODEL_GROUPS_BY_MODEL_ID, (model_id,)).fetchall()]
 
@@ -52,7 +64,7 @@ def _summary(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def list_models(conn: sqlite3.Connection, search: str = "", page: int = 1, tag: str = "") -> dict[str, Any]:
+def list_models(conn: sqlite3.Connection, search: str = "", page: int = 1, tag: str = "", creator: str = "") -> dict[str, Any]:
     conn.row_factory = sqlite3.Row
     where, args = _VISIBLE, []
     if search:
@@ -61,6 +73,9 @@ def list_models(conn: sqlite3.Connection, search: str = "", page: int = 1, tag: 
     if tag:
         where += f" AND m.id IN ({_TAGGED})"
         args += [tag, tag]
+    if creator:
+        where += f" AND m.id IN ({_BY_CREATOR})"
+        args.append(creator)
     total = conn.execute(f"SELECT COUNT(*) FROM models m WHERE {where};", args).fetchone()[0]
     offset = (max(1, page) - 1) * PAGE_SIZE
     rows = conn.execute(
@@ -69,7 +84,8 @@ def list_models(conn: sqlite3.Connection, search: str = "", page: int = 1, tag: 
             FROM models m WHERE {where} ORDER BY m.name COLLATE NOCASE, m.id LIMIT {PAGE_SIZE} OFFSET {offset};""",
         args,
     ).fetchall()
-    return {"models": [_summary(conn, r) for r in rows], "total": total, "page": max(1, page), "page_size": PAGE_SIZE}
+    creators = [r[0] for r in conn.execute(_CREATORS)]
+    return {"creators": creators, "models": [_summary(conn, r) for r in rows], "total": total, "page": max(1, page), "page_size": PAGE_SIZE}
 
 
 def model_detail(conn: sqlite3.Connection, model_id: int) -> dict[str, Any] | None:

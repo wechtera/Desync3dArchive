@@ -545,8 +545,8 @@ export async function saveArchiveReview(collectionId, payload) {
   });
 }
 
-export async function fetchCatalogModels(search, page, tag = '') {
-  return request(`/api/catalog-models?q=${encodeURIComponent(search)}&page=${page}&tag=${encodeURIComponent(tag)}`);
+export async function fetchCatalogModels(search, page, tag = '', creator = '') {
+  return request(`/api/catalog-models?q=${encodeURIComponent(search)}&page=${page}&tag=${encodeURIComponent(tag)}&creator=${encodeURIComponent(creator)}`);
 }
 
 export async function fetchDocuments(filters) {
