@@ -3295,3 +3295,5 @@ select, input[type="text"] { font-size: 0.9rem; }
 @media (max-width: 1040px) { #metrics-bar { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 560px) { #metrics-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .audit-detail { max-width: 52vw; max-height: 220px; overflow: auto; font-size: 0.78rem; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); }
+.import-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) auto; gap: 12px; align-items: end; }
+.import-form label { display: flex; flex-direction: column; gap: 4px; color: var(--text-dim); font-size: 0.85rem; }

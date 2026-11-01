@@ -204,6 +204,7 @@
     <div class="sub-tabs sub-tabs-minor" id="minor-external" style="display:none;">
       <button class="sub-btn" id="sub-btn-libraries" data-click="switchDownloadSubView" data-args='["libraries"]'>Linked Libraries</button>
       <button class="sub-btn" id="sub-btn-archives" data-click="switchDownloadSubView" data-args='["archives"]'>Archive Review</button>
+      <button class="sub-btn" id="sub-btn-import" data-click="switchDownloadSubView" data-args='["import"]'>Import File</button>
     </div>
 
     <!-- Sub-View A: Pending / Bulk Selection -->
@@ -504,6 +505,23 @@
           </div>
         </div>
         <div id="archive-review-queue"><div class="table-msg">Loading collections...</div></div>
+      </div>
+    </div>
+
+    <div id="sub-dl-import" style="display:none;">
+      <div class="settings-panel">
+        <div class="settings-panel-header">
+          <div>
+            <h2 class="settings-panel-title">Import File</h2>
+            <div class="settings-panel-subtitle">Add one STL or archive from anywhere. It's copied into the vault, and a repeat of the same file is refused.</div>
+          </div>
+        </div>
+        <div class="import-form">
+          <label>File path <input type="text" id="import-path" placeholder="/Users/you/Downloads/dragon.zip" spellcheck="false"></label>
+          <label>Name (optional) <input type="text" id="import-name" placeholder="Defaults to the file name" spellcheck="false"></label>
+          <label>Creator (optional) <input type="text" id="import-creator" spellcheck="false"></label>
+          <button type="button" class="btn-pill btn-action-primary" id="btn-import-file" data-click="handleImportFile">Import</button>
+        </div>
       </div>
     </div>
 

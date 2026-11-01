@@ -6,7 +6,7 @@ INSERT_APP_SETTINGS = "INSERT INTO app_settings (key, value) VALUES (?, ?);"
 
 SELECT_APP_SETTINGS_VALUE_BY_KEY = "SELECT value FROM app_settings WHERE key = ?;"
 
-UPDATE_LIBRARY_WORK_QUEUE_STATUS_BY_STATUS = "UPDATE library_work_queue SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE status = 'failed';"
+UPDATE_LIBRARY_WORK_QUEUE_STATUS_BY_STATUS = "UPDATE library_work_queue SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE status IN ('failed', 'no_source');"
 
 SELECT_LIBRARY_WORK_QUEUE = "SELECT status, COUNT(*) FROM library_work_queue GROUP BY status;"
 
@@ -26,6 +26,11 @@ SELECT_LIBRARY_WORK_QUEUE_BY_STATUS = """
 UPDATE_LIBRARY_WORK_QUEUE_STATUS_BY_ID = (
     "UPDATE library_work_queue SET status = ?, attempts = attempts + 1, detail = ?,"
     " updated_at = CURRENT_TIMESTAMP WHERE id = ?;"
+)
+
+SELECT_MODEL_ARTIFACTS_LOOSE_STL_PATHS = (
+    "SELECT path FROM model_artifacts WHERE model_id = ? AND archive_member_id IS NULL"
+    " AND lower(filename) LIKE '%.stl';"
 )
 
 SELECT_LIBRARY_MODEL_FOLDERS_REL_PATH_BY_MODEL_ID = "SELECT rel_path FROM library_model_folders WHERE model_id = ? AND excluded = 0 ORDER BY id;"

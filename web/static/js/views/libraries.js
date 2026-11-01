@@ -15,6 +15,7 @@ import {
   fetchLibraryRelease,
   saveLibraryReview,
   fetchArchiveQueue,
+  importFile,
   fetchArchiveReview,
   saveArchiveReview,
   fetchImageQueue,
@@ -394,7 +395,7 @@ export async function loadImageQueue() {
       </p>
       <div class="flex gap-2 mt-2">
         <button type="button" class="btn-pill" id="btn-image-queue-toggle" @click=${() => changeImageQueue(data.paused ? 'resume' : 'pause')}>${data.paused ? 'Resume' : 'Pause'}</button>
-        ${counts.failed ? html`<button type="button" class="btn-pill" @click=${() => changeImageQueue('retry')}>Retry ${counts.failed} Failed</button>` : nothing}
+        ${counts.failed + counts.no_source ? html`<button type="button" class="btn-pill" @click=${() => changeImageQueue('retry')}>Retry ${counts.failed + counts.no_source} Failed</button>` : nothing}
       </div>
     </div>
   `, container);
@@ -742,6 +743,18 @@ function openArchiveReview(collectionId) {
   });
 }
 
+export async function handleImportFile() {
+  const value = (id) => document.getElementById(id)?.value.trim() || '';
+  try {
+    const res = await importFile({ path: value('import-path'), name: value('import-name'), creator: value('import-creator') });
+    showToast(`Imported ${res.name}.`);
+    document.getElementById('import-path').value = '';
+    document.getElementById('import-name').value = '';
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
 export async function loadArchiveQueue() {
   const container = document.getElementById('archive-review-queue');
   if (!container) return;
@@ -814,5 +827,6 @@ Object.assign(window, {
   handleScanExternalLibrary,
   handleDeleteExternalLibrary,
   closeReview,
+  handleImportFile,
   loadArchiveQueue,
 });

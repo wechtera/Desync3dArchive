@@ -787,6 +787,20 @@ test.describe('settings', () => {
     await expect(page.locator('body img[src="x"]')).toHaveCount(0);
   });
 
+  test('a file can be imported from its path', async ({ page }) => {
+    let sent = null;
+    await page.route('**/api/import-file', (route) => {
+      sent = route.request().postDataJSON();
+      return route.fulfill({ json: { success: true, name: 'dragon', collection_id: 9 } });
+    });
+    await page.goto('/#downloads');
+    await page.locator('#group-external').click();
+    await page.locator('#sub-btn-import').click();
+    await page.locator('#import-path').fill('/tmp/dragon.stl');
+    await page.locator('#btn-import-file').click();
+    await expect.poll(() => sent?.path).toBe('/tmp/dragon.stl');
+  });
+
   test('manage tabs group downloads and external sources', async ({ page }) => {
     await page.goto('/#downloads');
     await expect(page.locator('#view-downloads > .sub-tabs').first().locator('.sub-btn')).toHaveText(['MMF Sync', 'Download MMF', 'External Vault', 'Vault Reconcile']);

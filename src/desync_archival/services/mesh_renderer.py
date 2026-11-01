@@ -12,6 +12,7 @@ import subprocess
 import tempfile
 import uuid
 import zipfile
+from collections.abc import Iterable
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -50,9 +51,13 @@ class MeshRenderer:
         """
         Selects the best un-supported body mesh from loose files on disk.
         """
+        return self.best_of(directory.rglob("*"))
+
+    def best_of(self, paths: Iterable[Path]) -> Path | None:
+        """The best mesh from a given set of files. Callers decide which files are in play."""
         all_stls: List[Path] = []
         supported_stls: list[Path] = []
-        for f in directory.rglob("*"):
+        for f in paths:
             if not f.is_file() or f.suffix.lower() != ".stl":
                 continue
             (supported_stls if re.search(r"(?<!un)supported", str(f), re.IGNORECASE) else all_stls).append(f)

@@ -492,6 +492,14 @@ export async function saveLibraryReview(libraryId, payload) {
   });
 }
 
+export async function importFile(payload) {
+  return request('/api/import-file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function fetchAuditHistory(action) {
   return request(`/api/audit-history?action=${encodeURIComponent(action)}`);
 }

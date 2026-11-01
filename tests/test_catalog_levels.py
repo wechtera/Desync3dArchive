@@ -14,6 +14,7 @@ from desync_archival.services import (
     archive_review,
     catalog_browse,
     catalog_levels,
+    file_import,
     jobs,
 )
 from desync_archival.services.archive_peeker import ArchivePeeker
@@ -651,4 +652,60 @@ class TaskLogTests(unittest.TestCase):
         logged = conn.execute("SELECT log_output FROM pipeline_tasks WHERE id = ?", (task,)).fetchone()[0]
         self.assertNotIn("abcdefghijklmnop1234", logged)
         self.assertIn("failed with", logged)
+
+
+class ImportTests(BuildCase):
+    def setUp(self):
+        super().setUp()
+        self.conn.row_factory = sqlite3.Row
+        root = Path(self.temp.name)
+        self.vault = root / "vault"
+        self.vault.mkdir()
+        self.incoming = root / "incoming"
+        self.incoming.mkdir()
+        with self.conn:
+            self.conn.execute("UPDATE app_settings SET value = ? WHERE key = 'download_root_path'", (str(self.vault),))
+            self.conn.execute(
+                "INSERT INTO app_settings (key, value) SELECT 'download_root_path', ? WHERE changes() = 0", (str(self.vault),),
+            )
+        patcher = patch("desync_archival.settings.is_allowed", return_value=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def bring(self, name="dragon.stl", body=b"solid dragon", **extra):
+        path = self.incoming / name
+        path.write_bytes(body)
+        return file_import.import_file(self.conn, self.db, path, **extra)
+
+    def test_a_loose_stl_becomes_a_findable_model(self):
+        result = self.bring(name="dragon.stl", creator="Maker")
+        self.assertTrue(result["success"])
+        row = self.one("SELECT state, name FROM models WHERE id = ?", result["collection_id"])
+        self.assertEqual(tuple(row), ("resolved", "dragon"))
+        self.assertEqual(self.one("SELECT COUNT(*) FROM catalog_search_artifacts WHERE name LIKE '%dragon.stl%'")[0], 1)
+        self.assertTrue(list(self.vault.glob("Imports/*/dragon.stl")))
+
+    def test_the_same_file_under_another_name_is_refused(self):
+        first = self.bring()
+        again = self.bring(name="renamed.stl")
+        self.assertTrue(again["duplicate"])
+        self.assertEqual(again["collection_id"], first["collection_id"])
+
+    def test_the_hash_is_stored(self):
+        self.bring()
+        self.assertEqual(len(self.one("SELECT sha256 FROM downloaded_files WHERE original_filename = 'dragon.stl'")[0]), 64)
+
+    def test_an_unknown_type_is_refused(self):
+        with self.assertRaisesRegex(file_import.ImportRefused, "printable"):
+            self.bring(name="notes.txt")
+
+    def test_a_missing_file_is_refused(self):
+        with self.assertRaisesRegex(file_import.ImportRefused, "doesn't exist"):
+            file_import.import_file(self.conn, self.db, self.incoming / "gone.stl")
+
+    def test_an_offline_vault_refuses_and_copies_nothing(self):
+        with self.conn:
+            self.conn.execute("UPDATE app_settings SET value = '/nowhere/at/all' WHERE key = 'download_root_path'")
+        with self.assertRaisesRegex(file_import.ImportRefused, "isn't available"):
+            self.bring()
 

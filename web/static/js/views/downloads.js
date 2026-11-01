@@ -96,7 +96,7 @@ export function stopActiveTransfersPolling() {
 const DOWNLOAD_GROUPS = {
   sync: ['sync'],
   download: ['pending', 'active', 'history'],
-  external: ['libraries', 'archives'],
+  external: ['libraries', 'archives', 'import'],
   reconcile: ['reconcile'],
 };
 

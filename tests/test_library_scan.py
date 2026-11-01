@@ -432,6 +432,30 @@ class RenderChoiceTests(ScanCase):
 
 
 class ImageWorkerTests(ScanCase):
+    def test_a_cover_only_looks_at_the_model_s_own_files(self):
+        worker = ImageWorker(self.db)
+        carved = self.root / "2024-01 - Drop" / "Golem" / "Tomb"
+        carved.mkdir()
+        (carved / "tomb_32mm.stl").write_bytes(SOLID)
+        self.scan_everything()
+        conn = self.connect()
+        model = conn.execute("SELECT id FROM collections WHERE name = 'Golem'").fetchone()[0]
+        conn.execute("DELETE FROM model_artifacts WHERE model_id = ? AND filename = 'tomb_32mm.stl'", (model,))
+        conn.commit()
+        job = {"model_id": model, "library_path": str(self.root)}
+        best = worker._best_stl(conn, job, self.root / "2024-01 - Drop" / "Golem")
+        conn.close()
+        self.assertEqual(best.name, "body.stl")
+
+    def test_a_mesh_in_another_folder_of_the_model_is_used(self):
+        worker = ImageWorker(self.db)
+        self.scan_everything()
+        conn = self.connect()
+        model = conn.execute("SELECT id FROM collections WHERE name = 'Golem'").fetchone()[0]
+        best = worker._best_stl(conn, {"model_id": model, "library_path": str(self.root)}, self.root / "missing")
+        conn.close()
+        self.assertEqual(best.name, "body.stl")
+
     def setUp(self):
         super().setUp()
         self.worker = ImageWorker(self.db)

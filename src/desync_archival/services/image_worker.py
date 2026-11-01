@@ -6,6 +6,7 @@ Failed jobs stay failed until someone hits retry. The old scan re-rendered them 
 import logging
 import shutil
 import sqlite3
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any, Optional
@@ -149,9 +150,15 @@ class ImageWorker:
         return Path(job["library_path"]).is_dir()
 
     def _best_stl(self, conn: sqlite3.Connection, job: sqlite3.Row, model_dir: Path) -> Path | None:
-        # A character's main folder can be Lychee-only, so try its other scales and variants.
+        # Artifacts first: a card's folder can hold another card's carved-out files, and a
+        # character's main folder can be Lychee-only.
+        root = Path(job["library_path"])
+        artifacts = conn.execute(queries.SELECT_MODEL_ARTIFACTS_LOOSE_STL_PATHS, (job["model_id"],)).fetchall()
+        best = self.renderer.best_of(root / r[0] for r in artifacts)
+        if best:
+            return best
         rows = conn.execute(queries.SELECT_LIBRARY_MODEL_FOLDERS_REL_PATH_BY_MODEL_ID, (job["model_id"],)).fetchall()
-        for folder in [model_dir, *(Path(job["library_path"]) / r[0] for r in rows)]:
+        for folder in [model_dir, *(root / r[0] for r in rows)]:
             # A review card can own single files, and rglob finds nothing under a file.
             if folder.is_file():
                 if folder.suffix.lower() == ".stl":
@@ -160,6 +167,23 @@ class ImageWorker:
             best = self.renderer.select_best_render_candidate(folder)
             if best:
                 return best
+        return None
+
+    def _render_cover(self, conn: sqlite3.Connection, job: sqlite3.Row, model_dir: Path, cover: Path) -> str | None:
+        """Renders from a loose mesh, then from inside an archive. Returns a state to stop on, or None."""
+        best_stl = self._best_stl(conn, job, model_dir)
+        with tempfile.TemporaryDirectory(prefix="desync-cover-") as scratch:
+            if not best_stl:
+                best_stl = self.renderer._resolve_model_stl_candidate(conn, job["model_id"], Path(scratch))
+            if not best_stl:
+                return self._fail(conn, job, "no_source", inactive_log.NO_SOURCE, "No artwork and no STL, loose or in an archive")
+            if not self.renderer.is_available():
+                return self._set_state(BLENDER_UNAVAILABLE)
+            log_layer("storage", logging.INFO, f"Rendering cover for Model #{job['model_id']} from {best_stl.name}")
+            if not self.renderer.render_primary_thumbnail(best_stl, cover):
+                if not self._still_mounted(job):
+                    return self._set_state(STORAGE_OFFLINE)
+                return self._fail(conn, job, "failed", inactive_log.RENDER_FAILED, f"Blender failed on {best_stl.name}")
         return None
 
     def _cover(self, conn: sqlite3.Connection, job: sqlite3.Row) -> str:
@@ -181,17 +205,9 @@ class ImageWorker:
             else:
                 if not self._still_mounted(job):
                     return self._set_state(STORAGE_OFFLINE)
-                best_stl = self.renderer.select_best_render_candidate(model_dir)
-                # TODO: E23, archive-only models could render from the archive.
-                if not best_stl:
-                    return self._fail(conn, job, "no_source", inactive_log.NO_SOURCE, "No artwork and no loose STL")
-                if not self.renderer.is_available():
-                    return self._set_state(BLENDER_UNAVAILABLE)
-                log_layer("storage", logging.INFO, f"Rendering cover for Model #{model_id} from {best_stl.name}")
-                if not self.renderer.render_primary_thumbnail(best_stl, cover):
-                    if not self._still_mounted(job):
-                        return self._set_state(STORAGE_OFFLINE)
-                    return self._fail(conn, job, "failed", inactive_log.RENDER_FAILED, f"Blender failed on {best_stl.name}")
+                stopped = self._render_cover(conn, job, model_dir, cover)
+                if stopped is not None:
+                    return stopped
 
         with conn:
             conn.execute(queries.UPDATE_COLLECTIONS_PRIMARY_IMAGE_URL_BY_ID, (f"/previews/{model_id}/cover.jpg", model_id))

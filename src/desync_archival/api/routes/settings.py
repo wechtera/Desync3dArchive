@@ -22,6 +22,7 @@ from desync_archival.services import (
     audit,
     auth_service,
     catalog_browse,
+    file_import,
     image_worker,
     inactive_log,
     jobs,
@@ -591,6 +592,23 @@ def handle_get_model_group(
 ) -> tuple[dict[str, Any], int]:
     found = catalog_browse.group_detail(conn, group_id)
     return (found, 200) if found else ({"success": False, "error": "Group not found."}, 404)
+
+
+def handle_post_import_file(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    data = body or {}
+    try:
+        result = file_import.import_file(
+            conn, app_config.db_path(), Path(str(data.get("path") or "").strip()),
+            str(data.get("name") or ""), str(data.get("creator") or ""),
+        )
+    except file_import.ImportRefused as e:
+        return {"success": False, "error": str(e)}, 400
+    return result, 200 if result.get("success") else 409
 
 
 def handle_get_audit_history(

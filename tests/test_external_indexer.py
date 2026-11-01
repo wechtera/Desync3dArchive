@@ -332,7 +332,8 @@ class TestExternalIndexer(unittest.TestCase):
         self.assertTrue(m4_cover.exists())
         self.assertEqual(m4_cover.read_bytes(), b"MOCK_BLENDER_COVER_JPG")
 
-        self.assertEqual(mock_render_primary.call_count, 1)
+        # Tree Monster, plus the archive-only model, which renders from inside its archive.
+        self.assertEqual(mock_render_primary.call_count, 2)
 
     def test_idempotency_rescan_no_duplicate_rows_or_id_churn(self):
         indexer = ExternalLibraryIndexer(self.db_path)
