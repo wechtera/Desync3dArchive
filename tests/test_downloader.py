@@ -167,7 +167,7 @@ class TestDownloaderOAuth(unittest.TestCase):
     @patch("httpx.Client.get")
     @patch("httpx.Client.stream")
     def test_oauth_metadata_refresh_and_stream(self, mock_stream, mock_get):
-        """Verifies pre-download metadata refresh obtains fresh URLs and streams with Authorization: Bearer."""
+        """Verifies a missing link is fetched from the API and streams with Authorization: Bearer."""
         # Mock 1: Object metadata refresh endpoint
         mock_meta_resp = MagicMock()
         mock_meta_resp.status_code = 200
@@ -193,7 +193,9 @@ class TestDownloaderOAuth(unittest.TestCase):
         mock_stream_resp.iter_bytes.return_value = [VALID_ZIP_CONTENT]
         mock_stream.return_value.__enter__.return_value = mock_stream_resp
 
-        # Run download process
+        # A stored link is trusted, so the API is only asked when one is missing or has died.
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.execute("UPDATE model_files SET download_url = '' WHERE file_id = 5001;")
         job = self.dm._claim_next_download_job()
         self.assertIsNotNone(job)
         self.dm._process_download_to_staging(1, job, self.staging_path)

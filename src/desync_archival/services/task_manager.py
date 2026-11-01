@@ -1012,26 +1012,15 @@ class TaskManager:
         if skipped_count > 0:
             self._append_log(task_id, f"Skipping {skipped_count} active models already recorded in SQLite.")
 
-        # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
-        base_headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-            "Accept": "application/json",
-            "Referer": "https://www.myminifactory.com/library",
-        }
-
-        cookies_dict = parse_cookies(self._get_setting("cookies_json", "").strip())
-        if not cookies_dict and (self.root_dir / "cookies.json").exists():
-            cookies_dict = parse_cookies((self.root_dir / "cookies.json").read_text(encoding="utf-8"))
-
+        # NOTE: metadata is OAuth only, as a plain client, by the owner's rule (S-15). A plain request
+        # with a token was tested against /objects/{id} on 2026-11-01. Saved metadata needs no sign-in.
         auth_token = self._get_setting("mmf_access_token", "").strip()
-        active_headers = dict(base_headers)
+        headers = {"Accept": "application/json"}
         if auth_token:
-            active_headers["Authorization"] = f"Bearer {auth_token}"
-            self._append_log(task_id, "Using MMF API Bearer token from settings.")
-            log_layer("http", logging.INFO, f"Ingest task #{task_id}: Authenticated via OAuth Bearer token.")
+            headers["Authorization"] = f"Bearer {auth_token}"
+            self._append_log(task_id, "Using your MMF sign-in.")
         else:
-            self._append_log(task_id, f"Using {len(cookies_dict)} session cookies for authentication.")
-            log_layer("http", logging.INFO, f"Ingest task #{task_id}: Operating via cookie authentication.")
+            self._append_log(task_id, "No MMF sign-in, so only saved metadata can be read. Sign in under Settings to fetch the rest.")
 
         semaphore = asyncio.Semaphore(5)
         db_lock = asyncio.Lock()
@@ -1043,15 +1032,10 @@ class TaskManager:
         tombstone_count = 0
         failed_count = 0
 
-        async with httpx.AsyncClient(
-            headers=active_headers,
-            cookies=auth_service.mmf_cookies(cookies_dict),
-            timeout=20.0,
-            follow_redirects=True,
-        ) as client:
+        async with httpx.AsyncClient(headers=headers, timeout=20.0, follow_redirects=True) as client:
 
             async def process_single_model(model_id: int):
-                nonlocal processed_count, ingested_count, tombstone_count, failed_count
+                nonlocal processed_count, ingested_count, tombstone_count, failed_count, auth_token
                 if self._cancelled(task_id):
                     return
 
@@ -1069,12 +1053,14 @@ class TaskManager:
                     except Exception:
                         data = None
 
-                if data is None:
+                if data is None and auth_token:
                     url = f"https://www.myminifactory.com/api/v2/objects/{model_id}"
                     async with semaphore:
                         for attempt in range(1, 4):
                             if self._cancelled(task_id):
                                 return
+                            if not auth_token:
+                                break
                             try:
                                 log_layer("http", logging.DEBUG, f"Requesting metadata: GET {url} (Attempt {attempt})")
                                 res = await client.get(url)
@@ -1085,11 +1071,12 @@ class TaskManager:
                                     await asyncio.sleep(0.15)
                                     break
                                 elif res.status_code == 401:
-                                    self._append_log(task_id, "MMF Bearer token expired (401). Falling back to session cookies.")
-                                    log_layer("http", logging.WARNING, f"Model #{model_id}: 401 Bearer expired. Removing Authorization header.")
-                                    if "Authorization" in client.headers:
-                                        del client.headers["Authorization"]
-                                    continue
+                                    # Every other model would answer the same, so one message and no more requests.
+                                    if auth_token:
+                                        auth_token = ""
+                                        self._append_log(task_id, "Your MMF sign-in has expired (401). Sign in again under Settings.")
+                                    log_layer("http", logging.WARNING, f"Model #{model_id}: 401, sign-in expired.")
+                                    break
                                 elif res.status_code == 429:
                                     wait_time = int(res.headers.get("Retry-After", 5))
                                     self._append_log(task_id, f"Rate limited on model {model_id}. Waiting {wait_time}s...")

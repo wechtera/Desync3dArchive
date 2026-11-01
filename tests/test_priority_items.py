@@ -1654,7 +1654,7 @@ class ImageRequestsS15Tests(TempCase):
     def test_browser_signals_stay_out_of_the_image_code(self):
         # Moving the other three requests to OAuth (E50) lowers these counts, and they should only fall.
         services = Path(__file__).resolve().parents[1] / "src/desync_archival/services"
-        for name, allowed in (("reconciler.py", 0), ("archive_peeker.py", 0), ("task_manager.py", 1), ("downloader.py", 2)):
+        for name, allowed in (("reconciler.py", 0), ("archive_peeker.py", 0), ("task_manager.py", 0), ("downloader.py", 1)):
             self.assertEqual((services / name).read_text(encoding="utf-8").count("Mozilla/"), allowed, name)
 
 

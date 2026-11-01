@@ -302,6 +302,10 @@ class StorageManager:
         return metrics
 
 
+class DeadDownloadLink(Exception):
+    """A download link answered 404 or 410, so MMF is asked whether it has a newer one."""
+
+
 class StagedFileMissing(FileNotFoundError):
     """A staged file a job needs is gone, so no retry can finish the job."""
 
@@ -686,51 +690,69 @@ class DownloadManager:
 
     @job_logged(lambda self, worker_id, job, *_: f"download-{job['id']}")
     def _process_download_to_staging(self, worker_id: int, job: sqlite3.Row, work_dir: Path):
+        # Links don't change once issued: stored and live matched on every file checked, so asking MMF
+        # before each model only added a request. It's asked when a link is missing or has died.
+        if self._links_missing(job["model_id"]):
+            self._refresh_links(worker_id, job)
+        try:
+            self._stage_files(worker_id, job, work_dir)
+        except DeadDownloadLink as e:
+            if not self._refresh_links(worker_id, job):
+                raise RuntimeError(str(e)) from e
+            log_layer("http", logging.INFO, f"Worker #{worker_id}: Model #{job['model_id']} has a new link. Trying once more.")
+            try:
+                self._stage_files(worker_id, job, work_dir)
+            except DeadDownloadLink as retry_error:
+                raise RuntimeError(str(retry_error)) from retry_error
+
+    def _links_missing(self, model_id: int) -> bool:
+        with self._get_db() as conn:
+            rows = conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID, (model_id,)).fetchall()
+        return not rows or any(not row["download_url"] for row in rows)
+
+    def _refresh_links(self, worker_id: int, job: sqlite3.Row) -> bool:
+        """Asks MMF's API for current links, as a plain client. Returns whether a stored one changed."""
         model_id = job["model_id"]
         mmf_id = job["external_key"]
+        if not self.access_token or not mmf_id:
+            return False
+        api_url = f"https://www.myminifactory.com/api/v2/objects/{mmf_id}"
+        auth_headers = {"Authorization": f"Bearer {self.access_token}", "Accept": "application/json"}
+        changed = False
+        try:
+            log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Checking download links for Model #{model_id}")
+            with httpx.Client(timeout=15.0, follow_redirects=True) as meta_client:
+                resp = meta_client.get(api_url, headers=auth_headers)
+            if resp.status_code == 401:
+                self.trip_circuit_breaker("MyMiniFactory OAuth token expired (HTTP 401). Please re-authenticate in settings.")
+                raise RuntimeError("OAuth token expired (HTTP 401)")
+            if resp.status_code != 200:
+                return False
+            obj_data = resp.json()
+            archive_dl_url = obj_data.get("archive_download_url")
+            remote_files = (
+                obj_data.get("files", {}).get("items", [])
+                if isinstance(obj_data.get("files"), dict)
+                else (obj_data.get("files") or [])
+            )
+            with self._get_db() as conn:
+                with conn:
+                    stored = {row["external_key"]: row["download_url"] for row in conn.execute(queries.SELECT_MODEL_FILE_LINKS, (model_id,))}
+                    if archive_dl_url:
+                        conn.execute(queries.UPDATE_COLLECTIONS_ARCHIVE_DOWNLOAD_URL_BY_ID, (archive_dl_url, model_id))
+                    for rf in remote_files:
+                        rf_id, rf_url = rf.get("id"), rf.get("download_url")
+                        if rf_id and rf_url:
+                            changed = changed or stored.get(str(rf_id)) != rf_url
+                            conn.execute(queries.UPDATE_MODEL_FILES_DOWNLOAD_URL_BY_SOURCE, (rf_url, rf.get("size"), str(rf_id)))
+            log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Download links checked for Model #{model_id}")
+        except httpx.RequestError as req_err:
+            log_layer("http", logging.WARNING, f"Worker #{worker_id}: Could not check download links for Model #{model_id}: {req_err}")
+        return changed
 
-        # --- PRE-DOWNLOAD OAUTH REFRESH: Fetch live authenticated URLs ---
-        if self.access_token and mmf_id:
-            api_url = f"https://www.myminifactory.com/api/v2/objects/{mmf_id}"
-            # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
-            auth_headers = {
-                "Authorization": f"Bearer {self.access_token}",
-                "Accept": "application/json",
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-            }
-            try:
-                log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Refreshing live OAuth download URLs for Model #{model_id}")
-                with httpx.Client(timeout=15.0, follow_redirects=True) as meta_client:
-                    resp = meta_client.get(api_url, headers=auth_headers)
-                    if resp.status_code == 200:
-                        obj_data = resp.json()
-                        archive_dl_url = obj_data.get("archive_download_url")
-
-                        remote_files = (
-                            obj_data.get("files", {}).get("items", [])
-                            if isinstance(obj_data.get("files"), dict)
-                            else (obj_data.get("files") or [])
-                        )
-
-                        with self._get_db() as conn:
-                            with conn:
-                                if archive_dl_url:
-                                    conn.execute(
-                                        queries.UPDATE_COLLECTIONS_ARCHIVE_DOWNLOAD_URL_BY_ID,
-                                        (archive_dl_url, model_id),
-                                    )
-                                for rf in remote_files:
-                                    rf_id = rf.get("id")
-                                    rf_url = rf.get("download_url")
-                                    rf_size = rf.get("size")
-                                    if rf_id and rf_url:
-                                        conn.execute(queries.UPDATE_MODEL_FILES_DOWNLOAD_URL_BY_SOURCE, (rf_url, rf_size, str(rf_id)))
-                        log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Live URLs updated for Model #{model_id} (ArchiveURL={bool(archive_dl_url)})")
-                    elif resp.status_code == 401:
-                        self.trip_circuit_breaker("MyMiniFactory OAuth token expired (HTTP 401). Please re-authenticate in Settings.")
-                        raise RuntimeError("OAuth token expired (HTTP 401)")
-            except httpx.RequestError as req_err:
-                log_layer("http", logging.WARNING, f"Worker #{worker_id}: Could not refresh live OAuth metadata for Model #{model_id}: {req_err}")
+    def _stage_files(self, worker_id: int, job: sqlite3.Row, work_dir: Path):
+        model_id = job["model_id"]
+        mmf_id = job["external_key"]
 
         with self._get_db() as conn:
             files = conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID, (model_id,)).fetchall()
@@ -758,7 +780,9 @@ class DownloadManager:
         downloaded_bytes_acc = 0
         staged_files_info = []
 
-        # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
+        # NOTE: the one disguised MMF request left, kept by the owner's decision on 2026-11-01. File bytes
+        # sit on the website behind a Cloudflare challenge, which a plain client with a valid token
+        # can't pass, and the API has no route to them (S-15, E50). Remove this when MMF offers one.
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
             "Referer": "https://www.myminifactory.com/library",
@@ -798,8 +822,13 @@ class DownloadManager:
                 log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Streaming {cleaned_name} ({expected_size} B) for Model #{model_id}")
 
                 with client.stream("GET", dl_url, headers=request_headers) as resp:
+                    if resp.status_code in (404, 410):
+                        raise DeadDownloadLink(f"HTTP {resp.status_code} downloading file {file_id}")
                     if resp.status_code in (401, 403):
+                        challenged = resp.status_code == 403 and resp.headers.get("cf-mitigated")
                         reason = (
+                            f"Cloudflare asked for a browser check on file {filename}. Paste fresh session cookies, then resume."
+                            if challenged else
                             f"MyMiniFactory OAuth token expired (HTTP {resp.status_code}) on file {filename}"
                             if self.access_token else
                             f"Cloudflare/MMF Session expired (HTTP {resp.status_code}) on file {filename}"

@@ -1175,7 +1175,7 @@
           <h3>Authentication Hierarchy (OAuth 2.0 vs. Cloudflare)</h3>
         </div>
         <div class="help-card-body">
-          <p>MyMiniFactory balances public REST APIs with Cloudflare Turnstile anti-bot gates. The engine uses a tiered authentication fallback strategy:</p>
+          <p>The app uses MyMiniFactory's API wherever it can. Its website sits behind a Cloudflare check that the API doesn't, so two jobs still need your browser session:</p>
           <table class="help-table">
             <thead>
               <tr>
@@ -1188,17 +1188,17 @@
               <tr>
                 <td><code>Authorization: Bearer</code></td>
                 <td>Primary (API)</td>
-                <td>Direct REST calls and direct authenticated download streams.</td>
+                <td>Metadata and download links. Needs a current sign-in, with no cookie fallback.</td>
               </tr>
               <tr>
                 <td><code>PHPSESSID</code></td>
                 <td>Session</td>
-                <td>Session identity cookie confirming user ownership of paid/backed objects. Fallback for cookie-based downloads.</td>
+                <td>Your session cookie, used by the library retrieval and file downloads only.</td>
               </tr>
               <tr>
                 <td><code>cf_clearance</code></td>
-                <td>Bypass</td>
-                <td>Cloudflare clearance token. Injected into Playwright and HTTP clients to pass Turnstile bot challenges.</td>
+                <td>Session</td>
+                <td>Cloudflare's cookie from your browser, used by the same two jobs. If it expires, paste fresh cookies.</td>
               </tr>
             </tbody>
           </table>

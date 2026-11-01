@@ -140,7 +140,7 @@ The app never migrates a database by itself. If the schema is behind, it refuses
 
 **Cancel** asks a task to stop, and it stays listed as running until its worker exits, so nothing else can start beside it. Both stop a scrape or archive unpacking within a second, and **Force Kill** ends a scrape's browser outright. A stuck Python worker can't be killed from outside, so if a task stays listed, restart the server.
 
-Sign in from Settings with **Connect**, which opens MMF's login page, where you also choose how long the sign-in lasts. Only the Client ID has to be saved first. The library scrape needs session cookies, which go in their own Settings fields, and it runs without a browser window by default. If Cloudflare asks for a check, turn that switch off and scrape in a visible window.
+Sign in from Settings with **Connect**, which opens MMF's login page, where you also choose how long the sign-in lasts. Only the Client ID has to be saved first. Metadata and download links use that sign-in through MMF's API. The library scrape and file downloads also need session cookies, because MMF's website sits behind a Cloudflare check. Those go in their own Settings fields, and it runs without a browser window by default. If Cloudflare asks for a check, turn that switch off and scrape in a visible window.
 
 The app and the old app both use port 8080, so stop one before starting the other. `check.sh` runs the browser tests when `~/DESYNC_Data_dev` exists, and they use port 8099.
 

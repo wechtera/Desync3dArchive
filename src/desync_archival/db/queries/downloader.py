@@ -86,6 +86,8 @@ SELECT_MODEL_FILES_BY_MODEL_ID = """
 
 SELECT_COLLECTIONS_BY_ID = "SELECT name, archive_download_url FROM collections WHERE id = ?;"
 
+SELECT_MODEL_FILE_LINKS = "SELECT external_key, download_url FROM model_files WHERE model_id = ?;"
+
 INSERT_MODEL_FILES = """
                             INSERT INTO model_files (source, external_key, model_id, filename, size_bytes, download_url, created_at)
                             VALUES (?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP);
