@@ -778,6 +778,12 @@ class TagTests(BuildCase):
         self.assertEqual(self.one("SELECT COUNT(*) FROM collection_tags WHERE tag = '&'")[0], 0)
         self.assertEqual(self.one("SELECT COUNT(*) FROM collection_tags WHERE tag = '01-old'")[0], 1)
 
+    def test_clean_up_clears_stale_names_from_the_list(self):
+        with self.conn:
+            self.conn.execute("INSERT INTO tags (name) VALUES ('01---old')")
+        tags.clean_up(self.conn)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM tags WHERE name = '01---old'")[0], 0)
+
     def test_clean_up_removes_junk_and_respells(self):
         with self.conn:
             self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (?, 'of')", (self.collection,))

@@ -104,4 +104,8 @@ def clean_up(conn: sqlite3.Connection) -> dict[str, int]:
         rename(conn, tag, tag)
     for tag in junk:
         delete(conn, tag)
-    return {"respelled": len(respell), "junk_removed": len(junk)}
+    # The list was filled before these spellings were settled, so it can hold names nothing uses.
+    stale = [r[0] for r in conn.execute(queries.SELECT_UNBLOCKED_TAG_NAMES).fetchall() if clean(r[0]) != r[0]]
+    with conn:
+        conn.executemany(queries.DELETE_TAG, [(name,) for name in stale])
+    return {"respelled": len(respell), "junk_removed": len(junk), "stale_names": len(stale)}

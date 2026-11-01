@@ -27,3 +27,4 @@ INSERT_REMOVED_TAG = "INSERT INTO removed_tags (collection_id, tag) VALUES (?, ?
 DELETE_REMOVED_TAG = "DELETE FROM removed_tags WHERE collection_id = ? AND tag = ?;"
 SELECT_GROUP_MEMBERS = "SELECT model_id FROM model_group_members WHERE group_id = ?;"
 SELECT_ALL_USED_TAGS = "SELECT tag FROM collection_tags UNION SELECT tag FROM model_tags;"
+SELECT_UNBLOCKED_TAG_NAMES = "SELECT name FROM tags WHERE blocked = 0;"
