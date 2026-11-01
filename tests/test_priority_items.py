@@ -1232,6 +1232,92 @@ class BackfillP03Tests(TempCase):
         self.assertEqual(build.call_count, 1)
 
 
+class SecondReviewS04Tests(TempCase):
+    def setUp(self):
+        super().setUp()
+        self.folder = self.root / "scratch"
+        self.folder.mkdir()
+        self.archive = self.root / "pack.rar"
+        self.archive.write_bytes(b"not read by the fake tool")
+
+    def free(self, usable):
+        free = external.FREE_SPACE_RESERVE + usable
+        return patch("desync_archival.external.shutil.disk_usage", return_value=shutil._ntuple_diskusage(free, 0, free))
+
+    def fake_unrar(self, payload_bytes):
+        tool = self.root / "unrar"
+        tool.write_text(
+            f"#!{sys.executable}\nimport sys, time\n"
+            f"open(sys.argv[-1] + '/big.stl', 'wb').write(b'x' * {payload_bytes})\ntime.sleep(30)\n",
+            encoding="utf-8",
+        )
+        tool.chmod(0o755)
+        return str(tool)
+
+    def test_a_whole_archive_stops_at_free_space(self):
+        with self.free(1024), patch.object(external, "list_members", return_value=[]), \
+                self.assertRaises(external.ExtractionRefused):
+            external.extract_all(".rar", self.archive, self.folder, self.fake_unrar(4096), None)
+        self.assertEqual(list(self.folder.iterdir()), [])
+
+    def test_a_full_disk_refuses_a_whole_archive_before_a_tool_runs(self):
+        with self.free(-1), patch.object(external, "run") as run, self.assertRaises(external.ExtractionRefused):
+            external.extract_all(".rar", self.archive, self.folder, "unrar", None)
+        run.assert_not_called()
+
+    def test_declared_sizes_past_free_space_are_refused_first(self):
+        members = [external.ArchiveMember("a.stl", 4096)]
+        with self.free(1024), patch.object(external, "list_members", return_value=members), \
+                patch.object(external, "run") as run, self.assertRaises(external.ExtractionRefused):
+            external.extract_all(".rar", self.archive, self.folder, "unrar", None)
+        run.assert_not_called()
+
+    def test_member_limit_works_for_a_folder_not_made_yet(self):
+        self.assertGreater(external.member_limit(self.folder / "not" / "yet"), -external.FREE_SPACE_RESERVE)
+
+    def zip_with(self, name, size):
+        archive = self.root / "pack.zip"
+        with zipfile.ZipFile(archive, "w") as handle:
+            handle.writestr(name, b"x" * size)
+        return archive
+
+    def test_a_whole_zip_export_stops_at_free_space(self):
+        archive = self.zip_with("a/big.stl", 4096)
+        exporter = object.__new__(StashExporter)
+        dest = self.root / "export"
+        dest.mkdir()
+        with self.free(1024), self.assertRaises(external.ExtractionRefused):
+            exporter._unpack_archive_to_dest(archive, dest, self.folder, "all")
+        self.assertEqual(list(self.folder.iterdir()), [])
+
+    def test_a_peeked_image_stops_at_free_space(self):
+        archive = self.zip_with("a/big.jpg", 4096)
+        peeker = object.__new__(ArchivePeeker)
+        with self.free(1024):
+            found = peeker._extract_images(archive, ["a/big.jpg"], self.folder, "zip")
+        self.assertEqual(found, {})
+
+    def test_free_space_is_checked_again_before_each_stash_item(self):
+        exporter = object.__new__(StashExporter)
+        checks = []
+        exporter._check_free_space = lambda needed, *folders: checks.append(needed)
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        migrations.apply_pending(conn)
+        with conn:
+            conn.execute("INSERT INTO collections (id, name, source, raw_backup_path) VALUES (1, 'A', 'mmf', 'm.json')")
+            conn.execute("INSERT INTO stashes (id, name) VALUES (1, 'S')")
+            for file_id in (1, 2):
+                conn.execute("INSERT INTO model_files (file_id, model_id, filename) VALUES (?, 1, 'f.zip')", (file_id,))
+                conn.execute("INSERT INTO stash_items (stash_id, item_type, model_id, file_id) VALUES (1, 'file', 1, ?)", (file_id,))
+        exporter.resolve_paths = lambda _conn: (self.root / "e", self.folder, self.root / "p")
+        (self.root / "e").mkdir()
+        exporter._export_single_item = lambda **_kwargs: {"files_count": 0, "bytes_count": 0, "manifest_entry": {}}
+        exporter.export_stash(1, conn=conn)
+        self.assertEqual(len(checks), 3, "once for the whole stash, then once per item")
+        conn.close()
+
+
 class SecondReviewR17Tests(QueueR17Tests):
     def test_a_live_job_row_counts_as_busy_with_idle_workers(self):
         # Offload backoff leaves a staging_complete job in neither in-memory list.
@@ -1261,6 +1347,74 @@ class SecondReviewR17Tests(QueueR17Tests):
         self.assertEqual(self.status(live), "staging_complete")
         kept = self.conn.execute("SELECT COUNT(*) FROM downloaded_files WHERE model_id = ?", (live,)).fetchone()[0]
         self.assertEqual(kept, 1)
+
+
+class SecondReviewR16Tests(CancelR16Tests):
+    def tool(self):
+        script = self.root / "slow_tool.py"
+        script.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+        return [sys.executable, str(script)]
+
+    def spawn_tool(self, task, finish):
+        folder = self.root / "work"
+        folder.mkdir(exist_ok=True)
+        started = threading.Event()
+        caught = []
+
+        def worker():
+            started.set()
+            try:
+                external.run(self.tool(), 30, cap=(folder, 1024))
+            except external.ExtractionStopped as e:
+                caught.append(e)
+            finish(task)
+
+        self.manager._spawn(task, "stash_export", worker, ())
+        self.assertTrue(started.wait(5))
+        return caught
+
+    def test_force_kill_stops_an_unpacking_tool(self):
+        task = self.stale_row()
+        self.manager._begin(task)
+        began = time.monotonic()
+        caught = self.spawn_tool(task, lambda t: self.manager._finalize_task(t, jobs.CANCELLED, "stopped", {}))
+        self.manager.kill_active_task()
+        join_task_threads()
+        self.assertLess(time.monotonic() - began, 10)
+        self.assertEqual(len(caught), 1)
+        self.assertEqual(self.row(task)[0], "cancelled")
+
+    def test_cancel_stops_an_unpacking_tool_too(self):
+        task = self.stale_row()
+        self.manager._begin(task)
+        caught = self.spawn_tool(task, lambda t: self.manager._finalize_task(t, jobs.CANCELLED, "stopped", {}))
+        self.manager.cancel_task(task)
+        join_task_threads()
+        self.assertEqual(len(caught), 1)
+
+    def test_a_stopped_tool_is_not_retried_with_the_next_one(self):
+        self.assertTrue(issubclass(external.ExtractionStopped, external.ExtractionRefused))
+
+    def test_a_thread_with_no_task_is_unaffected(self):
+        script = self.root / "ok.py"
+        script.write_text("print('fine')\n", encoding="utf-8")
+        result = external.run([sys.executable, str(script)], 10, cap=(self.root, 10**9))
+        self.assertEqual(result.stdout.strip(), "fine")
+
+    def test_a_stopped_export_ends_as_cancelled(self):
+        task = self.stale_row()
+        self.manager._begin(task)
+        exporter = MagicMock()
+        exporter.export_stash.side_effect = external.ExtractionStopped("stopped")
+        with patch("desync_archival.services.stash_exporter.StashExporter", return_value=exporter):
+            self.manager._run_stash_export_worker(task, {"stash_id": 1})
+        self.assertEqual(self.row(task)[0], "cancelled")
+
+    def test_an_unknown_task_type_gives_the_slot_back(self):
+        result = self.manager.start_task("no_such_task")
+        self.assertFalse(result["success"])
+        self.assertIsNone(self.manager.active_task_id)
+        self.assertEqual(self.manager._cancel_events, {})
 
 
 class SecondReviewR14Tests(BundleImportR14Tests):

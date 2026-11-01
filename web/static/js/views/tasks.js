@@ -382,7 +382,7 @@ export async function cancelActiveTask() {
 
 /** Kills any subprocess and asks the worker to stop, after asking. */
 export async function killActiveTask() {
-  if (!confirm('Force-terminate this task? Its subprocess stops now. The task stays listed until its worker ends, and if the worker is stuck, restart the server.')) return;
+  if (!confirm('Force-terminate this task? A scrape or archive unpacking stops now. The task stays listed until its worker ends, and if the worker is stuck, restart the server.')) return;
   const killBtn = document.getElementById('btn-kill-active-task');
   if (killBtn) {
     killBtn.disabled = true;

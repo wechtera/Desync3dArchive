@@ -164,6 +164,9 @@ class StashExporter:
                     if cancel_cb and cancel_cb():
                         raise InterruptedError("Export cancelled by operator.")
 
+                    # Again here, because an unpeeked archive's real size is only known as it unpacks.
+                    self._check_free_space(self._estimated_bytes(c, [item]), target_export_dir, scratch_dir)
+
                     if progress_cb:
                         pct = round(((idx - 1) / total_items) * 90.0, 1)
                         progress_cb(pct, f"Extracting item {idx}/{total_items}...")
@@ -586,7 +589,7 @@ class StashExporter:
                     clean_name = Path(name).name
                     temp_scratch = scratch_dir / f"unpack_{uuid.uuid4().hex[:8]}_{clean_name}"
                     with zf.open(info, "r") as src:
-                        external.copy_limited(src, temp_scratch)
+                        external.copy_limited(src, temp_scratch, external.member_limit(scratch_dir))
 
                     out_file = dest_dir / clean_name
                     if out_file.exists():

@@ -294,7 +294,7 @@ class ArchivePeeker:
                     try:
                         out_file = dest_dir / names[img_path]
                         with zf.open(img_path, "r") as src:
-                            external.copy_limited(src, out_file)
+                            external.copy_limited(src, out_file, external.member_limit(dest_dir))
                         extracted[img_path] = out_file
                     except Exception as ze:
                         log_layer("archive", logging.WARNING, f"Image extract error on {img_path}: {ze}")
@@ -348,8 +348,13 @@ class ArchivePeeker:
         cover = self._collection_cover(model_id)
         if not cover:
             return None
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(cover, out_file)
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(cover, out_file)
+        except OSError as e:
+            # A missing fallback picture must not fail the peek.
+            log_layer("archive", logging.WARNING, f"Fallback preview not copied for Model #{model_id}: {e}")
+            return None
         return out_file
 
     def _collection_cover(self, model_id: int) -> Optional[Path]:

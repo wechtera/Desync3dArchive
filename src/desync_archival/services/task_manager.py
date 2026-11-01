@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-from desync_archival import backup
+from desync_archival import backup, external
 from desync_archival import settings as app_config
 from desync_archival.db.queries import task_manager as queries
 from desync_archival.services import (
@@ -211,6 +211,8 @@ class TaskLogBuffer:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
+        # Held for the whole write, so a blocked one can't be overtaken and swap a task's lines.
+        self._writing = threading.Lock()
         self._lines: dict[tuple[Path, int], list[str]] = {}
         self._timer: threading.Timer | None = None
 
@@ -224,19 +226,20 @@ class TaskLogBuffer:
 
     def flush(self, db_path: Path | None = None, task_id: int | None = None) -> None:
         """Writes one task's lines, or everyone's when called with nothing."""
-        with self._lock:
-            if task_id is None:
-                pending, self._lines = self._lines, {}
-                self._timer = None
-            else:
-                key = (db_path, task_id)
-                pending = {key: self._lines.pop(key)} if key in self._lines else {}
-        for (path, owner), lines in pending.items():
-            try:
-                with scoped_connection(path) as conn:
-                    conn.execute(queries.UPDATE_PIPELINE_TASKS_LOG_OUTPUT_BY_ID, ("\n".join(lines), owner))
-            except sqlite3.Error as e:
-                logger.warning(f"Task #{owner}: {len(lines)} log lines stayed in vault.log only: {e}")
+        with self._writing:
+            with self._lock:
+                if task_id is None:
+                    pending, self._lines = self._lines, {}
+                    self._timer = None
+                else:
+                    key = (db_path, task_id)
+                    pending = {key: self._lines.pop(key)} if key in self._lines else {}
+            for (path, owner), lines in pending.items():
+                try:
+                    with scoped_connection(path) as conn:
+                        conn.execute(queries.UPDATE_PIPELINE_TASKS_LOG_OUTPUT_BY_ID, ("\n".join(lines), owner))
+                except sqlite3.Error as e:
+                    logger.warning(f"Task #{owner}: {len(lines)} log lines stayed in vault.log only: {e}")
 
 
 TASK_LOGS = TaskLogBuffer()
@@ -569,6 +572,7 @@ class TaskManager:
         timer.daemon = True
 
         def guarded() -> None:
+            external.stop_when(lambda: self._cancelled(task_id))
             try:
                 target(*args)
             except Exception:
@@ -634,6 +638,7 @@ class TaskManager:
         }
         if task_type not in workers:
             self._finalize_task(task_id, "failed", f"Unsupported task type: {task_type}", {})
+            self._release(task_id)
             return {"success": False, "error": f"Unknown task_type '{task_type}'"}
 
         target, args = workers[task_type]
@@ -1423,7 +1428,7 @@ class TaskManager:
             self._append_log(task_id, label)
             self._finalize_task(task_id, "completed", label, result, result)
 
-        except InterruptedError:
+        except (InterruptedError, external.ExtractionStopped):
             self._append_log(task_id, "Stash export cancelled by operator.")
             self._finalize_task(task_id, "cancelled", "Stash export cancelled by operator", {})
         except Exception as e:

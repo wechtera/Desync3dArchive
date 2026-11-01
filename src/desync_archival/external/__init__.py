@@ -11,9 +11,11 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import zipfile
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import IO
@@ -42,6 +44,23 @@ BLENDER_APPS = "/Applications/Blender*.app/Contents/MacOS/Blender"
 
 class ExtractionRefused(Exception):
     """An archive broke a safety rule, so nothing from it was kept."""
+
+
+class ExtractionStopped(ExtractionRefused):
+    """The task running this was cancelled, so the next tool mustn't be tried either."""
+
+
+_worker = threading.local()
+
+
+def stop_when(check: Callable[[], bool]) -> None:
+    """Lets a task stop tools run from its own thread. Peeks during downloads run in other threads."""
+    _worker.stop = check
+
+
+def _stop_requested() -> bool:
+    check = getattr(_worker, "stop", None)
+    return bool(check and check())
 
 
 @dataclass(frozen=True)
@@ -108,14 +127,17 @@ def _bytes_in(folder: Path) -> int:
 
 
 def _run_capped(cmd: list[str], timeout: float, folder: Path, limit: int) -> subprocess.CompletedProcess:
-    """Stops a tool once a folder holds more than `limit` bytes.
+    """Stops a tool once a folder holds more than `limit` bytes, or when its task is cancelled.
 
     unrar and 7-Zip have no byte cap of their own, and an archive's declared sizes can lie, so
     the only real limit is watching what lands.
 
     Raises:
         ExtractionRefused: The tool wrote past the limit. The caller removes what it left.
+        ExtractionStopped: The task was cancelled.
     """
+    if _stop_requested():
+        raise ExtractionStopped(f"{Path(cmd[0]).name} not started, because its task was cancelled")
     process = subprocess.Popen(
         cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8", errors="replace",
@@ -127,6 +149,8 @@ def _run_capped(cmd: list[str], timeout: float, folder: Path, limit: int) -> sub
                 stdout, stderr = process.communicate(timeout=min(CAP_POLL_SECONDS, timeout))
                 return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
             except subprocess.TimeoutExpired:
+                if _stop_requested():
+                    raise ExtractionStopped(f"{Path(cmd[0]).name} stopped because its task was cancelled") from None
                 if _bytes_in(folder) > limit:
                     raise ExtractionRefused(f"{Path(cmd[0]).name} unpacked past the limit of {limit} bytes") from None
                 if time.monotonic() >= deadline:
@@ -207,7 +231,9 @@ def _base_name(member_path: str) -> str:
 
 
 def member_limit(folder: Path) -> int:
-    """How many bytes a member may unpack to here. Below zero means the disk is already too full."""
+    """How many bytes may unpack here. Below zero means the disk is already too full."""
+    while not folder.exists():
+        folder = folder.parent
     return min(MAX_EXTRACTED_BYTES, shutil.disk_usage(folder).free - FREE_SPACE_RESERVE)
 
 
@@ -439,7 +465,13 @@ def _check_extracted(dest: Path, archive_name: str) -> None:
 
 def extract_all(extension: str, archive: Path, dest: Path, unrar: str | None, seven_zip: str | None) -> None:
     """Unpacks a whole archive into dest, or leaves dest empty and raises ExtractionRefused."""
-    check_members(list_members(archive, unrar, seven_zip), archive.name)
+    limit = member_limit(dest)
+    if limit <= 0:
+        raise ExtractionRefused(f"Not enough free space to unpack {archive.name}.")
+    members = list_members(archive, unrar, seven_zip)
+    check_members(members, archive.name)
+    if sum(member.size for member in members) > limit:
+        raise ExtractionRefused(f"{archive.name} wouldn't fit in the free space left.")
 
     if extension == ".rar" and unrar and Path(unrar).exists():
         command = [unrar, "x", "-y", "--", str(archive), f"{dest}/"]
@@ -449,7 +481,7 @@ def extract_all(extension: str, archive: Path, dest: Path, unrar: str | None, se
         raise ExtractionRefused(f"No tool available to unpack {archive.name}")
 
     try:
-        run(command, BULK_TIMEOUT, check=True, cap=(dest, MAX_EXTRACTED_BYTES))
+        run(command, BULK_TIMEOUT, check=True, cap=(dest, limit))
         _check_extracted(dest, archive.name)
     except (subprocess.SubprocessError, ExtractionRefused):
         shutil.rmtree(dest, ignore_errors=True)
