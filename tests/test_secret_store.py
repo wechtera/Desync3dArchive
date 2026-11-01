@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from desync_archival import backup, settings
 from desync_archival.api import server
-from desync_archival.services import auth_service, login, secret_store
+from desync_archival.services import auth_service, db, login, secret_store
 from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.task_manager import TaskManager
 
@@ -178,3 +178,33 @@ class StoredPathTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BlankedCookiesTests(unittest.TestCase):
+    """A blanked row looks empty, and startup used to refill it from the old cookies file."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        (self.root / "cookies.json").write_text('{"old": "stale-value"}', encoding="utf-8")
+        for name, value in (("secrets_file", self.root / "secrets.json"), ("data_dir", self.root)):
+            patcher = patch(f"desync_archival.settings.{name}", return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.conn = sqlite3.connect(":memory:")
+        self.addCleanup(self.conn.close)
+        self.conn.execute("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)")
+        self.conn.execute("INSERT INTO app_settings (key, value) VALUES ('cookies_json', '')")
+
+    def stored(self):
+        return self.conn.execute("SELECT value FROM app_settings WHERE key = 'cookies_json'").fetchone()[0]
+
+    def test_a_blanked_row_stays_blank_when_the_secrets_file_holds_it(self):
+        secret_store.save({"cookies_json": '{"new": "value"}'})
+        db.seed_default_settings(self.conn)
+        self.assertEqual(self.stored(), "")
+
+    def test_a_first_run_still_imports_the_old_file(self):
+        db.seed_default_settings(self.conn)
+        self.assertIn("stale-value", self.stored())

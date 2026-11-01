@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Union
 
 from desync_archival import settings as app_config
+from desync_archival.services import secret_store
 
 
 def get_db_connection(db_path: Union[Path, str]) -> sqlite3.Connection:
@@ -53,6 +54,9 @@ def seed_default_settings(conn: sqlite3.Connection):
             INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)
         """, defaults)
 
+        # A blanked row looks empty, so without this check every start refilled it from the old file.
+        if secret_store.load().get("cookies_json"):
+            return
         # Seed cookies_json if row exists but is empty
         row = conn.execute("SELECT value FROM app_settings WHERE key = 'cookies_json';").fetchone()
         if row:
