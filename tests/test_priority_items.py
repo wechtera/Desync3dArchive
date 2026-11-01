@@ -23,6 +23,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import httpx
 from db_helper import create_database
 from fastapi.testclient import TestClient
 
@@ -30,6 +31,7 @@ from desync_archival import backup, dbtool, external, migrations
 from desync_archival import settings as app_config
 from desync_archival.api import server
 from desync_archival.services import data_bundle, duplicates, jobs, login, secret_store
+from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.db import get_db_connection
 from desync_archival.services.downloader import DownloadManager, queue_models
 from desync_archival.services.stash_exporter import StashExporter
@@ -860,3 +862,83 @@ class DuplicateNamesR13Tests(unittest.TestCase):
         result = self.scan("Hero_Presupported.zip", "base_01.zip", "Support.zip")
         self.assertEqual(result["summary"]["excluded_files"], 4)
         self.assertEqual(len(result["files"]), 1)
+
+
+class PeekFallbackE47Tests(TempCase):
+    def setUp(self):
+        super().setUp()
+        self.previews = self.root / "previews"
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.execute("CREATE TABLE collections (id INTEGER PRIMARY KEY, primary_image_url TEXT, external_key TEXT)")
+        self.addCleanup(self.conn.close)
+        self.peeker = object.__new__(ArchivePeeker)
+        self.peeker.previews_root = self.previews
+        self.peeker._get_db = lambda: self.conn
+        self.folder = self.previews / "7" / "99"
+
+    def collection(self, url):
+        self.conn.execute("INSERT INTO collections (id, primary_image_url) VALUES (7, ?)", (url,))
+        self.conn.commit()
+
+    def cover(self, content=b"cached cover"):
+        path = self.previews / "7" / "cover.jpg"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return path
+
+    def test_a_cached_cover_means_no_request(self):
+        self.collection("https://assets.myminifactory.com/a.jpg")
+        self.cover()
+        with patch("desync_archival.services.archive_peeker.httpx.Client") as client:
+            found = self.peeker._fetch_catalog_fallback_image(7, self.folder)
+        client.assert_not_called()
+        self.assertEqual(found, self.folder / "catalog_primary.jpg")
+        self.assertEqual(found.read_bytes(), b"cached cover")
+
+    def test_an_external_collections_local_cover_works(self):
+        # primary_image_url is a local path for these, which httpx can't fetch.
+        self.collection("/previews/7/cover.jpg")
+        self.cover()
+        found = self.peeker._fetch_catalog_fallback_image(7, self.folder)
+        self.assertEqual(found.read_bytes(), b"cached cover")
+
+    def test_a_local_path_with_no_cover_finds_nothing_and_makes_no_request(self):
+        self.collection("/previews/7/cover.jpg")
+        with patch("desync_archival.services.archive_peeker.httpx.Client") as client:
+            self.assertIsNone(self.peeker._fetch_catalog_fallback_image(7, self.folder))
+        client.assert_not_called()
+
+    def test_with_no_cover_it_fetches_once_and_keeps_it_as_the_cover(self):
+        self.collection("https://assets.myminifactory.com/a.jpg")
+        response = MagicMock(status_code=200, content=b"fetched")
+        with patch("desync_archival.services.archive_peeker.httpx.Client") as client:
+            client.return_value.__enter__.return_value.get.return_value = response
+            first = self.peeker._fetch_catalog_fallback_image(7, self.folder)
+            second = self.peeker._fetch_catalog_fallback_image(7, self.previews / "7" / "100")
+        self.assertEqual(client.call_count, 1)
+        self.assertEqual((self.previews / "7" / "cover.jpg").read_bytes(), b"fetched")
+        self.assertEqual(first.read_bytes(), b"fetched")
+        self.assertEqual(second.read_bytes(), b"fetched")
+
+    def test_an_empty_cover_doesnt_count(self):
+        self.collection("https://assets.myminifactory.com/a.jpg")
+        self.cover(b"")
+        response = MagicMock(status_code=200, content=b"fetched")
+        with patch("desync_archival.services.archive_peeker.httpx.Client") as client:
+            client.return_value.__enter__.return_value.get.return_value = response
+            found = self.peeker._fetch_catalog_fallback_image(7, self.folder)
+        self.assertEqual(found.read_bytes(), b"fetched")
+
+    def test_a_failed_fetch_leaves_no_files(self):
+        self.collection("https://assets.myminifactory.com/a.jpg")
+        with patch("desync_archival.services.archive_peeker.httpx.Client") as client:
+            client.return_value.__enter__.return_value.get.side_effect = httpx.ConnectError("no")
+            self.assertIsNone(self.peeker._fetch_catalog_fallback_image(7, self.folder))
+        self.assertFalse((self.previews / "7" / "cover.jpg").exists())
+
+    def test_it_keeps_the_stored_path_format(self):
+        self.collection("/previews/7/cover.jpg")
+        self.cover()
+        found = self.peeker._fetch_catalog_fallback_image(7, self.folder)
+        self.assertEqual(found.relative_to(self.previews).as_posix(), "7/99/catalog_primary.jpg")

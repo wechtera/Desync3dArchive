@@ -333,6 +333,54 @@ class ArchivePeeker:
             shutil.rmtree(scratch, ignore_errors=True)
 
     def _fetch_catalog_fallback_image(self, model_id: int, dest_dir: Path) -> Optional[Path]:
+        """Gives an archive with no images the collection's cover.
+
+        It's copied into the file's own folder, because stored preview paths are built from that
+        folder and its filename. The copy is local: MMF is only asked when no cover is cached.
+        """
+        out_file = dest_dir / "catalog_primary.jpg"
+        if out_file.exists() and out_file.stat().st_size > 0:
+            return out_file
+        cover = self._collection_cover(model_id)
+        if not cover:
+            return None
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(cover, out_file)
+        return out_file
+
+    def _collection_cover(self, model_id: int) -> Optional[Path]:
+        cover = self.previews_root / str(model_id) / "cover.jpg"
+        if cover.exists() and cover.stat().st_size > 0:
+            return cover
+
+        url = self._catalog_image_url(model_id)
+        # External collections store the local path of their render here, which isn't fetchable.
+        if not url or not url.startswith(("http://", "https://")):
+            return None
+
+        # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+            "Referer": "https://www.myminifactory.com/",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+        }
+
+        try:
+            log_layer("http", logging.DEBUG, f"ArchivePeeker downloading fallback catalog preview: {url}")
+            with httpx.Client(headers=headers, timeout=15.0, follow_redirects=True) as client:
+                resp = client.get(url)
+                if resp.status_code == 200 and len(resp.content) > 0:
+                    cover.parent.mkdir(parents=True, exist_ok=True)
+                    temp = cover.with_suffix(".jpg.tmp")
+                    temp.write_bytes(resp.content)
+                    temp.replace(cover)
+                    return cover
+        except Exception as e:
+            log_layer("http", logging.WARNING, f"ArchivePeeker fallback preview failed for Model #{model_id}: {e}")
+
+        return None
+
+    def _catalog_image_url(self, model_id: int) -> Optional[str]:
         url = None
         with self._get_db() as conn:
             row = conn.execute(queries.SELECT_COLLECTIONS_PRIMARY_IMAGE_URL_BY_ID, (model_id,)).fetchone()
@@ -358,33 +406,7 @@ class ArchivePeeker:
                             )
                 except Exception:
                     pass
-
-        if not url:
-            return None
-
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        out_file = dest_dir / "catalog_primary.jpg"
-        if out_file.exists() and out_file.stat().st_size > 0:
-            return out_file
-
-        # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-            "Referer": "https://www.myminifactory.com/",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-        }
-
-        try:
-            log_layer("http", logging.DEBUG, f"ArchivePeeker downloading fallback catalog preview: {url}")
-            with httpx.Client(headers=headers, timeout=15.0, follow_redirects=True) as client:
-                resp = client.get(url)
-                if resp.status_code == 200 and len(resp.content) > 0:
-                    out_file.write_bytes(resp.content)
-                    return out_file
-        except Exception as e:
-            log_layer("http", logging.WARNING, f"ArchivePeeker fallback preview failed for Model #{model_id}: {e}")
-
-        return None
+        return url
 
     def _handle_document_pack(
         self,
