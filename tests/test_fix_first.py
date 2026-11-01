@@ -435,6 +435,7 @@ class R06Backups(BackupCase):
         tasks.db_path = self.db
         tasks._lock = threading.Lock()
         tasks.active_task_id = None
+        tasks._cancel_events = {}
         tasks._finalize_task = MagicMock()
         tasks.start_task = MagicMock(return_value={"success": True})
         return tasks

@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 import unittest
 import zipfile
@@ -32,6 +33,7 @@ from desync_archival.services import data_bundle, jobs, login, secret_store
 from desync_archival.services.db import get_db_connection
 from desync_archival.services.downloader import DownloadManager, queue_models
 from desync_archival.services.stash_exporter import StashExporter
+from desync_archival.services.task_manager import TaskManager
 
 # Stored relative to the data folder or an archive, so a move can't change them.
 NOT_MOVED_WITH_A_BUNDLE = {
@@ -47,6 +49,12 @@ NOT_MOVED_WITH_A_BUNDLE = {
     ("model_artifacts", "path"),
     ("models", "image_path"),
 }
+
+
+def join_task_threads():
+    for thread in threading.enumerate():
+        if thread.name.startswith("task-"):
+            thread.join(5)
 
 
 class TempCase(unittest.TestCase):
@@ -636,3 +644,168 @@ class QueueR17Tests(unittest.TestCase):
         for status, model in zip(self.LIVE, live, strict=True):
             self.assertEqual(manager.clear_queue(status), 0)
             self.assertEqual(self.status(model), status)
+
+
+class CancelR16Tests(TempCase):
+    """Real threads, because the bug only exists while a cancelled worker is still running."""
+
+    def setUp(self):
+        super().setUp()
+        self.db = self.root / "library.db"
+        create_database(self.db)
+        self.manager = object.__new__(TaskManager)
+        self.manager.db_path = self.db
+        self.manager.root_dir = self.root
+        self.manager._lock = threading.Lock()
+        self.manager.active_task_id = None
+        self.manager.active_process = None
+        self.manager._cancel_events = {}
+        self.gate = threading.Event()
+        # Runs last to first: open the gate, wait for the threads, then the temp folder can go.
+        self.addCleanup(join_task_threads)
+        self.addCleanup(self.gate.set)
+        self.exited = threading.Event()
+
+    def worker(self, task_id, _params):
+        self.gate.wait(10)
+        status = jobs.CANCELLED if self.manager._cancelled(task_id) else jobs.COMPLETED
+        self.manager._finalize_task(task_id, status, "done", {})
+        self.manager._release(task_id)
+        self.exited.set()
+
+    def start(self):
+        with patch.object(self.manager, "_run_backup_worker", self.worker):
+            return self.manager.start_task("database_backup")["task_id"]
+
+    def row(self, task_id):
+        conn = sqlite3.connect(self.db)
+        try:
+            return conn.execute("SELECT status, progress_label FROM pipeline_tasks WHERE id = ?", (task_id,)).fetchone()
+        finally:
+            conn.close()
+
+    def busy(self):
+        conn = sqlite3.connect(self.db)
+        try:
+            return jobs.busy_reason(conn)
+        finally:
+            conn.close()
+
+    def finish(self):
+        self.gate.set()
+        self.assertTrue(self.exited.wait(5))
+        join_task_threads()
+
+    def test_a_cancelled_task_stays_running_until_its_worker_stops(self):
+        task = self.start()
+        self.manager.cancel_task(task)
+        self.assertEqual(self.row(task)[0], "running")
+        self.assertIn("Cancelling", self.row(task)[1])
+        self.assertIsNotNone(self.busy())
+        self.finish()
+        self.assertEqual(self.row(task)[0], "cancelled")
+
+    def test_nothing_else_starts_while_a_cancelled_worker_runs(self):
+        task = self.start()
+        self.manager.cancel_active_task()
+        result = self.manager.start_task("database_backup")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["task_id"], task)
+        self.finish()
+
+    def test_a_killed_task_keeps_its_slot_until_the_thread_ends(self):
+        task = self.start()
+        process = MagicMock()
+        process.poll.return_value = None
+        self.manager.active_process = process
+        self.manager.kill_active_task()
+        process.kill.assert_called_once()
+        self.assertEqual(self.manager.active_task_id, task)
+        self.assertEqual(self.row(task)[0], "running")
+        self.assertIsNotNone(self.busy())
+        self.finish()
+        self.assertEqual(self.row(task)[0], "cancelled")
+        self.assertIsNone(self.manager.active_task_id)
+
+    def test_cancelling_one_task_leaves_the_next_alone(self):
+        self.manager._begin(1)
+        self.manager._begin(2)
+        self.manager._cancel_events[1].set()
+        self.assertTrue(self.manager._cancelled(1))
+        self.assertFalse(self.manager._cancelled(2))
+
+    def test_starting_a_task_cant_uncancel_an_older_one(self):
+        self.manager._begin(1)
+        self.manager._cancel_events[1].set()
+        self.manager._begin(2)
+        self.assertTrue(self.manager._cancelled(1))
+
+    def test_an_old_worker_cant_clear_a_newer_tasks_slot(self):
+        self.manager._begin(1)
+        self.manager._begin(2)
+        self.manager._release(1)
+        self.assertEqual(self.manager.active_task_id, 2)
+        self.manager._release(2)
+        self.assertIsNone(self.manager.active_task_id)
+
+    def stale_row(self):
+        conn = sqlite3.connect(self.db)
+        with conn:
+            task = conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('vault_reconcile', 'running')").lastrowid
+        conn.close()
+        return task
+
+    def test_a_row_with_no_worker_can_still_be_cancelled(self):
+        # Nothing is left to report back, so waiting would leave the row running forever.
+        task = self.stale_row()
+        self.manager.cancel_task(task)
+        self.assertEqual(self.row(task)[0], "cancelled")
+
+    def test_cancelling_with_no_active_worker_clears_stale_rows(self):
+        task = self.stale_row()
+        self.assertTrue(self.manager.cancel_active_task())
+        self.assertEqual(self.row(task)[0], "cancelled")
+
+    def test_killing_a_row_with_no_worker_clears_it(self):
+        task = self.stale_row()
+        self.assertTrue(self.manager.kill_active_task())
+        self.assertEqual(self.row(task)[0], "cancelled")
+
+    def test_a_worker_that_ignores_cancel_reports_what_really_happened(self):
+        task = self.stale_row()
+        self.manager._begin(task)
+        self.manager.cancel_task(task)
+        self.manager._finalize_task(task, jobs.COMPLETED, "finished anyway", {})
+        self.assertEqual(self.row(task)[0], "completed")
+
+    def test_a_cancelled_worker_that_returns_without_a_result_is_closed(self):
+        task = self.stale_row()
+        self.manager._begin(task)
+        done = threading.Event()
+        self.manager.cancel_task(task)
+        self.manager._spawn(task, "vault_reconcile", done.set, ())
+        self.assertTrue(done.wait(5))
+        deadline = time.monotonic() + 5
+        while self.row(task)[0] == "running" and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(self.row(task)[0], "cancelled")
+
+    def test_a_worker_that_returns_without_a_result_doesnt_look_busy_forever(self):
+        task = self.stale_row()
+        self.manager._begin(task)
+        self.manager._spawn(task, "vault_reconcile", lambda: None, ())
+        deadline = time.monotonic() + 5
+        while self.row(task)[0] == "running" and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(self.row(task)[0], "failed")
+
+    def test_the_time_limit_uses_the_tasks_own_cancel(self):
+        task = self.stale_row()
+        self.manager._begin(task)
+        self.manager._on_time_limit(task, "vault_reconcile")
+        self.assertTrue(self.manager._cancelled(task))
+        self.assertEqual(self.row(task)[0], "running")
+
+    def test_no_worker_reads_a_shared_flag(self):
+        source = (Path(__file__).resolve().parents[1] / "src/desync_archival/services/task_manager.py").read_text(encoding="utf-8")
+        self.assertNotIn("_cancel_requested", source)

@@ -199,6 +199,10 @@ def extract_normalized_records(model_id: int, data: dict, backup_path: Path):
     return model_row, tag_rows, file_rows
 
 
+CANCELLING_LABEL = "Cancelling. Waiting for the task to stop."
+KILLING_LABEL = "Force kill sent. If this stays here, the worker is stuck, so restart the server."
+
+
 class TaskManager:
     """Runs one background pipeline task at a time. Process-wide singleton."""
     _instance: Optional["TaskManager"] = None
@@ -224,7 +228,7 @@ class TaskManager:
         self._lock = threading.Lock()
         self.active_task_id: Optional[int] = None
         self.active_process: Optional[subprocess.Popen] = None
-        self._cancel_requested: bool = False
+        self._cancel_events: dict[int, threading.Event] = {}
         self._scrape_error: str = ""
         self._initialized = True
 
@@ -399,8 +403,7 @@ class TaskManager:
         with self._get_db() as conn:
             auth_service.set_settings(conn, stamps)
         self._finalize_task(task_id, status, label, {"result": result})
-        with self._lock:
-            self.active_task_id = None
+        self._release(task_id)
 
     def record_finished(self, task_type: str, label: str, summary: dict[str, Any], status: str = jobs.COMPLETED) -> None:
         """A check that answers at once still gets a job row, so its last run can be shown."""
@@ -415,16 +418,15 @@ class TaskManager:
                 model_ids=params.get("model_ids"),
                 progress_cb=lambda pct, label: self._update_progress(task_id, pct, label),
                 log_cb=lambda message: self._append_log(task_id, message),
-                cancel_cb=lambda: self._cancel_requested,
+                cancel_cb=lambda: self._cancelled(task_id),
             )
-            status = jobs.CANCELLED if self._cancel_requested else jobs.COMPLETED
+            status = jobs.CANCELLED if self._cancelled(task_id) else jobs.COMPLETED
             label = f"{report.get('downloaded', 0)} cover images cached"
         except (OSError, sqlite3.Error) as e:
             self._append_log(task_id, f"Preview backfill stopped: {e}")
             report, status, label = {}, jobs.FAILED, "Preview backfill failed"
         self._finalize_task(task_id, status, label, report)
-        with self._lock:
-            self.active_task_id = None
+        self._release(task_id)
 
     def _run_path_realign_worker(self, task_id: int, params: dict[str, Any]):
         try:
@@ -440,8 +442,7 @@ class TaskManager:
         with self._get_db() as conn:
             audit.record(conn, "path_realign", False, {"task_id": task_id, **report})
         self._finalize_task(task_id, status, label, report)
-        with self._lock:
-            self.active_task_id = None
+        self._release(task_id)
 
     def _inventory_library_pdfs(self, task_id: int, library_id: int) -> None:
         from desync_archival.services import documents
@@ -449,7 +450,7 @@ class TaskManager:
         try:
             with self._get_db() as conn:
                 documents.inventory_one(
-                    conn, library_id, lambda message: self._append_log(task_id, message), lambda: self._cancel_requested,
+                    conn, library_id, lambda message: self._append_log(task_id, message), lambda: self._cancelled(task_id),
                 )
         except (OSError, sqlite3.Error) as e:
             # The scan itself worked, and Update PDFs can pick these up later.
@@ -464,16 +465,15 @@ class TaskManager:
                 totals = documents.update(
                     conn, lambda message: self._append_log(task_id, message),
                     lambda pct, label: self._update_progress(task_id, pct, label),
-                    lambda: self._cancel_requested,
+                    lambda: self._cancelled(task_id),
                 )
-            status = jobs.CANCELLED if self._cancel_requested else jobs.COMPLETED
+            status = jobs.CANCELLED if self._cancelled(task_id) else jobs.COMPLETED
             label = f"{totals['added']} new PDFs, {totals['made']} previews made, {totals['failed']} couldn't be drawn"
         except (OSError, sqlite3.Error) as e:
             self._append_log(task_id, f"PDF update stopped: {e}")
             totals, status, label = {}, jobs.FAILED, "PDF update failed"
         self._finalize_task(task_id, status, label, totals)
-        with self._lock:
-            self.active_task_id = None
+        self._release(task_id)
 
     @job_logged(lambda self, task_id, *_: f"task-{task_id}")
     def _run_file_import_worker(self, task_id: int, params: dict[str, Any]):
@@ -485,7 +485,7 @@ class TaskManager:
                     conn, self.db_path, [Path(p) for p in params["paths"]], params.get("creator", ""),
                     lambda message: self._append_log(task_id, message),
                     lambda pct, label: self._update_progress(task_id, pct, label),
-                    lambda: self._cancel_requested,
+                    lambda: self._cancelled(task_id),
                 )
             label = f"Imported {totals['imported']} files, {totals['repeats']} already in the catalog"
             if totals["archives"]:
@@ -498,8 +498,7 @@ class TaskManager:
             self._append_log(task_id, f"Import stopped: {e}")
             totals, status, label = {}, jobs.FAILED, "Import failed"
         self._finalize_task(task_id, status, label, totals)
-        with self._lock:
-            self.active_task_id = None
+        self._release(task_id)
 
     def _rebuild_releases(self, task_id: int) -> None:
         """Ingest changes the catalog, so releases are rebuilt. A failure here keeps the ingest result."""
@@ -510,6 +509,15 @@ class TaskManager:
         except Exception:
             logger.exception("Release rebuild failed after ingest")
             self._append_log(task_id, "Release rebuild failed. See the application log.")
+
+    def _close_row(self, task_id: int) -> None:
+        """Cancel leaves closing the row to the worker, so one that returned without a result would look busy forever."""
+        if self._cancelled(task_id):
+            status, label = jobs.CANCELLED, "Cancelled by operator"
+        else:
+            status, label = jobs.FAILED, "The task ended without a result. See the application log."
+        with self._get_db() as conn:
+            conn.execute(queries.UPDATE_RUNNING_TASK_RESULT, (status, status, label, task_id))
 
     def _spawn(self, task_id: int, task_type: str, target: Callable, args: tuple) -> None:
         """The one place background jobs start, with a time limit and a guard against crashes."""
@@ -522,13 +530,15 @@ class TaskManager:
             except Exception:
                 logger.exception(f"Task #{task_id} ({task_type}) crashed")
                 self._finalize_task(task_id, jobs.FAILED, "Task crashed. See the application log.", {})
-                with self._lock:
-                    self.active_task_id = None
             finally:
                 timer.cancel()
+                try:
+                    self._close_row(task_id)
+                finally:
+                    self._release(task_id)
 
         timer.start()
-        threading.Thread(target=guarded, daemon=True).start()
+        threading.Thread(target=guarded, daemon=True, name=f"task-{task_id}").start()
 
     def _on_time_limit(self, task_id: int, task_type: str) -> None:
         if self.active_task_id != task_id:
@@ -559,11 +569,10 @@ class TaskManager:
                 params_json = json.dumps(task_params)
                 cursor = conn.execute(queries.INSERT_PIPELINE_TASKS, (task_type, params_json))
                 task_id = cursor.lastrowid
+                assert task_id is not None
                 conn.execute(queries.UPDATE_PIPELINE_TASKS_STARTED_AT_BY_ID, (task_id,))
 
-            # FIXME(R-16): _cancel_requested is one shared flag, so this un-cancels any older worker that is still running.
-            self.active_task_id = task_id
-            self._cancel_requested = False
+            self._begin(task_id)
 
         log_layer("sql", logging.INFO, f"Dispatched background task #{task_id} (Type: {task_type})")
 
@@ -588,37 +597,58 @@ class TaskManager:
 
         return {"success": True, "task_id": task_id, "task_type": task_type}
 
-    def cancel_task(self, task_id: int) -> Dict[str, Any]:
-        """Flags cancellation and marks the row, before the worker has actually stopped."""
-        with self._lock:
-            self._cancel_requested = True
-            if self.active_process and self.active_process.poll() is None:
-                try:
-                    self.active_process.terminate()
-                except Exception:
-                    pass
+    def _begin(self, task_id: int) -> None:
+        """Called holding `_lock`. Each task has its own flag, so one can't clear or trip another's."""
+        self.active_task_id = task_id
+        self._cancel_events[task_id] = threading.Event()
 
-            with self._get_db() as conn:
-                with conn:
+    def _cancelled(self, task_id: int) -> bool:
+        event = self._cancel_events.get(task_id)
+        return event is not None and event.is_set()
+
+    def _release(self, task_id: int) -> None:
+        """Gives up the slot, only if this task still holds it."""
+        with self._lock:
+            self._cancel_events.pop(task_id, None)
+            if self.active_task_id == task_id:
+                self.active_task_id = None
+
+    def _ask_to_stop(self, task_id: int | None, force: bool, note: str) -> bool:
+        """Called holding `_lock`. Returns False if no worker here is running the task.
+
+        The row stays `running` until the worker exits, so busy checks stay true and nothing starts
+        beside it. A Python thread can't be stopped from outside, so a stuck one keeps the slot
+        until a restart, which is safer than running a second task next to it.
+        """
+        event = self._cancel_events.get(task_id) if task_id is not None else None
+        if event is None:
+            return False
+        event.set()
+        if self.active_process and self.active_process.poll() is None:
+            try:
+                if force:
+                    self.active_process.kill()
+                else:
+                    self.active_process.terminate()
+            except OSError:
+                pass
+        with self._get_db() as conn:
+            conn.execute(queries.UPDATE_RUNNING_TASK_LABEL, (note, task_id))
+        return True
+
+    def cancel_task(self, task_id: int) -> Dict[str, Any]:
+        with self._lock:
+            if not self._ask_to_stop(task_id, force=False, note=CANCELLING_LABEL):
+                with self._get_db() as conn:
                     conn.execute(queries.UPDATE_PIPELINE_TASKS_STATUS_BY_ID_V2, (task_id,))
             logger.info(f"[TaskManager] Cancelled task #{task_id} by operator.")
             return {"success": True, "task_id": task_id}
 
-    # FIXME(R-16): this frees the slot while a Python worker keeps running, so busy checks report idle.
     def kill_task(self, task_id: int) -> Dict[str, Any]:
-        """Kills any subprocess and releases the slot. A Python worker thread can't be killed."""
+        """Kills any subprocess and asks the worker to stop. See `_ask_to_stop` on the slot."""
         with self._lock:
-            self._cancel_requested = True
-            if self.active_process and self.active_process.poll() is None:
-                try:
-                    self.active_process.kill()
-                except Exception:
-                    pass
-            self.active_process = None
-            self.active_task_id = None
-
-            with self._get_db() as conn:
-                with conn:
+            if not self._ask_to_stop(task_id, force=True, note=KILLING_LABEL):
+                with self._get_db() as conn:
                     conn.execute(queries.UPDATE_PIPELINE_TASKS_STATUS_BY_ID_V3, (task_id,))
             logger.warning(f"[TaskManager] Force killed task #{task_id} by operator.")
             return {"success": True, "task_id": task_id}
@@ -661,31 +691,15 @@ class TaskManager:
 
     def cancel_active_task(self) -> bool:
         with self._lock:
-            self._cancel_requested = True
-            if self.active_process and self.active_process.poll() is None:
-                try:
-                    self.active_process.terminate()
-                except Exception:
-                    pass
-
-            with self._get_db() as conn:
-                with conn:
+            if not self._ask_to_stop(self.active_task_id, force=False, note=CANCELLING_LABEL):
+                with self._get_db() as conn:
                     conn.execute(queries.UPDATE_PIPELINE_TASKS_STATUS_BY_STATUS)
             return True
 
     def kill_active_task(self) -> bool:
         with self._lock:
-            self._cancel_requested = True
-            if self.active_process and self.active_process.poll() is None:
-                try:
-                    self.active_process.kill()
-                except Exception:
-                    pass
-            self.active_process = None
-            self.active_task_id = None
-
-            with self._get_db() as conn:
-                with conn:
+            if not self._ask_to_stop(self.active_task_id, force=True, note=KILLING_LABEL):
+                with self._get_db() as conn:
                     conn.execute(queries.UPDATE_PIPELINE_TASKS_STATUS_BY_STATUS_V2)
             return True
 
@@ -765,8 +779,7 @@ class TaskManager:
             err_msg = f"Fatal: scrape.js script not found at {scrape_script}"
             self._append_log(task_id, err_msg)
             self._finalize_task(task_id, "failed", err_msg, {})
-            with self._lock:
-                self.active_task_id = None
+            self._release(task_id)
             return
 
         self._update_progress(task_id, 5.0, "Launching Playwright browser...")
@@ -797,14 +810,14 @@ class TaskManager:
 
             process.wait()
             return_code = process.returncode
-            if return_code == 0 and not self._cancel_requested and cookies_dest.exists():
+            if return_code == 0 and not self._cancelled(task_id) and cookies_dest.exists():
                 with self._get_db() as conn:
                     renewed = auth_service.keep_fresh_cookies(conn, cookies_dest.read_text(encoding="utf-8"))
                 self._append_log(task_id, f"Saved {renewed} renewed session cookies.")
             # Safety: live session cookies. FIXME(S-07): move to finally, because earlier exits leave them on disk.
             cookies_dest.unlink(missing_ok=True)
 
-            if self._cancel_requested:
+            if self._cancelled(task_id):
                 self._finalize_task(task_id, "cancelled", "Scrape cancelled by user.", {})
                 return
 
@@ -843,7 +856,7 @@ class TaskManager:
         finally:
             with self._lock:
                 self.active_process = None
-                self.active_task_id = None
+            self._release(task_id)
 
     # -------------------------------------------------------------------------
     # 2. Metadata Ingestion Pipeline Worker
@@ -902,12 +915,11 @@ class TaskManager:
 
                 cursor = conn.execute(queries.INSERT_PIPELINE_TASKS_V3, (json.dumps({"source": source_label, "count": len(clean_ids)}),))
                 task_id = cursor.lastrowid
+                assert task_id is not None
                 conn.execute(queries.UPDATE_PIPELINE_TASKS_STARTED_AT_BY_ID, (task_id,))
 
-            self.active_task_id = task_id
-            self._cancel_requested = False
+            self._begin(task_id)
 
-        assert task_id is not None
         self._spawn(
             task_id, "metadata_ingest", self._run_ingest_worker,
             (task_id, pending_ids, skipped_count, source_label, len(clean_ids)),
@@ -936,8 +948,7 @@ class TaskManager:
             self._append_log(task_id, f"Fatal ingestion exception: {e}")
             self._finalize_task(task_id, "failed", f"Ingestion error: {e}", {})
         finally:
-            with self._lock:
-                self.active_task_id = None
+            self._release(task_id)
 
     async def _async_ingest(
         self,
@@ -996,7 +1007,7 @@ class TaskManager:
 
             async def process_single_model(model_id: int):
                 nonlocal processed_count, ingested_count, tombstone_count, failed_count
-                if self._cancel_requested:
+                if self._cancelled(task_id):
                     return
 
                 backup_file = metadata_dir / f"model_{model_id}.json"
@@ -1017,7 +1028,7 @@ class TaskManager:
                     url = f"https://www.myminifactory.com/api/v2/objects/{model_id}"
                     async with semaphore:
                         for attempt in range(1, 4):
-                            if self._cancel_requested:
+                            if self._cancelled(task_id):
                                 return
                             try:
                                 log_layer("http", logging.DEBUG, f"Requesting metadata: GET {url} (Attempt {attempt})")
@@ -1142,13 +1153,13 @@ class TaskManager:
 
             batch_size = 25
             for i in range(0, len(pending_ids), batch_size):
-                if self._cancel_requested:
+                if self._cancelled(task_id):
                     break
                 batch = pending_ids[i:i + batch_size]
                 await asyncio.gather(*(process_single_model(mid) for mid in batch))
 
         summary = {
-            "status": "cancelled" if self._cancel_requested else "completed",
+            "status": "cancelled" if self._cancelled(task_id) else "completed",
             "source": source_label,
             "total_submitted": total_submitted,
             "skipped_already_in_db": skipped_count,
@@ -1165,7 +1176,7 @@ class TaskManager:
             "tombstoned_count": tombstone_count,
         }
 
-        if self._cancel_requested:
+        if self._cancelled(task_id):
             self._append_log(task_id, f"Ingestion cancelled by user ({ingested_count} models saved before stop).")
             self._finalize_task(task_id, "cancelled", f"Ingestion cancelled ({ingested_count} saved)", summary, artifacts)
         else:
@@ -1198,7 +1209,7 @@ class TaskManager:
             self._update_progress(task_id, pct, label)
 
         def cancel_cb() -> bool:
-            return self._cancel_requested
+            return self._cancelled(task_id)
 
         try:
             reconciler = VaultReconciler(self.db_path)
@@ -1209,7 +1220,7 @@ class TaskManager:
                 cancel_cb=cancel_cb,
             )
 
-            if self._cancel_requested:
+            if self._cancelled(task_id):
                 self._append_log(task_id, "Reconciliation scan cancelled by operator.")
                 self._finalize_task(
                     task_id,
@@ -1252,9 +1263,7 @@ class TaskManager:
             self._append_log(task_id, f"Fatal reconciliation exception: {e}\n{tb}")
             self._finalize_task(task_id, "failed", f"Reconciliation exception: {e}", {})
         finally:
-            with self._lock:
-                self.active_task_id = None
-                self._cancel_requested = False
+            self._release(task_id)
 
     # -------------------------------------------------------------------------
     # 4. Retroactive Archive Peeker Sweep Worker
@@ -1271,7 +1280,7 @@ class TaskManager:
             self._update_progress(task_id, pct, label)
 
         def cancel_cb() -> bool:
-            return self._cancel_requested
+            return self._cancelled(task_id)
 
         try:
             reconciler = VaultReconciler(self.db_path)
@@ -1283,7 +1292,7 @@ class TaskManager:
                 cancel_cb=cancel_cb,
             )
 
-            if self._cancel_requested:
+            if self._cancelled(task_id):
                 self._append_log(task_id, "Archive peek backfill cancelled by operator.")
                 self._finalize_task(
                     task_id,
@@ -1326,9 +1335,7 @@ class TaskManager:
             self._append_log(task_id, f"Fatal archive peek backfill exception: {e}\n{tb}")
             self._finalize_task(task_id, "failed", f"Archive peek exception: {e}", {})
         finally:
-            with self._lock:
-                self.active_task_id = None
-                self._cancel_requested = False
+            self._release(task_id)
 
     # -------------------------------------------------------------------------
     # 5. Background Slicer Stash Export Worker
@@ -1349,7 +1356,7 @@ class TaskManager:
             self._update_progress(task_id, pct, label)
 
         def cancel_cb() -> bool:
-            return self._cancel_requested
+            return self._cancelled(task_id)
 
         try:
             from desync_archival.services.stash_exporter import StashExporter
@@ -1362,7 +1369,7 @@ class TaskManager:
                 cancel_cb=cancel_cb,
             )
 
-            if self._cancel_requested:
+            if self._cancelled(task_id):
                 self._append_log(task_id, "Stash export cancelled by operator.")
                 self._finalize_task(task_id, "cancelled", "Stash export cancelled by operator", result, result)
                 return
@@ -1379,9 +1386,7 @@ class TaskManager:
             self._append_log(task_id, f"Fatal stash export exception: {e}\n{tb}")
             self._finalize_task(task_id, "failed", f"Stash export error: {e}", {})
         finally:
-            with self._lock:
-                self.active_task_id = None
-                self._cancel_requested = False
+            self._release(task_id)
 
     # -------------------------------------------------------------------------
     # 6. In-Place External Library Reconciler Worker (Phase 8)
@@ -1400,7 +1405,7 @@ class TaskManager:
             self._update_progress(task_id, pct, label)
 
         def cancel_cb() -> bool:
-            return self._cancel_requested
+            return self._cancelled(task_id)
 
         try:
             from desync_archival.services.external_indexer import (
@@ -1419,10 +1424,10 @@ class TaskManager:
             result = run_pass(int(library_id), progress_cb=progress_cb, log_cb=log_cb, cancel_cb=cancel_cb)
 
             # This job already has the NAS awake, and a scan only records printable files.
-            if mode != PREVIEW and result.get("success") and not self._cancel_requested:
+            if mode != PREVIEW and result.get("success") and not self._cancelled(task_id):
                 self._inventory_library_pdfs(task_id, int(params["library_id"]))
 
-            if self._cancel_requested:
+            if self._cancelled(task_id):
                 self._append_log(task_id, "Library crawl cancelled by operator.")
                 self._finalize_task(
                     task_id,
@@ -1461,6 +1466,4 @@ class TaskManager:
             self._append_log(task_id, f"Fatal external indexer exception: {e}\n{tb}")
             self._finalize_task(task_id, "failed", f"Indexer error: {e}", {})
         finally:
-            with self._lock:
-                self.active_task_id = None
-                self._cancel_requested = False
+            self._release(task_id)

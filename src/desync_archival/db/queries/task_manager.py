@@ -136,3 +136,12 @@ INSERT_FINISHED_TASK = """
     INSERT INTO pipeline_tasks (task_type, status, progress_pct, progress_label, log_output, started_at, completed_at, result_summary_json)
     VALUES (?, ?, 100.0, ?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?);
 """
+
+UPDATE_RUNNING_TASK_LABEL = "UPDATE pipeline_tasks SET progress_label = ? WHERE id = ? AND status = 'running';"
+
+UPDATE_RUNNING_TASK_RESULT = """
+    UPDATE pipeline_tasks
+    SET status = ?, progress_pct = CASE WHEN ? = 'completed' THEN 100.0 ELSE progress_pct END,
+        progress_label = ?, completed_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND status = 'running';
+"""

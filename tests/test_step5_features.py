@@ -42,7 +42,7 @@ class TempDb(unittest.TestCase):
         manager._lock = threading.Lock()
         manager.active_task_id = None
         manager.active_process = None
-        manager._cancel_requested = False
+        manager._cancel_events = {}
         manager._scrape_error = ""
         return manager
 

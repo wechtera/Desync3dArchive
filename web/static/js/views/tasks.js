@@ -378,9 +378,9 @@ export async function cancelActiveTask() {
   }
 }
 
-/** Force-releases the task slot, after asking. */
+/** Kills any subprocess and asks the worker to stop, after asking. */
 export async function killActiveTask() {
-  if (!confirm('Force-terminate running or stuck task? This will immediately release the task pipeline lock.')) return;
+  if (!confirm('Force-terminate this task? Its subprocess stops now. The task stays listed until its worker ends, and if the worker is stuck, restart the server.')) return;
   const killBtn = document.getElementById('btn-kill-active-task');
   if (killBtn) {
     killBtn.disabled = true;

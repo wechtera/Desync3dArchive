@@ -135,7 +135,7 @@ class SpawnTests(TempDb):
         manager._lock = threading.Lock()
         manager.active_task_id = 1
         manager.active_process = None
-        manager._cancel_requested = False
+        manager._cancel_events = {1: threading.Event()}
         return manager
 
     def test_a_crashing_worker_fails_its_task_and_frees_the_slot(self):
@@ -164,18 +164,20 @@ class SpawnTests(TempDb):
         manager = self.manager()
         with patch.object(jobs, "time_limit", return_value=0.05):
             release = threading.Event()
+            cancel = manager._cancel_events[1]
             manager._spawn(1, "library_scrape", lambda: release.wait(2), ())
-            deadline = time.monotonic() + 3
-            while not manager._cancel_requested and time.monotonic() < deadline:
-                time.sleep(0.01)
+            cancel.wait(3)
             release.set()
-        self.assertTrue(manager._cancel_requested)
+        self.assertTrue(cancel.is_set())
+        deadline = time.monotonic() + 5
+        while manager.active_task_id is not None and time.monotonic() < deadline:
+            time.sleep(0.01)
 
     def test_time_limit_ignores_a_finished_task(self):
         manager = self.manager()
         manager.active_task_id = 99
         manager._on_time_limit(1, "library_scrape")
-        self.assertFalse(manager._cancel_requested)
+        self.assertFalse(manager._cancelled(1))
 
 
 class ReleaseRebuildTests(TempDb):

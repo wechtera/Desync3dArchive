@@ -782,10 +782,11 @@ class ImportTests(BuildCase):
         manager = object.__new__(TaskManager)
         manager.db_path = self.db
         manager._lock = threading.Lock()
-        manager.active_task_id = 1
-        manager._cancel_requested = True
+        manager._cancel_events = {}
         task_id = self.conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('file_import', 'running')").lastrowid
         self.conn.commit()
+        manager._begin(task_id)
+        manager._cancel_events[task_id].set()
         manager._run_file_import_worker(task_id, {"paths": [str(self.write("dragon.stl"))]})
         self.assertEqual(self.one("SELECT status FROM pipeline_tasks WHERE id = ?", task_id)[0], "cancelled")
         self.assertIsNone(manager.active_task_id)
@@ -864,7 +865,7 @@ class ImportTests(BuildCase):
         manager.db_path = self.db
         manager._lock = threading.Lock()
         manager.active_task_id = None
-        manager._cancel_requested = False
+        manager._cancel_events = {}
         task_id = self.conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('file_import', 'running')").lastrowid
         self.conn.commit()
         manager._run_file_import_worker(task_id, {"paths": [str(self.write("dragon.stl")), str(self.write("wyrm.stl", b"w"))]})
@@ -877,10 +878,10 @@ class ImportTests(BuildCase):
         manager = object.__new__(TaskManager)
         manager.db_path = self.db
         manager._lock = threading.Lock()
-        manager.active_task_id = 7
-        manager._cancel_requested = False
+        manager._cancel_events = {}
         task_id = self.conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('file_import', 'running')").lastrowid
         self.conn.commit()
+        manager._begin(task_id)
         manager._run_file_import_worker(task_id, {"paths": [str(self.write("dragon.stl"))]})
         self.assertEqual(self.one("SELECT status FROM pipeline_tasks WHERE id = ?", task_id)[0], "failed")
         self.assertIsNone(manager.active_task_id)
