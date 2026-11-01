@@ -8,7 +8,13 @@ import sys
 from pathlib import Path
 
 from desync_archival import backup, migrations, settings
-from desync_archival.services import archive_peeker, catalog_levels, login, secret_store
+from desync_archival.services import (
+    archive_peeker,
+    catalog_levels,
+    data_bundle,
+    login,
+    secret_store,
+)
 
 
 def set_password() -> int:
@@ -65,6 +71,13 @@ def main() -> int:
     repeek = commands.add_parser("repeek-broken")
     repeek.add_argument("--confirm-production", action="store_true")
     commands.add_parser("backup")
+    export = commands.add_parser("export")
+    export.add_argument("destination", type=Path)
+    export.add_argument("--with-secrets", action="store_true")
+    bring_in = commands.add_parser("import")
+    bring_in.add_argument("bundle", type=Path)
+    bring_in.add_argument("--map", action="append", default=[], metavar="OLD=NEW", help="rewrite a stored path prefix")
+    bring_in.add_argument("--confirm-production", action="store_true")
     restore = commands.add_parser("restore")
     restore.add_argument("backup_file", type=Path)
     restore.add_argument("target", type=Path)
@@ -110,7 +123,14 @@ def main() -> int:
             print(f"backup written: {backup.create_backup(db_path)}")
             print(archive_peeker.repeek_broken(db_path))
         elif args.command == "backup":
-            print(f"backup written: {backup.create_backup(db_path)}")
+            print(f"backup written: {backup.create_backup(db_path, full=True)}")
+        elif args.command == "export":
+            print(data_bundle.export_bundle(db_path, args.destination.resolve(), args.with_secrets))
+        elif args.command == "import":
+            if settings.is_production() and not args.confirm_production:
+                raise migrations.MigrationError("Refusing to import in production without --confirm-production")
+            refuse_if_app_running()
+            print(data_bundle.import_bundle(args.bundle.resolve(), settings.data_dir(), dict(m.split("=", 1) for m in args.map)))
         else:
             # Resolved because restore opens these as URIs, and those can't be relative.
             counts = backup.restore(args.backup_file.resolve(), args.target.resolve())

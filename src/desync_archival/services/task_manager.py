@@ -389,7 +389,7 @@ class TaskManager:
     @job_logged(lambda self, task_id, *_: f"task-{task_id}")
     def _run_backup_worker(self, task_id: int, params: dict[str, Any]):
         try:
-            path = backup.create_backup(self.db_path)
+            path = backup.create_backup(self.db_path, full=True)
             result = f"OK: {path.name}"
             status, label = jobs.COMPLETED, "Database backup complete"
         except (backup.BackupError, app_config.SettingsError, sqlite3.Error, OSError) as e:

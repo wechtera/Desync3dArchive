@@ -5,7 +5,13 @@ from fastapi import APIRouter
 from desync_archival.api import schemas
 from desync_archival.api.routes import settings as handlers
 from desync_archival.api.routes import storage as storage_handlers
-from desync_archival.api.routing import RouteContext, add_route, plain, with_path_id
+from desync_archival.api.routing import (
+    RouteContext,
+    add_route,
+    plain,
+    with_path_id,
+    with_tasks,
+)
 
 router = APIRouter()
 
@@ -43,6 +49,8 @@ add_route(router, "GET", "/api/catalog-models/{model_id:int}", with_path_id(hand
 add_route(router, "POST", "/api/catalog-models/{model_id:int}/stash",
           with_path_id(handlers.handle_post_catalog_model_stash, "model_id"), schemas.ModelStashBody)
 add_route(router, "GET", "/api/model-groups/{group_id:int}", with_path_id(handlers.handle_get_model_group, "group_id"))
+add_route(router, "GET", "/api/backups", with_tasks(handlers.handle_get_backups))
+add_route(router, "POST", "/api/backups", with_tasks(handlers.handle_post_backups), schemas.BackupBody)
 add_route(router, "GET", "/api/archive-review", plain(handlers.handle_get_archive_queue))
 add_route(router, "GET", "/api/archive-review/{collection_id:int}",
           with_path_id(handlers.handle_get_archive_review, "collection_id"))

@@ -5,6 +5,7 @@ Outside APP_ENV=production, the guard refuses any path that resolves to a produc
 """
 
 import ipaddress
+import json
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -197,9 +198,31 @@ def staging_dir() -> Path:
     return data_dir() / "staging"
 
 
+def backup_paths_file() -> Path:
+    return data_dir() / "backup_paths.json"
+
+
+def _backup_path_choice(key: str) -> str:
+    # Chosen in Settings. The data folder is the one place every process can read before the database.
+    try:
+        return str(json.loads(backup_paths_file().read_text(encoding="utf-8")).get(key) or "").strip()
+    except (OSError, ValueError):
+        return ""
+
+
+def save_backup_paths(backup: str, mirror: str) -> None:
+    backup_paths_file().write_text(json.dumps({"backup_dir": backup, "mirror_dir": mirror}), encoding="utf-8")
+
+
+def backup_mirror_dir() -> Path | None:
+    _load()
+    value = _backup_path_choice("mirror_dir") or os.environ.get("DESYNC_BACKUP_MIRROR_DIR", "").strip()
+    return Path(value).expanduser().resolve() if value else None
+
+
 def backup_dir() -> Path:
     _load()
-    value = os.environ.get("DESYNC_BACKUP_DIR", "").strip()
+    value = _backup_path_choice("backup_dir") or os.environ.get("DESYNC_BACKUP_DIR", "").strip()
     if not value:
         raise SettingsError("DESYNC_BACKUP_DIR is required for backups. See .env.example.")
     return Path(value).expanduser().resolve()

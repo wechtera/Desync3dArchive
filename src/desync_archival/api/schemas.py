@@ -96,6 +96,13 @@ class LibraryApproveBody(RequestBody):
     ready_only: bool | None = None
 
 
+class BackupBody(RequestBody):
+    action: str
+    name: str | None = None
+    backup_dir: str | None = None
+    mirror_dir: str | None = None
+
+
 class ModelStashBody(RequestBody):
     scale: str | None = None
     support: str | None = None

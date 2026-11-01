@@ -85,12 +85,28 @@ scripts/production.sh python -m desync_archival.dbtool build-models --confirm-pr
 
 ## Backups
 
-The app backs up the database monthly while it's running, and catches up if it was off. Migrations and `build-models` also back up first. The last 14 are kept in `DESYNC_BACKUP_DIR`.
+The app backs up monthly while it's running, and catches up if it was off. **Settings > Backups** shows what exists, runs a backup, checks one, and sets the folders. A full backup holds the database, `metadata/` and a local copy of your secrets, and the last 14 are kept. It also goes to the second folder if one is set, without the secrets, so a restore from there means reloading cookies. If that folder isn't available, the local backup still counts. Migrations take a quick database copy first.
 
 ```bash
 scripts/production.sh python -m desync_archival.dbtool backup
 uv run python -m desync_archival.dbtool restore BACKUP_FILE NEW_PATH
 ```
+
+## Moving to another machine
+
+Files on the NAS and in linked libraries stay where they are and aren't in the bundle. This copies the catalog, metadata and previews:
+
+```bash
+scripts/production.sh python -m desync_archival.dbtool export /Volumes/NAS/desync-bundle
+```
+
+Add `--with-secrets` to include your secrets, and keep that folder private. On the new machine, install the app, set `DESYNC_DATA_DIR` to an empty folder, then:
+
+```bash
+uv run python -m desync_archival.dbtool import /Volumes/NAS/desync-bundle --map /Volumes/STL=/mnt/nas
+```
+
+`--map OLD=NEW` rewrites stored paths, and can be repeated. `MANIFEST.json` in the bundle lists the paths in use.
 
 ## Running
 
