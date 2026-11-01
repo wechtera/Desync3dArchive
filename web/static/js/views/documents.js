@@ -83,7 +83,7 @@ export async function loadDocuments(nextPage = 1) {
       </p>
       ${data.documents.length
         ? html`<div class="document-grid">${data.documents.map(card)}</div>`
-        : html`<div class="table-msg text-dim">No PDFs match. Update PDFs records the ones in linked libraries.</div>`}
+        : html`<div class="table-msg text-dim">No PDFs match. Update PDFs, under Vault Reconcile, records the ones in linked libraries.</div>`}
       ${pages > 1 ? html`
         <div class="results-pager">
           <button type="button" class="btn-pill font-xs" ?disabled=${page <= 1} @click=${() => loadDocuments(page - 1)}>Previous</button>

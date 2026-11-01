@@ -890,6 +890,19 @@ test.describe('settings', () => {
     await expect(page.locator('#browse-creator option')).toHaveCount(3);
   });
 
+  test('update pdfs runs from vault reconcile', async ({ page }) => {
+    let started = false;
+    await page.route('**/api/documents/update', (route) => {
+      started = true;
+      return route.fulfill({ json: { success: true, task_id: 3 } });
+    });
+    await page.goto('/#downloads');
+    await page.locator('#group-reconcile').click();
+    await expect(page.locator('#view-documents #btn-document-update')).toHaveCount(0);
+    await page.locator('#sub-dl-reconcile #btn-document-update').click();
+    await expect.poll(() => started).toBe(true);
+  });
+
   test('help explains the server settings file', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => window.switchTab('help'));

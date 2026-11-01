@@ -89,7 +89,7 @@ Import File, under Manage / Retrieve / Reconcile Assets > External Vault, takes 
 
 ### PDFs
 
-View Library > PDFs lists every PDF the catalog knows about, from MMF, linked libraries, imports and inside peeked archives. The list reads SQLite only, so it works with the NAS offline. **Update PDFs** records PDFs in linked libraries and makes first page previews with Ghostscript, kept locally. A PDF inside an archive can only be named once that archive is downloaded and peeked, so until then it shows as an archive not read yet.
+View Library > PDFs lists every PDF the catalog knows about, from MMF, linked libraries, imports and inside peeked archives. The list reads SQLite only, so it works with the NAS offline. **Update PDFs**, under Manage / Retrieve / Reconcile Assets > Vault Reconcile, records PDFs in linked libraries and makes first page previews with Ghostscript, kept locally. A PDF inside an archive can only be named once that archive is downloaded and peeked, so until then it shows as an archive not read yet.
 
 ## Backups
 

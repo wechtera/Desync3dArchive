@@ -165,7 +165,6 @@
         <option value="not_downloaded">Not downloaded</option>
         <option value="unread">Archive not read yet</option>
       </select>
-      <button type="button" class="btn-pill" id="btn-document-update" data-click="updateDocuments">Update PDFs</button>
     </div>
     <div id="document-results"></div>
   </div>
@@ -391,6 +390,9 @@
           <button type="button" class="btn-pill" id="btn-backfill-previews" data-click="triggerCatalogPreviewSweep">
             Backfill Model Previews
           </button>
+          <button type="button" class="btn-pill" id="btn-document-update" data-click="updateDocuments">
+            Update PDFs
+          </button>
           <button type="button" class="btn-pill" id="btn-scan-staging" data-click="triggerStagingSweep">
             Staging Scratch Purge
           </button>
@@ -463,6 +465,12 @@
           </div>
         </div>
         <div class="reconcile-guide-grid mt-3">
+          <div class="reconcile-guide-item">
+            <h4 class="text-accent font-semibold font-md">Update PDFs</h4>
+            <p class="text-dim font-sm">
+              Records PDFs in linked libraries and makes first page previews for View Library &gt; PDFs. It reads the NAS, so run it after adding to a library. Scans and imports record their own PDFs.
+            </p>
+          </div>
           <div class="reconcile-guide-item">
             <h4 class="text-accent font-semibold font-md">Forward Reconciliation (Fast Scan)</h4>
             <p class="text-dim font-sm">
