@@ -215,9 +215,9 @@ export async function loadBrowse(nextPage = 1) {
         ${activeTag ? html`<button type="button" class="btn-pill font-xs" id="browse-tag-filter" @click=${() => showTag('')}>Tag: ${activeTag} ×</button>` : nothing}
       </div>
       <div class="browse-grid">${data.models.map(m => card(m, () => openBrowseModel(m.id)))}</div>
-      <div class="flex gap-2 mt-2">
+      <div class="results-pager" id="browse-pager">
         <button type="button" class="btn-pill" ?disabled=${page <= 1} @click=${() => loadBrowse(page - 1)}>Previous</button>
-        <span class="font-sm">Page ${page} of ${pages}</span>
+        <span class="font-sm text-dim">Page ${page} of ${pages}</span>
         <button type="button" class="btn-pill" ?disabled=${page >= pages} @click=${() => loadBrowse(page + 1)}>Next</button>
       </div>
     `, container);
