@@ -8,6 +8,7 @@ import logging
 import sqlite3
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -16,6 +17,7 @@ from desync_archival.services import secret_store
 from desync_archival.services.logger import log_layer, logger
 
 MMF_USER_API_URL = "https://www.myminifactory.com/api/v2/user"
+MMF_COOKIE_DOMAIN = ".myminifactory.com"
 MMF_AUTHORIZE_URL = "https://auth.myminifactory.com/web/authorize"
 DEFAULT_REDIRECT_URI = "http://localhost:8080/api/auth/callback"
 
@@ -131,6 +133,20 @@ def keep_fresh_cookies(conn: sqlite3.Connection, refreshed: str) -> int:
         with conn:
             set_settings(conn, {"cookies_json": json.dumps(list(by_name.values())), "cookies_saved_at": str(time.time())})
     return changed
+
+
+def mmf_cookies(cookies: dict[str, str]) -> httpx.Cookies:
+    """Binds cookies to MMF. A plain dict has no domain, so httpx sends it to every redirect host."""
+    jar = httpx.Cookies()
+    for name, value in cookies.items():
+        jar.set(name, value, domain=MMF_COOKIE_DOMAIN, path="/")
+    return jar
+
+
+def is_mmf_url(url: str) -> bool:
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    return parts.scheme == "https" and (host == MMF_COOKIE_DOMAIN[1:] or host.endswith(MMF_COOKIE_DOMAIN))
 
 
 def get_redirect_uri(conn: sqlite3.Connection) -> str:

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from desync_archival import backup, migrations, settings
 from desync_archival.services import (
+    analytics,
     archive_peeker,
     catalog_levels,
     data_bundle,
@@ -79,6 +80,8 @@ def main() -> int:
     repeek = commands.add_parser("repeek-broken")
     repeek.add_argument("--confirm-production", action="store_true")
     commands.add_parser("backup")
+    rebuild = commands.add_parser("rebuild-releases")
+    rebuild.add_argument("--confirm-production", action="store_true")
     tidy = commands.add_parser("clean-tags")
     tidy.add_argument("--confirm-production", action="store_true")
     export = commands.add_parser("export")
@@ -134,6 +137,18 @@ def main() -> int:
             print(archive_peeker.repeek_broken(db_path))
         elif args.command == "backup":
             print(f"backup written: {backup.create_backup(db_path, full=True)}")
+        elif args.command == "rebuild-releases":
+            if settings.is_production() and not args.confirm_production:
+                raise migrations.MigrationError("Refusing to rebuild releases in production without --confirm-production")
+            refuse_if_app_running()
+            print(f"backup written: {backup.create_backup(db_path)}")
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                analytics.run_startup_analytics(conn)
+                print(dict(conn.execute("SELECT COUNT(*) AS releases, SUM(total_files) AS files FROM releases").fetchone()))
+            finally:
+                conn.close()
         elif args.command == "clean-tags":
             if settings.is_production() and not args.confirm_production:
                 raise migrations.MigrationError("Refusing to clean tags in production without --confirm-production")

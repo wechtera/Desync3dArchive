@@ -31,6 +31,7 @@ from desync_archival import backup
 from desync_archival import settings as app_config
 from desync_archival.db.queries import task_manager as queries
 from desync_archival.services import (
+    audit,
     auth_service,
     catalog_levels,
     identity,
@@ -39,6 +40,7 @@ from desync_archival.services import (
     secret_store,
 )
 from desync_archival.services.analytics import run_startup_analytics
+from desync_archival.services.downloader import StorageUnavailableError
 from desync_archival.services.logger import job_logged, log_layer, logger, redact
 from desync_archival.services.paths import sanitize_segment
 
@@ -373,6 +375,9 @@ class TaskManager:
         last = self._get_setting("last_backup_epoch", "0")
         if time.time() - float(last or 0) < jobs.BACKUP_INTERVAL:
             return False
+        attempted = self._get_setting("last_backup_attempt_epoch", "0")
+        if time.time() - float(attempted or 0) < jobs.BACKUP_RETRY_INTERVAL:
+            return False
         return bool(self.start_task("database_backup").get("success"))
 
     @job_logged(lambda self, task_id, *_: f"task-{task_id}")
@@ -385,13 +390,17 @@ class TaskManager:
             logger.error(f"Scheduled backup failed: {e}")
             result, status, label = f"Failed: {type(e).__name__}", jobs.FAILED, "Database backup failed"
 
+        finished = str(time.time())
+        stamps = {
+            "last_backup_attempt_epoch": finished,
+            "last_backup_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "last_backup_result": result,
+        }
+        # Only a good backup restarts the month. A failed one retries after BACKUP_RETRY_INTERVAL.
+        if status == jobs.COMPLETED:
+            stamps["last_backup_epoch"] = finished
         with self._get_db() as conn:
-            auth_service.set_settings(conn, {
-                # FIXME(R-06): also stamped on failure, so a failed monthly backup isn't retried for 30 days.
-                "last_backup_epoch": str(time.time()),
-                "last_backup_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "last_backup_result": result,
-            })
+            auth_service.set_settings(conn, stamps)
         self._finalize_task(task_id, status, label, {"result": result})
         with self._lock:
             self.active_task_id = None
@@ -416,6 +425,23 @@ class TaskManager:
         except (OSError, sqlite3.Error) as e:
             self._append_log(task_id, f"Preview backfill stopped: {e}")
             report, status, label = {}, jobs.FAILED, "Preview backfill failed"
+        self._finalize_task(task_id, status, label, report)
+        with self._lock:
+            self.active_task_id = None
+
+    def _run_path_realign_worker(self, task_id: int, params: dict[str, Any]):
+        try:
+            report = VaultReconciler(self.db_path).realign_model_paths(model_ids=params.get("model_ids"))
+            for problem in report.get("errors", []):
+                self._append_log(task_id, problem)
+            moved = report.get("realigned_count", 0)
+            status = jobs.FAILED if report.get("errors") and not moved else jobs.COMPLETED
+            label = f"{moved} folders moved, {len(report.get('errors', []))} refused or failed"
+        except (OSError, sqlite3.Error, StorageUnavailableError) as e:
+            self._append_log(task_id, f"Path realign stopped: {e}")
+            report, status, label = {}, jobs.FAILED, "Path realign failed"
+        with self._get_db() as conn:
+            audit.record(conn, "path_realign", False, {"task_id": task_id, **report})
         self._finalize_task(task_id, status, label, report)
         with self._lock:
             self.active_task_id = None
@@ -554,6 +580,7 @@ class TaskManager:
             "file_import": (self._run_file_import_worker, (task_id, task_params)),
             "document_update": (self._run_document_worker, (task_id,)),
             "catalog_preview_backfill": (self._run_catalog_preview_worker, (task_id, task_params)),
+            "path_realign": (self._run_path_realign_worker, (task_id, task_params)),
         }
         if task_type not in workers:
             self._finalize_task(task_id, "failed", f"Unsupported task type: {task_type}", {})
@@ -965,8 +992,7 @@ class TaskManager:
 
         async with httpx.AsyncClient(
             headers=active_headers,
-            # FIXME(S-01): same as the download client. These cookies have no domain.
-            cookies=cookies_dict,
+            cookies=auth_service.mmf_cookies(cookies_dict),
             timeout=20.0,
             follow_redirects=True,
         ) as client:

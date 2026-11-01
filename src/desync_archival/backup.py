@@ -73,9 +73,15 @@ def backup_dir() -> Path:
 
 
 def prune(directory: Path, keep: int) -> list[Path]:
-    """Removes the oldest backups beyond keep. Only files with the backup name are touched."""
+    """Removes the oldest backups beyond keep, per kind. Only files with the backup name are touched.
+
+    Quick safety copies hold no metadata, and a busy week makes many of them, so they get their own
+    count. Sharing one would let them push out every monthly backup.
+    """
     backups = sorted(p for p in directory.iterdir() if p.is_file() and BACKUP_PATTERN.fullmatch(p.name))
-    removed = backups[:-keep] if keep > 0 else []
+    full = [p for p in backups if metadata_copy(p).exists()]
+    quick = [p for p in backups if not metadata_copy(p).exists()]
+    removed = (full[:-keep] + quick[:-keep]) if keep > 0 else []
     for path in removed:
         path.unlink()
         secrets_copy(path).unlink(missing_ok=True)
@@ -184,8 +190,9 @@ def create_backup(db_path: Path, keep: int = DEFAULT_RETENTION, full: bool = Fal
     os.close(os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
     try:
         _copy_database(db_path, temp, journal_mode="DELETE")
-        # FIXME(R-06): counts the live database after the copy, so any write in between fails a good backup.
-        counts = verify(temp, expected=row_counts(db_path))
+        # Only the copy is checked. Comparing it with the live database fails on any write in between,
+        # such as a download's audit row, and SQLite's backup API already gives one consistent snapshot.
+        counts = verify(temp)
         temp.rename(target)
         _copy_secrets(target)
     except BaseException:
@@ -193,10 +200,11 @@ def create_backup(db_path: Path, keep: int = DEFAULT_RETENTION, full: bool = Fal
         logger.error(f"Backup of {db_path.name} failed")
         raise
 
-    # FIXME(R-07): quick pre-migration copies share this limit, so they can push out monthly full backups.
-    removed = prune(directory, keep)
+    # Metadata first, because that file is how prune tells a full backup from a quick copy.
     if full:
         _archive_metadata(target)
+    removed = prune(directory, keep)
+    if full:
         mirror_backup(target, keep)
     logger.info(
         f"Backup written: {target.name}, {len(counts)} tables, {sum(counts.values())} rows, "

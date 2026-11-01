@@ -64,4 +64,10 @@ DELETE_PIPELINE_TASKS_BY_STATUS = "DELETE FROM pipeline_tasks WHERE status IN ('
 
 SELECT_APP_SETTINGS_BY_KEY = "SELECT key, value FROM app_settings WHERE key = 'stash_download_path';"
 
+SELECT_PROTECTED_ROOTS = """
+    SELECT value FROM app_settings WHERE key = 'download_root_path' AND value != ''
+    UNION
+    SELECT path FROM external_libraries WHERE is_active = 1
+"""
+
 SUM_VAULT_FILES = "SELECT COUNT(*), COALESCE(SUM(actual_bytes), 0) FROM downloaded_files WHERE vault_path LIKE ?;"

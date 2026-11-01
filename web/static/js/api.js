@@ -381,11 +381,11 @@ export async function fetchPathDrift() {
   return request('/api/reconcile/drift');
 }
 
-export async function realignModelPaths(modelIds = null) {
+export async function realignModelPaths(modelIds = null, confirm = false) {
   return request('/api/reconcile/drift/realign', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model_ids: modelIds }),
+    body: JSON.stringify({ model_ids: modelIds, confirm }),
   });
 }
 

@@ -297,12 +297,23 @@ def handle_post_reconcile_path_realign(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
-    """POST /api/reconcile/drift/realign. Moves folders on the NAS and rewrites their paths."""
+    """POST /api/reconcile/drift/realign. Lists the moves. With confirm, runs them as a job."""
     model_ids = body.get("model_ids")
-    reconciler, _ = _get_managers(conn)
-    # FIXME(S-03): moves NAS folders with no dry run, busy check or audit. None means every drifted model.
-    res = reconciler.realign_model_paths(model_ids=model_ids)
-    return res, 200 if res.get("success") else 400
+    reconciler, task_mgr = _get_managers(conn)
+    if not body.get("confirm"):
+        res = reconciler.realign_model_paths(model_ids=model_ids, dry_run=True)
+        audit.record(conn, "path_realign", True, {**res, "model_ids": model_ids})
+        return res, 200
+    # None used to mean every drifted model, and that's too much for a request to do by omission.
+    if not model_ids:
+        return {"success": False, "error": "List the models to move."}, 400
+    if reason := jobs.busy_reason(conn, download_manager):
+        return {"success": False, "error": reason}, 409
+    started = task_mgr.start_task("path_realign", {"model_ids": model_ids})
+    if not started.get("success"):
+        return started, 409
+    audit.record(conn, "path_realign", False, {"task_id": started["task_id"], "model_ids": model_ids})
+    return {"success": True, "task_id": started["task_id"], "message": "Folder moves started."}, 200
 
 def handle_post_reconcile_catalog_previews(
     conn: sqlite3.Connection,

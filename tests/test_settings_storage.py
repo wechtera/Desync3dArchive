@@ -112,6 +112,7 @@ class TestSettingsStorage(unittest.TestCase):
         old_folder = queue_dir / "2026-09-01_Old_Batch"
         old_folder.mkdir()
         (old_folder / "test.stl").write_bytes(b"data")
+        (old_folder / "manifest.json").write_text("{}")
         old_time = time.time() - (20 * 86400)
         os.utime(old_folder, (old_time, old_time))
 

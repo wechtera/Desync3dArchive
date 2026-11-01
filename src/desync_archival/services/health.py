@@ -71,14 +71,27 @@ def _cookies(conn: sqlite3.Connection) -> dict[str, str]:
 
 def _backup(conn: sqlite3.Connection) -> dict[str, str]:
     last = float(auth_service.get_setting(conn, "last_backup_epoch", "0") or 0)
+    attempted = float(auth_service.get_setting(conn, "last_backup_attempt_epoch", "0") or 0)
     result = auth_service.get_setting(conn, "last_backup_result", "")
+    if result.startswith("Failed"):
+        return _check("backup", "Backups", PROBLEM, f"The last one failed, {_ago(attempted or last)}.")
     if not last:
         return _check("backup", "Backups", WARNING, "None yet.")
-    if result.startswith("Failed"):
-        return _check("backup", "Backups", PROBLEM, f"The last one failed, {_ago(last)}.")
     if time.time() - last > BACKUP_LATE:
         return _check("backup", "Backups", WARNING, f"The last one was {_ago(last)}.")
     return _check("backup", "Backups", OK, f"Last one {_ago(last)}.")
+
+
+def _workers(downloads: Any) -> dict[str, str]:
+    counts = downloads.worker_counts() if downloads else {"running": 0, "expected": 0}
+    if not counts["expected"]:
+        return _check("workers", "Download workers", OK, "Not started.")
+    if counts["running"] < counts["expected"]:
+        return _check(
+            "workers", "Download workers", PROBLEM,
+            f"{counts['running']} of {counts['expected']} are running. Restart the app and check the log.",
+        )
+    return _check("workers", "Download workers", OK, f"All {counts['expected']} are running.")
 
 
 def _sync(conn: sqlite3.Connection) -> dict[str, str]:
@@ -112,7 +125,7 @@ def report(conn: sqlite3.Connection, downloads: Any) -> dict[str, Any]:
     metrics = downloads.storage.get_disk_metrics() if downloads else {"nas": {}}
     checks = [
         _database(conn), _vault(metrics), _sign_in(conn), _cookies(conn), _backup(conn),
-        _sync(conn), _integrity(conn), _tasks(conn),
+        _workers(downloads), _sync(conn), _integrity(conn), _tasks(conn),
     ]
     columns = ("task_type", "runs", "failed", "average_seconds", "last_run")
     return {

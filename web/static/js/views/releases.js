@@ -114,6 +114,8 @@ export async function loadAudit(designer = '') {
 }
 
 function queueButton(r) {
+  // Linked libraries are read in place, so there's nothing to download.
+  if (String(r.id).startsWith('external_')) return nothing;
   if (r.download_status === 'completed') {
     return html`<button type="button" class="btn-pill" disabled>Archived</button>`;
   }
@@ -303,18 +305,16 @@ export async function openReleaseModal(designer, month) {
 }
 
 export async function queueReleasePack(releaseId) {
-  await queueDownloads({ release_id: releaseId });
+  try {
+    await queueDownloads({ release_id: releaseId });
+  } catch (err) {
+    alert(`Couldn't queue this pack: ${err.message}`);
+  }
   window.refreshCurrentView();
 }
 
 export async function cancelReleaseQueue(releaseId) {
-  // FIXME(R-12): the first part is a designer ID or `external`, not a name, so this matches the wrong models or none.
-  const parts = releaseId.split('_');
-  const data = await fetchModels({ designer: parts[0], month: parts[1], limit: 200 });
-  const ids = data.models.map(m => m.id);
-  if (ids.length > 0) {
-    await dequeueDownloads({ model_ids: ids });
-  }
+  await dequeueDownloads({ release_id: releaseId });
   window.refreshCurrentView();
 }
 

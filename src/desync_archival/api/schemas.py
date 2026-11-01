@@ -26,6 +26,7 @@ class RenderStlBody(RequestBody):
 
 class ModelIdsBody(RequestBody):
     model_ids: list[int] | None = None
+    confirm: bool = False
 
 
 class DownloadQueueBody(RequestBody):
@@ -34,6 +35,7 @@ class DownloadQueueBody(RequestBody):
 
 
 class DownloadDequeueBody(RequestBody):
+    release_id: str | None = None
     model_ids: list[int] = Field(default_factory=list)
     clear_status: str | None = None
     purge_incomplete: bool = False
@@ -82,6 +84,13 @@ class SettingsBody(BaseModel):
     download_work_path: str | None = None
     stash_download_path: str | None = None
     metadata_backup_path: str | None = None
+    # Same limits _load_settings clamps to. A bad value used to save and then stop the next startup.
+    worker_concurrency: int | None = Field(default=None, ge=1, le=16)
+    offloader_concurrency: int | None = Field(default=None, ge=1, le=8)
+    batch_size: int | None = Field(default=None, ge=1, le=100)
+    batch_cooldown_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    stream_chunk_size_mb: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    offload_chunk_size_mb: float | None = Field(default=None, gt=0, allow_inf_nan=False)
 
 
 class LibraryBody(RequestBody):

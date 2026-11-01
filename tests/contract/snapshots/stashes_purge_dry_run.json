@@ -11,6 +11,7 @@
       "dry_run": true,
       "errors": [],
       "reclaimable_bytes": 0,
+      "skipped_no_manifest": 0,
       "success": true,
       "would_purge": 0
     },

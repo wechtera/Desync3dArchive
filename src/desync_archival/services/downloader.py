@@ -4,23 +4,28 @@ Supports OAuth 2.0 Bearer authenticated downloads, live URL hydration, and dual-
 Instrumented with dynamic topic-based subsystem logging ('http', 'storage', 'archive').
 """
 
+import contextlib
 import hashlib
 import json
 import logging
+import math
+import os
 import re
 import shutil
 import sqlite3
 import threading
 import time
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit
 
 import httpx
 
 from desync_archival import settings as app_config
 from desync_archival.db.queries import downloader as queries
-from desync_archival.services import identity, secret_store
+from desync_archival.services import auth_service, identity, secret_store
 from desync_archival.services.logger import job_logged, log_layer, logger
 from desync_archival.services.paths import sanitize_segment
 
@@ -37,6 +42,30 @@ OFFLOAD_CHUNK_SIZE_DEFAULT = 4 * 1024 * 1024  # 4 MB network transfer buffer
 
 
 TOKEN_EXPIRY_MARGIN_SECONDS = 600
+WORKER_ERROR_PAUSE_SECONDS = 5.0
+OFFLOAD_RETRY_BASE_SECONDS = 30
+OFFLOAD_RETRY_MAX_SECONDS = 3600
+
+
+def read_number(settings: dict[str, Any], key: str, default: Any, kind: Callable[[Any], Any]) -> Any:
+    """Falls back with a warning, so one bad row can't stop the app starting."""
+    raw = settings.get(key, default)
+    try:
+        value = kind(raw)
+        if math.isfinite(value):
+            return value
+    except (TypeError, ValueError, OverflowError):
+        pass
+    logger.warning(f"Setting {key} isn't a usable number, so {default} is used instead.")
+    return default
+
+
+def sha256_of(path: Path, chunk_size: int) -> str:
+    hasher = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(chunk_size), b""):
+            hasher.update(block)
+    return hasher.hexdigest()
 
 
 def can_resume(status_code: int, content_range: str | None, resume_from: int) -> bool:
@@ -271,6 +300,7 @@ class DownloadManager:
 
         self.workers: List[threading.Thread] = []
         self.offloader_workers: List[threading.Thread] = []
+        self._offload_not_before: dict[int, float] = {}
 
         self.active_downloads: Dict[int, Dict[str, Any]] = {}
         self.active_offloads: Dict[int, Dict[str, Any]] = {}
@@ -467,16 +497,15 @@ class DownloadManager:
             rows = conn.execute(queries.SELECT_APP_SETTINGS).fetchall()
             settings = {r["key"]: r["value"] for r in rows}
 
-            # FIXME(R-05): a non-numeric saved value raises here, and __init__ calls this, so the app can't start.
-            self.worker_concurrency = max(1, min(16, int(settings.get("worker_concurrency", 2))))
-            self.offloader_concurrency = max(1, min(8, int(settings.get("offloader_concurrency", 1))))
-            self.batch_size = max(1, min(100, int(settings.get("batch_size", 5))))
-            self.batch_cooldown_seconds = max(0.0, float(settings.get("batch_cooldown_seconds", 3.0)))
+            self.worker_concurrency = max(1, min(16, read_number(settings, "worker_concurrency", 2, int)))
+            self.offloader_concurrency = max(1, min(8, read_number(settings, "offloader_concurrency", 1, int)))
+            self.batch_size = max(1, min(100, read_number(settings, "batch_size", 5, int)))
+            self.batch_cooldown_seconds = max(0.0, read_number(settings, "batch_cooldown_seconds", 3.0, float))
 
-            stream_mb = float(settings.get("stream_chunk_size_mb", 1.0))
+            stream_mb = read_number(settings, "stream_chunk_size_mb", 1.0, float)
             self.stream_chunk_size = max(64 * 1024, int(stream_mb * 1024 * 1024))
 
-            offload_mb = float(settings.get("offload_chunk_size_mb", 4.0))
+            offload_mb = read_number(settings, "offload_chunk_size_mb", 4.0, float)
             self.offload_chunk_size = max(256 * 1024, int(offload_mb * 1024 * 1024))
 
             secret_store.overlay(settings)
@@ -597,46 +626,53 @@ class DownloadManager:
 
     def _download_worker_loop(self, worker_id: int):
         while self.is_running:
-            if self.is_paused or self.is_circuit_breaker_tripped() or self.needs_reconnect():
-                time.sleep(1.0)
-                continue
-
+            # An error that ended this thread would stall the queue until a restart, with is_running still True.
             try:
-                work_dir = self.storage.get_work_path()
-            except StorageUnavailableError:
-                time.sleep(2.0)
-                continue
+                self._download_next(worker_id)
+            except Exception:
+                logger.exception(f"[DownloadManager] Download worker #{worker_id} hit an error and will retry")
+                time.sleep(WORKER_ERROR_PAUSE_SECONDS)
 
-            # FIXME(R-04): a sqlite3 error here ends this thread for good, and is_running stays True.
-            job = self._claim_next_download_job()
-            if not job:
-                time.sleep(1.5)
-                continue
+    def _download_next(self, worker_id: int) -> None:
+        if self.is_paused or self.is_circuit_breaker_tripped() or self.needs_reconnect():
+            time.sleep(1.0)
+            return
 
-            model_id = job["model_id"]
-            log_layer("storage", logging.DEBUG, f"Worker #{worker_id}: Claimed Model #{model_id} ('{job['model_name']}')")
+        try:
+            work_dir = self.storage.get_work_path()
+        except StorageUnavailableError:
+            time.sleep(2.0)
+            return
 
+        job = self._claim_next_download_job()
+        if not job:
+            time.sleep(1.5)
+            return
+
+        model_id = job["model_id"]
+        log_layer("storage", logging.DEBUG, f"Worker #{worker_id}: Claimed Model #{model_id} ('{job['model_name']}')")
+
+        with self._lock:
+            self.active_downloads[worker_id] = {
+                "model_id": model_id,
+                "model_name": job["model_name"] or f"Model #{model_id}",
+                "creator": job["creator_name"] or "Unknown",
+                "status": "downloading",
+                "speed_bps": 0,
+                "downloaded_bytes": 0,
+                "total_bytes": 0,
+                "current_file": "Initializing",
+            }
+
+        try:
+            self._process_download_to_staging(worker_id, job, work_dir)
+        except Exception as e:
+            self._handle_download_failure(job["id"], model_id, str(e))
+        finally:
             with self._lock:
-                self.active_downloads[worker_id] = {
-                    "model_id": model_id,
-                    "model_name": job["model_name"] or f"Model #{model_id}",
-                    "creator": job["creator_name"] or "Unknown",
-                    "status": "downloading",
-                    "speed_bps": 0,
-                    "downloaded_bytes": 0,
-                    "total_bytes": 0,
-                    "current_file": "Initializing",
-                }
+                self.active_downloads.pop(worker_id, None)
 
-            try:
-                self._process_download_to_staging(worker_id, job, work_dir)
-            except Exception as e:
-                self._handle_download_failure(job["id"], model_id, str(e))
-            finally:
-                with self._lock:
-                    self.active_downloads.pop(worker_id, None)
-
-            time.sleep(self.batch_cooldown_seconds)
+        time.sleep(self.batch_cooldown_seconds)
 
     @job_logged(lambda self, worker_id, job, *_: f"download-{job['id']}")
     def _process_download_to_staging(self, worker_id: int, job: sqlite3.Row, work_dir: Path):
@@ -717,11 +753,8 @@ class DownloadManager:
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
             "Referer": "https://www.myminifactory.com/library",
         }
-        if self.access_token:
-            headers["Authorization"] = f"Bearer {self.access_token}"
 
-        # FIXME(S-01): a plain dict gives cookies no domain, so httpx sends them to every redirect host. Bind them to MMF.
-        with httpx.Client(headers=headers, cookies=self.cookies, timeout=30.0, follow_redirects=True) as client:
+        with httpx.Client(headers=headers, cookies=auth_service.mmf_cookies(self.cookies), timeout=30.0, follow_redirects=True) as client:
             for file_row in files:
                 file_id = file_row["file_id"]
                 filename = file_row["filename"]
@@ -745,11 +778,16 @@ class DownloadManager:
                 bytes_received = 0
                 hasher = hashlib.sha256()
                 resume_from = part_path.stat().st_size if part_path.exists() else 0
-                range_headers = {"Range": f"bytes={resume_from}-"} if resume_from else None
+                request_headers = {"Range": f"bytes={resume_from}-"} if resume_from else {}
+                # The URL comes from MMF's response, so it decides here whether the token may go along.
+                if urlsplit(dl_url).scheme != "https":
+                    raise RuntimeError(f"Refusing a download URL that isn't https for file #{file_id}")
+                if self.access_token and auth_service.is_mmf_url(dl_url):
+                    request_headers["Authorization"] = f"Bearer {self.access_token}"
 
                 log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Streaming {cleaned_name} ({expected_size} B) for Model #{model_id}")
 
-                with client.stream("GET", dl_url, headers=range_headers) as resp:
+                with client.stream("GET", dl_url, headers=request_headers) as resp:
                     if resp.status_code in (401, 403):
                         reason = (
                             f"MyMiniFactory OAuth token expired (HTTP {resp.status_code}) on file {filename}"
@@ -763,6 +801,9 @@ class DownloadManager:
                         raise RuntimeError(f"Saved partial file for {file_id} was refused. Restarting it.")
                     if resp.status_code not in (200, 206):
                         raise RuntimeError(f"HTTP {resp.status_code} downloading file {file_id}")
+                    # Host only, because the full URL is signed. This shows where MMF's downloads really go.
+                    if resp.url.host != urlsplit(dl_url).hostname:
+                        log_layer("http", logging.INFO, f"Worker #{worker_id}: {cleaned_name} redirected to {resp.url.host}")
 
                     resuming = can_resume(resp.status_code, resp.headers.get("Content-Range"), resume_from)
                     if resuming:
@@ -791,6 +832,14 @@ class DownloadManager:
 
                 file_sha256 = hasher.hexdigest()
                 log_layer("storage", logging.DEBUG, f"Worker #{worker_id}: In-flight buffer finished for {cleaned_name} (SHA-256: {file_sha256[:10]}...)")
+
+                # The stream ended cleanly, so a wrong size isn't a dropped connection. It's not the
+                # file, such as a 200 holding a Cloudflare page, so its bytes can't be resumed from.
+                # A dropped connection raises above and keeps its .part for the next attempt.
+                final_size = part_path.stat().st_size
+                if expected_size and final_size != expected_size:
+                    part_path.unlink(missing_ok=True)
+                    raise RuntimeError(f"Size mismatch on {cleaned_name}: expected {expected_size}, got {final_size}")
 
                 ext = Path(cleaned_name).suffix.lower()
                 if ext == ".zip":
@@ -844,8 +893,7 @@ class DownloadManager:
                     "cleaned_filename": cleaned_name,
                     "local_relative_path": nas_rel_path,
                     "expected_bytes": expected_size,
-                    # FIXME(R-01): this counts only this attempt, so a resumed file records too few bytes and can never offload.
-                    "actual_bytes": bytes_received,
+                    "actual_bytes": final_size,
                     "file_extension": ext,
                     "staging_path": str(staged_path),
                     "sha256": file_sha256,
@@ -875,6 +923,10 @@ class DownloadManager:
             conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V8, (model_id, error_msg))
 
     def _claim_next_offload_job(self) -> Optional[sqlite3.Row]:
+        now = time.time()
+        with self._lock:
+            waiting = [job_id for job_id, due in self._offload_not_before.items() if due > now]
+        marks = ",".join("?" * len(waiting))
         with self._get_db() as conn:
             creator_expr, month_expr, joins = self._get_model_meta_query_parts(conn)
             row = conn.execute(f"""
@@ -882,59 +934,80 @@ class DownloadManager:
                 FROM download_jobs dj
                 JOIN collections m ON dj.model_id = m.id
                 {joins}
-                WHERE dj.status = 'staging_complete'
+                WHERE dj.status = 'staging_complete' AND dj.id NOT IN ({marks})
                 ORDER BY dj.enqueued_at ASC LIMIT 1;
-            """).fetchone()
+            """, waiting).fetchone()
 
             if row and conn.execute(
                 queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V4,
                 (row["id"],),
             ).rowcount == 1:
+                with self._lock:
+                    self._offload_not_before.pop(row["id"], None)
                 return row
         return None
 
     def _offload_worker_loop(self, worker_id: int):
         while self.is_running:
-            if self.is_paused:
-                time.sleep(1.0)
-                continue
-
             try:
-                nas_root = self.storage.get_root_path()
-            except StorageUnavailableError:
-                time.sleep(3.0)
-                continue
+                self._offload_next(worker_id)
+            except Exception:
+                logger.exception(f"[DownloadManager] Offload worker #{worker_id} hit an error and will retry")
+                time.sleep(WORKER_ERROR_PAUSE_SECONDS)
 
-            job = self._claim_next_offload_job()
-            if not job:
-                time.sleep(1.5)
-                continue
+    def _offload_next(self, worker_id: int) -> None:
+        if self.is_paused:
+            time.sleep(1.0)
+            return
 
-            model_id = job["model_id"]
-            log_layer("storage", logging.DEBUG, f"Offloader #{worker_id}: Claimed Model #{model_id} for NAS transfer")
+        try:
+            nas_root = self.storage.get_root_path()
+        except StorageUnavailableError:
+            time.sleep(3.0)
+            return
 
+        job = self._claim_next_offload_job()
+        if not job:
+            time.sleep(1.5)
+            return
+
+        model_id = job["model_id"]
+        log_layer("storage", logging.DEBUG, f"Offloader #{worker_id}: Claimed Model #{model_id} for NAS transfer")
+
+        with self._lock:
+            self.active_offloads[worker_id] = {
+                "model_id": model_id,
+                "model_name": job["model_name"] or f"Model #{model_id}",
+                "status": "offloading",
+                "speed_bps": 0,
+                "transferred_bytes": 0,
+                "total_bytes": job["downloaded_bytes"] or 0,
+                "current_file": "Initializing",
+            }
+
+        try:
+            self._process_nas_offload(worker_id, job, nas_root)
+        except Exception as e:
+            log_layer("storage", logging.ERROR, f"Offloader #{worker_id}: Transfer failed for Model #{model_id}: {e}")
+            self._delay_offload(job)
+            with self._get_db() as conn:
+                conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V5, (f"NAS Offload Delayed: {e}", job["id"]))
+        finally:
             with self._lock:
-                self.active_offloads[worker_id] = {
-                    "model_id": model_id,
-                    "model_name": job["model_name"] or f"Model #{model_id}",
-                    "status": "offloading",
-                    "speed_bps": 0,
-                    "transferred_bytes": 0,
-                    "total_bytes": job["downloaded_bytes"] or 0,
-                    "current_file": "Initializing",
-                }
+                self.active_offloads.pop(worker_id, None)
 
-            try:
-                self._process_nas_offload(worker_id, job, nas_root)
-            except Exception as e:
-                log_layer("storage", logging.ERROR, f"Offloader #{worker_id}: Transfer failed for Model #{model_id}: {e}")
-                with self._get_db() as conn:
-                    conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V5, (f"NAS Offload Delayed: {e}", job["id"]))
-            finally:
-                with self._lock:
-                    self.active_offloads.pop(worker_id, None)
+        time.sleep(0.5)
 
-            time.sleep(0.5)
+    def _delay_offload(self, job: sqlite3.Row) -> None:
+        # The job has to stay in staging_complete, because its staged files are the only copy and the
+        # queue routes can delete a failed job. Without a wait it would rewrite every file in a loop.
+        delay = min(OFFLOAD_RETRY_MAX_SECONDS, OFFLOAD_RETRY_BASE_SECONDS * 2 ** min(job["retry_count"] or 0, 8))
+        with self._lock:
+            self._offload_not_before[job["id"]] = time.time() + delay
+
+    def worker_counts(self) -> dict[str, int]:
+        threads = [*self.workers, *self.offloader_workers] if self.is_running else []
+        return {"running": sum(thread.is_alive() for thread in threads), "expected": len(threads)}
 
     def _write_model_metadata_json(self, conn: sqlite3.Connection, model_id: int, target_dir: Path):
         """Dumps formatted metadata.json directly into the object directory on the NAS."""
@@ -989,12 +1062,15 @@ class DownloadManager:
             file_id = record["file_id"]
             staging_path = Path(record["staging_path"]) if record["staging_path"] else None
             cleaned_name = record["cleaned_filename"]
-            expected_bytes = record["actual_bytes"]
 
             if not staging_path or not staging_path.exists():
                 raise FileNotFoundError(f"Staged file missing at '{staging_path}'")
 
+            # Measured here, because a job resumed by an older build recorded only its last attempt.
+            expected_bytes = staging_path.stat().st_size
+            expected_hash = record["sha256"] or sha256_of(staging_path, self.offload_chunk_size)
             target_nas_path = files_dest_dir / cleaned_name
+            temp_nas_path = files_dest_dir / f"{cleaned_name}.part"
 
             with self._lock:
                 if worker_id in self.active_offloads:
@@ -1002,34 +1078,44 @@ class DownloadManager:
 
             t0 = time.time()
             bytes_streamed = 0
-            # FIXME(R-02): writes the final name directly. Use a temp name, verify the hash, then rename.
-            with open(staging_path, "rb") as f_in, open(target_nas_path, "wb") as f_out:
-                while True:
-                    buf = f_in.read(self.offload_chunk_size)
-                    if not buf:
-                        break
-                    f_out.write(buf)
-                    bytes_streamed += len(buf)
-                    transferred_bytes_acc += len(buf)
+            try:
+                with open(staging_path, "rb") as f_in, open(temp_nas_path, "wb") as f_out:
+                    while True:
+                        buf = f_in.read(self.offload_chunk_size)
+                        if not buf:
+                            break
+                        f_out.write(buf)
+                        bytes_streamed += len(buf)
+                        transferred_bytes_acc += len(buf)
 
-                    elapsed = max(0.001, time.time() - t0)
-                    speed = int(bytes_streamed / elapsed)
-                    with self._lock:
-                        if worker_id in self.active_offloads:
-                            self.active_offloads[worker_id]["transferred_bytes"] = transferred_bytes_acc
-                            self.active_offloads[worker_id]["speed_bps"] = speed
+                        elapsed = max(0.001, time.time() - t0)
+                        speed = int(bytes_streamed / elapsed)
+                        with self._lock:
+                            if worker_id in self.active_offloads:
+                                self.active_offloads[worker_id]["transferred_bytes"] = transferred_bytes_acc
+                                self.active_offloads[worker_id]["speed_bps"] = speed
+                    f_out.flush()
+                    os.fsync(f_out.fileno())
 
-            nas_size = target_nas_path.stat().st_size
-            if nas_size != expected_bytes:
-                target_nas_path.unlink(missing_ok=True)
-                raise IOError(f"Byte mismatch on NAS for {cleaned_name} (Expected {expected_bytes}, got {nas_size})")
-
-            # FIXME(R-02): this is the last local copy, and only size was checked. Compare record["sha256"] first.
-            staging_path.unlink(missing_ok=True)
+                # Staging is about to go, and production has no second copy, so this reads the whole
+                # file back. A size check misses same-length corruption and writes SMB failed late.
+                nas_size = temp_nas_path.stat().st_size
+                if nas_size != expected_bytes:
+                    raise OSError(f"Byte mismatch on NAS for {cleaned_name} (Expected {expected_bytes}, got {nas_size})")
+                if sha256_of(temp_nas_path, self.offload_chunk_size) != expected_hash:
+                    raise OSError(f"Checksum mismatch on NAS for {cleaned_name}")
+                os.replace(temp_nas_path, target_nas_path)
+            finally:
+                with contextlib.suppress(OSError):
+                    temp_nas_path.unlink(missing_ok=True)
 
             nas_rel_path = str(Path(clean_creator) / rel_month / clean_model_folder / "files" / cleaned_name)
             with self._get_db() as conn:
                 conn.execute(queries.UPDATE_DOWNLOADED_FILES_STORAGE_TIER_BY_FILE_ID_V2, (str(target_nas_path), nas_rel_path, file_id))
+
+            # Last on purpose. If this ran before the row update, a crash between them would leave
+            # the catalog pointing at a staged file that no longer exists.
+            staging_path.unlink(missing_ok=True)
 
         try:
             staged_parent = Path(records[0]["staging_path"]).parent

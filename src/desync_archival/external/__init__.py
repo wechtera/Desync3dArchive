@@ -10,8 +10,11 @@ import os
 import re
 import shutil
 import subprocess
+import zipfile
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import IO
 
 from desync_archival import settings as app_config
 
@@ -110,9 +113,14 @@ def seven_zip_extract_member(seven_zip: str, archive: Path, member: str, dest: P
 
 
 def member_commands(
-    extension: str, unrar: str | None, seven_zip: str | None, archive: Path, internal_path: str, filename: str, dest: Path
+    extension: str, unrar: str | None, seven_zip: str | None, archive: Path, internal_path: str, filename: str, dest: Path,
+    fuzzy: bool = False,
 ) -> list[list[str]]:
-    """Extraction attempts for one member, in order. Archive tools disagree on separators and paths."""
+    """Extraction attempts for one member, in order. Archive tools disagree on separators and paths.
+
+    fuzzy matches by name in any folder, so only use it once the name is known to be unique. `e`
+    flattens folders, so same-named files overwrite each other and one of them comes back at random.
+    """
     backslashed = internal_path.replace("/", "\\")
     forward = internal_path.replace("\\", "/")
     unrar = unrar if unrar and Path(unrar).exists() else None
@@ -121,21 +129,153 @@ def member_commands(
 
     if extension == ".rar" and unrar:
         commands += [
-            # FIXME(R-03): a wildcard matches same-named files in other folders, and `e` flattens them. Try the exact path first.
             unrar_extract_member(unrar, archive, f"*{filename}", dest, recurse=True),
             unrar_extract_member(unrar, archive, filename, dest, recurse=True),
-            unrar_extract_member(unrar, archive, backslashed, dest),
+        ] if fuzzy else [
             unrar_extract_member(unrar, archive, forward, dest),
+            unrar_extract_member(unrar, archive, backslashed, dest),
         ]
     if seven_zip:
         commands += [
             seven_zip_extract_member(seven_zip, archive, f"*{filename}", dest, recurse=True),
+        ] if fuzzy else [
             seven_zip_extract_member(seven_zip, archive, internal_path, dest),
             seven_zip_extract_member(seven_zip, archive, backslashed, dest),
         ]
-    if unrar and extension != ".rar":
+    if fuzzy and unrar and extension != ".rar":
         commands.append(unrar_extract_member(unrar, archive, f"*{filename}", dest, recurse=True))
     return commands
+
+
+def _base_name(member_path: str) -> str:
+    return PurePosixPath(member_path.replace("\\", "/")).name
+
+
+def copy_limited(source: IO[bytes], target: Path) -> int:
+    """Copies a zip member, counting bytes as they arrive because its declared size can lie.
+
+    Raises:
+        ExtractionRefused: The member ran past the size limit. The partial file is removed.
+    """
+    copied = 0
+    with open(target, "wb") as output:
+        while chunk := source.read(1024 * 1024):
+            copied += len(chunk)
+            if copied > MAX_EXTRACTED_BYTES:
+                output.close()
+                target.unlink(missing_ok=True)
+                raise ExtractionRefused(f"{target.name} unpacked past the size limit")
+            output.write(chunk)
+    return copied
+
+
+def _zip_entry(archive: zipfile.ZipFile, internal_path: str, archive_name: str) -> str:
+    def normalized(name: str) -> str:
+        return name.replace("\\", "/").strip("/").lower()
+
+    names = [name for name in archive.namelist() if not name.endswith("/")]
+    wanted = normalized(internal_path)
+    exact = [name for name in names if normalized(name) == wanted]
+    if exact:
+        return exact[0]
+    same_name = [name for name in names if _base_name(name).lower() == _base_name(internal_path).lower()]
+    if len(same_name) == 1:
+        return same_name[0]
+    if same_name:
+        raise ExtractionRefused(f"{archive_name} has {len(same_name)} files named {_base_name(internal_path)}")
+    raise FileNotFoundError(f"Could not find entry '{internal_path}' inside zip {archive_name}")
+
+
+def _name_is_unique(archive: Path, filename: str, unrar: str | None, seven_zip: str | None) -> bool:
+    try:
+        members = list_members(archive, unrar, seven_zip)
+    except (ExtractionRefused, OSError, subprocess.SubprocessError):
+        return False
+    return sum(_base_name(member.path).lower() == filename.lower() for member in members) == 1
+
+
+def _extract_with_tools(archive: Path, internal_path: str, folder: Path, unrar: str | None, seven_zip: str | None) -> Path:
+    filename = _base_name(internal_path)
+    extension = archive.suffix.lower()
+    last_error = ""
+    for fuzzy in (False, True):
+        if fuzzy and not _name_is_unique(archive, filename, unrar, seven_zip):
+            break
+        for cmd in member_commands(extension, unrar, seven_zip, archive, internal_path, filename, folder, fuzzy):
+            try:
+                # FIXME(S-04): a single RAR member has a timeout but no size limit. Zip members are capped.
+                result = run(cmd, MEMBER_TIMEOUT)
+            except (OSError, subprocess.SubprocessError) as e:
+                last_error = str(e)
+                continue
+            # Homebrew's 7zz has no RAR codec, and fails leaving a 0 byte file, so only bytes count.
+            found = [
+                path for path in regular_files(folder)
+                if path.name.lower() == filename.lower() and path.stat().st_size > 0
+            ]
+            if found:
+                return found[0]
+            last_error = (result.stderr or result.stdout or "").strip() or last_error
+    raise ExtractionRefused(
+        f"Extraction failed for '{filename}' from {archive.name}. "
+        f"Diagnostics: {last_error or 'File not found, or the name repeats in other folders'}"
+    )
+
+
+def extract_member(
+    archive: Path, internal_path: str, folder: Path, unrar: str | None, seven_zip: str | None, expected_size: int = 0,
+) -> Path:
+    """Extracts one member into an empty folder the caller owns, and returns the file.
+
+    The exact path is tried first. A match by name alone is allowed only when that name appears
+    once in the archive, because the same filename in Supported and Unsupported folders is normal.
+
+    Raises:
+        ExtractionRefused: No tool produced the member, its name is ambiguous, or its size is wrong.
+        FileNotFoundError: A zip has no entry with that path or name.
+    """
+    if archive.suffix.lower() == ".zip":
+        with zipfile.ZipFile(archive, "r") as handle:
+            entry = _zip_entry(handle, internal_path, archive.name)
+            found = folder / _base_name(entry)
+            with handle.open(entry, "r") as source:
+                copy_limited(source, found)
+    else:
+        found = _extract_with_tools(archive, internal_path, folder, unrar, seven_zip)
+
+    size = found.stat().st_size
+    if expected_size and size != expected_size:
+        raise ExtractionRefused(f"{found.name} from {archive.name} is {size} bytes, and the catalog says {expected_size}")
+    return found
+
+
+def export_paths(internal_paths: list[str]) -> dict[str, str]:
+    """Maps members to paths under one export folder, so no two of them land on the same file.
+
+    A unique name stays flat, which is the layout slicers and existing exports expect. A name that
+    repeats keeps the folders that tell its copies apart, such as Supported/Head.stl.
+
+    Raises:
+        ExtractionRefused: A member path could escape the export folder.
+    """
+    groups: dict[str, list[str]] = defaultdict(list)
+    for path in internal_paths:
+        if not is_safe_member(path):
+            raise ExtractionRefused(f"Unsafe member path: {path!r}")
+        groups[_base_name(path).lower()].append(path)
+
+    placed = {}
+    for paths in groups.values():
+        if len(paths) == 1:
+            placed[paths[0]] = _base_name(paths[0])
+            continue
+        folders = [PurePosixPath(path.replace("\\", "/")).parent.parts for path in paths]
+        shared = 0
+        while all(len(parts) > shared and parts[shared] == folders[0][shared] for parts in folders):
+            shared += 1
+        for path, parts in zip(paths, folders):
+            placed[path] = "/".join((*parts[shared:], _base_name(path)))
+    return placed
 
 
 def regular_files(folder: Path) -> list[Path]:

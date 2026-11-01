@@ -28,7 +28,7 @@ from desync_archival import settings as app_config
 from desync_archival.services import documents, image_worker, jobs, login, scheduler
 from desync_archival.services.db import get_db_connection, seed_default_settings
 from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
-from desync_archival.services.logger import log_context, logger
+from desync_archival.services.logger import init_logging_from_db, log_context, logger
 from desync_archival.services.task_manager import TaskManager
 
 DB_PATH = app_config.db_path().resolve()
@@ -320,6 +320,7 @@ def start_managers() -> None:
         jobs.recover_interrupted(conn)
     finally:
         conn.close()
+    init_logging_from_db(DB_PATH)
 
     logger.info("[Server] Initializing background TaskManager")
     task_manager = TaskManager(DB_PATH, app_config.data_dir())

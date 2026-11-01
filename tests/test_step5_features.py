@@ -146,6 +146,8 @@ class JobClaimTests(TempDb):
 
         manager = object.__new__(DownloadManager)
         manager.db_path = self.db
+        manager._lock = threading.Lock()
+        manager._offload_not_before = {}
         claimed = []
         lock = threading.Lock()
         barrier = threading.Barrier(8)

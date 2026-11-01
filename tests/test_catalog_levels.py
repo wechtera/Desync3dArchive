@@ -393,6 +393,7 @@ class ImageExtractionTests(unittest.TestCase):
 
         def fake_run(cmd, _timeout):
             cmd[0](next(self.dest.glob(".extract_*")))
+            return MagicMock(stderr="", stdout="")
 
         with patch("desync_archival.services.archive_peeker.external.member_commands", return_value=commands), \
                 patch("desync_archival.services.archive_peeker.external.run", side_effect=fake_run):

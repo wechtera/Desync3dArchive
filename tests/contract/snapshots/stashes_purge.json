@@ -13,6 +13,7 @@
       "message": "Purged 0 print queue folders older than 14 days.",
       "purged_count": 0,
       "reclaimed_bytes": 0,
+      "skipped_no_manifest": 0,
       "success": true
     },
     "location": null,

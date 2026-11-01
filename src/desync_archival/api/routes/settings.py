@@ -1200,6 +1200,15 @@ def handle_post_logs_purge(
     }, 200
 
 
+def _purge_refusal(conn: sqlite3.Connection, stash_path: Path) -> str | None:
+    """Stops a stash path that overlaps the vault or a library, because purging there destroys originals."""
+    for (root,) in conn.execute(queries.SELECT_PROTECTED_ROOTS).fetchall():
+        resolved = Path(root).expanduser().resolve()
+        if stash_path == resolved or resolved in stash_path.parents or stash_path in resolved.parents:
+            return f"The print queue folder overlaps {resolved}, so nothing was purged."
+    return None
+
+
 def handle_post_stashes_purge(
     conn: sqlite3.Connection,
     download_manager: Any = None,
@@ -1212,6 +1221,8 @@ def handle_post_stashes_purge(
         days = int(data.get("days", 14))
     except (ValueError, TypeError):
         days = 14
+    if days < 1:
+        return {"error": "Purging needs an age of at least 1 day."}, 400
 
     settings = {}
     try:
@@ -1224,9 +1235,13 @@ def handle_post_stashes_purge(
     stash_setting = settings.get("stash_download_path", "")
     stash_path = Path(stash_setting).expanduser().resolve() if stash_setting else Path(DEFAULT_STASH_EXPORT_PATH).resolve()
 
+    if refusal := _purge_refusal(conn, stash_path):
+        return {"error": refusal}, 400
+
     dry_run = not data.get("confirm")
     purged_folders = 0
     reclaimed_bytes = 0
+    skipped = 0
     errors = []
 
     cutoff_time = time.time() - (days * 86400)
@@ -1234,12 +1249,15 @@ def handle_post_stashes_purge(
     if stash_path.exists() and stash_path.is_dir():
         for item in stash_path.iterdir():
             if item.is_dir():
+                # The exporter's manifest is what proves a folder is an export, not something else.
+                if not (item / "manifest.json").is_file():
+                    skipped += 1
+                    continue
                 try:
                     mtime = item.stat().st_mtime
                     if mtime < cutoff_time:
                         folder_sz = sum(f.stat().st_size for f in item.rglob("*") if f.is_file())
                         if not dry_run:
-                            # Safety: age is the only test. FIXME(S-02): a stash path set to the vault would purge vault folders. Mark export folders.
                             shutil.rmtree(item)
                         purged_folders += 1
                         reclaimed_bytes += folder_sz
@@ -1249,7 +1267,7 @@ def handle_post_stashes_purge(
     if dry_run:
         result = {
             "success": True, "dry_run": True, "would_purge": purged_folders,
-            "reclaimable_bytes": reclaimed_bytes, "errors": errors, "days": days,
+            "reclaimable_bytes": reclaimed_bytes, "errors": errors, "days": days, "skipped_no_manifest": skipped,
         }
         audit.record(conn, "stashes_purge", True, result)
         return result, 200
@@ -1264,5 +1282,6 @@ def handle_post_stashes_purge(
         "purged_count": purged_folders,
         "reclaimed_bytes": reclaimed_bytes,
         "errors": errors,
+        "skipped_no_manifest": skipped,
         "message": f"Purged {purged_folders} print queue folders older than {days} days.",
     }, 200

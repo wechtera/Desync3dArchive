@@ -37,6 +37,7 @@ class ReliabilityCase(unittest.TestCase):
         self.addCleanup(self.conn.close)
         self.tasks = MagicMock(root_dir=self.base)
         self.downloads = MagicMock(active_downloads={})
+        self.downloads.worker_counts.return_value = {"running": 0, "expected": 0}
 
     def set(self, **values):
         with self.conn:
@@ -172,6 +173,7 @@ class CookieExpiryTests(ReliabilityCase):
 
     def check(self):
         self.downloads.storage.get_disk_metrics.return_value = {"nas": {}}
+        self.downloads.worker_counts.return_value = {"running": 0, "expected": 0}
         return {c["key"]: c for c in health.report(self.conn, self.downloads)["checks"]}["cookies"]
 
     def test_health_warns_when_expired_or_close(self):
@@ -308,6 +310,7 @@ class ScheduleFormTests(ReliabilityCase):
 
 class HealthTests(ReliabilityCase):
     def report(self):
+        self.downloads.worker_counts.return_value = {"running": 0, "expected": 0}
         self.downloads.storage.get_disk_metrics.return_value = {"nas": {"mounted": True, "total_bytes": 100, "free_bytes": 50}}
         result = health.report(self.conn, self.downloads)
         return result, {c["key"]: c for c in result["checks"]}

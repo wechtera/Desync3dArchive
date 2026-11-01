@@ -9,9 +9,10 @@
   "response": {
     "content_type": "application/json",
     "json": {
+      "dry_run": true,
       "errors": [],
-      "realigned_count": 0,
-      "success": true
+      "success": true,
+      "would_move": []
     },
     "location": null,
     "status": 200

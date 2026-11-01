@@ -1005,11 +1005,12 @@ export async function resetAllReconcileDiscrepancies() {
 }
 
 export async function deleteSingleOrphan(path) {
-  if (!confirm(`Permanently delete orphan directory from disk?\n\n${path}`)) return;
+  if (!confirm(`Move this orphan folder to Pending Deletion? It can be restored for 14 days.\n\n${path}`)) return;
   try {
-    // FIXME(R-15): success is true even when errors is not empty, so a failed delete looks done.
     const res = await deleteOrphanDirectories([path]);
-    if (res.success) {
+    if (res.errors?.length) {
+      alert(res.errors.join('\n'));
+    } else if (res.success) {
       currentOrphanDirectories = currentOrphanDirectories.filter(o => o.directory_path !== path);
       renderReverseOrphanSection(document.getElementById('reconcile-orphan-section'), currentOrphanDirectories, currentUntrackedFiles);
     }
@@ -1021,12 +1022,14 @@ export async function deleteSingleOrphan(path) {
 export async function deleteAllOrphans() {
   if (currentOrphanDirectories.length === 0) return;
   const count = currentOrphanDirectories.length;
-  if (!confirm(`Permanently delete all ${count} orphan directories from disk? This cannot be undone.`)) return;
+  if (!confirm(`Move all ${count} orphan folders to Pending Deletion? They can be restored for 14 days.`)) return;
 
   const paths = currentOrphanDirectories.map(o => o.directory_path);
   try {
     const res = await deleteOrphanDirectories(paths);
-    if (res.success) {
+    if (res.errors?.length) {
+      alert(`${res.deleted_count} moved. These were refused, so run the audit again:\n\n${res.errors.join('\n')}`);
+    } else if (res.success) {
       currentOrphanDirectories = [];
       renderReverseOrphanSection(document.getElementById('reconcile-orphan-section'), [], currentUntrackedFiles);
     }
@@ -1327,16 +1330,23 @@ function renderPathDriftResults(items) {
   render(htmlParts, container);
 }
 
-/** Moves one model's folder to its canonical path. Doesn't ask first. */
+// Moves run as a job, so a folder list stays on screen until a fresh scan shows the result.
+async function realignPaths(ids) {
+  const preview = await realignModelPaths(ids);
+  const moves = preview.would_move.map(item => `${item.current_path}\n  to ${item.canonical_path}`);
+  if (preview.errors.length) alert(preview.errors.join('\n'));
+  if (moves.length === 0) return;
+  const shown = moves.slice(0, 5).join('\n\n');
+  const more = moves.length > 5 ? `\n\nand ${moves.length - 5} more` : '';
+  if (!confirm(`Move ${moves.length} folders on the vault and update the catalog?\n\n${shown}${more}`)) return;
+  await realignModelPaths(ids, true);
+  alert('Folder moves started. Follow them in Pipeline Tasks, then run the scan again.');
+  if (typeof window.checkHealth === 'function') window.checkHealth();
+}
+
 export async function realignSinglePath(modelId) {
   try {
-    // FIXME(R-15): same here. Per-item errors are dropped, and this path never asks first.
-    const res = await realignModelPaths([modelId]);
-    if (res.success) {
-      currentPathDrifts = currentPathDrifts.filter(it => it.model_id !== modelId);
-      renderPathDriftResults(currentPathDrifts);
-      window.refreshCurrentView();
-    }
+    await realignPaths([modelId]);
   } catch (err) {
     alert(`Realign failed: ${err.message}`);
   }
@@ -1344,17 +1354,8 @@ export async function realignSinglePath(modelId) {
 
 export async function realignAllPaths() {
   if (currentPathDrifts.length === 0) return;
-  const count = currentPathDrifts.length;
-  if (!confirm(`Realign all ${count} legacy model directories to canonical sanitized paths and update the database?`)) return;
-
-  const ids = currentPathDrifts.map(it => it.model_id);
   try {
-    const res = await realignModelPaths(ids);
-    if (res.success) {
-      currentPathDrifts = [];
-      renderPathDriftResults([]);
-      window.refreshCurrentView();
-    }
+    await realignPaths(currentPathDrifts.map(it => it.model_id));
   } catch (err) {
     alert(`Realign all failed: ${err.message}`);
   }

@@ -22,6 +22,7 @@ import httpx
 
 from desync_archival import settings as app_config
 from desync_archival.db.queries import reconciler as queries
+from desync_archival.services import pending_deletion
 from desync_archival.services.downloader import StorageManager, StorageUnavailableError
 from desync_archival.services.logger import log_layer
 from desync_archival.services.paths import (
@@ -99,6 +100,22 @@ def compute_file_sha256(file_path: Path, chunk_size: int = 1024 * 1024) -> str:
     return digest
 
 
+# Matches 123_Name and bare [123]. An old `[123] Name` folder has a space and doesn't match.
+MODEL_DIR_PATTERN = re.compile(r"^\[?(\d+)\]?(?:_(.*))?$")
+
+
+def folder_model_id(folder: Path) -> int | None:
+    """The MMF ID a vault folder belongs to, from its name or its metadata.json."""
+    match = MODEL_DIR_PATTERN.match(folder.name)
+    if match:
+        return int(match.group(1))
+    try:
+        meta = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
+        return int(meta["id"]) if isinstance(meta, dict) and meta.get("id") else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
 class VaultReconciler:
     """Audits the vault against the catalog and carries out the repairs. Process-wide singleton."""
     _instance: Optional["VaultReconciler"] = None
@@ -157,8 +174,6 @@ class VaultReconciler:
             return self._execute_forward(nas_root, mode, progress, log, is_cancelled)
 
     def _execute_reverse(self, nas_root: Path, progress, log, is_cancelled) -> Dict[str, Any]:
-        # Matches 123_Name and bare [123]. An old `[123] Name` folder has a space and doesn't match.
-        model_dir_regex = re.compile(r"^\[?(\d+)\]?(?:_(.*))?$")
         candidate_model_dirs: List[Path] = []
 
         log("Discovering model directories on physical storage...")
@@ -180,7 +195,7 @@ class VaultReconciler:
 
             has_files_dir = (root_path / "files").is_dir()
             has_meta = (root_path / "metadata.json").is_file()
-            name_match = model_dir_regex.match(root_path.name)
+            name_match = MODEL_DIR_PATTERN.match(root_path.name)
 
             if has_files_dir or has_meta or name_match:
                 candidate_model_dirs.append(root_path)
@@ -209,16 +224,7 @@ class VaultReconciler:
             label = f"[REVERSE] Folder {i}/{total}: {model_dir.name[:35]}"
             progress(pct, label)
 
-            match = model_dir_regex.match(model_dir.name)
-            extracted_id = int(match.group(1)) if match else None
-
-            if extracted_id is None and (model_dir / "metadata.json").exists():
-                try:
-                    meta_obj = json.loads((model_dir / "metadata.json").read_text(encoding="utf-8"))
-                    if isinstance(meta_obj, dict) and meta_obj.get("id"):
-                        extracted_id = int(meta_obj["id"])
-                except Exception:
-                    pass
+            extracted_id = folder_model_id(model_dir)
 
             local_id = model_id_by_mmf_id.get(str(extracted_id))
             if extracted_id is None or local_id is None:
@@ -564,41 +570,64 @@ class VaultReconciler:
         log_layer("sql", logging.INFO, f"Reset {len(clean_ids)} reconciliation models for re-download: {clean_ids}")
         return {"success": True, "reset_count": len(clean_ids)}
 
+    def _orphan_refusal(self, target: Path, nas_root: Path, known_ids: dict, catalog_paths: list[str]) -> str | None:
+        """Why a path can't go as an orphan. Checked at delete time, because an audit list goes stale."""
+        if target.relative_to(nas_root).parts[0] in (IMPORT_FOLDER, PENDING_DELETION_FOLDER):
+            return "it's a fixed vault folder"
+        text = str(target)
+        for held in catalog_paths:
+            if held == text or held.startswith(f"{text}/"):
+                return "the catalog has files there"
+            # A row at the vault root isn't a model folder, and ingest can leave one. Counting it
+            # would make every orphan look catalogued.
+            if text.startswith(f"{held}/") and Path(held).is_relative_to(nas_root) and Path(held) != nas_root:
+                return "the catalog has files there"
+        if str(folder_model_id(target)) in known_ids:
+            return "that model is in the catalog"
+        return None
+
     def delete_orphan_directories(self, paths: List[str], dry_run: bool = False) -> Dict[str, Any]:
-        """Permanently removes folders inside the vault root, and empties parents upward."""
+        """Moves orphan folders to pending deletion, where they wait 14 days and can be restored."""
         if not paths:
             return {"success": False, "error": "No directory paths provided."}
         nas_root = self.storage.get_root_path().resolve()
         deleted, errors = [], []
         would_delete: list[str] = []
         reclaimable = 0
-        for p_str in paths:
-            try:
-                target = Path(p_str).resolve()
-                # Safety: containment only. FIXME(S-02): also require an audit-listed orphan, and refuse the two fixed folders.
-                if not target.is_relative_to(nas_root) or target == nas_root:
-                    errors.append(f"Security: Refusing deletion outside vault root: {target}")
-                    log_layer("storage", logging.ERROR, f"Refused orphan deletion outside NAS root: {target}")
-                    continue
-                if dry_run:
-                    if target.is_dir():
-                        would_delete.append(str(target))
-                        reclaimable += sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
-                    continue
-                if target.exists() and target.is_dir():
-                    shutil.rmtree(target)
-                    deleted.append(str(target))
-                    log_layer("storage", logging.INFO, f"Deleted orphan directory: {target}")
-                    parent = target.parent
-                    while parent != nas_root and parent.is_relative_to(nas_root):
-                        if parent.exists() and not any(parent.iterdir()):
-                            parent.rmdir()
-                            parent = parent.parent
-                        else:
-                            break
-            except Exception as e:
-                errors.append(f"Failed deleting {p_str}: {e}")
-                log_layer("storage", logging.ERROR, f"Failed deleting orphan {p_str}: {e}")
+        with self._get_db() as conn:
+            known_ids = dict(conn.execute(queries.SELECT_COLLECTIONS_BY_SOURCE).fetchall())
+            catalog_paths = [row[0] for row in conn.execute(queries.SELECT_CATALOG_VAULT_PATHS).fetchall()]
+            for p_str in paths:
+                try:
+                    target = Path(p_str).resolve()
+                    if not target.is_relative_to(nas_root) or target == nas_root:
+                        errors.append(f"Security: Refusing deletion outside vault root: {target}")
+                        log_layer("storage", logging.ERROR, f"Refused orphan deletion outside NAS root: {target}")
+                        continue
+                    refusal = self._orphan_refusal(target, nas_root, known_ids, catalog_paths)
+                    if refusal:
+                        errors.append(f"Refused {target.name}: {refusal}.")
+                        log_layer("storage", logging.ERROR, f"Refused orphan deletion of {target}: {refusal}")
+                        continue
+                    if dry_run:
+                        if target.is_dir():
+                            would_delete.append(str(target))
+                            reclaimable += sum(f.stat().st_size for f in target.rglob("*") if f.is_file())
+                        continue
+                    if target.exists() and target.is_dir():
+                        pending_deletion.hold_folder(conn, nas_root, target)
+                        deleted.append(str(target))
+                        log_layer("storage", logging.INFO, f"Held orphan directory: {target}")
+                        parent = target.parent
+                        while parent != nas_root and parent.is_relative_to(nas_root):
+                            if parent.exists() and not any(parent.iterdir()):
+                                parent.rmdir()
+                                parent = parent.parent
+                            else:
+                                break
+                except Exception as e:
+                    errors.append(f"Failed deleting {p_str}: {e}")
+                    log_layer("storage", logging.ERROR, f"Failed deleting orphan {p_str}: {e}")
         if dry_run:
             return {
                 "success": True, "dry_run": True, "would_delete": would_delete,
@@ -743,13 +772,15 @@ class VaultReconciler:
         log_layer("storage", logging.DEBUG, f"Path drift scan found {len(drift_items)} deviations.")
         return {"success": True, "total_drifts": len(drift_items), "items": drift_items}
 
-    def realign_model_paths(self, model_ids: Optional[List[int]] = None) -> Dict[str, Any]:
+    def realign_model_paths(self, model_ids: list[int] | None = None, dry_run: bool = False) -> dict[str, Any]:
+        """Moves drifted folders and rewrites their stored paths, or lists the moves on a dry run."""
         nas_root = self.storage.get_root_path().resolve()
         items = self.scan_path_drift().get("items", [])
         if model_ids is not None:
             cset = set(model_ids)
             items = [it for it in items if it["model_id"] in cset]
         realigned, errors = 0, []
+        would_move: list[dict[str, Any]] = []
         with self._get_db() as conn:
             for it in items:
                 mid = it["model_id"]
@@ -757,10 +788,22 @@ class VaultReconciler:
                 canon = Path(it["canonical_path"]).resolve()
                 if not cur.exists() or not cur.is_dir():
                     continue
+                # shutil.move nests inside an existing folder, and the catalog would then hold a wrong path.
+                if canon.exists():
+                    errors.append(f"Model #{mid}: {canon} already exists, so nothing was moved.")
+                    log_layer("storage", logging.ERROR, f"Path realign refused for Model #{mid}: {canon} exists")
+                    continue
+                if dry_run:
+                    would_move.append({"model_id": mid, "current_path": str(cur), "canonical_path": str(canon)})
+                    continue
                 try:
                     canon.parent.mkdir(parents=True, exist_ok=True)
-                    # FIXME(S-03): if canon exists, move nests cur inside it and the stored path is wrong.
                     shutil.move(str(cur), str(canon))
+                except OSError as e:
+                    errors.append(f"Model #{mid}: {e}")
+                    log_layer("storage", logging.ERROR, f"Path realign failed for Model #{mid}: {e}")
+                    continue
+                try:
                     with conn:
                         conn.execute(queries.UPDATE_COLLECTIONS_VAULT_PATH_BY_ID, (str(canon), mid))
                         conn.execute(queries.UPDATE_DOWNLOAD_JOBS_DESTINATION_PATH_BY_MODEL_ID, (str(canon), mid))
@@ -768,11 +811,16 @@ class VaultReconciler:
                         rel_nas = canon.relative_to(nas_root)
                         for f in files:
                             conn.execute(queries.UPDATE_DOWNLOADED_FILES_VAULT_PATH_BY_FILE_ID, (str(canon / "files" / f["cleaned_filename"]), str(rel_nas / "files" / f["cleaned_filename"]), f["file_id"]))
-                    realigned += 1
-                    log_layer("storage", logging.INFO, f"Realigned Model #{mid} storage path to: {canon}")
                 except Exception as e:
+                    # The catalog rolled back, so the folder goes back too, or the two would disagree.
+                    shutil.move(str(canon), str(cur))
                     errors.append(f"Model #{mid}: {e}")
-                    log_layer("storage", logging.ERROR, f"Path realign failed for Model #{mid}: {e}")
+                    log_layer("storage", logging.ERROR, f"Path realign undone for Model #{mid}: {e}")
+                    continue
+                realigned += 1
+                log_layer("storage", logging.INFO, f"Realigned Model #{mid} storage path to: {canon}")
+        if dry_run:
+            return {"success": True, "dry_run": True, "would_move": would_move, "errors": errors}
         return {"success": True, "realigned_count": realigned, "errors": errors}
 
     # -------------------------------------------------------------------------

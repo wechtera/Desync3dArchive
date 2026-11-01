@@ -1,5 +1,7 @@
 """Raw SQL for the downloads API routes. Names with braces take format() values, never user input."""
 
+from desync_archival.db.queries import analytics
+
 COUNT_DOWNLOAD_JOBS = "SELECT COUNT(*) FROM download_jobs dj {where_clause};"
 
 SELECT_DOWNLOAD_JOBS = """
@@ -14,7 +16,23 @@ SELECT_DOWNLOAD_JOBS = """
         LIMIT ? OFFSET ?;
     """
 
-SELECT_COLLECTIONS_ID_BY_DESIGNER_NAME = "SELECT id FROM collections WHERE designer_name = ? AND release_month = ? AND is_active = 1;"
+# Models a release can still queue. Skipping anything with a live or finished job matters, because
+# queuing resets a job's status, and a pack can hold models that are mid-download or already archived.
+SELECT_QUEUEABLE_RELEASE_MODELS = f"""
+    SELECT m.id FROM collections m
+    WHERE {analytics.RELEASE_FILTER} AND {analytics.RELEASE_KEY} = ?
+      AND NOT EXISTS (
+          SELECT 1 FROM download_jobs j WHERE j.model_id = m.id
+          AND j.status IN ('pending', 'downloading', 'staging_complete', 'offloading', 'completed')
+      );
+"""
+
+# Only waiting jobs. A job that has started owns files on disk that a delete would strand.
+DELETE_PENDING_RELEASE_JOBS = f"""
+    DELETE FROM download_jobs WHERE status = 'pending' AND model_id IN (
+        SELECT m.id FROM collections m WHERE {analytics.RELEASE_FILTER} AND {analytics.RELEASE_KEY} = ?
+    );
+"""
 
 COUNT_MODEL_FILES_BY_MODEL_ID = "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM model_files WHERE model_id = ?;"
 

@@ -13,6 +13,7 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 from db_helper import create_database
 
@@ -210,17 +211,11 @@ class TestStashExporter(unittest.TestCase):
         scratch_root = self.local_work_dir / ".stash_scratch"
 
         # Force failure mid-extraction by mocking copy to raise IOError
-        original_copy = shutil.copyfileobj
-
-        def fail_copy(src, dst):
-            raise IOError("Simulated disk error during extraction")
-
-        shutil.copyfileobj = fail_copy
-        try:
-            with self.assertRaises(IOError):
-                self.exporter.export_stash(stash_id=1, conn=self.conn)
-        finally:
-            shutil.copyfileobj = original_copy
+        failing_copy = patch(
+            "desync_archival.external.copy_limited", side_effect=OSError("Simulated disk error during extraction"),
+        )
+        with failing_copy, self.assertRaises(OSError):
+            self.exporter.export_stash(stash_id=1, conn=self.conn)
 
         active_jobs = list(scratch_root.glob("*")) if scratch_root.exists() else []
         self.assertEqual(len(active_jobs), 0, "Orphaned scratch directory remained after exception!")

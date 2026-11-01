@@ -139,10 +139,9 @@ class LayerFilter(logging.Filter):
     """Filters log records based on the active log level and subsystem layer."""
     def filter(self, record: logging.LogRecord) -> bool:
         layer = getattr(record, "layer", None)
-        # If the record belongs to a specific layer and that layer is disabled, suppress it
-        if layer and layer in VALID_LAYERS:
+        # Layers only quiet routine detail. A warning or error always gets through.
+        if layer and layer in VALID_LAYERS and record.levelno < logging.WARNING:
             with _CONFIG_LOCK:
-                # FIXME(R-10): this filter drops ERROR lines too, so fixing log_layer alone isn't enough.
                 if layer not in _ACTIVE_LAYERS:
                     return False
         return True
@@ -275,12 +274,11 @@ def init_logging_from_db(db_path: Path):
 def log_layer(layer: str, level: int, message: str, **kwargs):
     """
     Emits a log entry tagged with a specific subsystem layer.
-    Aborts immediately if the subsystem layer is not enabled.
+    Routine lines stop here if the layer is off. Warnings and errors always go through.
     """
     clean_layer = layer.strip().lower()
     with _CONFIG_LOCK:
-        # FIXME(R-10): no layers are on by default, so this drops ERROR lines as well.
-        if clean_layer in VALID_LAYERS and clean_layer not in _ACTIVE_LAYERS:
+        if level < logging.WARNING and clean_layer in VALID_LAYERS and clean_layer not in _ACTIVE_LAYERS:
             return
 
     extra = kwargs.get("extra", {})

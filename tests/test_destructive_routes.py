@@ -187,13 +187,14 @@ class StashPurgeTests(DestructiveCase):
         self.old = self.stash / "old_batch"
         self.old.mkdir()
         (self.old / "a.stl").write_bytes(b"1234")
+        (self.old / "manifest.json").write_text("{}")
         stale = time.time() - 30 * 86400
         os.utime(self.old, (stale, stale))
 
     def test_both_aliases_dry_run_by_default(self):
         for path in ("/api/stashes/purge", "/api/settings/stashes/purge"):
             data = self.client.post(path, json={"days": 14}).json()
-            self.assertEqual((data["dry_run"], data["would_purge"], data["reclaimable_bytes"]), (True, 1, 4))
+            self.assertEqual((data["dry_run"], data["would_purge"], data["reclaimable_bytes"]), (True, 1, 6))
         self.assertTrue(self.old.exists())
         self.assertEqual([row[:2] for row in self.audit()], [("stashes_purge", 1), ("stashes_purge", 1)])
 

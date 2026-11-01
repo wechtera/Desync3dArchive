@@ -28,6 +28,9 @@ LINKED_REASON = "Linked libraries are read-only, so this file can only be kept o
 STASHED_REASON = "This file is in a stash. Remove it from the stash first."
 OFFLINE_REASON = "The vault is offline, so nothing can be moved."
 OUTSIDE_REASON = "This file isn't in the vault, so it can't be moved."
+# An orphan folder has no catalog rows, so its tombstone points at no file or collection.
+FOLDER_ID = 0
+ORPHAN_FOLDER_LABEL = "Orphan folder"
 
 
 class DeleteRefused(ValueError):
@@ -151,6 +154,26 @@ def delete_file(conn: sqlite3.Connection, file_id: int) -> dict[str, Any]:
     return result
 
 
+def hold_folder(conn: sqlite3.Connection, root: Path, folder: Path) -> Path:
+    """Holds an orphan folder like a deleted file, so a mistaken delete can be undone for 14 days."""
+    size = sum(path.stat().st_size for path in folder.rglob("*") if path.is_file())
+    moved = None
+    try:
+        with conn:
+            tombstone = int(conn.execute(queries.INSERT_TOMBSTONE, (
+                FOLDER_ID, FOLDER_ID, ORPHAN_FOLDER_LABEL, folder.name, str(folder), size, None, None, None,
+            )).lastrowid or 0)
+            moved = _hold(root, folder, tombstone)
+            conn.execute(queries.UPDATE_PENDING_PATH, (str(moved), tombstone))
+    except (OSError, sqlite3.Error):
+        # The catalog rolled back, so the folder has to go back with it.
+        if moved and moved.exists():
+            shutil.move(str(moved), folder)
+        raise
+    log_layer("storage", logging.WARNING, f"Held orphan folder {folder.name} in pending deletion")
+    return moved
+
+
 def _insert_row(conn: sqlite3.Connection, table: str, row: dict[str, Any]) -> None:
     # Only columns that still exist, so a tombstone survives later migrations.
     current = {column[1] for column in conn.execute(f"PRAGMA table_info({table})")}
@@ -193,8 +216,9 @@ def restore_file(conn: sqlite3.Connection, tombstone_id: int) -> dict[str, Any]:
     tombstone = conn.execute(queries.SELECT_TOMBSTONE, (tombstone_id,)).fetchone()
     if not tombstone:
         raise DeleteRefused("That file can no longer be restored.", 404)
+    is_folder = tombstone["file_id"] == FOLDER_ID
     collection = conn.execute(queries.SELECT_COLLECTION, (tombstone["collection_id"],)).fetchone()
-    if not collection:
+    if not collection and not is_folder:
         raise DeleteRefused("Its collection is no longer in the catalog.", 409)
 
     held = Path(tombstone["pending_path"]) if tombstone["pending_path"] else None
@@ -203,7 +227,7 @@ def restore_file(conn: sqlite3.Connection, tombstone_id: int) -> dict[str, Any]:
         root = _vault_root(conn)
         if not target.resolve().is_relative_to(root):
             raise DeleteRefused(OUTSIDE_REASON)
-        if not held.is_file():
+        if not (held.is_dir() if is_folder else held.is_file()):
             raise DeleteRefused("The held file is missing from .Pending-Deletion.", 409)
         if target.exists():
             raise DeleteRefused("Something else is now at its old path, so nothing was restored.", 409)
@@ -213,7 +237,7 @@ def restore_file(conn: sqlite3.Connection, tombstone_id: int) -> dict[str, Any]:
     try:
         with conn:
             lost = _put_rows_back(conn, snapshot["rows"]) if snapshot else 0
-            if not snapshot:
+            if not snapshot and not is_folder:
                 _put_bare_rows_back(conn, tombstone, collection["source"])
             conn.execute(queries.UPDATE_RESTORED, (tombstone_id,))
             if held and target:
@@ -301,7 +325,10 @@ def purge(conn: sqlite3.Connection, confirm: bool = False, ids: list[int] | None
             if item["id"] not in chosen:
                 continue
             path = Path(item["pending_path"])
-            path.unlink(missing_ok=True)
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink(missing_ok=True)
             if path.parent != root and path.parent.is_dir() and not any(path.parent.iterdir()):
                 path.parent.rmdir()
             with conn:

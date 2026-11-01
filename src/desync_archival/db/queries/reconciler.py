@@ -4,6 +4,12 @@ SELECT_COLLECTIONS_BY_SOURCE = "SELECT external_key, id FROM collections WHERE s
 
 SELECT_COLLECTIONS_BY_ID = "SELECT name, designer_name FROM collections WHERE id = ?"
 
+SELECT_CATALOG_VAULT_PATHS = """
+    SELECT vault_path FROM collections WHERE vault_path IS NOT NULL AND vault_path != ''
+    UNION
+    SELECT vault_path FROM downloaded_files WHERE vault_path IS NOT NULL AND vault_path != ''
+"""
+
 SELECT_MODEL_FILES_BY_MODEL_ID = """
                         SELECT mf.filename, df.cleaned_filename
                         FROM model_files mf

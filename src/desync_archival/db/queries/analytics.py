@@ -18,7 +18,42 @@ UPDATE_COLLECTIONS_IS_BONUS_BY_LOWER = """
                );
         """
 
-DELETE_RELEASES = "DELETE FROM releases;"
+# external_indexer owns the external_ rows, and nothing here can rebuild them.
+DELETE_RELEASES = "DELETE FROM releases WHERE release_key NOT LIKE 'external\\_%' ESCAPE '\\';"
+
+# The one definition of a release key. A designer with no ID falls back to their name, because a
+# shared 0_ prefix would give two such designers one key and the duplicate trigger aborts the rebuild.
+RELEASE_KEY = "COALESCE(m.designer_id, 'name:' || COALESCE(m.designer_name, 'Unknown')) || '_' || m.release_month"
+RELEASE_FILTER = "m.is_active = 1 AND m.source = 'mmf' AND m.release_month IS NOT NULL AND m.release_month != ''"
+
+# Files and tags are separate on purpose. Joined together, each file counts once per tag.
+SELECT_RELEASE_CLUSTERS = f"""
+            SELECT
+                {RELEASE_KEY} AS release_id,
+                MAX(m.designer_name) AS designer_name,
+                MAX(m.designer_id) AS designer_id,
+                m.release_month,
+                SUM(CASE WHEN m.is_bonus = 0 THEN 1 ELSE 0 END) AS regular_model_count,
+                SUM(CASE WHEN m.is_bonus = 1 THEN 1 ELSE 0 END) AS bonus_model_count,
+                COALESCE(SUM(f.file_count), 0) AS total_files,
+                COALESCE(SUM(f.total_bytes), 0) AS total_size_bytes,
+                MAX(m.primary_image_url) AS sample_image_url,
+                GROUP_CONCAT(m.description) AS all_descriptions
+            FROM collections m
+            LEFT JOIN (
+                SELECT model_id, COUNT(*) AS file_count, SUM(size_bytes) AS total_bytes
+                FROM model_files GROUP BY model_id
+            ) f ON f.model_id = m.id
+            WHERE {RELEASE_FILTER}
+            GROUP BY release_id;
+        """
+
+SELECT_RELEASE_TAGS = f"""
+            SELECT {RELEASE_KEY} AS release_id, GROUP_CONCAT(DISTINCT t.tag) AS all_tags
+            FROM collections m JOIN collection_tags t ON t.model_id = m.id
+            WHERE {RELEASE_FILTER}
+            GROUP BY release_id;
+        """
 
 INSERT_RELEASES = """
             INSERT INTO releases (

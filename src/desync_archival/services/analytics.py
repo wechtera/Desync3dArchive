@@ -45,27 +45,8 @@ def run_startup_analytics(conn: sqlite3.Connection):
 
         conn.execute(queries.DELETE_RELEASES)
 
-        # FIXME(R-11): files join tags, so each file counts once per tag. Sizes inflate the same way.
-        cluster_query = """
-            SELECT 
-                COALESCE(m.designer_id, 0) || '_' || m.release_month AS release_id,
-                m.designer_name,
-                m.designer_id,
-                m.release_month,
-                COUNT(DISTINCT CASE WHEN m.is_bonus = 0 THEN m.id END) AS regular_model_count,
-                COUNT(DISTINCT CASE WHEN m.is_bonus = 1 THEN m.id END) AS bonus_model_count,
-                COUNT(f.file_id) AS total_files,
-                COALESCE(SUM(f.size_bytes), 0) AS total_size_bytes,
-                MAX(m.primary_image_url) AS sample_image_url,
-                GROUP_CONCAT(DISTINCT t.tag) AS all_tags,
-                GROUP_CONCAT(m.description) AS all_descriptions
-            FROM collections m
-            LEFT JOIN model_files f ON m.id = f.model_id
-            LEFT JOIN collection_tags t ON m.id = t.model_id
-            WHERE m.is_active = 1 AND m.release_month IS NOT NULL AND m.release_month != ''
-            GROUP BY m.designer_name, m.release_month;
-        """
-        clusters = conn.execute(cluster_query).fetchall()
+        clusters = conn.execute(queries.SELECT_RELEASE_CLUSTERS).fetchall()
+        tags_by_release = dict(conn.execute(queries.SELECT_RELEASE_TAGS).fetchall())
         bundle_keywords = {"patreon", "tribe", "tribes", "welcome pack", "bundle", "release", "heroes", "pack"}
 
         release_rows = []
@@ -75,7 +56,7 @@ def run_startup_analytics(conn: sqlite3.Connection):
             if reg_count == 0 and bonus_count == 0:
                 continue
 
-            tags_str = c["all_tags"] or ""
+            tags_str = tags_by_release.get(c["release_id"]) or ""
             desc_str = (c["all_descriptions"] or "").lower()
             combined_text = f"{tags_str.lower()} {desc_str}"
 

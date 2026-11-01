@@ -3,14 +3,15 @@ services/archive_peeker.py - Bidirectional anchor inspection, submodel discovery
 Instrumented with dynamic topic-based subsystem logging ('archive', 'http', 'sql').
 """
 
+import hashlib
 import json
 import logging
 import re
 import shutil
 import sqlite3
-import subprocess
 import uuid
 import zipfile
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -284,54 +285,54 @@ class ArchivePeeker:
 
         log_layer("archive", logging.DEBUG, f"Extracting {len(filtered_targets)} preview images from {archive_path.name}")
 
+        names = self._preview_names(filtered_targets)
         if archive_type == "zip":
             with zipfile.ZipFile(archive_path, "r") as zf:
                 for img_path in filtered_targets:
                     try:
-                        # FIXME(R-03): basename only, so same-named images from different folders overwrite each other.
-                        clean_name = re.sub(r"[^\w\-_\.]", "_", Path(img_path).name)
-                        out_file = dest_dir / clean_name
-                        # FIXME(S-04): no size cap on a third-party archive.
-                        with zf.open(img_path, "r") as src, open(out_file, "wb") as dst:
-                            shutil.copyfileobj(src, dst)
+                        out_file = dest_dir / names[img_path]
+                        with zf.open(img_path, "r") as src:
+                            external.copy_limited(src, out_file)
                         extracted[img_path] = out_file
                     except Exception as ze:
                         log_layer("archive", logging.WARNING, f"Image extract error on {img_path}: {ze}")
         else:
             for img_path in filtered_targets:
-                out_file = self._extract_one_image(archive_path, img_path, dest_dir)
+                out_file = self._extract_one_image(archive_path, img_path, dest_dir, names[img_path])
                 if out_file:
                     extracted[img_path] = out_file
 
         return extracted
 
+    @staticmethod
+    def _preview_names(image_paths: list[str]) -> dict[str, str]:
+        # Most names stay as they were, so a re-peek doesn't rename every preview. A repeated name gets
+        # a hash of its path, or render.jpg from two folders would become one file and one picture.
+        clean = {path: re.sub(r"[^\w\-_\.]", "_", Path(path).name) for path in image_paths}
+        counts = Counter(name.lower() for name in clean.values())
+        return {
+            path: name if counts[name.lower()] == 1 else f"{hashlib.sha256(path.encode()).hexdigest()[:8]}_{name}"
+            for path, name in clean.items()
+        }
+
     def extract_member(self, archive_path: Path, member_path: str, dest_dir: Path) -> Optional[Path]:
         return self._extract_one_image(archive_path, member_path, dest_dir)
 
-    def _extract_one_image(self, archive_path: Path, img_path: str, dest_dir: Path) -> Optional[Path]:
-        # Homebrew's 7zz has no RAR codec. It fails but leaves a 0 byte file, which used to pass as
-        # an image, so a broken preview hid the real one. Only a file with bytes in it counts.
-        name = Path(img_path).name
+    def _extract_one_image(
+        self, archive_path: Path, img_path: str, dest_dir: Path, final_name: str | None = None
+    ) -> Path | None:
         scratch = dest_dir / f".extract_{uuid.uuid4().hex[:8]}"
         scratch.mkdir(parents=True, exist_ok=True)
         try:
-            for cmd in external.member_commands(
-                archive_path.suffix.lower(), self._bin_unrar, self._bin_7z, archive_path, img_path, name, scratch
-            ):
-                try:
-                    external.run(cmd, external.MEMBER_TIMEOUT)
-                except (OSError, subprocess.SubprocessError) as e:
-                    log_layer("archive", logging.WARNING, f"Image extract error on {img_path}: {e}")
-                    continue
-                target = scratch / name
-                if target.exists() and target.stat().st_size > 0:
-                    final = dest_dir / re.sub(r"[^\w\-_\.]", "_", name)
-                    target.replace(final)
-                    return final
+            found = external.extract_member(archive_path, img_path, scratch, self._bin_unrar, self._bin_7z)
+            final = dest_dir / (final_name or re.sub(r"[^\w\-_\.]", "_", found.name))
+            found.replace(final)
+            return final
+        except (external.ExtractionRefused, OSError, zipfile.BadZipFile) as e:
+            log_layer("archive", logging.WARNING, f"No tool could extract {img_path} from {archive_path.name}: {e}")
+            return None
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
-        log_layer("archive", logging.WARNING, f"No tool could extract {img_path} from {archive_path.name}")
-        return None
 
     def _fetch_catalog_fallback_image(self, model_id: int, dest_dir: Path) -> Optional[Path]:
         url = None

@@ -133,7 +133,7 @@ INSERT_DOWNLOAD_AUDIT_LOG_V8 = """
 UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V4 = "UPDATE download_jobs SET status = 'offloading' WHERE id = ? AND status = 'staging_complete';"
 
 UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V5 = """
-                        UPDATE download_jobs SET status = 'staging_complete', error_message = ? WHERE id = ?;
+                        UPDATE download_jobs SET status = 'staging_complete', error_message = ?, retry_count = retry_count + 1 WHERE id = ?;
                     """
 
 SELECT_COLLECTIONS_BY_ID_V2 = "SELECT * FROM collections WHERE id = ?"

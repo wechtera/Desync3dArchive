@@ -77,15 +77,8 @@ def handle_post_downloads_queue(
     release_id = body.get("release_id")
 
     if release_id and not model_ids:
-        # FIXME(R-12): the key starts with designer_id, or `external`, never the designer name, so this finds no models.
-        parts = release_id.split("_", 1)
-        if len(parts) == 2:
-            designer, month = parts
-            rows = conn.execute(
-                queries.SELECT_COLLECTIONS_ID_BY_DESIGNER_NAME,
-                (designer, month),
-            ).fetchall()
-            model_ids = [r[0] for r in rows]
+        rows = conn.execute(queries.SELECT_QUEUEABLE_RELEASE_MODELS, (release_id,)).fetchall()
+        model_ids = [r[0] for r in rows]
 
     if not model_ids:
         return {"error": "No model IDs provided"}, 400
@@ -111,9 +104,12 @@ def handle_delete_downloads_queue(
     model_ids = body.get("model_ids", [])
     clear_status = body.get("clear_status")
     purge_incomplete = body.get("purge_incomplete", False)
+    release_id = body.get("release_id")
 
     with conn:
-        if purge_incomplete:
+        if release_id:
+            conn.execute(queries.DELETE_PENDING_RELEASE_JOBS, (release_id,))
+        elif purge_incomplete:
             conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS)
         elif clear_status:
             # FIXME(S-09): any status is accepted, including staging_complete, whose staged files are the only copy.

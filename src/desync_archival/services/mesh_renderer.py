@@ -11,7 +11,6 @@ import sqlite3
 import subprocess
 import tempfile
 import uuid
-import zipfile
 from collections.abc import Iterable
 from pathlib import Path
 from typing import List, Optional, Union
@@ -380,72 +379,12 @@ class MeshRenderer:
         dest_file: Path,
     ) -> int:
         dest_file.parent.mkdir(parents=True, exist_ok=True)
-        temp_scratch_file = scratch_dir / f"extract_{uuid.uuid4().hex[:8]}_{dest_file.name}"
-        ext = archive_path.suffix.lower()
-        filename_only = Path(internal_path).name
-
-        if ext == ".zip":
-            with zipfile.ZipFile(archive_path, "r") as zf:
-                target_entry = None
-                normalized_target = internal_path.replace("\\", "/").strip("/").lower()
-
-                for name in zf.namelist():
-                    norm = name.replace("\\", "/").strip("/").lower()
-                    if norm == normalized_target:
-                        target_entry = name
-                        break
-
-                if not target_entry:
-                    for name in zf.namelist():
-                        if Path(name).name.lower() == filename_only.lower():
-                            target_entry = name
-                            break
-
-                if not target_entry:
-                    raise FileNotFoundError(f"Could not find entry '{internal_path}' inside zip {archive_path.name}")
-
-                with zf.open(target_entry, "r") as src, open(temp_scratch_file, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
-
-        else:
-            pass_dir = scratch_dir / f"pass_{uuid.uuid4().hex[:8]}"
-            pass_dir.mkdir(parents=True, exist_ok=True)
-
-            bin_unrar = self._bin_unrar
-            bin_7z = self._bin_7z
-            extracted = False
-            last_err = ""
-
-            candidates = external.member_commands(
-                ext, bin_unrar, bin_7z, archive_path, internal_path, filename_only, pass_dir
-            )
-
-            for cmd in candidates:
-                try:
-                    proc = external.run(cmd, external.MEMBER_TIMEOUT)
-                    found = [f for f in external.regular_files(pass_dir) if f.name.lower() == filename_only.lower()]
-                    if found and found[0].stat().st_size > 0:
-                        shutil.move(str(found[0]), str(temp_scratch_file))
-                        extracted = True
-                        break
-                    else:
-                        out = (proc.stderr or proc.stdout or "").strip()
-                        if out:
-                            last_err = out
-                except Exception as ex:
-                    last_err = str(ex)
-
+        pass_dir = scratch_dir / f"pass_{uuid.uuid4().hex[:8]}"
+        pass_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            found = external.extract_member(archive_path, internal_path, pass_dir, self._bin_unrar, self._bin_7z)
+            sz = found.stat().st_size
+            shutil.move(str(found), str(dest_file))
+        finally:
             shutil.rmtree(pass_dir, ignore_errors=True)
-
-            if not extracted:
-                raise RuntimeError(
-                    f"Extraction failed for '{filename_only}' from {archive_path.name}.\n"
-                    f"Diagnostics: {last_err or 'File not found or compression format unsupported'}"
-                )
-
-        if not temp_scratch_file.exists():
-            raise FileNotFoundError(f"Failed extracting {internal_path} from {archive_path.name}")
-
-        sz = temp_scratch_file.stat().st_size
-        shutil.move(str(temp_scratch_file), str(dest_file))
         return sz
