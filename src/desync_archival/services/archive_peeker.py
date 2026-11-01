@@ -301,6 +301,9 @@ class ArchivePeeker:
 
         return extracted
 
+    def extract_member(self, archive_path: Path, member_path: str, dest_dir: Path) -> Optional[Path]:
+        return self._extract_one_image(archive_path, member_path, dest_dir)
+
     def _extract_one_image(self, archive_path: Path, img_path: str, dest_dir: Path) -> Optional[Path]:
         # Homebrew's 7zz has no RAR codec. It fails but leaves a 0 byte file, which used to pass as
         # an image, so a broken preview hid the real one. Only a file with bytes in it counts.

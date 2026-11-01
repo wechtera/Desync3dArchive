@@ -3359,3 +3359,12 @@ select, input[type="text"] { font-size: 0.9rem; }
 .schedule-form select { min-width: 0; max-width: 100%; }
 .schedule-form .settings-actions-bar { grid-column: 1 / -1; }
 .tab-btn.nav-attention::after { content: ""; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: #d9b45b; vertical-align: middle; }
+
+/* PDFs */
+.document-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 16px; }
+.document-card { display: flex; flex-direction: column; border: 1px solid var(--border-dim); border-radius: 10px; overflow: hidden; background: var(--bg-card, transparent); }
+.document-cover { aspect-ratio: 3 / 4; object-fit: cover; object-position: top; width: 100%; display: block; background: var(--bg-input, #0d1210); }
+.document-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
+.document-title { font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
+.document-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 8px; }
+.document-pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin: 18px 0; }

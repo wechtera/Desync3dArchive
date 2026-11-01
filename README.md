@@ -87,6 +87,10 @@ scripts/production.sh python -m desync_archival.dbtool build-models --confirm-pr
 
 Import File, under Manage / Retrieve / Reconcile Assets > External Vault, takes any mix of archives, loose files and folders. Everything is copied to `ad-hoc/` at the vault root, a fixed location apart from the creator folders. A folder becomes one collection and a file its own, and repeats are skipped by hash. Archives are peeked and wait in Archive Review. The picker can only open folders listed in `DESYNC_ALLOWED_ROOTS`.
 
+### PDFs
+
+View Library > PDFs lists every PDF the catalog knows about, from MMF, linked libraries, imports and inside peeked archives. The list reads SQLite only, so it works with the NAS offline. **Update PDFs** records PDFs in linked libraries and makes first page previews with Ghostscript, kept locally. A PDF inside an archive can only be named once that archive is downloaded and peeked, so until then it shows as an archive not read yet.
+
 ## Backups
 
 The app backs up monthly while it's running, and catches up if it was off. **Settings > Backups** shows what exists, runs a backup, checks one, and sets the folders. A full backup holds the database, `metadata/` and a local copy of your secrets, and the last 14 are kept. It also goes to the second folder if one is set, without the secrets, so a restore from there means reloading cookies. If that folder isn't available, the local backup still counts. Migrations take a quick database copy first.
@@ -194,7 +198,7 @@ Settings live in two places. Anything in the Settings tab is stored by the app. 
 | `DESYNC_REQUIRE_LOGIN` | `1` requires the password. Always on in LAN mode | LAN mode |
 | `DESYNC_TLS_CERT`, `DESYNC_TLS_KEY` | HTTPS certificate and key | LAN mode |
 | `DESYNC_SECRETS_FILE` | Moves the secrets file | Rare |
-| `DESYNC_BLENDER_BIN`, `DESYNC_UNRAR_BIN` | Tool locations, if not in `tools/` | Rare |
+| `DESYNC_BLENDER_BIN`, `DESYNC_UNRAR_BIN`, `DESYNC_7ZIP_BIN`, `DESYNC_GHOSTSCRIPT_BIN` | Tool locations, if not found automatically | Rare |
 | `DESYNC_PRODUCTION_ENV` | Moves the settings file. Set it in your shell | Rare |
 
 The Help page in the app has the same reference with examples. Settings > Directories lists every location in use on this machine, with its purpose and how to change it.

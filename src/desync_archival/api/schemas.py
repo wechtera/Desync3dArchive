@@ -102,6 +102,10 @@ class TagBody(RequestBody):
     new_name: str | None = None
 
 
+class DocumentStashBody(RequestBody):
+    key: str
+
+
 class SchedulesBody(RequestBody):
     sync_enabled: bool = False
     sync_interval_days: int = 7

@@ -20,6 +20,7 @@ from desync_archival.db.queries import settings as queries
 from desync_archival.services import (
     archive_review,
     audit,
+    documents,
     health,
     locations,
     scheduler,
@@ -64,8 +65,11 @@ __all__ = [
     "format_bytes",
     "handle_delete_external_library",
     "handle_get_directory_usage",
+    "handle_get_documents",
     "handle_get_health",
     "handle_get_locations",
+    "handle_post_document_stash",
+    "handle_post_document_update",
     "handle_post_schedules",
     "handle_get_external_libraries",
     "handle_get_logging_config",
@@ -883,6 +887,42 @@ def handle_get_inactive(
 # Directory Metrics & System Browse Endpoints
 # -------------------------------------------------------------------------
 
+def handle_get_documents(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    query = params or {}
+    def one(name: str) -> str:
+        return (query.get(name) or [""])[0].strip()
+    page = max(int(one("page")) if one("page").isdigit() else 1, 1)
+    return documents.listing(conn, one("q"), one("kind"), one("creator"), one("source"), one("state"), page), 200
+
+
+def handle_post_document_stash(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    try:
+        return {"success": True, **documents.add_to_stash(conn, str((body or {}).get("key") or ""))}, 200
+    except documents.DocumentUnavailable as e:
+        return {"success": False, "error": str(e)}, e.code
+
+
+def handle_post_document_update(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+    task_manager: Any = None,
+) -> tuple[dict[str, Any], int]:
+    result = task_manager.start_task("document_update")
+    return result, 200 if result.get("success") else 409
+
+
 def handle_get_health(
     conn: sqlite3.Connection,
     download_manager: Any = None,
@@ -1040,7 +1080,7 @@ def handle_get_system_browse(
                     "name": entry.name,
                     "path": str(entry.resolve()),
                 })
-            elif want_files and entry.is_file() and entry.suffix.lower() in SUPPORTED_FILE_EXTENSIONS and not entry.name.startswith("."):
+            elif want_files and entry.is_file() and entry.suffix.lower() in file_import.IMPORTABLE and not entry.name.startswith("."):
                 files.append({"name": entry.name, "path": str(entry.resolve()), "size_bytes": entry.stat().st_size})
     except (PermissionError, OSError):
         pass

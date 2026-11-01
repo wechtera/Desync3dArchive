@@ -27,6 +27,7 @@ MAX_EXTRACTED_FILES = 200_000
 TOOLS_DIR = app_config.REPO_ROOT / "tools"
 UNRAR_NAMES = ("unrar",)
 SEVEN_ZIP_NAMES = ("7zz", "7z", "7za")
+GHOSTSCRIPT_NAMES = ("gs", "gswin64c")
 SYSTEM_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin")
 BLENDER_APPS = "/Applications/Blender*.app/Contents/MacOS/Blender"
 
@@ -60,6 +61,21 @@ def find_unrar() -> str | None:
 
 def find_7zip() -> str | None:
     return _find(SEVEN_ZIP_NAMES, "DESYNC_7ZIP_BIN")
+
+
+def find_ghostscript() -> str | None:
+    return _find(GHOSTSCRIPT_NAMES, "DESYNC_GHOSTSCRIPT_BIN")
+
+
+def pdf_page_command(source: Path, target: Path) -> list[str] | None:
+    """Draws the first page. -dSAFER matters here, because these PDFs come from anywhere."""
+    found = find_ghostscript()
+    if not found:
+        return None
+    return [
+        found, "-dSAFER", "-dBATCH", "-dNOPAUSE", "-dQUIET", "-dFirstPage=1", "-dLastPage=1", "-sDEVICE=jpeg",
+        "-dJPEGQ=80", "-r50", f"-sOutputFile={target}", str(source),
+    ]
 
 
 def find_blender() -> str | None:

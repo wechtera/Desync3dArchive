@@ -549,6 +549,18 @@ export async function fetchCatalogModels(search, page, tag = '') {
   return request(`/api/catalog-models?q=${encodeURIComponent(search)}&page=${page}&tag=${encodeURIComponent(tag)}`);
 }
 
+export async function fetchDocuments(filters) {
+  return request(`/api/documents?${new URLSearchParams(filters)}`);
+}
+
+export async function stashDocument(key) {
+  return postJson('/api/documents/stash', { key });
+}
+
+export async function updateDocuments() {
+  return postJson('/api/documents/update', {});
+}
+
 export async function fetchHealth() {
   return request('/api/health');
 }

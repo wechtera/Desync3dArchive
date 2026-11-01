@@ -1,4 +1,5 @@
 import './views/tags.js';
+import { loadDocuments } from './views/documents.js';
 import { loadBrowse } from './views/browse.js';
 import { bindActions } from './actions.js';
 import {
@@ -217,7 +218,7 @@ export function switchTab(tabName) {
     shouldOpenTasks = true;
   }
 
-  const allViews = ['browse', 'releases', 'models', 'creators', 'downloads', 'stashes', 'settings', 'help'];
+  const allViews = ['browse', 'documents', 'releases', 'models', 'creators', 'downloads', 'stashes', 'settings', 'help'];
   allViews.forEach(v => {
     const el = document.getElementById('view-' + v);
     if (el) el.style.display = (v === tabName) ? 'block' : 'none';
@@ -229,7 +230,7 @@ export function switchTab(tabName) {
 
   const libraryBtn = document.getElementById('btn-library-dropdown');
   if (libraryBtn) {
-    if (['browse', 'releases', 'models', 'creators'].includes(tabName)) {
+    if (['browse', 'documents', 'releases', 'models', 'creators'].includes(tabName)) {
       libraryBtn.classList.add('active');
     } else {
       libraryBtn.classList.remove('active');
@@ -244,6 +245,9 @@ export function switchTab(tabName) {
   if (tabName === 'browse') {
     stopActiveTransfersPolling();
     loadBrowse();
+  } else if (tabName === 'documents') {
+    stopActiveTransfersPolling();
+    loadDocuments();
   } else if (tabName === 'releases') {
     stopActiveTransfersPolling();
     loadReleases();

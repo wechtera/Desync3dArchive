@@ -390,6 +390,38 @@ class TaskManager:
         with self._lock:
             self.active_task_id = None
 
+    def _inventory_library_pdfs(self, task_id: int, library_id: int) -> None:
+        from desync_archival.services import documents
+
+        try:
+            with self._get_db() as conn:
+                documents.inventory_one(
+                    conn, library_id, lambda message: self._append_log(task_id, message), lambda: self._cancel_requested,
+                )
+        except (OSError, sqlite3.Error) as e:
+            # The scan itself worked, and Update PDFs can pick these up later.
+            self._append_log(task_id, f"PDFs weren't recorded: {e}")
+
+    @job_logged(lambda self, task_id, *_: f"task-{task_id}")
+    def _run_document_worker(self, task_id: int):
+        from desync_archival.services import documents
+
+        try:
+            with self._get_db() as conn:
+                totals = documents.update(
+                    conn, lambda message: self._append_log(task_id, message),
+                    lambda pct, label: self._update_progress(task_id, pct, label),
+                    lambda: self._cancel_requested,
+                )
+            status = jobs.CANCELLED if self._cancel_requested else jobs.COMPLETED
+            label = f"{totals['added']} new PDFs, {totals['made']} previews made, {totals['failed']} couldn't be drawn"
+        except (OSError, sqlite3.Error) as e:
+            self._append_log(task_id, f"PDF update stopped: {e}")
+            totals, status, label = {}, jobs.FAILED, "PDF update failed"
+        self._finalize_task(task_id, status, label, totals)
+        with self._lock:
+            self.active_task_id = None
+
     @job_logged(lambda self, task_id, *_: f"task-{task_id}")
     def _run_file_import_worker(self, task_id: int, params: dict[str, Any]):
         from desync_archival.services import file_import
@@ -489,6 +521,7 @@ class TaskManager:
             "external_library_reconcile": (self._run_external_indexer_worker, (task_id, task_params)),
             "database_backup": (self._run_backup_worker, (task_id, task_params)),
             "file_import": (self._run_file_import_worker, (task_id, task_params)),
+            "document_update": (self._run_document_worker, (task_id,)),
         }
         if task_type not in workers:
             self._finalize_task(task_id, "failed", f"Unsupported task type: {task_type}", {})
@@ -1321,6 +1354,10 @@ class TaskManager:
                 FULL: indexer.rescan_known,
             }[mode]
             result = run_pass(int(library_id), progress_cb=progress_cb, log_cb=log_cb, cancel_cb=cancel_cb)
+
+            # This job already has the NAS awake, and a scan only records printable files.
+            if mode != PREVIEW and result.get("success") and not self._cancel_requested:
+                self._inventory_library_pdfs(task_id, int(params["library_id"]))
 
             if self._cancel_requested:
                 self._append_log(task_id, "Library crawl cancelled by operator.")

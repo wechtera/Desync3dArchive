@@ -25,7 +25,7 @@ from starlette.datastructures import MutableHeaders
 
 from desync_archival import migrations
 from desync_archival import settings as app_config
-from desync_archival.services import image_worker, jobs, login, scheduler
+from desync_archival.services import documents, image_worker, jobs, login, scheduler
 from desync_archival.services.db import get_db_connection, seed_default_settings
 from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
 from desync_archival.services.logger import log_context, logger
@@ -286,6 +286,17 @@ def serve_preview(rel_path: str) -> Response:
     return FileResponse(file_path, media_type=content_type, headers={"Cache-Control": PREVIEW_CACHE_CONTROL})
 
 
+def serve_document(key: str) -> Response:
+    conn = get_db_connection(DB_PATH)
+    try:
+        path = documents.locate(conn, key)
+    except documents.DocumentUnavailable as e:
+        return JSONResponse({"error": str(e)}, e.code)
+    finally:
+        conn.close()
+    return FileResponse(path, media_type="application/pdf", content_disposition_type="inline", filename=path.name)
+
+
 def start_managers() -> None:
     global download_manager, task_manager
     logger.info("[Server] Initializing database schema")
@@ -367,6 +378,10 @@ def create_app(manage_workers: bool = True) -> FastAPI:
 
     for router in routers.ALL:
         app.include_router(router)
+
+    @app.get("/api/documents/{key}/file")
+    def open_document(key: str) -> Response:
+        return serve_document(key)
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "DELETE"])
     def api_not_found(request: Request) -> Response:

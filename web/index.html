@@ -51,6 +51,7 @@
           <div class="dropdown-menu" id="menu-library-dropdown">
             <button type="button" class="dropdown-item" data-click="switchTab" data-args='["browse"]' id="nav-browse-models">Models</button>
             <button type="button" class="dropdown-item" data-click="switchTab" data-args='["models"]'>Collections</button>
+            <button type="button" class="dropdown-item" data-click="switchTab" data-args='["documents"]' id="nav-documents">PDFs</button>
             <button type="button" class="dropdown-item" data-click="switchTab" data-args='["releases"]'>Monthly Releases</button>
             <button type="button" class="dropdown-item" data-click="switchTab" data-args='["creators"]'>Creators</button>
           </div>
@@ -148,6 +149,24 @@
       <input type="text" id="browse-search" class="search-box" placeholder="Search models, model groups and artifacts..." spellcheck="false">
     </div>
     <div id="browse-results"></div>
+  </div>
+
+  <div id="view-documents" style="display:none;">
+    <div class="controls">
+      <input type="text" id="document-search" class="search-box" placeholder="Search PDFs, collections and creators" spellcheck="false">
+      <select id="document-kind" aria-label="Type"><option value="">All Types</option></select>
+      <select id="document-creator" aria-label="Creator"><option value="">All Creators</option></select>
+      <select id="document-source" aria-label="Source"><option value="">All Sources</option></select>
+      <select id="document-state" aria-label="Availability">
+        <option value="">Any Availability</option>
+        <option value="on_disk">On disk</option>
+        <option value="in_archive">Inside an archive</option>
+        <option value="not_downloaded">Not downloaded</option>
+        <option value="unread">Archive not read yet</option>
+      </select>
+      <button type="button" class="btn-pill" id="btn-document-update" data-click="updateDocuments">Update PDFs</button>
+    </div>
+    <div id="document-results"></div>
   </div>
 
   <div id="view-models">
@@ -1232,6 +1251,8 @@
                 <tr><td><code>DESYNC_TLS_KEY</code></td><td>Private key for that certificate.</td><td><code>~/.config/desync-archival/tls/vault-key.pem</code></td></tr>
                 <tr><td colspan="3" class="help-table-group">Rarely needed</td></tr>
                 <tr><td><code>DESYNC_SECRETS_FILE</code></td><td>Moves the secrets file from its default place.</td><td><code>~/.config/desync-archival/production.json</code></td></tr>
+                <tr><td><code>DESYNC_GHOSTSCRIPT_BIN</code></td><td>Ghostscript to use for PDF previews, if it isn't found on its own.</td><td><code>/usr/local/bin/gs</code></td></tr>
+                <tr><td><code>DESYNC_7ZIP_BIN</code></td><td>7-Zip to use for archives, if it isn't found on its own.</td><td><code>/opt/homebrew/bin/7zz</code></td></tr>
                 <tr><td><code>DESYNC_BLENDER_BIN</code></td><td>Blender to use for preview renders, if it isn't in <code>tools/</code>.</td><td><code>/Applications/Blender.app/Contents/MacOS/Blender</code></td></tr>
                 <tr><td><code>DESYNC_UNRAR_BIN</code></td><td>unrar to use for RAR archives, if it isn't in <code>tools/</code>.</td><td><code>/opt/homebrew/bin/unrar</code></td></tr>
                 <tr><td><code>DESYNC_PRODUCTION_ENV</code></td><td>Moves this settings file. Set it in your shell, since it says where the file is.</td><td><code>~/config/production.env</code></td></tr>

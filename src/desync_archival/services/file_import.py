@@ -27,6 +27,8 @@ from desync_archival.services.external_indexer import (
 from desync_archival.services.logger import log_layer
 from desync_archival.services.paths import IMPORT_FOLDER
 
+PDF = ".pdf"
+IMPORTABLE = {*SUPPORTED_FILE_EXTENSIONS, PDF}
 CHUNK = 8 * 1024 * 1024
 # Peeking the archives takes the rest of the bar.
 BYTES_SHARE = 95
@@ -95,7 +97,7 @@ def import_root(conn: sqlite3.Connection) -> Path:
 
 
 def _is_supported(path: Path) -> bool:
-    return path.suffix.lower() in SUPPORTED_FILE_EXTENSIONS and not path.name.startswith(".")
+    return path.suffix.lower() in IMPORTABLE and not path.name.startswith(".")
 
 
 def check_paths(paths: list[str]) -> list[Path]:
@@ -171,7 +173,7 @@ def _import_group(
             ))
             if target.suffix.lower() in ARCHIVE_EXTENSIONS:
                 archives.append((file_id, target))
-            else:
+            elif target.suffix.lower() != PDF:
                 loose.append((file_id, target, rel_path, size))
         if loose:
             catalog_levels.build_loose_models(conn, collection_id, "" if archives else label, loose)

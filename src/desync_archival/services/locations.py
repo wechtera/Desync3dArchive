@@ -61,6 +61,7 @@ def _app_data(stored: dict[str, str]) -> list[dict[str, Any]]:
                "Raw MMF metadata for each collection, kept so the catalog can be rebuilt.", FIXED),
         _entry(DATA, "Previews", app_config.previews_dir(), "Cover images and renders shown in the library.", FIXED),
         _entry(DATA, "Scrapes", app_config.scrapes_dir(), "Results of each MMF scrape.", FIXED),
+        _entry(DATA, "PDF cache", data / "document_cache", "PDFs opened from inside an archive, so the next open skips the NAS.", FIXED),
         _entry(DATA, "Logs", app_config.logs_dir(), "The app log. Rotated, and old files can be purged in Settings.", FIXED),
         _entry(DATA, "Backup choices", app_config.backup_paths_file(), "Remembers the folders chosen in Settings > Backups.", IN_BACKUPS),
     ]

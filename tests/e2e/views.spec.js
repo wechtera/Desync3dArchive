@@ -849,6 +849,33 @@ test.describe('settings', () => {
     await expect.poll(() => sent).toMatchObject({ sync_enabled: true, sync_interval_days: 3, integrity_enabled: false });
   });
 
+  test('pdfs filter, stash and queue from one view', async ({ page }) => {
+    const urls = [];
+    let stashed = null;
+    const documents = [
+      { key: 'file-1', title: 'Guide', filename: 'guide.pdf', kind: 'Painting guide', creator: 'Maker', collection: 'Pack', collection_id: 4, source: 'MyMiniFactory', size_bytes: 5, state: 'on_disk', preview_url: '' },
+      { key: 'file-2', title: 'Dragonseekers (PDF)', filename: 'Dragonseekers.zip', kind: 'Other', creator: 'Maker', collection: 'Dragonseekers (PDF)', collection_id: 5, source: 'MyMiniFactory', size_bytes: 5, state: 'unread', preview_url: '' },
+    ];
+    await page.route('**/api/documents?*', (route) => {
+      urls.push(route.request().url());
+      return route.fulfill({ json: { documents, total: 2, page: 1, page_size: 48, kinds: { Other: 1, 'Painting guide': 1 }, creators: ['Maker'], sources: ['MyMiniFactory'], previews_waiting: 1 } });
+    });
+    await page.route('**/api/documents/stash', (route) => {
+      stashed = route.request().postDataJSON();
+      return route.fulfill({ json: { success: true, stash_id: 1, stash_name: 'Reading' } });
+    });
+    await page.goto('/');
+    await page.locator('#btn-library-dropdown').click();
+    await page.locator('#nav-documents').click();
+    await expect(page.locator('#document-summary')).toContainText('2 PDFs');
+    await expect(page.locator('[data-key="file-2"]')).toContainText('Archive not read yet');
+    await expect(page.locator('[data-key="file-2"] .document-stash')).toHaveCount(0);
+    await page.locator('[data-key="file-1"] .document-stash').click();
+    await expect.poll(() => stashed).toEqual({ key: 'file-1' });
+    await page.locator('#document-kind').selectOption('Painting guide');
+    await expect.poll(() => urls.at(-1)).toContain('kind=Painting+guide');
+  });
+
   test('help explains the server settings file', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => window.switchTab('help'));
