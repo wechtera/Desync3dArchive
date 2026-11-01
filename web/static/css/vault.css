@@ -3438,3 +3438,4 @@ select:not([multiple]) {
 .filter-group select { flex: 0 1 240px; width: auto; }
 .library-preview-card table { width: 100%; }
 .reconcile-results-body { max-height: 70vh; overflow-y: auto; }
+button.duplicate-delete:disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(1); }

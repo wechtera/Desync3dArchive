@@ -89,14 +89,67 @@ class PairTests(Case):
         self.stored(one, "b.stl")
         self.assertEqual(self.pairs(), [])
 
-    def test_linked_files_cant_be_deleted(self):
-        ours = self.collection("Alpha")
-        self.stored(ours, "x.stl")
-        linked = self.collection("Loot", "external")
-        self.stored(linked, "x.stl")
-        sides = self.pairs()[0]
-        flags = {s["source"]: s["can_delete"] for s in (sides["first"], sides["second"])}
-        self.assertEqual(flags, {"mmf": True, "external": False})
+    def blocked(self, busy=None):
+        pair = pending_deletion.mark_blocked(self.conn, self.pairs(), busy)[0]
+        return {s["file_id"]: s["delete_blocked"] for s in (pair["first"], pair["second"])}
+
+    def test_a_clear_file_has_no_reason(self):
+        self.twins()
+        self.assertEqual(set(self.blocked().values()), {""})
+
+    def test_a_linked_file_says_why(self):
+        self.stored(self.collection("Alpha"), "x.stl")
+        linked, _ = self.stored(self.collection("Loot", "external"), "x.stl")
+        self.assertEqual(self.blocked()[linked], pending_deletion.LINKED_REASON)
+
+    def test_a_stashed_file_says_why(self):
+        self.twins()
+        with self.conn:
+            stash = self.conn.execute("INSERT INTO stashes (name) VALUES ('s')").lastrowid
+            self.conn.execute(
+                "INSERT INTO stash_items (stash_id, item_type, model_id, file_id) VALUES (?, 'file', ?, ?)", (stash, self.a, self.first),
+            )
+        reasons = self.blocked()
+        self.assertEqual((reasons[self.first], reasons[self.second]), (pending_deletion.STASHED_REASON, ""))
+
+    def test_an_offline_vault_says_why(self):
+        self.twins()
+        with self.conn:
+            self.conn.execute("UPDATE app_settings SET value = '/nowhere' WHERE key = 'download_root_path'")
+        self.assertEqual(set(self.blocked().values()), {pending_deletion.OFFLINE_REASON})
+
+    def test_a_file_outside_the_vault_says_why(self):
+        one, _ = self.stored(self.collection("Alpha"), "x.stl", under=self.base / "elsewhere")
+        self.stored(self.collection("Beta"), "y.stl")
+        self.assertEqual(self.blocked()[one], pending_deletion.OUTSIDE_REASON)
+
+    def test_running_downloads_say_why(self):
+        self.twins()
+        self.assertEqual(set(self.blocked("Downloads are running.").values()), {"Downloads are running."})
+
+    def test_a_linked_file_is_never_told_to_wait_for_downloads(self):
+        self.stored(self.collection("Alpha"), "x.stl")
+        linked, _ = self.stored(self.collection("Loot", "external"), "x.stl")
+        self.assertEqual(self.blocked("Downloads are running.")[linked], pending_deletion.LINKED_REASON)
+
+    def test_a_file_not_downloaded_can_still_be_removed(self):
+        one = self.collection("Alpha")
+        two = self.collection("Beta")
+        with self.conn:
+            for collection in (one, two):
+                self.conn.execute("INSERT INTO model_files (model_id, filename, size_bytes) VALUES (?, 'same.stl', 9)", (collection,))
+            self.conn.execute("UPDATE app_settings SET value = '/nowhere' WHERE key = 'download_root_path'")
+        self.assertEqual(set(self.blocked().values()), {""})
+
+    def test_saved_results_get_reasons_too(self):
+        self.twins()
+        manager = object.__new__(TaskManager)
+        manager.db_path = self.db
+        with patch.object(routes, "_get_managers", return_value=(MagicMock(), manager)):
+            routes.handle_get_reconcile_duplicates(self.conn, None, {}, {})
+        self.conn.commit()
+        body, _ = routes.handle_get_reconcile_duplicates_latest(self.conn, MagicMock(active_downloads={1: {}}), {}, {})
+        self.assertIn("Downloads", body["pairs"][0]["first"]["delete_blocked"])
 
 
 class DecisionTests(Case):

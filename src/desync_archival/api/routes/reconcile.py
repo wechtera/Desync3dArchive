@@ -196,6 +196,7 @@ def handle_get_reconcile_duplicates(
     found = duplicates.find_duplicates(conn, include_shared=include_shared)
     _, task_mgr = _get_managers(conn)
     task_mgr.record_finished("duplicate_scan", f"{found['summary']['pairs']} pairs to review", found)
+    pending_deletion.mark_blocked(conn, found["pairs"], jobs.busy_reason(conn, download_manager))
     return found, 200
 
 
@@ -205,7 +206,9 @@ def handle_get_reconcile_duplicates_latest(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
-    return duplicates.latest(conn), 200
+    saved = duplicates.latest(conn)
+    pending_deletion.mark_blocked(conn, saved["pairs"], jobs.busy_reason(conn, download_manager))
+    return saved, 200
 
 
 def handle_post_reconcile_duplicate_decision(

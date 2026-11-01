@@ -20,6 +20,10 @@ from desync_archival.services.paths import PENDING_DELETION_FOLDER
 WAIT_DAYS = 14
 DAY_SECONDS = 86400
 LINKED_SOURCES = ("external", "document")
+LINKED_REASON = "Linked libraries are read-only, so this file can only be kept or ignored."
+STASHED_REASON = "This file is in a stash. Remove it from the stash first."
+OFFLINE_REASON = "The vault is offline, so nothing can be moved."
+OUTSIDE_REASON = "This file isn't in the vault, so it can't be moved."
 
 
 class DeleteRefused(ValueError):
@@ -34,12 +38,41 @@ def _vault_root(conn: sqlite3.Connection) -> Path:
     row = conn.execute(queries.SELECT_VAULT_ROOT).fetchone()
     root = Path(row[0]) if row and row[0] else None
     if root is None or not root.is_dir():
-        raise DeleteRefused("The vault is offline, so nothing can be moved.", 503)
+        raise DeleteRefused(OFFLINE_REASON, 503)
     return root.resolve()
 
 
-def can_delete(source: str) -> bool:
-    return source not in LINKED_SOURCES
+def _vault_root_or_none(conn: sqlite3.Connection) -> Path | None:
+    try:
+        return _vault_root(conn)
+    except DeleteRefused:
+        return None
+
+
+def mark_blocked(conn: sqlite3.Connection, pairs: list[dict[str, Any]], busy: str | None = None) -> list[dict[str, Any]]:
+    """Adds why each file can't be deleted, so the page can say so before anyone clicks.
+
+    delete_file still applies these itself, because a page can be out of date. The vault is only
+    checked once, and paths are compared as text, so a long list doesn't walk the NAS.
+    """
+    stashed = {row[0] for row in conn.execute(queries.SELECT_STASHED_FILE_IDS)}
+    root = _vault_root_or_none(conn)
+    def reason(side: dict[str, Any]) -> str:
+        if side["source"] in LINKED_SOURCES:
+            return LINKED_REASON
+        if side["file_id"] in stashed:
+            return STASHED_REASON
+        if busy:
+            return busy
+        if not side["path"]:
+            return ""
+        if root is None:
+            return OFFLINE_REASON
+        return "" if side["path"].startswith(f"{root}/") else OUTSIDE_REASON
+    for pair in pairs:
+        for side in (pair["first"], pair["second"]):
+            side["delete_blocked"] = reason(side)
+    return pairs
 
 
 def _hold(root: Path, source: Path, tombstone: int) -> Path:
@@ -57,17 +90,17 @@ def delete_file(conn: sqlite3.Connection, file_id: int) -> dict[str, Any]:
     row = conn.execute(queries.SELECT_FILE, (file_id,)).fetchone()
     if not row:
         raise DeleteRefused("That file is no longer in the catalog.", 404)
-    if not can_delete(row["source"]):
-        raise DeleteRefused("Linked libraries are read-only, so this file can only be kept or ignored.")
+    if row["source"] in LINKED_SOURCES:
+        raise DeleteRefused(LINKED_REASON)
     if conn.execute(queries.COUNT_STASH_ITEMS, (file_id,)).fetchone()[0]:
-        raise DeleteRefused("This file is in a stash. Remove it from the stash first.", 409)
+        raise DeleteRefused(STASHED_REASON, 409)
 
     stored = row["vault_path"] or row["staging_path"]
     source = Path(stored) if stored else None
     root = _vault_root(conn) if source else None
     if source and root:
         if not source.resolve().is_relative_to(root):
-            raise DeleteRefused("This file isn't in the vault, so it can't be moved.")
+            raise DeleteRefused(OUTSIDE_REASON)
         if not source.is_file():
             raise DeleteRefused("The file isn't at its recorded path. Run a reconciliation first.", 409)
 

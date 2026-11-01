@@ -277,7 +277,7 @@ test.describe('duplicate report', () => {
   test('lists matches with hostile names as text', async ({ page }) => {
     const side = (fileId, filename, source = 'mmf') => ({
       file_id: fileId, filename, size_bytes: 1024, model_id: fileId, model_name: `Model ${fileId}`, source,
-      path: source === 'mmf' ? `/vault/${fileId}/x.stl` : '/loot/x.stl', can_delete: source === 'mmf',
+      path: source === 'mmf' ? `/vault/${fileId}/x.stl` : '/loot/x.stl', delete_blocked: source === 'mmf' ? '' : 'Linked libraries are read-only.',
     });
     const results = {
       success: true,
@@ -310,8 +310,12 @@ test.describe('duplicate report', () => {
     await expect(page.locator('.duplicate-row').nth(1)).toContainText('EXACT');
     await expect(page.locator('.duplicate-row').nth(1)).toContainText('/vault/1/x.stl');
     await expect(page.locator('.duplicate-row').nth(2)).toContainText('POSSIBLE');
-    await expect(page.locator('.duplicate-row').nth(2)).toContainText('Linked library, read-only');
-    await expect(page.locator('.duplicate-row').nth(2).locator('.duplicate-delete')).toHaveCount(1);
+    const blocked = page.locator('.duplicate-side[data-file="4"]');
+    await expect(blocked.locator('.duplicate-delete')).toBeDisabled();
+    await expect(blocked.locator('.duplicate-delete')).toHaveAttribute('title', 'Linked libraries are read-only.');
+    await expect(blocked.locator('.duplicate-blocked')).toHaveText('Linked libraries are read-only.');
+    await expect(page.locator('.duplicate-side[data-file="3"] .duplicate-delete')).toBeEnabled();
+    await expect(page.locator('.duplicate-side[data-file="3"] .duplicate-blocked')).toHaveCount(0);
     const whole = await card.boundingBox();
     const panel = await card.locator('#duplicate-results-panel').boundingBox();
     expect(panel.width).toBeGreaterThan(whole.width - 4);

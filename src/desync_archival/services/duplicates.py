@@ -14,7 +14,6 @@ from typing import Any
 
 from desync_archival.db.queries import duplicates as queries
 from desync_archival.services import audit
-from desync_archival.services.pending_deletion import can_delete
 
 DEFAULT_IGNORE_NAMES = "base,support"
 MAX_LISTED = 200
@@ -40,7 +39,7 @@ def _side(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "file_id": item["file_id"], "filename": item["filename"], "size_bytes": item["size_bytes"],
         "model_id": item["model_id"], "model_name": item["model_name"], "source": item["source"],
-        "path": item["disk_path"] or "", "can_delete": can_delete(item["source"]),
+        "path": item["disk_path"] or "",
     }
 
 

@@ -1210,9 +1210,9 @@ function duplicateSide(side) {
       <span class="font-xs text-dim">${side.model_name}</span>
       <span class="font-mono font-xs text-dim location-path">${side.path || 'Not downloaded'}</span>
       <span class="font-xs text-dim">${formatBytes(side.size_bytes || 0)}</span>
-      ${side.can_delete
-        ? html`<button type="button" class="btn-pill btn-action-cancel font-xs duplicate-delete" @click=${() => deleteSide(side)}>Delete This One</button>`
-        : html`<span class="font-xs text-dim">Linked library, read-only</span>`}
+      <button type="button" class="btn-pill btn-action-cancel font-xs duplicate-delete" ?disabled=${Boolean(side.delete_blocked)}
+        title=${side.delete_blocked || ''} @click=${() => deleteSide(side)}>Delete This One</button>
+      ${side.delete_blocked ? html`<span class="font-xs text-dim duplicate-blocked">${side.delete_blocked}</span>` : nothing}
     </div>
   `;
 }

@@ -24,3 +24,4 @@ SELECT_PENDING = """
 SUM_PENDING = """
     SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM deleted_files WHERE purged_at IS NULL AND pending_path != '';
 """
+SELECT_STASHED_FILE_IDS = "SELECT DISTINCT file_id FROM stash_items WHERE file_id IS NOT NULL;"
