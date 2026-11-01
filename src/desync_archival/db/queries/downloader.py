@@ -9,9 +9,15 @@ INSERT_DOWNLOAD_AUDIT_LOG = """
 
 SELECT_APP_SETTINGS_VALUE_BY_KEY = "SELECT value FROM app_settings WHERE key = ?;"
 
-DELETE_DOWNLOAD_JOBS_BY_STATUS = "DELETE FROM download_jobs WHERE status = ?;"
+# A job in one of these has a worker on it, or staged files that only its row keeps track of.
+LIVE_JOB_STATUSES = ("downloading", "staging_complete", "offloading")
+LIVE_STATUSES = str(LIVE_JOB_STATUSES)
 
-DELETE_DOWNLOAD_JOBS_BY_STATUS_V2 = "DELETE FROM download_jobs WHERE status NOT IN ('downloading', 'completed');"
+DELETE_DOWNLOAD_JOBS_BY_STATUS = f"DELETE FROM download_jobs WHERE status = ? AND status NOT IN {LIVE_STATUSES};"
+
+DELETE_DOWNLOAD_JOBS_BY_STATUS_V2 = f"DELETE FROM download_jobs WHERE status != 'completed' AND status NOT IN {LIVE_STATUSES};"
+
+DELETE_WAITING_JOBS_BY_MODEL = f"DELETE FROM download_jobs WHERE model_id IN ({{marks}}) AND status != 'completed' AND status NOT IN {LIVE_STATUSES};"
 
 UPDATE_APP_SETTINGS_VALUE_BY_KEY = "UPDATE app_settings SET value = '1' WHERE key = 'circuit_breaker_tripped';"
 
@@ -181,12 +187,14 @@ SELECT_DOWNLOAD_JOBS = """
 
 COUNT_MODEL_FILES_FOR_QUEUE = "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM model_files WHERE model_id = ?;"
 
-# FIXME(R-17): no status guard, so queuing a model mid-download starts a second writer on its .part file.
-UPDATE_DOWNLOAD_JOBS_FOR_QUEUE = """
+SELECT_DOWNLOAD_JOB_BY_MODEL = "SELECT 1 FROM download_jobs WHERE model_id = ?;"
+
+# The guard stops a second worker starting on a model that's mid-download, on the same .part file.
+UPDATE_DOWNLOAD_JOBS_FOR_QUEUE = f"""
                 UPDATE download_jobs
                 SET status = 'pending', total_files = ?, total_bytes = ?,
                     enqueued_at = CURRENT_TIMESTAMP, error_message = NULL
-                WHERE model_id = ?;
+                WHERE model_id = ? AND status NOT IN {LIVE_STATUSES};
             """
 
 INSERT_DOWNLOAD_JOBS_FOR_QUEUE = """

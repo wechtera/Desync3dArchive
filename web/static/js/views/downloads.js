@@ -397,7 +397,7 @@ export async function dequeueSelectedModels() {
   }
   const ids = Array.from(selectedPendingIds);
   try {
-    await dequeueDownloads({ model_ids: ids });
+    reportKeptJobs(await dequeueDownloads({ model_ids: ids }));
     selectedPendingIds.clear();
     updateSelectedCount();
     window.refreshCurrentView();
@@ -415,9 +415,15 @@ export async function queueSingleModel(modelId) {
   }
 }
 
+function reportKeptJobs(result) {
+  if (result?.kept) {
+    alert(`${result.kept} already started or finished, so they stayed. A running job can't be removed until it ends.`);
+  }
+}
+
 export async function dequeueSingleModel(modelId) {
   try {
-    await dequeueDownloads({ model_ids: [modelId] });
+    reportKeptJobs(await dequeueDownloads({ model_ids: [modelId] }));
     window.refreshCurrentView();
   } catch (err) {
     alert(`Cancel failed: ${err.message}`);

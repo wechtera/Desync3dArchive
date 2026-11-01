@@ -11,6 +11,8 @@
   "response": {
     "content_type": "application/json",
     "json": {
+      "kept": 0,
+      "removed": 1,
       "success": true
     },
     "location": null,

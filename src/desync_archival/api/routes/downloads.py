@@ -2,7 +2,12 @@ import sqlite3
 from typing import Any, Optional
 
 from desync_archival.db.queries import downloads as queries
-from desync_archival.services.downloader import DownloadManager, queue_models
+from desync_archival.db.queries.downloader import LIVE_JOB_STATUSES
+from desync_archival.services.downloader import (
+    DownloadManager,
+    queue_models,
+    remove_waiting_jobs,
+)
 
 
 def handle_get_downloads_status(
@@ -94,7 +99,6 @@ def handle_post_downloads_queue(
     return {"success": True, "queued_count": queued_count}, 200
 
 
-# FIXME(R-17): deletes jobs in any state. DownloadManager.dequeue_models protects active ones, and nothing calls it.
 def handle_delete_downloads_queue(
     conn: sqlite3.Connection,
     download_manager: Optional[DownloadManager],
@@ -106,23 +110,24 @@ def handle_delete_downloads_queue(
     purge_incomplete = body.get("purge_incomplete", False)
     release_id = body.get("release_id")
 
+    if clear_status in LIVE_JOB_STATUSES:
+        return {"error": f"Jobs in {clear_status} are in progress, so they can't be cleared."}, 409
+
+    removed = kept = 0
     with conn:
         if release_id:
             conn.execute(queries.DELETE_PENDING_RELEASE_JOBS, (release_id,))
         elif purge_incomplete:
             conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS)
         elif clear_status:
-            # FIXME(S-09): any status is accepted, including staging_complete, whose staged files are the only copy.
+            # FIXME(S-09): clears with no dry run or audit row.
             conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS_V2, (clear_status,))
         elif model_ids:
             clean_ids = [int(m) for m in model_ids if str(m).isdigit()]
-            if clean_ids:
-                conn.execute(
-                    f"DELETE FROM download_jobs WHERE model_id IN ({','.join(['?']*len(clean_ids))});",
-                    clean_ids,
-                )
+            removed = remove_waiting_jobs(conn, clean_ids)
+            kept = len(clean_ids) - removed
 
-    return {"success": True}, 200
+    return {"success": True, "removed": removed, "kept": kept}, 200
 
 
 def handle_post_downloads_control(

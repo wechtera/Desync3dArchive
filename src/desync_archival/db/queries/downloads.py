@@ -48,7 +48,7 @@ INSERT_DOWNLOAD_JOBS = """
                 VALUES (?, 'pending', ?, ?, CURRENT_TIMESTAMP);
             """
 
-DELETE_DOWNLOAD_JOBS_BY_STATUS = "DELETE FROM download_jobs WHERE status IN ('pending', 'downloading', 'failed');"
+DELETE_DOWNLOAD_JOBS_BY_STATUS = "DELETE FROM download_jobs WHERE status IN ('pending', 'failed');"
 
 DELETE_DOWNLOAD_JOBS_BY_STATUS_V2 = "DELETE FROM download_jobs WHERE status = ?;"
 
@@ -58,4 +58,4 @@ UPDATE_DOWNLOAD_JOBS_STATUS_BY_STATUS = """
                 WHERE status = 'failed';
             """
 
-DELETE_DOWNLOAD_JOBS_BY_STATUS_V3 = "DELETE FROM download_jobs WHERE status IN ('pending', 'downloading', 'failed');"
+DELETE_DOWNLOAD_JOBS_BY_STATUS_V3 = "DELETE FROM download_jobs WHERE status IN ('pending', 'failed');"

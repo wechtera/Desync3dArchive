@@ -200,15 +200,26 @@ def queue_models(conn: sqlite3.Connection, download_manager: Any, model_ids: lis
     with conn:
         for model_id in model_ids:
             files, size = conn.execute(queries.COUNT_MODEL_FILES_FOR_QUEUE, (model_id,)).fetchone()
-            if not conn.execute(queries.UPDATE_DOWNLOAD_JOBS_FOR_QUEUE, (files or 0, size or 0, model_id)).rowcount:
+            # Check first: the update changes nothing for a live job, and that mustn't read as "no job yet".
+            if conn.execute(queries.SELECT_DOWNLOAD_JOB_BY_MODEL, (model_id,)).fetchone():
+                queued += conn.execute(queries.UPDATE_DOWNLOAD_JOBS_FOR_QUEUE, (files or 0, size or 0, model_id)).rowcount
+            else:
                 conn.execute(queries.INSERT_DOWNLOAD_JOBS_FOR_QUEUE, (model_id, files or 0, size or 0))
-            queued += 1
+                queued += 1
     if download_manager:
         if not download_manager.is_running:
             download_manager.start()
         elif download_manager.is_paused:
             download_manager.resume()
     return queued
+
+
+def remove_waiting_jobs(conn: sqlite3.Connection, model_ids: list[int]) -> int:
+    """Takes models off the queue, leaving live and completed jobs. Returns how many went."""
+    if not model_ids:
+        return 0
+    marks = ",".join("?" for _ in model_ids)
+    return conn.execute(queries.DELETE_WAITING_JOBS_BY_MODEL.format(marks=marks), model_ids).rowcount
 
 
 class StorageManager:
@@ -327,12 +338,7 @@ class DownloadManager:
             return 0
         with self._get_db() as conn:
             with conn:
-                placeholders = ",".join("?" for _ in model_ids)
-                cur = conn.execute(
-                    f"DELETE FROM download_jobs WHERE model_id IN ({placeholders}) AND status NOT IN ('downloading', 'completed');",
-                    model_ids,
-                )
-                removed = cur.rowcount
+                removed = remove_waiting_jobs(conn, model_ids)
                 log_layer("storage", logging.INFO, f"Dequeued {removed} models from transfer queue.")
                 return removed
 

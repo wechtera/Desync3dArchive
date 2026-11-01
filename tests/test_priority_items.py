@@ -20,13 +20,17 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from db_helper import create_database
+from fastapi.testclient import TestClient
 
 from desync_archival import backup, dbtool, external, migrations
 from desync_archival import settings as app_config
-from desync_archival.services import data_bundle, login, secret_store
+from desync_archival.api import server
+from desync_archival.services import data_bundle, jobs, login, secret_store
+from desync_archival.services.db import get_db_connection
+from desync_archival.services.downloader import DownloadManager, queue_models
 from desync_archival.services.stash_exporter import StashExporter
 
 # Stored relative to the data folder or an archive, so a move can't change them.
@@ -524,3 +528,111 @@ class ExportSpaceS04Tests(TempCase):
         ]
         self.assertEqual(self.exporter._estimated_bytes(conn, items), 5000 + 5000)
         conn.close()
+
+
+class QueueR17Tests(unittest.TestCase):
+    LIVE = ("downloading", "staging_complete", "offloading")
+
+    def setUp(self):
+        create_database(server.DB_PATH)
+        self.conn = get_db_connection(server.DB_PATH)
+        self.addCleanup(self.conn.close)
+        self.conn.execute("DELETE FROM download_jobs")
+        self.conn.execute("DELETE FROM collections")
+        self.conn.commit()
+        self.client = TestClient(server.create_app(manage_workers=False), base_url="http://localhost")
+        self.client.__enter__()
+        self.addCleanup(self.client.__exit__, None, None, None)
+
+    def job(self, status):
+        with self.conn:
+            model = self.conn.execute(
+                "INSERT INTO collections (name, source, raw_backup_path) VALUES (?, 'mmf', 'm.json')", (status,)
+            ).lastrowid
+            self.conn.execute("INSERT INTO download_jobs (model_id, status) VALUES (?, ?)", (model, status))
+        return model
+
+    def status(self, model):
+        row = self.conn.execute("SELECT status FROM download_jobs WHERE model_id = ?", (model,)).fetchone()
+        return row[0] if row else None
+
+    def delete(self, body):
+        return self.client.request("DELETE", "/api/downloads/queue", json=body)
+
+    def test_queuing_a_live_job_leaves_it_alone(self):
+        for status in self.LIVE:
+            model = self.job(status)
+            self.assertEqual(queue_models(self.conn, None, [model]), 0)
+            self.assertEqual(self.status(model), status)
+            self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM download_jobs WHERE model_id = ?", (model,)).fetchone()[0], 1)
+
+    def test_finished_jobs_can_still_be_queued_again(self):
+        for status in ("failed", "completed"):
+            model = self.job(status)
+            self.assertEqual(queue_models(self.conn, None, [model]), 1)
+            self.assertEqual(self.status(model), "pending")
+
+    def test_a_new_model_gets_a_job(self):
+        with self.conn:
+            model = self.conn.execute(
+                "INSERT INTO collections (name, source, raw_backup_path) VALUES ('New', 'mmf', 'm.json')"
+            ).lastrowid
+        self.assertEqual(queue_models(self.conn, None, [model]), 1)
+        self.assertEqual(self.status(model), "pending")
+
+    def test_the_route_counts_only_what_it_really_queued(self):
+        live, waiting = self.job("downloading"), self.job("failed")
+        data = self.client.post("/api/downloads/queue", json={"model_ids": [live, waiting]}).json()
+        self.assertEqual(data["queued_count"], 1)
+
+    def test_removing_by_model_keeps_live_and_finished_jobs(self):
+        kept = [self.job(status) for status in (*self.LIVE, "completed")]
+        gone = [self.job(status) for status in ("pending", "failed")]
+        data = self.delete({"model_ids": kept + gone}).json()
+        self.assertEqual((data["removed"], data["kept"]), (2, 4))
+        self.assertEqual([self.status(m) for m in gone], [None, None])
+        self.assertEqual([self.status(m) for m in kept], [*self.LIVE, "completed"])
+
+    def test_purge_incomplete_spares_live_jobs(self):
+        live = [self.job(status) for status in self.LIVE]
+        gone = [self.job(status) for status in ("pending", "failed")]
+        self.assertEqual(self.delete({"purge_incomplete": True}).status_code, 200)
+        self.assertEqual([self.status(m) for m in live], list(self.LIVE))
+        self.assertEqual([self.status(m) for m in gone], [None, None])
+
+    def test_the_control_route_purge_spares_live_jobs(self):
+        manager = MagicMock()
+        live = [self.job(status) for status in self.LIVE]
+        with patch.object(server, "download_manager", manager):
+            response = self.client.post("/api/downloads/control", json={"action": "purge_incomplete"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([self.status(m) for m in live], list(self.LIVE))
+
+    def test_clearing_a_live_status_is_refused(self):
+        for status in self.LIVE:
+            model = self.job(status)
+            self.assertEqual(self.delete({"clear_status": status}).status_code, 409)
+            self.assertEqual(self.status(model), status)
+
+    def test_clearing_a_waiting_status_still_works(self):
+        model = self.job("failed")
+        self.assertEqual(self.delete({"clear_status": "failed"}).status_code, 200)
+        self.assertIsNone(self.status(model))
+
+    def test_an_offload_counts_as_busy(self):
+        manager = MagicMock(active_downloads={}, active_offloads={0: {"model_id": 1}})
+        self.assertIn("vault", jobs.busy_reason(self.conn, manager))
+
+    def test_idle_workers_are_not_busy(self):
+        manager = MagicMock(active_downloads={}, active_offloads={})
+        self.assertIsNone(jobs.busy_reason(self.conn, manager))
+
+    def test_the_manager_helpers_share_the_guard(self):
+        live = [self.job(status) for status in self.LIVE]
+        manager = object.__new__(DownloadManager)
+        manager.db_path = server.DB_PATH
+        self.assertEqual(manager.dequeue_models(live), 0)
+        self.assertEqual(manager.clear_queue(), 0)
+        for status, model in zip(self.LIVE, live, strict=True):
+            self.assertEqual(manager.clear_queue(status), 0)
+            self.assertEqual(self.status(model), status)
