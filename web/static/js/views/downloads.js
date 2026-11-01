@@ -1239,6 +1239,7 @@ function renderDuplicateResults(data) {
   const includeShared = Boolean(data.include_shared);
   const models = (data.models || []).filter((group) => group.kind === 'duplicate');
   const hidden = (data.summary?.pairs || 0) - pairs.length;
+  const excluded = data.summary?.excluded_files || 0;
   panel.hidden = false;
   // Open the first time only, so an action doesn't reopen a section someone collapsed.
   if (!panel.dataset.shown) {
@@ -1249,7 +1250,7 @@ function renderDuplicateResults(data) {
     <summary>${pairs.length ? `${pairs.length} pairs to review` : 'No pairs left to review'}</summary>
     <div class="reconcile-results-body" id="duplicate-results">
       <div class="reconcile-results-bar">
-        <span class="font-sm text-dim">Keep and Ignore both stop a pair coming back. Delete moves one file to .Pending-Deletion.</span>
+        <span class="font-sm text-dim">Keep and Ignore both stop a pair coming back. Delete moves one file to .Pending-Deletion.${excluded ? ` ${excluded.toLocaleString()} files named as bases or supports were left out.` : ''}</span>
         <button type="button" class="btn-pill font-xs" @click=${() => triggerDuplicateScan(!includeShared)}>
           ${includeShared ? 'Hide shared bases and supports' : 'Include shared bases and supports'}
         </button>

@@ -29,7 +29,7 @@ from fastapi.testclient import TestClient
 from desync_archival import backup, dbtool, external, migrations
 from desync_archival import settings as app_config
 from desync_archival.api import server
-from desync_archival.services import data_bundle, jobs, login, secret_store
+from desync_archival.services import data_bundle, duplicates, jobs, login, secret_store
 from desync_archival.services.db import get_db_connection
 from desync_archival.services.downloader import DownloadManager, queue_models
 from desync_archival.services.stash_exporter import StashExporter
@@ -809,3 +809,54 @@ class CancelR16Tests(TempCase):
     def test_no_worker_reads_a_shared_flag(self):
         source = (Path(__file__).resolve().parents[1] / "src/desync_archival/services/task_manager.py").read_text(encoding="utf-8")
         self.assertNotIn("_cancel_requested", source)
+
+
+class DuplicateNamesR13Tests(unittest.TestCase):
+    def test_whole_words_only(self):
+        ignored = duplicates.parse_ignored(duplicates.DEFAULT_IGNORE_NAMES)
+        for name in ("presupported_head.stl", "Unsupported Torso.stl", "Supported/Arm.stl", "Baseline.stl", "database.zip"):
+            self.assertFalse(duplicates.is_ignored(name, ignored), name)
+        for name in ("base_01.stl", "Support.stl", "75mm Base.zip", "Bases.zip", "Hero-Supports.stl", "round.BASE.stl"):
+            self.assertTrue(duplicates.is_ignored(name, ignored), name)
+
+    def test_a_setting_can_name_several_words_in_a_row(self):
+        ignored = duplicates.parse_ignored("support stls, golem")
+        self.assertTrue(duplicates.is_ignored("Hero Support STLs.zip", ignored))
+        self.assertTrue(duplicates.is_ignored("golem_01.stl", ignored))
+        self.assertFalse(duplicates.is_ignored("support for stls.zip", ignored))
+        self.assertFalse(duplicates.is_ignored("Hero Support.zip", ignored))
+
+    def test_an_empty_setting_ignores_nothing(self):
+        self.assertFalse(duplicates.is_ignored("base.stl", duplicates.parse_ignored(" , ")))
+
+    def scan(self, *names):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        migrations.apply_pending(conn)
+        with conn:
+            for model in (1, 2):
+                conn.execute(
+                    "INSERT INTO collections (id, name, source, raw_backup_path) VALUES (?, ?, 'mmf', 'm.json')",
+                    (model, f"M{model}"),
+                )
+            for index, name in enumerate(names):
+                for model in (1, 2):
+                    file_id = model * 100 + index
+                    conn.execute("INSERT INTO model_files (file_id, model_id, filename, size_bytes) VALUES (?, ?, ?, 10)", (file_id, model, name))
+                    conn.execute(
+                        "INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path,"
+                        " actual_bytes, sha256, vault_path) VALUES (?, ?, ?, ?, ?, 10, ?, ?)",
+                        (file_id, model, name, name, name, f"hash{index}", f"/v/{file_id}"),
+                    )
+        result = duplicates.find_duplicates(conn)
+        conn.close()
+        return result
+
+    def test_presupported_files_reach_the_check(self):
+        result = self.scan("Hero_Presupported.zip")
+        self.assertEqual([group["filename"] for group in result["files"]], ["Hero_Presupported.zip"])
+
+    def test_the_summary_says_how_many_were_left_out(self):
+        result = self.scan("Hero_Presupported.zip", "base_01.zip", "Support.zip")
+        self.assertEqual(result["summary"]["excluded_files"], 4)
+        self.assertEqual(len(result["files"]), 1)

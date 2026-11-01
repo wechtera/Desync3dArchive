@@ -15,7 +15,7 @@ from typing import Any
 from desync_archival.db.queries import duplicates as queries
 from desync_archival.services import audit
 
-DEFAULT_IGNORE_NAMES = "base,support"
+DEFAULT_IGNORE_NAMES = "base,bases,support,supports"
 MAX_LISTED = 200
 DECISIONS = ("keep", "ignore")
 
@@ -35,6 +35,25 @@ def _catalog_files(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 def _pair_key(first: int, second: int) -> tuple[int, int]:
     return (first, second) if first < second else (second, first)
+
+
+def _words(text: str) -> list[str]:
+    # Not \b: `_` counts as a word character there, so Base_01 wouldn't contain "base".
+    return [word for word in re.split(r"[^a-z0-9]+", text.lower()) if word]
+
+
+def parse_ignored(setting: str) -> list[list[str]]:
+    return [words for entry in setting.split(",") if (words := _words(entry))]
+
+
+def is_ignored(filename: str, ignored: list[list[str]]) -> bool:
+    """Matches whole words, or several in a row. A substring test would drop `presupported`."""
+    words = _words(filename)
+    return any(
+        words[start:start + len(entry)] == entry
+        for entry in ignored
+        for start in range(len(words) - len(entry) + 1)
+    )
 
 
 def _side(item: dict[str, Any]) -> dict[str, Any]:
@@ -93,7 +112,7 @@ def _model_level(groups: list[list[dict[str, Any]]], file_counts: dict[int, int]
 def find_duplicates(conn: sqlite3.Connection, include_shared: bool = False) -> dict[str, Any]:
     """Finds exact and likely duplicates from the catalog, without touching the NAS."""
     row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY).fetchone()
-    ignored = [word.strip().lower() for word in (row[0] if row else DEFAULT_IGNORE_NAMES).split(",") if word.strip()]
+    ignored = parse_ignored(row[0] if row else DEFAULT_IGNORE_NAMES)
 
     files = _catalog_files(conn)
     file_counts: dict[int, int] = defaultdict(int)
@@ -102,9 +121,9 @@ def find_duplicates(conn: sqlite3.Connection, include_shared: bool = False) -> d
         file_counts[item["model_id"]] += 1
         names[item["model_id"]] = item["model_name"]
 
+    total_files = len(files)
     if not include_shared:
-        # FIXME(R-13): a substring test, so `support` also drops every file named supported or unsupported.
-        files = [f for f in files if not any(word in f["filename"].lower() for word in ignored)]
+        files = [f for f in files if not is_ignored(f["filename"], ignored)]
 
     by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
     by_name: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
@@ -138,7 +157,8 @@ def find_duplicates(conn: sqlite3.Connection, include_shared: bool = False) -> d
             "candidate_groups": len(candidate),
             "duplicate_models": sum(1 for g in model_groups if g["kind"] == "duplicate"),
             "overlapping_models": sum(1 for g in model_groups if g["kind"] == "overlap"),
-            "ignored_names": [] if include_shared else ignored,
+            "ignored_names": [] if include_shared else [" ".join(entry) for entry in ignored],
+            "excluded_files": total_files - len(files),
             "pairs": len(pairs),
         },
         "include_shared": include_shared,

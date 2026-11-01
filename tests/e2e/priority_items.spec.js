@@ -41,3 +41,17 @@ test.describe('queue removal, R-17', () => {
     expect(page.dialogs).toEqual([]);
   });
 });
+
+test('the duplicate panel says how many files it left out, R-13', async ({ page }) => {
+  const results = {
+    success: true, has_results: true, include_shared: false, pairs: [], files: [], models: [],
+    summary: { pairs: 0, excluded_files: 13579 },
+  };
+  await page.route('**/api/reconcile/duplicates/latest', (route) => route.fulfill({ json: results }));
+  await page.goto('/#downloads');
+  await page.locator('#group-reconcile').click();
+  const panel = page.locator('[data-card="duplicate_scan"] #duplicate-results-panel');
+  await panel.locator('summary').click();
+  await expect(panel).toContainText('13,579 files named as bases or supports were left out.');
+});
+
