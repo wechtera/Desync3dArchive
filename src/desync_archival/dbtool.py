@@ -79,6 +79,9 @@ def main() -> int:
     build.add_argument("--rebuild", action="store_true", help="redo every unreviewed proposal")
     repeek = commands.add_parser("repeek-broken")
     repeek.add_argument("--confirm-production", action="store_true")
+    repeek_chosen = commands.add_parser("repeek-files")
+    repeek_chosen.add_argument("--file-id", type=int, action="append", required=True)
+    repeek_chosen.add_argument("--confirm-production", action="store_true")
     commands.add_parser("backup")
     rebuild = commands.add_parser("rebuild-releases")
     rebuild.add_argument("--confirm-production", action="store_true")
@@ -135,6 +138,12 @@ def main() -> int:
             refuse_if_app_running()
             print(f"backup written: {backup.create_backup(db_path)}")
             print(archive_peeker.repeek_broken(db_path))
+        elif args.command == "repeek-files":
+            if settings.is_production() and not args.confirm_production:
+                raise migrations.MigrationError("Refusing to repeek in production without --confirm-production")
+            refuse_if_app_running()
+            print(f"backup written: {backup.create_backup(db_path)}")
+            print(archive_peeker.repeek_files(db_path, set(args.file_id)))
         elif args.command == "backup":
             print(f"backup written: {backup.create_backup(db_path, full=True)}")
         elif args.command == "rebuild-releases":

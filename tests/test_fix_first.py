@@ -398,6 +398,26 @@ class R03Extraction(TempCase):
         self.assertEqual(list(folder.iterdir()), [])
 
 
+class R03RepeekCommand(TempCase):
+    def test_only_the_chosen_archives_are_peeked_again(self):
+        with self.conn:
+            self.conn.execute("INSERT INTO collections (id, name, url, raw_backup_path) VALUES (1, 'M', '', '')")
+            for file_id in (10, 20):
+                self.conn.execute("""
+                    INSERT INTO downloaded_files
+                    (file_id, model_id, original_filename, cleaned_filename, local_relative_path, actual_bytes, vault_path)
+                    VALUES (?, 1, 'a.rar', 'a.rar', 'a.rar', 1, '/vault/a.rar')
+                """, (file_id,))
+        with patch("sys.argv", ["dbtool", "repeek-files", "--file-id", "20"]), \
+                patch("desync_archival.dbtool.settings.db_path", return_value=self.db), \
+                patch("desync_archival.dbtool.settings.is_production", return_value=False), \
+                patch("desync_archival.dbtool.refuse_if_app_running"), \
+                patch("desync_archival.dbtool.backup.create_backup", return_value="copy"), \
+                patch.object(ArchivePeeker, "inspect_and_record", return_value={"success": True}) as peek:
+            self.assertEqual(dbtool.main(), 0)
+        self.assertEqual([call.args[1] for call in peek.call_args_list], [20])
+
+
 class BackupCase(TempCase):
     def setUp(self):
         super().setUp()

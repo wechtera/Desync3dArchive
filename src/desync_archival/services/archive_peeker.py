@@ -737,24 +737,28 @@ class ArchivePeeker:
         log_layer("sql", logging.DEBUG, f"Persisted {len(submodels)} submodels and {len(all_clean_members)} archive members for File #{file_id}")
 
 
-def repeek_broken(db_path: Path) -> dict[str, int]:
-    """Peeks again any archive left with a 0 byte preview. Rows update in place, so nothing is lost."""
-    root = app_config.previews_dir().resolve()
-    broken = {
-        int(path.parent.name) for path in root.glob("*/*/*")
-        if path.is_file() and path.parent.name.isdigit() and path.stat().st_size == 0
-    }
+def repeek_files(db_path: Path, file_ids: set[int]) -> dict[str, int]:
+    """Peeks chosen archives again. Rows update in place, so nothing is lost."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    marks = ",".join("?" * len(broken))
+    marks = ",".join("?" * len(file_ids))
     rows = conn.execute(
-        f"SELECT file_id, model_id, vault_path FROM downloaded_files WHERE file_id IN ({marks});", sorted(broken)
-    ).fetchall() if broken else []
+        f"SELECT file_id, model_id, vault_path FROM downloaded_files WHERE file_id IN ({marks});", sorted(file_ids)
+    ).fetchall() if file_ids else []
     conn.close()
     peeker = ArchivePeeker(db_path)
     summary = {"archives": len(rows), "repaired": 0, "failed": 0}
     for row in rows:
         result = peeker.inspect_and_record(row["model_id"], row["file_id"], Path(row["vault_path"] or ""))
         summary["repaired" if result.get("success") else "failed"] += 1
-    log_layer("archive", logging.INFO, f"Repeek of broken previews: {summary}")
+    log_layer("archive", logging.INFO, f"Repeek of {len(file_ids)} archives: {summary}")
     return summary
+
+
+def repeek_broken(db_path: Path) -> dict[str, int]:
+    """Peeks again any archive left with a 0 byte preview."""
+    root = app_config.previews_dir().resolve()
+    return repeek_files(db_path, {
+        int(path.parent.name) for path in root.glob("*/*/*")
+        if path.is_file() and path.parent.name.isdigit() and path.stat().st_size == 0
+    })
