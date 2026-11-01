@@ -926,7 +926,7 @@ test.describe('settings', () => {
     await page.route('**/api/health', (route) => route.fulfill({ json: {
       status: 'warning', jobs: [],
       checks: [{ key: 'sign_in', label: 'MMF sign-in', state: 'warning', detail: 'Expires in 5 hours.' }],
-      schedules: { sync_enabled: '0', sync_interval_days: '7', sync_auto_download: '0', integrity_enabled: '0', integrity_interval_days: '30', integrity_mode: 'fast' },
+      schedules: { integrity_enabled: '0', integrity_interval_days: '30', integrity_mode: 'fast' },
     } }));
     await page.route('**/api/schedules', (route) => {
       sent = route.request().postDataJSON();
@@ -938,10 +938,11 @@ test.describe('settings', () => {
     await page.locator('[data-settings-tab-btn="health"]').click();
     await expect(page.locator('#health-overall')).toHaveText('Needs attention');
     await expect(page.locator('#health-panel')).toContainText('Expires in 5 hours.');
-    await page.locator('input[name="sync_enabled"]').check();
-    await page.locator('input[name="sync_interval_days"]').fill('3');
+    await expect(page.locator('input[name="sync_enabled"]')).toHaveCount(0);
+    await page.locator('input[name="integrity_enabled"]').check();
+    await page.locator('input[name="integrity_interval_days"]').fill('3');
     await page.getByRole('button', { name: 'Save Schedules' }).click();
-    await expect.poll(() => sent).toMatchObject({ sync_enabled: true, sync_interval_days: 3, integrity_enabled: false });
+    await expect.poll(() => sent).toMatchObject({ integrity_enabled: true, integrity_interval_days: 3 });
   });
 
   test('pdfs filter, stash and queue from one view', async ({ page }) => {

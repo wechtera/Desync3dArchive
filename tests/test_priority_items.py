@@ -34,8 +34,10 @@ from desync_archival.services import (
     archive_peeker,
     data_bundle,
     duplicates,
+    health,
     jobs,
     login,
+    scheduler,
     secret_store,
     task_manager,
 )
@@ -1654,3 +1656,52 @@ class ImageRequestsS15Tests(TempCase):
         services = Path(__file__).resolve().parents[1] / "src/desync_archival/services"
         for name, allowed in (("reconciler.py", 0), ("archive_peeker.py", 0), ("task_manager.py", 1), ("downloader.py", 2)):
             self.assertEqual((services / name).read_text(encoding="utf-8").count("Mozilla/"), allowed, name)
+
+
+class ScheduledSyncRemovedTests(unittest.TestCase):
+    """Tucked away on feature/scheduled-sync until an API can list a user's library."""
+
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.addCleanup(self.conn.close)
+        migrations.apply_pending(self.conn)
+        self.tasks = MagicMock()
+        self.downloads = MagicMock(active_downloads={}, active_offloads={})
+
+    def set(self, **values):
+        with self.conn:
+            for key, value in values.items():
+                self.conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", (key, str(value)))
+
+    def test_a_setting_left_on_starts_nothing(self):
+        # Production holds sync_enabled = 1 from before this was removed.
+        self.set(sync_enabled=1, sync_interval_days=1, cookies_json='[{"name": "a", "value": "b"}]')
+        scheduler.tick(self.conn, self.tasks, self.downloads)
+        self.tasks.start_task.assert_not_called()
+        self.tasks.start_metadata_ingest.assert_not_called()
+
+    def test_a_sync_left_part_way_is_ignored(self):
+        self.set(sync_stage="scrape", sync_task_id=1)
+        scheduler.tick(self.conn, self.tasks, self.downloads)
+        self.tasks.start_metadata_ingest.assert_not_called()
+
+    def test_the_integrity_schedule_still_runs(self):
+        self.set(integrity_enabled=1)
+        self.tasks.start_task.return_value = {"success": True, "task_id": 3}
+        scheduler.tick(self.conn, self.tasks, self.downloads)
+        self.assertEqual(self.tasks.start_task.call_args.args[0], "vault_reconcile")
+
+    def test_settings_only_offer_the_integrity_schedule(self):
+        self.set(sync_enabled=1)
+        self.assertEqual(sorted(scheduler.settings(self.conn)), ["integrity_enabled", "integrity_interval_days", "integrity_mode"])
+
+    def test_health_has_no_sync_row(self):
+        self.set(sync_enabled=1, last_sync_result="Failed: x")
+        report = health.report(self.conn, None)
+        self.assertNotIn("sync", [check["key"] for check in report["checks"]])
+
+    def test_nothing_scheduled_can_start_a_library_retrieval(self):
+        source = (Path(__file__).resolve().parents[1] / "src/desync_archival/services/scheduler.py").read_text(encoding="utf-8")
+        self.assertNotIn("library_scrape", source)
+        self.assertNotIn("start_metadata_ingest", source)

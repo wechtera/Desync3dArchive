@@ -94,14 +94,6 @@ def _workers(downloads: Any) -> dict[str, str]:
     return _check("workers", "Download workers", OK, f"All {counts['expected']} are running.")
 
 
-def _sync(conn: sqlite3.Connection) -> dict[str, str]:
-    if scheduler.settings(conn)["sync_enabled"] != "1":
-        return _check("sync", "Scheduled sync", OK, "Off.")
-    result = auth_service.get_setting(conn, "last_sync_result", "") or "Not run yet."
-    bad = result.startswith(("Failed", "Waiting"))
-    return _check("sync", "Scheduled sync", WARNING if bad else OK, result)
-
-
 def _integrity(conn: sqlite3.Connection) -> dict[str, str]:
     if scheduler.settings(conn)["integrity_enabled"] != "1":
         return _check("integrity", "Scheduled integrity check", OK, "Off.")
@@ -125,7 +117,7 @@ def report(conn: sqlite3.Connection, downloads: Any) -> dict[str, Any]:
     metrics = downloads.storage.get_disk_metrics() if downloads else {"nas": {}}
     checks = [
         _database(conn), _vault(metrics), _sign_in(conn), _cookies(conn), _backup(conn),
-        _workers(downloads), _sync(conn), _integrity(conn), _tasks(conn),
+        _workers(downloads), _integrity(conn), _tasks(conn),
     ]
     columns = ("task_type", "runs", "failed", "average_seconds", "last_run")
     return {

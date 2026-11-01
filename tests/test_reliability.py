@@ -62,92 +62,8 @@ class ReliabilityCase(unittest.TestCase):
                 "INSERT INTO collections (name, source, external_key, raw_backup_path) VALUES ('c', 'mmf', ?, '')", (key,),
             ).lastrowid
 
-    def scrape_found(self, *ids):
-        folder = self.base / "scrapes" / "run"
-        folder.mkdir(parents=True)
-        (folder / "model_ids.txt").write_text("\n".join(ids), encoding="utf-8")
-        return self.task(jobs.COMPLETED, {"folder": "run"})
-
     def tick(self):
         scheduler.tick(self.conn, self.tasks, self.downloads)
-
-
-class SyncTests(ReliabilityCase):
-    def test_nothing_runs_until_turned_on(self):
-        self.signed_in()
-        self.tick()
-        self.tasks.start_task.assert_not_called()
-
-    def test_a_due_sync_starts_a_scrape_and_remembers_it(self):
-        self.signed_in()
-        self.set(sync_enabled=1)
-        self.tasks.start_task.return_value = {"success": True, "task_id": 5}
-        self.tick()
-        self.assertEqual((self.get("sync_stage"), self.get("sync_task_id")), ("scrape", "5"))
-
-    def test_a_recent_sync_isnt_due(self):
-        self.signed_in()
-        self.set(sync_enabled=1, last_sync_epoch=time.time())
-        self.tick()
-        self.tasks.start_task.assert_not_called()
-
-    def test_an_expired_sign_in_waits_and_says_why(self):
-        self.set(sync_enabled=1)
-        self.tick()
-        self.tasks.start_task.assert_not_called()
-        self.assertIn("sign-in", self.get("last_sync_result"))
-        self.assertEqual(self.get("last_sync_epoch"), "")
-
-    def test_a_running_scrape_is_left_alone(self):
-        self.set(sync_stage="scrape", sync_task_id=self.task("running"))
-        self.tick()
-        self.tasks.start_metadata_ingest.assert_not_called()
-        self.assertEqual(self.get("sync_stage"), "scrape")
-
-    def test_a_failed_scrape_ends_the_sync_and_is_reported(self):
-        self.set(sync_stage="scrape", sync_task_id=self.task(jobs.FAILED))
-        self.tick()
-        self.assertEqual(self.get("sync_stage"), "")
-        self.assertTrue(self.get("last_sync_result").startswith("Failed"))
-
-    def test_only_a_finished_scrape_starts_the_ingest(self):
-        self.collection("1")
-        self.tasks.start_metadata_ingest.return_value = ({"task_id": 9}, 200)
-        self.set(sync_stage="scrape", sync_task_id=self.scrape_found("1", "2"))
-        self.tick()
-        self.assertEqual(self.tasks.start_metadata_ingest.call_args.args[0], [1, 2])
-        self.assertEqual((self.get("sync_stage"), self.get("sync_new_keys")), ("ingest", '["2"]'))
-
-    def test_a_scrape_with_nothing_new_finishes(self):
-        self.collection("1")
-        self.set(sync_stage="scrape", sync_task_id=self.scrape_found("1"))
-        self.tick()
-        self.tasks.start_metadata_ingest.assert_not_called()
-        self.assertEqual(self.get("last_sync_result"), "Completed: nothing new")
-
-    def test_a_busy_ingest_is_tried_again_on_the_next_tick(self):
-        self.tasks.start_metadata_ingest.return_value = ({"error": "busy"}, 409)
-        self.set(sync_stage="scrape", sync_task_id=self.scrape_found("2"))
-        self.tick()
-        self.assertEqual(self.get("sync_stage"), "scrape")
-
-    def test_new_collections_are_queued_only_when_chosen(self):
-        fresh = self.collection("2")
-        self.set(sync_stage="ingest", sync_task_id=self.task(jobs.COMPLETED), sync_new_keys='["2"]')
-        self.tick()
-        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM download_jobs").fetchone()[0], 0)
-        self.set(sync_stage="ingest", sync_task_id=self.task(jobs.COMPLETED), sync_new_keys='["2"]', sync_auto_download=1)
-        self.tick()
-        self.assertEqual(self.conn.execute("SELECT model_id FROM download_jobs").fetchone()[0], fresh)
-        self.assertIn("1 queued", self.get("last_sync_result"))
-
-    def test_stage_survives_a_restart(self):
-        self.set(sync_stage="ingest", sync_task_id=self.task(jobs.COMPLETED), sync_new_keys="[]")
-        reopened = sqlite3.connect(self.db)
-        reopened.row_factory = sqlite3.Row
-        self.addCleanup(reopened.close)
-        scheduler.tick(reopened, self.tasks, self.downloads)
-        self.assertEqual(self.get("sync_stage"), "")
 
 
 class CookieExpiryTests(ReliabilityCase):
@@ -161,15 +77,6 @@ class CookieExpiryTests(ReliabilityCase):
     def test_session_cookies_alone_give_no_date(self):
         self.cookies({"expires": -1}, {})
         self.assertIsNone(auth_service.cookie_expiry(self.conn))
-
-    def test_expired_cookies_hold_the_sync_and_keep_it_due(self):
-        self.signed_in()
-        self.cookies({"expires": time.time() - 60})
-        self.set(sync_enabled=1)
-        self.tick()
-        self.tasks.start_task.assert_not_called()
-        self.assertIn("cookies", self.get("last_sync_result"))
-        self.assertEqual(self.get("last_sync_epoch"), "")
 
     def check(self):
         self.downloads.storage.get_disk_metrics.return_value = {"nas": {}}
@@ -291,19 +198,19 @@ class IntegrityTests(ReliabilityCase):
 class ScheduleFormTests(ReliabilityCase):
     def test_saving_is_audited(self):
         body, status = routes.handle_post_schedules(self.conn, body={
-            "sync_enabled": True, "sync_interval_days": 3, "integrity_interval_days": 30, "integrity_mode": "deep",
+            "integrity_enabled": True, "integrity_interval_days": 3, "integrity_mode": "deep",
         })
-        self.assertEqual((status, body["schedules"]["sync_interval_days"]), (200, "3"))
+        self.assertEqual((status, body["schedules"]["integrity_interval_days"]), (200, "3"))
         self.assertEqual(self.conn.execute("SELECT action FROM audit_log").fetchone()[0], "schedules_changed")
 
     def test_a_bad_interval_is_refused(self):
         for days in (0, 366, "x"):
-            _, status = routes.handle_post_schedules(self.conn, body={"sync_interval_days": days, "integrity_interval_days": 30})
+            _, status = routes.handle_post_schedules(self.conn, body={"integrity_interval_days": days})
             self.assertEqual(status, 400)
 
     def test_a_bad_mode_is_refused(self):
         _, status = routes.handle_post_schedules(self.conn, body={
-            "sync_interval_days": 7, "integrity_interval_days": 30, "integrity_mode": "rm",
+            "integrity_interval_days": 30, "integrity_mode": "rm",
         })
         self.assertEqual(status, 400)
 

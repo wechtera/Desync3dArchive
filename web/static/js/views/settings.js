@@ -307,9 +307,6 @@ async function saveSchedules(event) {
   const form = new FormData(event.target);
   try {
     await postSchedules({
-      sync_enabled: form.has('sync_enabled'),
-      sync_interval_days: Number(form.get('sync_interval_days')),
-      sync_auto_download: form.has('sync_auto_download'),
       integrity_enabled: form.has('integrity_enabled'),
       integrity_interval_days: Number(form.get('integrity_interval_days')),
       integrity_mode: form.get('integrity_mode'),
@@ -347,13 +344,6 @@ export async function loadHealth() {
 
       <h3 class="health-heading">Schedules</h3>
       <form id="schedule-form" class="schedule-form" @submit=${saveSchedules}>
-        <fieldset>
-          <legend>Library sync</legend>
-          <label><input type="checkbox" name="sync_enabled" .checked=${on('sync_enabled')}> Scrape MMF and add new purchases</label>
-          <label>Every <input type="number" name="sync_interval_days" min="1" max="365" .value=${chosen.sync_interval_days}> days</label>
-          <label><input type="checkbox" name="sync_auto_download" .checked=${on('sync_auto_download')}> Queue new collections for download</label>
-          <span class="form-help-text">Needs a current MMF sign-in and cookies, which expire. It waits until they're renewed, and Health says when.</span>
-        </fieldset>
         <fieldset>
           <legend>Integrity check</legend>
           <label><input type="checkbox" name="integrity_enabled" .checked=${on('integrity_enabled')}> Check the vault against the catalog</label>

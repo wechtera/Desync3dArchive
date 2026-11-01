@@ -139,9 +139,6 @@ class DocumentStashBody(RequestBody):
 
 
 class SchedulesBody(RequestBody):
-    sync_enabled: bool = False
-    sync_interval_days: int = 7
-    sync_auto_download: bool = False
     integrity_enabled: bool = False
     integrity_interval_days: int = 30
     integrity_mode: str = "fast"
