@@ -25,7 +25,7 @@ def _catalog_files(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         SELECT mf.file_id, mf.model_id, mf.filename, COALESCE(df.actual_bytes, mf.size_bytes) AS size_bytes,
                df.sha256, m.name AS model_name, m.source
         FROM model_files mf
-        JOIN models m ON m.id = mf.model_id
+        JOIN collections m ON m.id = mf.model_id
         LEFT JOIN downloaded_files df ON df.file_id = mf.file_id
         WHERE m.is_active = 1 AND mf.filename IS NOT NULL AND mf.filename != '';
     """).fetchall()

@@ -25,7 +25,7 @@ from desync_archival.services.task_manager import TaskManager, parse_cookies
 def seed(db_path):
     conn = get_db_connection(db_path)
     conn.executescript("""
-        INSERT INTO models (id, name, url, raw_backup_path) VALUES (1, 'A', '', ''), (2, 'B', '', ''), (3, 'C', '', '');
+        INSERT INTO collections (id, name, url, raw_backup_path) VALUES (1, 'A', '', ''), (2, 'B', '', ''), (3, 'C', '', '');
         INSERT INTO pipeline_tasks (task_type, status) VALUES ('library_scrape', 'running'), ('vault_reconcile', 'completed');
         INSERT INTO download_jobs (model_id, status) VALUES (1, 'downloading'), (2, 'offloading'), (3, 'failed');
     """)
@@ -182,7 +182,7 @@ class ReleaseRebuildTests(TempDb):
     def test_ingest_rebuild_adds_new_releases(self):
         conn = sqlite3.connect(self.db)
         conn.execute("""
-            UPDATE models SET designer_name = 'Maker', designer_id = 9, published_at = '2026-10-01' WHERE id = 1
+            UPDATE collections SET designer_name = 'Maker', designer_id = 9, published_at = '2026-10-01' WHERE id = 1
         """)
         conn.commit()
         conn.close()

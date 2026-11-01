@@ -58,7 +58,7 @@ class TestDownloaderOAuth(unittest.TestCase):
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
 
-                CREATE TABLE IF NOT EXISTS models (
+                CREATE TABLE IF NOT EXISTS collections (
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,
                     designer_name TEXT DEFAULT 'Artisan Guild',
@@ -134,7 +134,7 @@ class TestDownloaderOAuth(unittest.TestCase):
                 INSERT OR REPLACE INTO app_settings (key, value) VALUES ('cookies_json', '[]');
 
                 -- Seed sample model
-                INSERT INTO models (external_key, id, name, designer_name, release_month, raw_backup_path)
+                INSERT INTO collections (external_key, id, name, designer_name, release_month, raw_backup_path)
                 VALUES ('90101', 101, 'Dragon Slayer', 'Archvillain Games', '2026-10', '');
 
                 INSERT INTO model_files (external_key, file_id, model_id, filename, size_bytes, download_url)
@@ -206,7 +206,7 @@ class TestDownloaderOAuth(unittest.TestCase):
         # Assert stream client was initialized with Authorization: Bearer
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
-            m_row = conn.execute("SELECT archive_download_url FROM models WHERE id = 101;").fetchone()
+            m_row = conn.execute("SELECT archive_download_url FROM collections WHERE id = 101;").fetchone()
             self.assertEqual(m_row["archive_download_url"], "https://cdn.example.com/presigned_archive_101.zip")
 
             f_row = conn.execute("SELECT download_url FROM model_files WHERE file_id = 5001;").fetchone()

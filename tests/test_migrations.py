@@ -262,7 +262,7 @@ class SchemaUseTests(TempCase):
         conn.row_factory = sqlite3.Row
         migrations.apply_pending(conn)
         conn.execute("""
-            INSERT INTO models (id, name, url, designer_name, designer_id, published_at, raw_backup_path)
+            INSERT INTO collections (id, name, url, designer_name, designer_id, published_at, raw_backup_path)
             VALUES (1, 'Dragon', '', 'Maker', 5, '2026-05-01', '')
         """)
         conn.commit()

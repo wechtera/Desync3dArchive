@@ -21,6 +21,7 @@ from desync_archival.services import (
     audit,
     auth_service,
     catalog_browse,
+    jobs,
     image_worker,
     inactive_log,
     library_review,
@@ -391,6 +392,8 @@ def handle_delete_external_library(
     INVARIANT: MUST NOT delete or touch any physical files or folders on the NAS.
     """
     conn.row_factory = sqlite3.Row
+    if reason := jobs.busy_reason(conn, download_manager):
+        return {"success": False, "error": reason}, 409
     row = conn.execute(queries.DELETE_EXTERNAL_LIBRARY_1, (library_id,)).fetchone()
     if not row:
         return {"error": f"External library #{library_id} not found."}, 404
@@ -537,7 +540,7 @@ def handle_post_library_review(
     return result, 200
 
 
-def handle_get_catalog_models(
+def handle_get_models(
     conn: sqlite3.Connection,
     download_manager: Any = None,
     body: dict | None = None,

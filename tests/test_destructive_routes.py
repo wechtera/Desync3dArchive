@@ -33,7 +33,7 @@ class DestructiveCase(unittest.TestCase):
         conn.execute("DELETE FROM pipeline_tasks")
         conn.execute("DELETE FROM download_jobs")
         conn.execute("DELETE FROM downloaded_files")
-        conn.execute("DELETE FROM models")
+        conn.execute("DELETE FROM collections")
         conn.commit()
         auth_service.set_settings(conn, {
             "download_root_path": str(self.vault), "download_work_path": str(self.work),
@@ -117,7 +117,7 @@ class ResetTests(DestructiveCase):
     def setUp(self):
         super().setUp()
         conn = get_db_connection(server.DB_PATH)
-        conn.execute("INSERT INTO models (id, name, url, raw_backup_path, vault_path) VALUES (9, 'M', '', '', '/v')")
+        conn.execute("INSERT INTO collections (id, name, url, raw_backup_path, vault_path) VALUES (9, 'M', '', '', '/v')")
         conn.execute("INSERT INTO model_files (file_id, model_id, filename) VALUES (1, 9, 'a')")
         conn.execute("""
             INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename,
@@ -129,7 +129,7 @@ class ResetTests(DestructiveCase):
 
     def vault_path(self):
         conn = sqlite3.connect(server.DB_PATH)
-        value = conn.execute("SELECT vault_path FROM models WHERE id = 9").fetchone()[0]
+        value = conn.execute("SELECT vault_path FROM collections WHERE id = 9").fetchone()[0]
         conn.close()
         return value
 

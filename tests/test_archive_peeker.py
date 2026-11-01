@@ -91,7 +91,7 @@ class TestArchivePeekerIsolated(unittest.TestCase):
     def _init_test_database(self):
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.executescript("""
-                CREATE TABLE IF NOT EXISTS models (
+                CREATE TABLE IF NOT EXISTS collections (
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,
                     primary_image_url TEXT,
@@ -104,7 +104,7 @@ class TestArchivePeekerIsolated(unittest.TestCase):
                     filename TEXT,
                     size_bytes INTEGER,
                     download_url TEXT,
-                    FOREIGN KEY (model_id) REFERENCES models(id)
+                    FOREIGN KEY (model_id) REFERENCES collections(id)
                 );
 
                 CREATE TABLE IF NOT EXISTS downloaded_files (
@@ -124,10 +124,10 @@ class TestArchivePeekerIsolated(unittest.TestCase):
                 );
 
                 -- Test model records
-                INSERT INTO models (id, name, primary_image_url, vault_path, raw_backup_path) 
+                INSERT INTO collections (id, name, primary_image_url, vault_path, raw_backup_path) 
                 VALUES (842170, 'Lunatics of the Death-Tide', 'https://example.com/lunatics.jpg', NULL, '');
 
-                INSERT INTO models (id, name, primary_image_url, vault_path, raw_backup_path) 
+                INSERT INTO collections (id, name, primary_image_url, vault_path, raw_backup_path) 
                 VALUES (841381, 'Archvillain Bestiary Vol XXXVII', 'https://example.com/bestiary.jpg', NULL, '');
 
                 -- Test archive file records

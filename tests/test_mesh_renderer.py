@@ -39,7 +39,7 @@ class TestMeshRenderer(unittest.TestCase):
 
         with conn:
             conn.executescript("""
-                CREATE TABLE IF NOT EXISTS models (
+                CREATE TABLE IF NOT EXISTS collections (
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,
                     vault_path TEXT,
@@ -180,7 +180,7 @@ class TestMeshRenderer(unittest.TestCase):
 
         conn = self._get_db()
         with conn:
-            conn.execute("INSERT INTO models (id, name, url, raw_backup_path) VALUES (10, 'Warrior', '', '');")
+            conn.execute("INSERT INTO collections (id, name, url, raw_backup_path) VALUES (10, 'Warrior', '', '');")
             conn.execute("INSERT OR IGNORE INTO model_files (file_id, model_id, filename) VALUES (500, 10, 'a');")
             conn.execute("""
                 INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path, file_extension, vault_path, actual_bytes)
@@ -214,7 +214,7 @@ class TestMeshRenderer(unittest.TestCase):
 
         conn = self._get_db()
         with conn:
-            conn.execute("INSERT INTO models (id, name, url, raw_backup_path) VALUES (20, 'Hero Pack', '', '');")
+            conn.execute("INSERT INTO collections (id, name, url, raw_backup_path) VALUES (20, 'Hero Pack', '', '');")
             conn.execute("INSERT INTO model_files (file_id, model_id, filename, size_bytes) VALUES (600, 20, 'pack.zip', 0)")
             conn.execute("""
                 INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path, file_extension, vault_path, actual_bytes)
@@ -247,7 +247,7 @@ class TestMeshRenderer(unittest.TestCase):
 
         conn = self._get_db()
         with conn:
-            conn.execute("INSERT INTO models (id, name, url, raw_backup_path) VALUES (30, 'Crash Model', '', '');")
+            conn.execute("INSERT INTO collections (id, name, url, raw_backup_path) VALUES (30, 'Crash Model', '', '');")
             conn.execute("INSERT OR IGNORE INTO model_files (file_id, model_id, filename) VALUES (800, 30, 'a');")
             conn.execute("""
                 INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path, file_extension, vault_path, actual_bytes)

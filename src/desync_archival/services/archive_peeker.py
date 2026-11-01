@@ -328,13 +328,13 @@ class ArchivePeeker:
     def _fetch_catalog_fallback_image(self, model_id: int, dest_dir: Path) -> Optional[Path]:
         url = None
         with self._get_db() as conn:
-            row = conn.execute("SELECT primary_image_url FROM models WHERE id = ?;", (model_id,)).fetchone()
+            row = conn.execute("SELECT primary_image_url FROM collections WHERE id = ?;", (model_id,)).fetchone()
             if row and row["primary_image_url"]:
                 url = row["primary_image_url"]
 
         if not url:
             with self._get_db() as conn:
-                key = conn.execute("SELECT external_key FROM models WHERE id = ?;", (model_id,)).fetchone()
+                key = conn.execute("SELECT external_key FROM collections WHERE id = ?;", (model_id,)).fetchone()
             meta_path = app_config.metadata_dir() / f"model_{key[0] if key else None}.json"
             if meta_path.exists():
                 try:

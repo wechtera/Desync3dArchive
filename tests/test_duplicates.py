@@ -22,7 +22,7 @@ class DuplicateCase(unittest.TestCase):
             self.conn.execute(f"DELETE FROM {table}")
         for model_id, name, source in ((1, "One", "mmf"), (2, "Two", "mmf"), (3, "Three", "external")):
             self.conn.execute(
-                "INSERT INTO models (id, name, source, raw_backup_path) VALUES (?, ?, ?, '')", (model_id, name, source)
+                "INSERT INTO collections (id, name, source, raw_backup_path) VALUES (?, ?, ?, '')", (model_id, name, source)
             )
         self.next_file = 100
 
@@ -95,7 +95,7 @@ class FileTests(DuplicateCase):
     def test_inactive_models_are_left_out(self):
         self.add(1, "golem.zip", 10, "abc")
         self.add(2, "golem.zip", 10, "abc")
-        self.conn.execute("UPDATE models SET is_active = 0 WHERE id = 2")
+        self.conn.execute("UPDATE collections SET is_active = 0 WHERE id = 2")
         self.assertEqual(self.kinds(), [])
 
 

@@ -116,7 +116,7 @@ class ImageWorker:
                 SELECT q.id, q.kind, q.model_id, q.file_id, m.name, m.vault_path, m.is_active, m.external_key,
                        l.path AS library_path
                 FROM library_work_queue q
-                JOIN models m ON m.id = q.model_id
+                JOIN collections m ON m.id = q.model_id
                 JOIN external_libraries l ON l.id = m.library_id
                 WHERE q.status = 'pending'
                 ORDER BY CASE q.kind WHEN 'cover' THEN 0 ELSE 1 END, q.id
@@ -203,7 +203,7 @@ class ImageWorker:
                     return self._fail(conn, job, "failed", inactive_log.RENDER_FAILED, f"Blender failed on {best_stl.name}")
 
         with conn:
-            conn.execute("UPDATE models SET primary_image_url = ? WHERE id = ?;", (f"/previews/{model_id}/cover.jpg", model_id))
+            conn.execute("UPDATE collections SET primary_image_url = ? WHERE id = ?;", (f"/previews/{model_id}/cover.jpg", model_id))
             inactive_log.resolve(conn, inactive_log.MODEL, model_id, inactive_log.RENDER_FAILED)
             inactive_log.resolve(conn, inactive_log.MODEL, model_id, inactive_log.NO_SOURCE)
         self._finish(conn, job, "done")

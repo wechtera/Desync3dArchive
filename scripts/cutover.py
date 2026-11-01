@@ -79,7 +79,7 @@ def preflight(source: Path) -> dict[str, Any]:
 
         repeated = conn.execute("""
             SELECT COUNT(*) FROM (
-                SELECT vault_path FROM models
+                SELECT vault_path FROM collections
                 WHERE source = 'external' AND vault_path IS NOT NULL
                 GROUP BY vault_path HAVING COUNT(*) > 1
             )
@@ -94,7 +94,7 @@ def preflight(source: Path) -> dict[str, Any]:
         if no_file:
             problems.append(f"{no_file} downloaded files have no model_files row")
 
-        no_source = conn.execute("SELECT COUNT(*) FROM models WHERE source IS NULL").fetchone()[0]
+        no_source = conn.execute("SELECT COUNT(*) FROM collections WHERE source IS NULL").fetchone()[0]
         if no_source:
             problems.append(f"{no_source} models have no source")
 
@@ -115,10 +115,10 @@ def pick_sample(conn: sqlite3.Connection, size: int) -> list[int]:
         "SELECT DISTINCT model_id FROM downloaded_files WHERE sha256 IS NOT NULL AND sha256 != '' LIMIT 3",
         "SELECT DISTINCT model_id FROM downloaded_files WHERE sha256 IS NULL OR sha256 = '' LIMIT 3",
         "SELECT DISTINCT model_id FROM file_archive_submodels LIMIT 3",
-        "SELECT id FROM models WHERE source = 'external' LIMIT 5",
-        "SELECT id FROM models WHERE name LIKE '[Unavailable Model %]' LIMIT 3",
-        "SELECT id FROM models WHERE is_bonus = 1 LIMIT 2",
-        "SELECT id FROM models WHERE id NOT IN (SELECT model_id FROM model_files) LIMIT 2",
+        "SELECT id FROM collections WHERE source = 'external' LIMIT 5",
+        "SELECT id FROM collections WHERE name LIKE '[Unavailable Model %]' LIMIT 3",
+        "SELECT id FROM collections WHERE is_bonus = 1 LIMIT 2",
+        "SELECT id FROM collections WHERE id NOT IN (SELECT model_id FROM model_files) LIMIT 2",
         "SELECT model_id FROM download_jobs WHERE status != 'completed' LIMIT 2",
     ]
     chosen: list[int] = []
@@ -127,7 +127,7 @@ def pick_sample(conn: sqlite3.Connection, size: int) -> list[int]:
             if model_id not in chosen:
                 chosen.append(model_id)
 
-    rest = [row[0] for row in conn.execute("SELECT id FROM models ORDER BY id") if row[0] not in chosen]
+    rest = [row[0] for row in conn.execute("SELECT id FROM collections ORDER BY id") if row[0] not in chosen]
     random.Random(7).shuffle(rest)
     return chosen + rest[:max(0, size - len(chosen))]
 
@@ -138,7 +138,7 @@ def reduce_to_sample(path: Path, size: int) -> list[int]:
         conn.execute("PRAGMA foreign_keys = ON")
         keep = pick_sample(conn, size)
         marks = ",".join("?" * len(keep))
-        conn.execute(f"DELETE FROM models WHERE id NOT IN ({marks})", keep)
+        conn.execute(f"DELETE FROM collections WHERE id NOT IN ({marks})", keep)
         for table in ("download_audit_log", "schema_anomalies"):
             conn.execute(f"DELETE FROM {table} WHERE model_id NOT IN ({marks})", keep)
         conn.commit()
@@ -154,7 +154,7 @@ def rewrite_paths(path: Path, old_root: Path) -> int:
     conn = sqlite3.connect(path)
     try:
         updated = conn.execute(
-            "UPDATE models SET raw_backup_path = substr(raw_backup_path, ?) WHERE substr(raw_backup_path, 1, ?) = ?",
+            "UPDATE collections SET raw_backup_path = substr(raw_backup_path, ?) WHERE substr(raw_backup_path, 1, ?) = ?",
             (len(prefix) + 1, len(prefix), prefix),
         ).rowcount
         conn.commit()
@@ -208,26 +208,32 @@ def verify(before_path: Path, after_path: Path, rows_only: bool = False, old_roo
     rows_only is for a restored backup, which is meant to have the older schema. old_root allows
     only the expected change to stored paths under that folder.
     """
+    from desync_archival import migrations
+
     before, after = open_read_only(before_path), open_read_only(after_path)
     problems: list[str] = []
     compared = {}
     try:
+        # A copy from before the final rename compares against the new table names.
+        pre_rename = "collections" in tables(after) and "collections" not in tables(before)
+        renames = migrations.TABLE_RENAMES[14] if pre_rename else {}
         for table in tables(before):
-            if table not in tables(after):
+            target = renames.get(table, table)
+            if target not in tables(after):
                 problems.append(f"{table} is missing after migration")
                 continue
-            old_columns, new_columns = columns(before, table), columns(after, table)
+            old_columns, new_columns = columns(before, table), columns(after, target)
             shared = [c for c in old_columns if c in new_columns]
             renamed = table == "releases" and "release_key" in new_columns
             if renamed:
                 shared = [c for c in shared if c != "id"]
             old_columns_sql = [f'"{c}"' for c in shared]
-            if table == "models" and old_root:
+            if target == "collections" and old_root:
                 old_columns_sql[shared.index("raw_backup_path")] = f"replace(raw_backup_path, '{old_root}/', '')"
             old_sql = ", ".join(['id'] * renamed + old_columns_sql)
             new_sql = ", ".join(['release_key'] * renamed + [f'"{c}"' for c in shared])
             old_rows = sorted(map(repr, before.execute(f'SELECT {old_sql} FROM "{table}"')))
-            new_rows = sorted(map(repr, after.execute(f'SELECT {new_sql} FROM "{table}"')))
+            new_rows = sorted(map(repr, after.execute(f'SELECT {new_sql} FROM "{target}"')))
             compared[table] = len(old_rows)
             if old_rows != new_rows:
                 problems.append(f"{table}: {len(old_rows)} rows before, {len(new_rows)} after, or values changed")
@@ -251,30 +257,30 @@ def verify(before_path: Path, after_path: Path, rows_only: bool = False, old_roo
                 problems.append(f"{table} has a unique constraint")
 
         wrong = after.execute("""
-            SELECT COUNT(*) FROM models
+            SELECT COUNT(*) FROM collections
             WHERE (source = 'mmf' AND external_key IS NOT CAST(id AS TEXT)) OR (source != 'mmf' AND external_key IS NOT NULL)
         """).fetchone()[0]
         if wrong:
             problems.append(f"{wrong} models have the wrong external_key")
 
-        for table, key in (("models", "id"), ("model_files", "file_id")):
+        for table, key in (("collections", "id"), ("model_files", "file_id")):
             highest = after.execute(f"SELECT COALESCE(MAX({key}), 0) FROM {table}").fetchone()[0]
             row = after.execute("SELECT seq FROM sqlite_sequence WHERE name = ?", (table,)).fetchone()
             if highest and (not row or row[0] < highest):
                 problems.append(f"{table} sequence is below its highest key, so a key could be reused")
 
-        words = sorted({w for (name,) in after.execute("SELECT name FROM models") for w in name.split() if len(w) >= 3})
+        words = sorted({w for (name,) in after.execute("SELECT name FROM collections") for w in name.split() if len(w) >= 3})
         random.Random(7).shuffle(words)
         for word in words[:SEARCH_TERMS]:
             pattern = f"%{word}%"
             plain = {r[0] for r in after.execute("""
-                SELECT m.id FROM models m WHERE m.name LIKE ?1 OR m.designer_name LIKE ?1
-                OR m.id IN (SELECT model_id FROM model_tags WHERE tag LIKE ?1)
+                SELECT m.id FROM collections m WHERE m.name LIKE ?1 OR m.designer_name LIKE ?1
+                OR m.id IN (SELECT model_id FROM collection_tags WHERE tag LIKE ?1)
             """, (pattern,))}
             indexed = {r[0] for r in after.execute("""
                 SELECT rowid FROM catalog_search WHERE name LIKE ?1
                 UNION SELECT rowid FROM catalog_search WHERE designer_name LIKE ?1
-                UNION SELECT model_id FROM model_tags WHERE tag LIKE ?1
+                UNION SELECT model_id FROM collection_tags WHERE tag LIKE ?1
                     AND model_id IN (SELECT rowid FROM catalog_search WHERE tags LIKE ?1)
             """, (pattern,))}
             if plain != indexed:
@@ -297,11 +303,11 @@ def smoke(stage_dir: Path) -> dict[str, Any]:
     def pick(sql: str) -> Any:
         return (conn.execute(sql).fetchone() or [None])[0]
 
-    mmf = pick(f"SELECT id FROM models WHERE source = 'mmf' AND {VISIBLE} LIMIT 1")
-    external = pick("SELECT id FROM models WHERE source = 'external' LIMIT 1")
+    mmf = pick(f"SELECT id FROM collections WHERE source = 'mmf' AND {VISIBLE} LIMIT 1")
+    external = pick("SELECT id FROM collections WHERE source = 'external' LIMIT 1")
     stash = pick("SELECT id FROM stashes LIMIT 1")
-    word = pick(f"SELECT name FROM models WHERE {VISIBLE} LIMIT 1")
-    total = pick(f"SELECT COUNT(*) FROM models WHERE {VISIBLE}")
+    word = pick(f"SELECT name FROM collections WHERE {VISIBLE} LIMIT 1")
+    total = pick(f"SELECT COUNT(*) FROM collections WHERE {VISIBLE}")
     conn.close()
 
     paths = ["/api/metrics", "/api/models?limit=24", "/api/releases?limit=24", "/api/creators", "/api/stashes",
@@ -400,8 +406,10 @@ def only_in_rolled_back(current: Path, restored: Path) -> dict[str, list]:
     """Rows the restore dropped. Files behind them may still be in the vault, unknown to the old database."""
     newer, older = open_read_only(current), open_read_only(restored)
     try:
-        models = {r[0]: r[1] for r in newer.execute("SELECT id, name FROM models")}
-        kept = {r[0] for r in older.execute("SELECT id FROM models")}
+        models = {r[0]: r[1] for r in newer.execute("SELECT id, name FROM collections")}
+        # A restored backup can be from before the final rename.
+        older_table = "collections" if "collections" in tables(older) else "models"
+        kept = {r[0] for r in older.execute(f"SELECT id FROM {older_table}")}
         files = {r[0]: r[1:] for r in newer.execute("SELECT file_id, model_id, cleaned_filename, vault_path FROM downloaded_files")}
         kept_files = {r[0] for r in older.execute("SELECT file_id FROM downloaded_files")}
         return {

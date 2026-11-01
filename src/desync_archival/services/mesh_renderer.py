@@ -354,7 +354,7 @@ class MeshRenderer:
         scratch_dir: Path,
     ) -> Optional[Path]:
         """Resolves the best STL candidate for a model from loose vault files or internal archive members."""
-        model = conn.execute("SELECT vault_path FROM models WHERE id = ?;", (model_id,)).fetchone()
+        model = conn.execute("SELECT vault_path FROM collections WHERE id = ?;", (model_id,)).fetchone()
         if model and model["vault_path"]:
             vp = Path(model["vault_path"])
             if vp.exists() and vp.is_dir():

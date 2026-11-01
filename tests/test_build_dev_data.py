@@ -49,7 +49,7 @@ class BuildDevDataTests(unittest.TestCase):
         conn.executescript(
             """
             CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT);
-            CREATE TABLE models (id INTEGER PRIMARY KEY, name TEXT, vault_path TEXT, source TEXT,
+            CREATE TABLE collections (id INTEGER PRIMARY KEY, name TEXT, vault_path TEXT, source TEXT,
                                  raw_backup_path TEXT);
             CREATE TABLE external_libraries (id INTEGER PRIMARY KEY, name TEXT, path TEXT);
             CREATE TABLE pipeline_tasks (id INTEGER PRIMARY KEY, log_output TEXT);
@@ -67,7 +67,7 @@ class BuildDevDataTests(unittest.TestCase):
         }
         conn.executemany("INSERT INTO app_settings VALUES (?, ?)", settings.items())
         conn.execute(
-            "INSERT INTO models VALUES (1, 'Model', ?, 'mmf', ?)",
+            "INSERT INTO collections VALUES (1, 'Model', ?, 'mmf', ?)",
             (f"{self.nas}/vault/a", f"{self.source}/metadata/model_1.json"),
         )
         conn.execute("INSERT INTO external_libraries VALUES (1, 'Loot', ?)", (f"{self.nas}/loot",))
@@ -111,7 +111,7 @@ class BuildDevDataTests(unittest.TestCase):
         self.assertEqual(settings["stash_download_path"], str(self.dest / "stash"))
 
         conn = sqlite3.connect(self.dest / "library.db")
-        vault_path, raw_path = conn.execute("SELECT vault_path, raw_backup_path FROM models").fetchone()
+        vault_path, raw_path = conn.execute("SELECT vault_path, raw_backup_path FROM collections").fetchone()
         library_path = conn.execute("SELECT path FROM external_libraries").fetchone()[0]
         log_output = conn.execute("SELECT log_output FROM pipeline_tasks").fetchone()[0]
         conn.close()

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from desync_archival.db.queries import reconcile as queries
-from desync_archival.services import audit, duplicates
+from desync_archival.services import audit, duplicates, jobs
 from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
@@ -28,6 +28,10 @@ def handle_post_reconcile_scan(
     """Starts background vault reconciliation task via TaskManager and returns immediately."""
     scan_mode = body.get("scan_mode", "fast")
     _, task_mgr = _get_managers(conn)
+
+    # A file mid-download looks like damage to a reconcile.
+    if reason := jobs.busy_reason(conn, download_manager):
+        return {"success": False, "error": reason}, 409
 
     res = task_mgr.start_task("vault_reconcile", {"scan_mode": scan_mode})
     if not res.get("success"):
@@ -91,6 +95,8 @@ def handle_post_reconcile_reset(
         return {"error": "Missing model_ids list in request body"}, 400
     reconciler, _ = _get_managers(conn)
     dry_run = not body.get("confirm")
+    if not dry_run and (reason := jobs.busy_reason(conn, download_manager)):
+        return {"success": False, "error": reason}, 409
     res = reconciler.reset_reconciliation_models(model_ids, dry_run=dry_run)
     audit.record(conn, "reconcile_reset", dry_run, {**res, "model_ids": model_ids})
     return res, 200 if res.get("success") else 400
@@ -107,6 +113,9 @@ def handle_post_reconcile_delete_orphans(
         return {"error": "Missing paths list in request body"}, 400
     reconciler, _ = _get_managers(conn)
     dry_run = not body.get("confirm")
+    # A folder a running job is writing looks like an orphan until its row lands.
+    if not dry_run and (reason := jobs.busy_reason(conn, download_manager)):
+        return {"success": False, "error": reason}, 409
     res = reconciler.delete_orphan_directories(paths, dry_run=dry_run)
     audit.record(conn, "delete_orphans", dry_run, {**res, "paths": paths})
     return res, 200 if res.get("success") else 400
@@ -146,6 +155,9 @@ def handle_post_reconcile_staging_purge(
     paths = body.get("paths")
     reconciler, _ = _get_managers(conn)
     dry_run = not body.get("confirm")
+    # Staging holds whatever a running download is writing right now.
+    if not dry_run and (reason := jobs.busy_reason(conn, download_manager)):
+        return {"success": False, "error": reason}, 409
     res = reconciler.purge_staging_garbage(target_paths=paths, dry_run=dry_run)
     audit.record(conn, "staging_purge", dry_run, res)
     return res, 200 if res.get("success") else 400

@@ -177,15 +177,18 @@ def verify_database(db_path: Path, secrets: list[str], forbidden_paths: list[str
 def sample_model_ids(db_path: Path) -> list[int]:
     conn = sqlite3.connect(db_path)
     try:
+        # The usual source is the old app's database, which predates the final rename.
+        renamed = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'collections'").fetchone()
+        table = "collections" if renamed else "models"
         rows = conn.execute(
-            """
+            f"""
             SELECT id FROM (
-                SELECT id FROM models WHERE vault_path IS NOT NULL ORDER BY id LIMIT ?
+                SELECT id FROM {table} WHERE vault_path IS NOT NULL ORDER BY id LIMIT ?
             )
             UNION
-            SELECT id FROM (SELECT id FROM models ORDER BY id LIMIT ?)
+            SELECT id FROM (SELECT id FROM {table} ORDER BY id LIMIT ?)
             UNION
-            SELECT id FROM models WHERE source = 'external'
+            SELECT id FROM {table} WHERE source = 'external'
             """,
             (SAMPLE_SIZE, SAMPLE_SIZE),
         ).fetchall()

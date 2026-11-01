@@ -110,7 +110,7 @@ class ErrorPathTests(RouteCase):
     def test_render_failure_returns_generic_text(self):
         target = "desync_archival.services.mesh_renderer.MeshRenderer.render_ephemeral"
         conn = sqlite3.connect(server.DB_PATH)
-        conn.execute("INSERT OR IGNORE INTO models (id, name, url, raw_backup_path) VALUES (77, 'M', '', '')")
+        conn.execute("INSERT OR IGNORE INTO collections (id, name, url, raw_backup_path) VALUES (77, 'M', '', '')")
         conn.execute("""
             INSERT OR REPLACE INTO downloaded_files (
                 file_id, model_id, original_filename, cleaned_filename, local_relative_path, actual_bytes, vault_path

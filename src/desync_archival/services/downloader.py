@@ -536,7 +536,7 @@ class DownloadManager:
 
     def _get_model_meta_query_parts(self, conn: sqlite3.Connection) -> tuple[str, str, str]:
         """Maps designer_name directly from models table."""
-        model_cols = {r[1] for r in conn.execute("PRAGMA table_info(models)").fetchall()}
+        model_cols = {r[1] for r in conn.execute("PRAGMA table_info(collections)").fetchall()}
 
         if "designer_name" in model_cols:
             creator_expr = "COALESCE(NULLIF(m.designer_name, ''), NULLIF(m.designer_username, ''), 'Unknown_Creator') AS creator_name"
@@ -563,7 +563,7 @@ class DownloadManager:
             query = f"""
                 SELECT dj.*, m.name AS model_name, m.external_key, {creator_expr}, {month_expr}
                 FROM download_jobs dj
-                JOIN models m ON dj.model_id = m.id
+                JOIN collections m ON dj.model_id = m.id
                 {joins}
                 WHERE dj.status = 'pending'
                 ORDER BY dj.enqueued_at ASC LIMIT 1;
@@ -652,7 +652,7 @@ class DownloadManager:
                             with conn:
                                 if archive_dl_url:
                                     conn.execute(
-                                        "UPDATE models SET archive_download_url = ? WHERE id = ?;",
+                                        "UPDATE collections SET archive_download_url = ? WHERE id = ?;",
                                         (archive_dl_url, model_id),
                                     )
                                 for rf in remote_files:
@@ -681,7 +681,7 @@ class DownloadManager:
 
             # Fallback: Adopt archive_download_url as synthetic ZIP file if no separate file items exist
             if not files:
-                m_row = conn.execute("SELECT name, archive_download_url FROM models WHERE id = ?;", (model_id,)).fetchone()
+                m_row = conn.execute("SELECT name, archive_download_url FROM collections WHERE id = ?;", (model_id,)).fetchone()
                 if m_row and m_row["archive_download_url"] and mmf_id:
                     clean_m = sanitize_segment(m_row["name"] or f"Model_{model_id}")
                     archive_filename = f"{mmf_id}_{clean_m}.zip"
@@ -903,7 +903,7 @@ class DownloadManager:
             row = conn.execute(f"""
                 SELECT dj.*, m.name as model_name, m.external_key, {creator_expr}, {month_expr}
                 FROM download_jobs dj
-                JOIN models m ON dj.model_id = m.id
+                JOIN collections m ON dj.model_id = m.id
                 {joins}
                 WHERE dj.status = 'staging_complete'
                 ORDER BY dj.enqueued_at ASC LIMIT 1;
@@ -963,7 +963,7 @@ class DownloadManager:
 
     def _write_model_metadata_json(self, conn: sqlite3.Connection, model_id: int, target_dir: Path):
         """Dumps formatted metadata.json directly into the object directory on the NAS."""
-        model_row = conn.execute("SELECT * FROM models WHERE id = ?", (model_id,)).fetchone()
+        model_row = conn.execute("SELECT * FROM collections WHERE id = ?", (model_id,)).fetchone()
         raw_payload = None
 
         if model_row and model_row["raw_backup_path"]:
@@ -987,7 +987,7 @@ class DownloadManager:
             target_file.write_text(json.dumps(raw_payload, indent=2), encoding="utf-8")
         elif model_row:
             meta = dict(model_row)
-            meta["tags"] = [r[0] for r in conn.execute("SELECT tag FROM model_tags WHERE model_id = ?", (model_id,)).fetchall()]
+            meta["tags"] = [r[0] for r in conn.execute("SELECT tag FROM collection_tags WHERE model_id = ?", (model_id,)).fetchall()]
             target_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
     @job_logged(lambda self, worker_id, job, *_: f"offload-{job['id']}")
@@ -1082,7 +1082,7 @@ class DownloadManager:
                 """, (str(model_dest_dir), job["id"]))
 
                 conn.execute("""
-                    UPDATE models
+                    UPDATE collections
                     SET vault_path = ?
                     WHERE id = ?;
                 """, (str(model_dest_dir), model_id))
@@ -1110,7 +1110,7 @@ class DownloadManager:
                 SELECT dj.id, dj.model_id, dj.status, dj.enqueued_at, dj.total_files, dj.total_bytes,
                        m.name AS model_name, {creator_expr}
                 FROM download_jobs dj
-                JOIN models m ON dj.model_id = m.id
+                JOIN collections m ON dj.model_id = m.id
                 {joins}
                 WHERE dj.status IN ('pending', 'downloading', 'staging_complete', 'offloading')
                 ORDER BY dj.enqueued_at ASC;

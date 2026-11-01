@@ -51,3 +51,16 @@ def recover_interrupted(conn: sqlite3.Connection) -> dict[str, Any]:
     if tasks or downloads or offloads:
         logger.warning(f"Recovered after restart: {result}")
     return result
+
+
+def busy_reason(conn, download_manager=None) -> str | None:
+    """Why a destructive action must wait, or None. Job starts refuse each other on their own."""
+    running = conn.execute(
+        "SELECT id, task_type FROM pipeline_tasks WHERE status = 'running' ORDER BY id DESC LIMIT 1;"
+    ).fetchone()
+    if running:
+        return f"Task #{running[0]} ({running[1]}) is running. Wait for it, or cancel it, then try again."
+    active = getattr(download_manager, "active_downloads", None)
+    if isinstance(active, dict) and active:
+        return "Downloads are running. Pause them and wait for them to finish, then try again."
+    return None

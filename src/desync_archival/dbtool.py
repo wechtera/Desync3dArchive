@@ -2,6 +2,7 @@
 
 import argparse
 import getpass
+import socket
 import sqlite3
 import sys
 from pathlib import Path
@@ -43,6 +44,15 @@ def move_secrets(args: argparse.Namespace) -> int:
     return 0
 
 
+def refuse_if_app_running() -> None:
+    # These rewrite tables the app is using. A stopped app is the only safe moment.
+    with socket.socket() as probe:
+        probe.settimeout(0.5)
+        target = "127.0.0.1" if settings.host() == "0.0.0.0" else settings.host()
+        if probe.connect_ex((target, settings.port())) == 0:
+            raise migrations.MigrationError(f"The app is running on port {settings.port()}. Stop it first: scripts/server.sh stop")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -77,11 +87,13 @@ def main() -> int:
             conn.close()
             print(f"schema version {version}, latest {migrations.latest_version()}")
         elif args.command == "migrate":
+            refuse_if_app_running()
             result = migrations.migrate_database(db_path, confirm_production=args.confirm_production)
             print(f"migrated from {result['from']} to {result['to']}, backup: {result['backup'] or 'none needed'}")
         elif args.command == "build-models":
             if settings.is_production() and not args.confirm_production:
                 raise migrations.MigrationError("Refusing to build models in production without --confirm-production")
+            refuse_if_app_running()
             print(f"backup written: {backup.create_backup(db_path)}")
             conn = sqlite3.connect(db_path)
             # Off by default in SQLite, and a rebuild deletes rows that others hang from.
@@ -94,6 +106,7 @@ def main() -> int:
         elif args.command == "repeek-broken":
             if settings.is_production() and not args.confirm_production:
                 raise migrations.MigrationError("Refusing to repeek in production without --confirm-production")
+            refuse_if_app_running()
             print(f"backup written: {backup.create_backup(db_path)}")
             print(archive_peeker.repeek_broken(db_path))
         elif args.command == "backup":

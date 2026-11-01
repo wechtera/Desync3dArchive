@@ -91,12 +91,12 @@ def _known_paths(conn: sqlite3.Connection, library_id: int, release: str) -> tup
     prefix = f"{release}/"
     keys = {
         row[0].split("/", 1)[1] for row in conn.execute(
-            "SELECT external_key FROM models WHERE library_id = ? AND external_key IS NOT NULL;", (library_id,)
+            "SELECT external_key FROM collections WHERE library_id = ? AND external_key IS NOT NULL;", (library_id,)
         ).fetchall()
     }
     held = {
         row[0] for row in conn.execute(
-            "SELECT f.rel_path FROM library_model_folders f JOIN models m ON m.id = f.model_id"
+            "SELECT f.rel_path FROM library_model_folders f JOIN collections m ON m.id = f.model_id"
             " WHERE m.library_id = ? AND f.excluded = 0;", (library_id,)
         ).fetchall()
     }

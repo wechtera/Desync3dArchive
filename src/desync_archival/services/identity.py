@@ -18,14 +18,14 @@ MODEL_COLUMNS = (
 
 def find_model(conn: sqlite3.Connection, source: str, external_key: object) -> int | None:
     row = conn.execute(
-        "SELECT id FROM models WHERE source = ? AND external_key = ?;", (source, str(external_key))
+        "SELECT id FROM collections WHERE source = ? AND external_key = ?;", (source, str(external_key))
     ).fetchone()
     return row[0] if row else None
 
 
 def mmf_key(conn: sqlite3.Connection, model_id: int) -> str | None:
     """The ID MMF knows a model by, or None for anything that did not come from MMF."""
-    row = conn.execute("SELECT external_key FROM models WHERE id = ? AND source = ?;", (model_id, MMF)).fetchone()
+    row = conn.execute("SELECT external_key FROM collections WHERE id = ? AND source = ?;", (model_id, MMF)).fetchone()
     return row[0] if row else None
 
 
@@ -38,18 +38,18 @@ def save_mmf_model(conn: sqlite3.Connection, mmf_id: object, values: tuple) -> i
     """Updates the model MMF knows by this ID, or adds it, and returns the internal key."""
     assignments = ", ".join(f"{column} = ?" for column in MODEL_COLUMNS)
     updated = conn.execute(
-        f"UPDATE models SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE source = ? AND external_key = ?;",
+        f"UPDATE collections SET {assignments}, updated_at = CURRENT_TIMESTAMP WHERE source = ? AND external_key = ?;",
         (*values, MMF, str(mmf_id)),
     )
     if updated.rowcount:
         return conn.execute(
-            "SELECT id FROM models WHERE source = ? AND external_key = ?;", (MMF, str(mmf_id))
+            "SELECT id FROM collections WHERE source = ? AND external_key = ?;", (MMF, str(mmf_id))
         ).fetchone()[0]
 
     columns = ", ".join(MODEL_COLUMNS)
     marks = ", ".join("?" for _ in MODEL_COLUMNS)
     cursor = conn.execute(
-        f"INSERT INTO models ({columns}, source, external_key, updated_at) VALUES ({marks}, ?, ?, CURRENT_TIMESTAMP);",
+        f"INSERT INTO collections ({columns}, source, external_key, updated_at) VALUES ({marks}, ?, ?, CURRENT_TIMESTAMP);",
         (*values, MMF, str(mmf_id)),
     )
     return int(cursor.lastrowid or 0)

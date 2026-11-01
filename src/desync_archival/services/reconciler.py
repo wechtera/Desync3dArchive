@@ -180,7 +180,7 @@ class VaultReconciler:
         with self._get_db() as conn:
             # Vault folders carry the MMF ID, which is not the internal key.
             model_id_by_mmf_id = dict(conn.execute(
-                "SELECT external_key, id FROM models WHERE source = 'mmf' AND external_key IS NOT NULL;"
+                "SELECT external_key, id FROM collections WHERE source = 'mmf' AND external_key IS NOT NULL;"
             ).fetchall())
 
         orphan_directories: List[Dict[str, Any]] = []
@@ -229,7 +229,7 @@ class VaultReconciler:
             had_untracked = False
             if files_dir.exists() and files_dir.is_dir():
                 with self._get_db() as conn:
-                    model_row = conn.execute("SELECT name, designer_name FROM models WHERE id = ?", (local_id,)).fetchone()
+                    model_row = conn.execute("SELECT name, designer_name FROM collections WHERE id = ?", (local_id,)).fetchone()
                     db_files = conn.execute("""
                         SELECT mf.filename, df.cleaned_filename
                         FROM model_files mf
@@ -292,7 +292,7 @@ class VaultReconciler:
             models = conn.execute("""
                 SELECT DISTINCT m.id, m.name, m.designer_name, m.designer_username,
                                 m.release_month, m.vault_path, m.external_key, dj.destination_path
-                FROM models m
+                FROM collections m
                 LEFT JOIN download_jobs dj ON dj.id = (SELECT MAX(id) FROM download_jobs WHERE model_id = m.id)
                 WHERE m.is_active = 1 AND (dj.status = 'completed' OR m.vault_path IS NOT NULL)
                 ORDER BY m.id DESC;
@@ -562,7 +562,7 @@ class VaultReconciler:
         with self._get_db() as conn:
             with conn:
                 conn.execute(f"DELETE FROM downloaded_files WHERE model_id IN ({placeholders});", clean_ids)
-                conn.execute(f"UPDATE models SET vault_path = NULL WHERE id IN ({placeholders});", clean_ids)
+                conn.execute(f"UPDATE collections SET vault_path = NULL WHERE id IN ({placeholders});", clean_ids)
                 conn.execute(f"""
                     UPDATE download_jobs
                     SET status = 'failed', error_message = 'Marked for retry via reconciliation audit', completed_at = NULL
@@ -630,7 +630,7 @@ class VaultReconciler:
                     fpath = Path(fpath_str).resolve()
                     if not fpath.exists() or not fpath.is_file():
                         continue
-                    model_row = conn.execute("SELECT id, name, designer_name, release_month, external_key, source FROM models WHERE id = ?", (model_id,)).fetchone()
+                    model_row = conn.execute("SELECT id, name, designer_name, release_month, external_key, source FROM collections WHERE id = ?", (model_id,)).fetchone()
                     if not model_row:
                         continue
                     filename = fpath.name
@@ -655,7 +655,7 @@ class VaultReconciler:
                                 file_extension, storage_tier, vault_path, sha256, downloaded_at
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'nas', ?, ?, CURRENT_TIMESTAMP);
                         """, (new_file_id, model_id, filename, filename, rel_p, sz, sz, ext, str(fpath), sha))
-                        conn.execute("UPDATE models SET vault_path = ? WHERE id = ?;", (str(fpath.parent.parent), model_id))
+                        conn.execute("UPDATE collections SET vault_path = ? WHERE id = ?;", (str(fpath.parent.parent), model_id))
                     ingested.append(fpath_str)
                     log_layer("storage", logging.INFO, f"Ingested untracked file: {fpath.name} -> Model #{model_id}")
                 except Exception as e:
@@ -739,7 +739,7 @@ class VaultReconciler:
     def scan_path_drift(self) -> Dict[str, Any]:
         nas_root = self.storage.get_root_path().resolve()
         with self._get_db() as conn:
-            models = conn.execute("SELECT id, name, designer_name, designer_username, release_month, vault_path, external_key FROM models WHERE source = 'mmf' AND vault_path IS NOT NULL;").fetchall()
+            models = conn.execute("SELECT id, name, designer_name, designer_username, release_month, vault_path, external_key FROM collections WHERE source = 'mmf' AND vault_path IS NOT NULL;").fetchall()
         drift_items = []
         for m in models:
             mid = m["id"]
@@ -776,7 +776,7 @@ class VaultReconciler:
                     canon.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(cur), str(canon))
                     with conn:
-                        conn.execute("UPDATE models SET vault_path = ? WHERE id = ?;", (str(canon), mid))
+                        conn.execute("UPDATE collections SET vault_path = ? WHERE id = ?;", (str(canon), mid))
                         conn.execute("UPDATE download_jobs SET destination_path = ? WHERE model_id = ?;", (str(canon), mid))
                         files = conn.execute("SELECT file_id, cleaned_filename FROM downloaded_files WHERE model_id = ?;", (mid,)).fetchall()
                         rel_nas = canon.relative_to(nas_root)
@@ -820,7 +820,7 @@ class VaultReconciler:
         query = """
             SELECT df.file_id, df.model_id, df.cleaned_filename, df.vault_path, m.name as model_name
             FROM downloaded_files df
-            JOIN models m ON df.model_id = m.id
+            JOIN collections m ON df.model_id = m.id
             WHERE m.is_active = 1 AND (
                 LOWER(df.file_extension) IN ('.zip', '.rar', '.7z')
                 OR LOWER(df.cleaned_filename) LIKE '%.zip'
@@ -941,7 +941,7 @@ class VaultReconciler:
 
         query = """
             SELECT id, name, designer_name, primary_image_url
-            FROM models
+            FROM collections
             WHERE is_active = 1 AND primary_image_url IS NOT NULL AND primary_image_url != ''
         """
         params: List[Any] = []

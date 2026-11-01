@@ -36,19 +36,19 @@ def run_startup_analytics(conn: sqlite3.Connection):
     log_layer("sql", logging.INFO, "Starting catalog continuity calculation and monthly release clustering...")
     with conn:
         conn.execute("""
-            UPDATE models 
+            UPDATE collections 
             SET release_month = substr(published_at, 1, 7)
             WHERE (release_month IS NULL OR release_month = '') 
               AND published_at IS NOT NULL;
         """)
 
         conn.execute("""
-            UPDATE models
+            UPDATE collections
             SET is_bonus = 1
             WHERE LOWER(name) LIKE '%reward%'
                OR LOWER(name) LIKE '%bonus%'
                OR id IN (
-                   SELECT model_id FROM model_tags 
+                   SELECT model_id FROM collection_tags 
                    WHERE LOWER(tag) LIKE '%reward%' OR LOWER(tag) LIKE '%bonus%'
                );
         """)
@@ -68,9 +68,9 @@ def run_startup_analytics(conn: sqlite3.Connection):
                 MAX(m.primary_image_url) AS sample_image_url,
                 GROUP_CONCAT(DISTINCT t.tag) AS all_tags,
                 GROUP_CONCAT(m.description) AS all_descriptions
-            FROM models m
+            FROM collections m
             LEFT JOIN model_files f ON m.id = f.model_id
-            LEFT JOIN model_tags t ON m.id = t.model_id
+            LEFT JOIN collection_tags t ON m.id = t.model_id
             WHERE m.is_active = 1 AND m.release_month IS NOT NULL AND m.release_month != ''
             GROUP BY m.designer_name, m.release_month;
         """
@@ -132,7 +132,7 @@ def compute_catalog_audit(conn: sqlite3.Connection, designer: Optional[str] = No
             ORDER BY release_month ASC;
         """, (designer,)).fetchall()
         bonus_row = conn.execute(
-            "SELECT COUNT(*) FROM models WHERE designer_name = ? AND is_bonus = 1 AND is_active = 1;",
+            "SELECT COUNT(*) FROM collections WHERE designer_name = ? AND is_bonus = 1 AND is_active = 1;",
             (designer,)
         ).fetchone()
         total_bonus = bonus_row[0] if bonus_row else 0
@@ -143,7 +143,7 @@ def compute_catalog_audit(conn: sqlite3.Connection, designer: Optional[str] = No
             GROUP BY release_month
             ORDER BY release_month ASC;
         """).fetchall()
-        bonus_row = conn.execute("SELECT COUNT(*) FROM models WHERE is_bonus = 1 AND is_active = 1;").fetchone()
+        bonus_row = conn.execute("SELECT COUNT(*) FROM collections WHERE is_bonus = 1 AND is_active = 1;").fetchone()
         total_bonus = bonus_row[0] if bonus_row else 0
 
     if not rows:

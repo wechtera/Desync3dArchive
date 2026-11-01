@@ -708,7 +708,7 @@ class TaskManager:
         self._update_progress(task_id, 5.0, "Launching Playwright browser...")
 
         with self._get_db() as conn:
-            expected_count = conn.execute("SELECT count(*) FROM models WHERE source = 'mmf';").fetchone()[0]
+            expected_count = conn.execute("SELECT count(*) FROM collections WHERE source = 'mmf';").fetchone()[0]
         cmd = [node_bin, str(scrape_script), "--cookies", str(cookies_dest), "--expected", str(expected_count)]
         if self._get_setting("scraper_headless", "1") != "0":
             cmd.append("--headless")
@@ -800,7 +800,7 @@ class TaskManager:
                 active_ids = {
                     row["external_key"]
                     for row in conn.execute(
-                        "SELECT external_key FROM models WHERE source = 'mmf' AND name IS NOT NULL AND name NOT LIKE '[Unavailable Model%';"
+                        "SELECT external_key FROM collections WHERE source = 'mmf' AND name IS NOT NULL AND name NOT LIKE '[Unavailable Model%';"
                     ).fetchall()
                 }
                 pending_ids = [mid for mid in clean_ids if str(mid) not in active_ids]
@@ -1026,12 +1026,12 @@ class TaskManager:
 
                             archive_dl = data.get("archive_download_url")
                             if archive_dl:
-                                conn.execute("UPDATE models SET archive_download_url = ? WHERE id = ?;", (archive_dl, local_id))
+                                conn.execute("UPDATE collections SET archive_download_url = ? WHERE id = ?;", (archive_dl, local_id))
 
-                            conn.execute("DELETE FROM model_tags WHERE model_id = ?;", (local_id,))
+                            conn.execute("DELETE FROM collection_tags WHERE model_id = ?;", (local_id,))
                             if tag_rows:
                                 conn.executemany(
-                                    "INSERT OR IGNORE INTO model_tags (model_id, tag) VALUES (?, ?);",
+                                    "INSERT OR IGNORE INTO collection_tags (model_id, tag) VALUES (?, ?);",
                                     [(local_id, tag) for _, tag in tag_rows],
                                 )
 

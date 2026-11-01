@@ -18,7 +18,7 @@ MANY_MODELS = 20  # Past this, an archive is more likely over-split than really 
 
 def _artifacts(conn: sqlite3.Connection, collection_id: int) -> list[sqlite3.Row]:
     return conn.execute("""
-        SELECT a.id, a.catalog_model_id, a.path, f.filename AS archive
+        SELECT a.id, a.model_id, a.path, f.filename AS archive
         FROM model_artifacts a JOIN model_files f ON f.file_id = a.file_id
         WHERE f.model_id = ? AND a.archive_member_id IS NOT NULL ORDER BY a.path;
     """, (collection_id,)).fetchall()
@@ -62,10 +62,10 @@ def queue(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """Worst first, so effort goes where a mistake is most likely."""
     conn.row_factory = sqlite3.Row
     rows = conn.execute("""
-        SELECT m.id, m.name, COUNT(DISTINCT a.catalog_model_id) AS models, COUNT(a.id) AS artifacts,
+        SELECT m.id, m.name, COUNT(DISTINCT a.model_id) AS models, COUNT(a.id) AS artifacts,
                COALESCE(MAX(r.reviewed), 0) AS reviewed, MAX(f.peeked_at) AS peeked_at,
                (SELECT COUNT(*) FROM model_groups g WHERE g.collection_id = m.id) AS model_groups
-        FROM models m
+        FROM collections m
         JOIN model_files f ON f.model_id = m.id
         JOIN model_artifacts a ON a.file_id = f.file_id AND a.archive_member_id IS NOT NULL
         LEFT JOIN collection_reviews r ON r.collection_id = m.id
@@ -77,26 +77,26 @@ def queue(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 def view(conn: sqlite3.Connection, collection_id: int) -> dict[str, Any]:
     conn.row_factory = sqlite3.Row
-    collection = conn.execute("SELECT name FROM models WHERE id = ?;", (collection_id,)).fetchone()
+    collection = conn.execute("SELECT name FROM collections WHERE id = ?;", (collection_id,)).fetchone()
     artifacts = _artifacts(conn, collection_id)
     if not collection or not artifacts:
         raise ReviewError("This collection has no peeked artifacts.")
 
     held: dict[int, list[str]] = defaultdict(list)
     for row in artifacts:
-        held[row["catalog_model_id"]].append(_shown_path(collection_id, row))
+        held[row["model_id"]].append(_shown_path(collection_id, row))
     files = [_shown_path(collection_id, r) for r in artifacts]
     folders = {f.rsplit("/", i)[0] for f in files for i in range(1, f.count("/"))}
 
     marks = ",".join("?" * len(held))
-    models = conn.execute(f"SELECT id, name, category, state FROM catalog_models WHERE id IN ({marks});", list(held)).fetchall()
+    models = conn.execute(f"SELECT id, name, category, state FROM models WHERE id IN ({marks});", list(held)).fetchall()
     groups = dict(conn.execute(
-        "SELECT m.catalog_model_id, g.name FROM model_group_members m JOIN model_groups g ON g.id = m.group_id"
+        "SELECT m.model_id, g.name FROM model_group_members m JOIN model_groups g ON g.id = m.group_id"
         " WHERE g.collection_id = ?;", (collection_id,),
     ).fetchall())
     shared = dict(conn.execute(
-        f"SELECT catalog_model_id, COUNT(*) FROM catalog_model_collections WHERE catalog_model_id IN ({marks})"
-        " GROUP BY catalog_model_id;", list(held),
+        f"SELECT model_id, COUNT(*) FROM model_collections WHERE model_id IN ({marks})"
+        " GROUP BY model_id;", list(held),
     ).fetchall())
     review = conn.execute("SELECT reviewed FROM collection_reviews WHERE collection_id = ?;", (collection_id,)).fetchone()
     cards = [
@@ -131,7 +131,7 @@ def _apply_groups(conn: sqlite3.Connection, collection_id: int, assigned: list[t
                 "INSERT INTO model_groups (collection_id, name) VALUES (?, ?);", (collection_id, name),
             ).lastrowid
             existing[name] = group_id
-            conn.execute("INSERT INTO model_group_members (group_id, catalog_model_id) VALUES (?, ?);", (group_id, model_id))
+            conn.execute("INSERT INTO model_group_members (group_id, model_id) VALUES (?, ?);", (group_id, model_id))
 
 
 def save(conn: sqlite3.Connection, collection_id: int, cards: list[dict], reviewed: bool) -> dict[str, Any]:
@@ -141,7 +141,7 @@ def save(conn: sqlite3.Connection, collection_id: int, cards: list[dict], review
         raise ReviewError("This collection has no peeked artifacts.")
     shown = {_shown_path(collection_id, r): r for r in artifacts}
     folders = {f.rsplit("/", i)[0] for f in shown for i in range(1, f.count("/"))}
-    linked = {r["catalog_model_id"] for r in artifacts}
+    linked = {r["model_id"] for r in artifacts}
 
     claims: dict[str, int] = {}
     for index, card in enumerate(cards):
@@ -166,15 +166,15 @@ def save(conn: sqlite3.Connection, collection_id: int, cards: list[dict], review
             name, category = str(card["name"]).strip(), str(card.get("category") or "").strip() or DEFAULT_CATEGORY
             if key.isdigit() and int(key) in linked:
                 conn.execute(
-                    "UPDATE catalog_models SET name = ?, category = ?, state = ? WHERE id = ?;", (name, category, state, int(key)),
+                    "UPDATE models SET name = ?, category = ?, state = ? WHERE id = ?;", (name, category, state, int(key)),
                 )
                 ids.append(int(key))
             elif any(owner == len(ids) for owner in owners.values()):
                 model_id = conn.execute(
-                    "INSERT INTO catalog_models (name, category, state) VALUES (?, ?, ?);", (name, category, state),
+                    "INSERT INTO models (name, category, state) VALUES (?, ?, ?);", (name, category, state),
                 ).lastrowid
                 conn.execute(
-                    "INSERT INTO catalog_model_collections (catalog_model_id, collection_id) VALUES (?, ?);", (model_id, collection_id),
+                    "INSERT INTO model_collections (model_id, collection_id) VALUES (?, ?);", (model_id, collection_id),
                 )
                 ids.append(model_id)
             else:
@@ -183,17 +183,17 @@ def save(conn: sqlite3.Connection, collection_id: int, cards: list[dict], review
         for path, owner in owners.items():
             target = ids[owner] if owner is not None else None
             if target is not None:
-                conn.execute("UPDATE model_artifacts SET catalog_model_id = ? WHERE id = ?;", (target, shown[path]["id"]))
+                conn.execute("UPDATE model_artifacts SET model_id = ? WHERE id = ?;", (target, shown[path]["id"]))
 
         kept = next(i for i in ids if i is not None)
         for model_id in linked - set(ids):
-            left = conn.execute("SELECT COUNT(*) FROM model_artifacts WHERE catalog_model_id = ?;", (model_id,)).fetchone()[0]
+            left = conn.execute("SELECT COUNT(*) FROM model_artifacts WHERE model_id = ?;", (model_id,)).fetchone()[0]
             conn.execute(
-                "DELETE FROM catalog_model_collections WHERE catalog_model_id = ? AND collection_id = ?;", (model_id, collection_id),
+                "DELETE FROM model_collections WHERE model_id = ? AND collection_id = ?;", (model_id, collection_id),
             )
             if not left:
                 # An emptied model keeps its row and redirects, so an old ID never dangles.
-                conn.execute("UPDATE catalog_models SET state = ?, merged_into = ? WHERE id = ?;", (MERGED, kept, model_id))
+                conn.execute("UPDATE models SET state = ?, merged_into = ? WHERE id = ?;", (MERGED, kept, model_id))
 
         _apply_groups(conn, collection_id, [
             (model_id, str(card.get("group") or "").strip()) for card, model_id in zip(cards, ids, strict=True) if model_id

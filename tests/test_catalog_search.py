@@ -11,14 +11,14 @@ from fastapi.testclient import TestClient
 from desync_archival.api import server
 
 OLD_SEARCH = """
-    SELECT m.id FROM models m
-    WHERE m.name LIKE ? OR m.designer_name LIKE ? OR m.id IN (SELECT model_id FROM model_tags WHERE tag LIKE ?)
+    SELECT m.id FROM collections m
+    WHERE m.name LIKE ? OR m.designer_name LIKE ? OR m.id IN (SELECT model_id FROM collection_tags WHERE tag LIKE ?)
 """
 NEW_SEARCH = """
-    SELECT m.id FROM models m WHERE m.id IN (
+    SELECT m.id FROM collections m WHERE m.id IN (
         SELECT rowid FROM catalog_search WHERE name LIKE ?
         UNION SELECT rowid FROM catalog_search WHERE designer_name LIKE ?
-        UNION SELECT model_id FROM model_tags WHERE tag LIKE ?
+        UNION SELECT model_id FROM collection_tags WHERE tag LIKE ?
             AND model_id IN (SELECT rowid FROM catalog_search WHERE tags LIKE ?)
     )
 """
@@ -40,9 +40,9 @@ TERMS = ["dragon", "DRAGON", "dra", "dr", "d", "é", "É", "élan", "ÉLAN", "é
 def seed(conn):
     for model_id, name, designer in MODELS:
         conn.execute(
-            "INSERT INTO models (id, name, designer_name, raw_backup_path) VALUES (?, ?, ?, '')", (model_id, name, designer)
+            "INSERT INTO collections (id, name, designer_name, raw_backup_path) VALUES (?, ?, ?, '')", (model_id, name, designer)
         )
-    conn.executemany("INSERT INTO model_tags (model_id, tag) VALUES (?, ?)", TAGS)
+    conn.executemany("INSERT INTO collection_tags (model_id, tag) VALUES (?, ?)", TAGS)
     conn.commit()
 
 
@@ -53,7 +53,7 @@ class SearchCase(unittest.TestCase):
         create_database(self.path)
         self.conn = sqlite3.connect(self.path)
         self.conn.execute("PRAGMA foreign_keys = ON")
-        self.conn.execute("DELETE FROM models")
+        self.conn.execute("DELETE FROM collections")
         seed(self.conn)
 
     def tearDown(self):
@@ -91,15 +91,15 @@ class SameResultsTests(SearchCase):
 
 class IndexStaysCurrentTests(SearchCase):
     def test_new_model_with_tags(self):
-        self.conn.execute("INSERT INTO models (id, name, raw_backup_path) VALUES (20, 'Wyvern', '')")
-        self.conn.execute("INSERT INTO model_tags (model_id, tag) VALUES (20, 'beast')")
+        self.conn.execute("INSERT INTO collections (id, name, raw_backup_path) VALUES (20, 'Wyvern', '')")
+        self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (20, 'beast')")
         self.assertEqual(self.hits("wyvern"), {20})
         self.assertEqual(self.hits("beast"), {20})
         self.assert_all_same()
 
     def test_upsert_rename(self):
         self.conn.execute("""
-            INSERT INTO models (id, name, designer_name, raw_backup_path) VALUES (1, 'Renamed', 'Someone', '')
+            INSERT INTO collections (id, name, designer_name, raw_backup_path) VALUES (1, 'Renamed', 'Someone', '')
             ON CONFLICT(id) DO UPDATE SET name = excluded.name, designer_name = excluded.designer_name
         """)
         self.assertNotIn(1, self.hits("Ancient"))
@@ -108,18 +108,18 @@ class IndexStaysCurrentTests(SearchCase):
         self.assert_all_same()
 
     def test_other_updates_keep_the_row(self):
-        self.conn.execute("UPDATE models SET vault_path = '/x' WHERE id = 1")
+        self.conn.execute("UPDATE collections SET vault_path = '/x' WHERE id = 1")
         self.assertIn(1, self.hits("Ancient"))
 
     def test_retagging(self):
-        self.conn.execute("DELETE FROM model_tags WHERE model_id = 1")
+        self.conn.execute("DELETE FROM collection_tags WHERE model_id = 1")
         self.assertNotIn(1, self.hits("fantasy"))
-        self.conn.execute("INSERT INTO model_tags (model_id, tag) VALUES (1, 'scifi')")
+        self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (1, 'scifi')")
         self.assertIn(1, self.hits("scifi"))
         self.assert_all_same()
 
     def test_deleting_a_model_cascades(self):
-        self.conn.execute("DELETE FROM models WHERE id = 1")
+        self.conn.execute("DELETE FROM collections WHERE id = 1")
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM catalog_search WHERE rowid = 1").fetchone()[0], 0)
         self.assert_all_same()
 
@@ -137,7 +137,8 @@ class MigrationTests(unittest.TestCase):
             conn.execute("CREATE VIRTUAL TABLE catalog_search USING fts5(name, designer_name, tags, tokenize = 'trigram')")
             seed_sql = Path(__file__).resolve().parents[1] / "migrations" / "0004_catalog_search.sql"
             backfill = seed_sql.read_text().split("INSERT INTO catalog_search", 1)[1].split(";", 1)[0]
-            conn.execute("DELETE FROM models")
+            backfill = backfill.replace("FROM models m", "FROM collections m").replace("FROM model_tags", "FROM collection_tags")
+            conn.execute("DELETE FROM collections")
             for trigger in ("model_insert", "tag_insert"):
                 conn.execute(f"DROP TRIGGER catalog_search_{trigger}")
             seed(conn)
@@ -153,7 +154,7 @@ class ApiTests(unittest.TestCase):
         create_database(server.DB_PATH)
         conn = sqlite3.connect(server.DB_PATH)
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("DELETE FROM models")
+        conn.execute("DELETE FROM collections")
         seed(conn)
         conn.close()
         client = TestClient(server.create_app(manage_workers=False), base_url="http://localhost")

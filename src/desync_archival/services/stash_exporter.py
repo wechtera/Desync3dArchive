@@ -155,7 +155,7 @@ class StashExporter:
                         progress_cb(pct, f"Extracting item {idx}/{total_items}...")
 
                     inactive = c.execute(
-                        "SELECT 1 FROM models WHERE id = ? AND is_active = 0;", (item["model_id"],)
+                        "SELECT 1 FROM collections WHERE id = ? AND is_active = 0;", (item["model_id"],)
                     ).fetchone()
                     if inactive:
                         skipped_inactive += 1
@@ -235,7 +235,7 @@ class StashExporter:
         item_type = item["item_type"]
         model_id = item["model_id"]
 
-        model_row = conn.execute("SELECT id, name, designer_name, vault_path FROM models WHERE id = ?;", (model_id,)).fetchone()
+        model_row = conn.execute("SELECT id, name, designer_name, vault_path FROM collections WHERE id = ?;", (model_id,)).fetchone()
         if not model_row or not model_row["vault_path"]:
             raise ValueError(f"Model #{model_id} has no vault directory. Cannot export.")
 

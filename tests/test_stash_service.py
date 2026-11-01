@@ -56,7 +56,7 @@ class TestStashServiceIsolated(unittest.TestCase):
         with sqlite3.connect(str(self.db_path)) as conn:
             conn.execute("PRAGMA foreign_keys = ON;")
             conn.executescript("""
-                CREATE TABLE IF NOT EXISTS models (
+                CREATE TABLE IF NOT EXISTS collections (
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,
                     designer_name TEXT DEFAULT 'Archvillain Games',
@@ -77,7 +77,7 @@ class TestStashServiceIsolated(unittest.TestCase):
                     size_bytes INTEGER DEFAULT 0,
                     download_url TEXT DEFAULT '',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE
+                    FOREIGN KEY (model_id) REFERENCES collections(id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS file_archive_submodels (
@@ -96,7 +96,7 @@ class TestStashServiceIsolated(unittest.TestCase):
                     scales_json TEXT DEFAULT '[]',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (file_id) REFERENCES model_files(file_id) ON DELETE CASCADE,
-                    FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE
+                    FOREIGN KEY (model_id) REFERENCES collections(id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS file_archive_members (
@@ -113,7 +113,7 @@ class TestStashServiceIsolated(unittest.TestCase):
                 );
 
                 -- Seed catalog data for testing
-                INSERT INTO models (id, name, designer_name, raw_backup_path)
+                INSERT INTO collections (id, name, designer_name, raw_backup_path)
                 VALUES (101, 'Vampire Lord', 'Artisan Guild', ''),
                        (102, 'Ghul Pack', 'Artisan Guild', ''),
                        (103, 'Dire Wolf', 'Artisan Guild', '');
@@ -132,7 +132,7 @@ class TestStashServiceIsolated(unittest.TestCase):
             vault = self.sandbox / "vault"
             vault.mkdir()
             (vault / "Vampire_Lord.zip").write_bytes(b"archive")
-            conn.execute("UPDATE models SET vault_path = ?;", (str(vault),))
+            conn.execute("UPDATE collections SET vault_path = ?;", (str(vault),))
             conn.execute("""
                 INSERT INTO downloaded_files (
                     file_id, model_id, original_filename, cleaned_filename, local_relative_path,

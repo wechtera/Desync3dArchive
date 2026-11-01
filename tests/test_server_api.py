@@ -67,7 +67,7 @@ class TestServerAPI(unittest.TestCase):
 
         with conn:
             conn.executescript("""
-                CREATE TABLE IF NOT EXISTS models (
+                CREATE TABLE IF NOT EXISTS collections (
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,
                     designer_name TEXT DEFAULT 'Archvillain Games',
@@ -91,7 +91,7 @@ class TestServerAPI(unittest.TestCase):
                     size_bytes INTEGER DEFAULT 0,
                     download_url TEXT DEFAULT '',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE
+                    FOREIGN KEY (model_id) REFERENCES collections(id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS downloaded_files (
@@ -138,7 +138,7 @@ class TestServerAPI(unittest.TestCase):
                     scales_json TEXT DEFAULT '[]',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (file_id) REFERENCES model_files(file_id) ON DELETE CASCADE,
-                    FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE
+                    FOREIGN KEY (model_id) REFERENCES collections(id) ON DELETE CASCADE
                 );
 
                 CREATE TABLE IF NOT EXISTS file_archive_members (
@@ -156,7 +156,7 @@ class TestServerAPI(unittest.TestCase):
             """)
 
             # Ensure all columns exist on models if table pre-existed
-            m_cols = {r[1] for r in conn.execute("PRAGMA table_info(models);").fetchall()}
+            m_cols = {r[1] for r in conn.execute("PRAGMA table_info(collections);").fetchall()}
             for col, col_def in [
                 ("vault_path", "TEXT"),
                 ("raw_backup_path", "TEXT DEFAULT ''"),
@@ -171,7 +171,7 @@ class TestServerAPI(unittest.TestCase):
                 ("primary_category", "TEXT DEFAULT 'Monsters'"),
             ]:
                 if col not in m_cols:
-                    conn.execute(f"ALTER TABLE models ADD COLUMN {col} {col_def};")
+                    conn.execute(f"ALTER TABLE collections ADD COLUMN {col} {col_def};")
 
             # Ensure all columns exist on downloaded_files
             df_cols = {r[1] for r in conn.execute("PRAGMA table_info(downloaded_files);").fetchall()}
@@ -185,7 +185,7 @@ class TestServerAPI(unittest.TestCase):
                     conn.execute(f"ALTER TABLE downloaded_files ADD COLUMN {col} {col_def};")
 
             conn.execute("""
-                INSERT OR REPLACE INTO models (id, name, designer_name, vault_path, raw_backup_path) 
+                INSERT OR REPLACE INTO collections (id, name, designer_name, vault_path, raw_backup_path) 
                 VALUES (1, 'Elder Dragon', 'Artisan Guild', ?, ''),
                        (2, 'City Guard', 'Artisan Guild', ?, '');
             """, (str(m1_dir), str(m2_dir)))

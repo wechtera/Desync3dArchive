@@ -43,7 +43,7 @@ class TestExternalIndexer(unittest.TestCase):
 
         with conn:
             conn.executescript("""
-                CREATE TABLE IF NOT EXISTS models (
+                CREATE TABLE IF NOT EXISTS collections (
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,
                     url TEXT,
@@ -108,7 +108,7 @@ class TestExternalIndexer(unittest.TestCase):
                 );
 
                 -- Seed standard MMF models (< 2,000,000,000)
-                INSERT INTO models (id, name, designer_name, source, raw_backup_path)
+                INSERT INTO collections (id, name, designer_name, source, raw_backup_path)
                 VALUES (839284, 'MMF Halfling Catapult', 'Cast n Play', 'mmf', '');
 
                 INSERT INTO model_files (file_id, model_id, filename, size_bytes)
@@ -207,19 +207,19 @@ class TestExternalIndexer(unittest.TestCase):
         self.assertGreaterEqual(summary.get("models_indexed", 0), 4)
 
         conn = self._get_db()
-        models = conn.execute("SELECT id, name, source, vault_path FROM models WHERE source = 'external';").fetchall()
+        models = conn.execute("SELECT id, name, source, vault_path FROM collections WHERE source = 'external';").fetchall()
         self.assertTrue(len(models) >= 4)
 
         for m in models:
             self.assertEqual(m["source"], "external")
 
         files = conn.execute("""
-            SELECT df.file_id FROM downloaded_files df JOIN models m ON m.id = df.model_id
+            SELECT df.file_id FROM downloaded_files df JOIN collections m ON m.id = df.model_id
             WHERE m.source = 'external';
         """).fetchall()
         self.assertTrue(len(files) >= 5)
 
-        mmf_model = conn.execute("SELECT id, name, source FROM models WHERE id = 839284;").fetchone()
+        mmf_model = conn.execute("SELECT id, name, source FROM collections WHERE id = 839284;").fetchone()
         self.assertIsNotNone(mmf_model)
         self.assertEqual(mmf_model["name"], "MMF Halfling Catapult")
         self.assertEqual(mmf_model["source"], "mmf")
@@ -236,7 +236,7 @@ class TestExternalIndexer(unittest.TestCase):
         conn = self._get_db()
         files = conn.execute("""
             SELECT df.file_id, df.cleaned_filename, df.storage_tier, df.vault_path, df.actual_bytes
-            FROM downloaded_files df JOIN models m ON m.id = df.model_id
+            FROM downloaded_files df JOIN collections m ON m.id = df.model_id
             WHERE m.source = 'external';
         """).fetchall()
 
@@ -304,7 +304,7 @@ class TestExternalIndexer(unittest.TestCase):
         conn = self._get_db()
 
         # 1. Archmage: Must discover Tier 1 local concept art (archmage_concept.jpg)
-        m_archmage = conn.execute("SELECT id, primary_image_url FROM models WHERE name LIKE '%Archmage%';").fetchone()
+        m_archmage = conn.execute("SELECT id, primary_image_url FROM collections WHERE name LIKE '%Archmage%';").fetchone()
         self.assertIsNotNone(m_archmage)
         m1_cover = self.previews_dir / str(m_archmage["id"]) / "cover.jpg"
         self.assertTrue(m1_cover.exists())
@@ -312,21 +312,21 @@ class TestExternalIndexer(unittest.TestCase):
         self.assertEqual(m_archmage["primary_image_url"], f"/previews/{m_archmage['id']}/cover.jpg")
 
         # 2. Cauldron: Must discover Tier 1 local render (cauldron_render.png)
-        m_cauldron = conn.execute("SELECT id, primary_image_url FROM models WHERE name LIKE '%Cauldron%';").fetchone()
+        m_cauldron = conn.execute("SELECT id, primary_image_url FROM collections WHERE name LIKE '%Cauldron%';").fetchone()
         self.assertIsNotNone(m_cauldron)
         m2_cover = self.previews_dir / str(m_cauldron["id"]) / "cover.jpg"
         self.assertTrue(m2_cover.exists())
         self.assertEqual(m2_cover.read_bytes(), self.m2_render_art.read_bytes())
 
         # 3. Stone Golem: Must cascade to Tier 2 release splash sheet (Enemies.png)
-        m_golem = conn.execute("SELECT id, primary_image_url FROM models WHERE name LIKE '%Stone Golem%';").fetchone()
+        m_golem = conn.execute("SELECT id, primary_image_url FROM collections WHERE name LIKE '%Stone Golem%';").fetchone()
         self.assertIsNotNone(m_golem)
         m3_cover = self.previews_dir / str(m_golem["id"]) / "cover.jpg"
         self.assertTrue(m3_cover.exists())
         self.assertEqual(m3_cover.read_bytes(), self.splash_art.read_bytes())
 
         # 4. Tree Monster: Must cascade to Tier 3 (Blender render_primary_thumbnail)
-        m_tree = conn.execute("SELECT id, primary_image_url FROM models WHERE name LIKE '%Tree Monster%';").fetchone()
+        m_tree = conn.execute("SELECT id, primary_image_url FROM collections WHERE name LIKE '%Tree Monster%';").fetchone()
         self.assertIsNotNone(m_tree)
         m4_cover = self.previews_dir / str(m_tree["id"]) / "cover.jpg"
         self.assertTrue(m4_cover.exists())
@@ -342,13 +342,13 @@ class TestExternalIndexer(unittest.TestCase):
         self.assertTrue(res1.get("success"))
 
         conn = self._get_db()
-        models_run1 = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM models WHERE source = 'external';").fetchall()}
+        models_run1 = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM collections WHERE source = 'external';").fetchall()}
         files_count1 = conn.execute("SELECT COUNT(*) FROM downloaded_files;").fetchone()[0]
 
         res2 = indexer.scan_and_index_library(1)
         self.assertTrue(res2.get("success"))
 
-        models_run2 = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM models WHERE source = 'external';").fetchall()}
+        models_run2 = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM collections WHERE source = 'external';").fetchall()}
         files_count2 = conn.execute("SELECT COUNT(*) FROM downloaded_files;").fetchone()[0]
 
         self.assertEqual(models_run1, models_run2, "Model IDs were churned or modified across re-scans.")

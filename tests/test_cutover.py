@@ -23,9 +23,9 @@ spec.loader.exec_module(cutover)
 
 def seed(conn):
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("DELETE FROM models")
-    conn.execute("INSERT INTO models (id, name, designer_name, source, external_key, raw_backup_path) VALUES (1, 'A', 'D', 'mmf', '1', '')")
-    conn.execute("INSERT INTO models (id, name, designer_name, source, external_key, raw_backup_path) VALUES (2, 'B', 'D', 'mmf', '2', '')")
+    conn.execute("DELETE FROM collections")
+    conn.execute("INSERT INTO collections (id, name, designer_name, source, external_key, raw_backup_path) VALUES (1, 'A', 'D', 'mmf', '1', '')")
+    conn.execute("INSERT INTO collections (id, name, designer_name, source, external_key, raw_backup_path) VALUES (2, 'B', 'D', 'mmf', '2', '')")
     conn.execute("INSERT INTO model_files (file_id, model_id, source, external_key, filename) VALUES (5, 1, 'mmf', '5', 'a.zip')")
     conn.execute(
         "INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path, actual_bytes)"
@@ -52,12 +52,12 @@ class PreflightTests(CutoverCase):
     def test_a_clean_database_passes(self):
         result = cutover.preflight(self.db)
         self.assertTrue(result["passed"], result["problems"])
-        self.assertEqual(result["row_counts"]["models"], 2)
+        self.assertEqual(result["row_counts"]["collections"], 2)
 
     def test_broken_references_are_reported(self):
         conn = sqlite3.connect(self.db)
         conn.execute("PRAGMA foreign_keys = OFF")
-        conn.execute("INSERT INTO model_tags (model_id, tag) VALUES (99, 'orphan')")
+        conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (99, 'orphan')")
         conn.commit()
         conn.close()
         result = cutover.preflight(self.db)
@@ -84,7 +84,7 @@ class SampleTests(CutoverCase):
         with patch.object(cutover, "pick_sample", return_value=[1]):
             cutover.reduce_to_sample(copy, 1)
         conn = sqlite3.connect(copy)
-        self.assertEqual(conn.execute("SELECT id FROM models").fetchall(), [(1,)])
+        self.assertEqual(conn.execute("SELECT id FROM collections").fetchall(), [(1,)])
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
         conn.close()
 
@@ -105,23 +105,23 @@ class VerifyTests(CutoverCase):
         self.assertEqual(cutover.verify(self.db, self.after)["problems"], [])
 
     def test_a_changed_value_fails(self):
-        self.change("UPDATE models SET name = 'Changed' WHERE id = 1")
-        self.assertIn("models", cutover.verify(self.db, self.after)["problems"][0])
+        self.change("UPDATE collections SET name = 'Changed' WHERE id = 1")
+        self.assertIn("collections", cutover.verify(self.db, self.after)["problems"][0])
 
     def test_a_lost_row_fails(self):
         self.change("DELETE FROM downloaded_files")
         self.assertIn("downloaded_files", cutover.verify(self.db, self.after)["problems"][0])
 
     def test_a_wrong_external_key_fails(self):
-        self.change("UPDATE models SET external_key = '77' WHERE id = 1")
+        self.change("UPDATE collections SET external_key = '77' WHERE id = 1")
         self.assertTrue(any("external_key" in p for p in cutover.verify(self.db, self.after)["problems"]))
 
     def test_a_low_sequence_fails(self):
-        self.change("UPDATE sqlite_sequence SET seq = 0 WHERE name = 'models'")
+        self.change("UPDATE sqlite_sequence SET seq = 0 WHERE name = 'collections'")
         self.assertTrue(any("sequence" in p for p in cutover.verify(self.db, self.after)["problems"]))
 
     def test_rows_only_skips_the_key_rules(self):
-        self.change("UPDATE sqlite_sequence SET seq = 0 WHERE name = 'models'")
+        self.change("UPDATE sqlite_sequence SET seq = 0 WHERE name = 'collections'")
         self.assertTrue(cutover.verify(self.db, self.after, rows_only=True)["passed"])
 
 
@@ -130,8 +130,8 @@ class RewriteTests(CutoverCase):
         super().setUp()
         self.after = self.base / "after.db"
         conn = sqlite3.connect(self.db)
-        conn.execute("UPDATE models SET raw_backup_path = '/old/data/metadata/model_1.json' WHERE id = 1")
-        conn.execute("UPDATE models SET raw_backup_path = 'metadata/model_2.json' WHERE id = 2")
+        conn.execute("UPDATE collections SET raw_backup_path = '/old/data/metadata/model_1.json' WHERE id = 1")
+        conn.execute("UPDATE collections SET raw_backup_path = 'metadata/model_2.json' WHERE id = 2")
         conn.commit()
         conn.close()
         shutil.copy(self.db, self.after)
@@ -139,7 +139,7 @@ class RewriteTests(CutoverCase):
     def test_absolute_paths_under_the_old_folder_become_relative(self):
         self.assertEqual(cutover.rewrite_paths(self.after, Path("/old/data")), 1)
         conn = sqlite3.connect(self.after)
-        rows = conn.execute("SELECT raw_backup_path FROM models ORDER BY id").fetchall()
+        rows = conn.execute("SELECT raw_backup_path FROM collections ORDER BY id").fetchall()
         conn.close()
         self.assertEqual(rows, [("metadata/model_1.json",), ("metadata/model_2.json",)])
 
@@ -200,7 +200,7 @@ class RollbackTests(CutoverCase):
         shutil.copy(self.db, self.live)
         conn = sqlite3.connect(self.live)
         conn.execute("PRAGMA foreign_keys = ON")
-        cursor = conn.execute("INSERT INTO models (name, source, external_key, raw_backup_path) VALUES ('New', 'mmf', '9', '')")
+        cursor = conn.execute("INSERT INTO collections (name, source, external_key, raw_backup_path) VALUES ('New', 'mmf', '9', '')")
         self.new_id = cursor.lastrowid
         file_id = conn.execute("INSERT INTO model_files (model_id, source, external_key, filename) VALUES (?, 'mmf', '9', 'n.zip')", (self.new_id,)).lastrowid
         conn.execute(
@@ -210,7 +210,7 @@ class RollbackTests(CutoverCase):
         conn.commit()
         conn.close()
         with sqlite3.connect(self.live) as conn:
-            self.newer_rows = conn.execute("SELECT COUNT(*) FROM models").fetchone()[0]
+            self.newer_rows = conn.execute("SELECT COUNT(*) FROM collections").fetchone()[0]
 
     def free_port(self):
         with socket.socket() as sock:
@@ -219,7 +219,7 @@ class RollbackTests(CutoverCase):
 
     def models(self):
         conn = sqlite3.connect(self.live)
-        count = conn.execute("SELECT COUNT(*) FROM models").fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM collections").fetchone()[0]
         conn.close()
         return count
 

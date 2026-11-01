@@ -70,7 +70,7 @@ class TestStashGuardrails(unittest.TestCase):
     def _init_schema(self):
         with self.conn:
             self.conn.executescript("""
-                CREATE TABLE IF NOT EXISTS models (
+                CREATE TABLE IF NOT EXISTS collections (
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,
                     designer_name TEXT,
@@ -124,17 +124,17 @@ class TestStashGuardrails(unittest.TestCase):
             self.conn.execute("INSERT INTO stashes (id, name, is_active) VALUES (1, 'Resin Queue', 1);")
 
             # 1. Model 101: Un-downloaded (vault_path IS NULL)
-            self.conn.execute("INSERT INTO models (id, name, vault_path, raw_backup_path) VALUES (101, 'Ghost Dragon', NULL, '');")
+            self.conn.execute("INSERT INTO collections (id, name, vault_path, raw_backup_path) VALUES (101, 'Ghost Dragon', NULL, '');")
             self.conn.execute("INSERT INTO model_files (file_id, model_id, filename, size_bytes) VALUES (1001, 101, 'dragon.zip', 500000);")
 
             # 2. Model 102: Corrupted path (vault_path set but directory does not exist on disk)
             fake_dir = self.vault_dir / "NonExistentFolder"
-            self.conn.execute("INSERT INTO models (id, name, vault_path, raw_backup_path) VALUES (102, 'Broken Mech', ?, '');", (str(fake_dir),))
+            self.conn.execute("INSERT INTO collections (id, name, vault_path, raw_backup_path) VALUES (102, 'Broken Mech', ?, '');", (str(fake_dir),))
 
             # 3. Model 103: Downloaded & Healthy
             model_103_dir = self.vault_dir / "Archvillain" / "Ghul"
             model_103_dir.mkdir(parents=True, exist_ok=True)
-            self.conn.execute("INSERT INTO models (id, name, vault_path, raw_backup_path) VALUES (103, 'Ghul Squad', ?, '');", (str(model_103_dir),))
+            self.conn.execute("INSERT INTO collections (id, name, vault_path, raw_backup_path) VALUES (103, 'Ghul Squad', ?, '');", (str(model_103_dir),))
 
             archive_file = model_103_dir / "ghul_squad.zip"
             archive_file.write_bytes(b"mock zip content")

@@ -62,7 +62,7 @@ class ReviewCase(ScanCase):
 
     def files_of(self, name):
         return sorted(r[0] for r in self.rows(
-            "SELECT mf.filename FROM model_files mf JOIN models m ON m.id = mf.model_id WHERE m.name = ?", name
+            "SELECT mf.filename FROM model_files mf JOIN collections m ON m.id = mf.model_id WHERE m.name = ?", name
         ))
 
 
@@ -109,14 +109,14 @@ class SavingTests(ReviewCase):
         self.assertEqual(self.files_of("Rings"), ["ring_b.stl"])
         self.indexer.rescan_known(1)
         self.assertEqual(self.files_of("Ring A"), ["ring_a.stl"])
-        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE name = 'Ring A' AND is_active = 1"), 1)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE name = 'Ring A' AND is_active = 1"), 1)
 
     def test_a_skipped_card_is_not_added_and_its_files_stay_with_nobody(self):
         cards = self.split("x", f"{self.release}/Voxshax/GraveyardMausoleum", "Mausoleum")
         cards[-1]["skip"] = True
         self.save(cards)
         self.add_all()
-        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE name = 'Mausoleum'"), 0)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE name = 'Mausoleum'"), 0)
         self.assertEqual(self.files_of("Voxshax"), ["body.stl"])
 
     def test_a_rename_and_category_reach_the_catalog(self):
@@ -126,7 +126,7 @@ class SavingTests(ReviewCase):
                 card["name"], card["category"] = "Magic Rings", "Props"
         self.save(cards)
         self.add_all()
-        self.assertEqual(self.rows("SELECT primary_category FROM models WHERE name = 'Magic Rings'")[0][0], "Props")
+        self.assertEqual(self.rows("SELECT primary_category FROM collections WHERE name = 'Magic Rings'")[0][0], "Props")
 
     def test_a_member_in_two_cards_is_refused(self):
         cards = self.view()["cards"]
@@ -264,7 +264,7 @@ class ApproveReviewedTests(ReviewCase):
         self.ready()
         self.assertIn("Voxshax Reviewed", self.added())
         self.assertIn("Rings", self.added())
-        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE name = 'Rings'"), 1)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE name = 'Rings'"), 1)
 
     def test_the_report_shows_only_what_is_left(self):
         self.ready()
@@ -281,7 +281,7 @@ class ApproveReviewedTests(ReviewCase):
         self.ready()
         self.indexer.preview_library(1)
         self.assertIn("Voxshax", self.proposed())
-        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE name = 'Rings'"), 1)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE name = 'Rings'"), 1)
 
 
 class LevelsTests(ReviewCase):
@@ -300,7 +300,7 @@ class LevelsTests(ReviewCase):
     def test_a_loose_file_becomes_a_findable_artifact_and_follows_a_rescan(self):
         self.add_all()
         self.assertEqual(self.count("SELECT COUNT(*) FROM catalog_search_artifacts WHERE name LIKE '%ring_a%'"), 1)
-        self.assertEqual(self.rows("SELECT state FROM catalog_models m JOIN models x ON x.id = m.id WHERE x.name = 'Rings'")[0][0], "resolved")
+        self.assertEqual(self.rows("SELECT state FROM models m JOIN collections x ON x.id = m.id WHERE x.name = 'Rings'")[0][0], "resolved")
         (self.root / self.release / "Rings" / "ring_a.stl").unlink()
         self.indexer.rescan_known(1)
         self.assertEqual(self.count("SELECT COUNT(*) FROM model_artifacts WHERE filename = 'ring_a.stl'"), 0)

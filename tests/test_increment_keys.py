@@ -55,10 +55,10 @@ class RulesCase(unittest.TestCase):
         self.conn = sqlite3.connect(self.path)
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.execute(
-            "INSERT INTO models (id, name, source, external_key, raw_backup_path) VALUES (10, 'A', 'mmf', '500', '')"
+            "INSERT INTO collections (id, name, source, external_key, raw_backup_path) VALUES (10, 'A', 'mmf', '500', '')"
         )
         self.conn.execute(
-            "INSERT INTO models (id, name, source, vault_path, raw_backup_path) VALUES (11, 'B', 'external', '/nas/B', '')"
+            "INSERT INTO collections (id, name, source, vault_path, raw_backup_path) VALUES (11, 'B', 'external', '/nas/B', '')"
         )
         self.conn.execute("INSERT INTO model_files (file_id, model_id, source, external_key) VALUES (20, 10, 'mmf', '900')")
         self.conn.commit()
@@ -75,31 +75,31 @@ class RulesCase(unittest.TestCase):
 
 class DuplicateTriggerTests(RulesCase):
     def test_same_key_and_source_is_refused(self):
-        self.refused("INSERT INTO models (name, source, external_key, raw_backup_path) VALUES ('C', 'mmf', '500', '')")
+        self.refused("INSERT INTO collections (name, source, external_key, raw_backup_path) VALUES ('C', 'mmf', '500', '')")
 
     def test_same_key_from_another_source_is_allowed(self):
-        self.conn.execute("INSERT INTO models (name, source, external_key, raw_backup_path) VALUES ('C', 'other', '500', '')")
+        self.conn.execute("INSERT INTO collections (name, source, external_key, raw_backup_path) VALUES ('C', 'other', '500', '')")
 
     def test_many_models_may_have_no_key(self):
         for name in ("C", "D"):
             self.conn.execute(
-                "INSERT INTO models (name, source, vault_path, raw_backup_path) VALUES (?, 'external', ?, '')", (name, f"/nas/{name}")
+                "INSERT INTO collections (name, source, vault_path, raw_backup_path) VALUES (?, 'external', ?, '')", (name, f"/nas/{name}")
             )
 
     def test_changing_a_key_onto_another_row_is_refused(self):
-        self.conn.execute("INSERT INTO models (id, name, source, external_key, raw_backup_path) VALUES (12, 'C', 'mmf', '501', '')")
-        self.refused("UPDATE models SET external_key = '500' WHERE id = 12")
+        self.conn.execute("INSERT INTO collections (id, name, source, external_key, raw_backup_path) VALUES (12, 'C', 'mmf', '501', '')")
+        self.refused("UPDATE collections SET external_key = '500' WHERE id = 12")
 
     def test_a_row_may_keep_its_own_key_on_update(self):
-        self.conn.execute("UPDATE models SET external_key = '500', name = 'New' WHERE id = 10")
+        self.conn.execute("UPDATE collections SET external_key = '500', name = 'New' WHERE id = 10")
 
     def test_same_library_path_is_refused(self):
-        self.refused("INSERT INTO models (name, source, vault_path, raw_backup_path) VALUES ('C', 'external', '/nas/B', '')")
+        self.refused("INSERT INTO collections (name, source, vault_path, raw_backup_path) VALUES ('C', 'external', '/nas/B', '')")
 
     def test_mmf_models_may_share_a_path_rule_free(self):
         for key in ("1", "2"):
             self.conn.execute(
-                "INSERT INTO models (name, source, external_key, vault_path, raw_backup_path) VALUES ('C', 'mmf', ?, '/v', '')", (key,)
+                "INSERT INTO collections (name, source, external_key, vault_path, raw_backup_path) VALUES ('C', 'mmf', ?, '/v', '')", (key,)
             )
 
     def test_same_file_key_is_refused(self):
@@ -135,14 +135,14 @@ class DuplicateTriggerTests(RulesCase):
 
     def test_a_repeated_tag_is_skipped_quietly(self):
         for _ in range(2):
-            self.conn.execute("INSERT OR IGNORE INTO model_tags (model_id, tag) VALUES (10, 'x')")
-        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM model_tags").fetchone()[0], 1)
+            self.conn.execute("INSERT OR IGNORE INTO collection_tags (model_id, tag) VALUES (10, 'x')")
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM collection_tags").fetchone()[0], 1)
 
 
 class KeyTests(RulesCase):
     def test_a_deleted_key_never_comes_back(self):
-        self.conn.execute("DELETE FROM models WHERE id = 11")
-        cursor = self.conn.execute("INSERT INTO models (name, raw_backup_path) VALUES ('New', '')")
+        self.conn.execute("DELETE FROM collections WHERE id = 11")
+        cursor = self.conn.execute("INSERT INTO collections (name, raw_backup_path) VALUES ('New', '')")
         self.assertGreater(cursor.lastrowid, 11)
 
     def test_deleting_a_file_removes_its_download_record(self):
@@ -154,8 +154,8 @@ class KeyTests(RulesCase):
         self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM downloaded_files").fetchone()[0], 0)
 
     def test_search_index_follows_the_rebuilt_tables(self):
-        self.conn.execute("UPDATE models SET name = 'Wyvern' WHERE id = 10")
-        self.conn.execute("INSERT INTO model_tags (model_id, tag) VALUES (10, 'beast')")
+        self.conn.execute("UPDATE collections SET name = 'Wyvern' WHERE id = 10")
+        self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (10, 'beast')")
         self.assertEqual(self.conn.execute("SELECT rowid FROM catalog_search WHERE name LIKE '%wyv%'").fetchone()[0], 10)
         self.assertEqual(self.conn.execute("SELECT rowid FROM catalog_search WHERE tags LIKE '%beast%'").fetchone()[0], 10)
 

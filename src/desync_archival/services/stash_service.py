@@ -33,7 +33,7 @@ class StashService:
     def _has_vault_columns(self, conn: sqlite3.Connection) -> bool:
         """Checks if the catalog database contains vault storage schema (models.vault_path and downloaded_files)."""
         try:
-            m_cols = {r[1] for r in conn.execute("PRAGMA table_info(models);").fetchall()}
+            m_cols = {r[1] for r in conn.execute("PRAGMA table_info(collections);").fetchall()}
             if "vault_path" not in m_cols:
                 return False
             tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()}
@@ -49,7 +49,7 @@ class StashService:
             return
 
         row = conn.execute(
-            "SELECT id, name, vault_path FROM models WHERE id = ? AND is_active = 1;", (model_id,)
+            "SELECT id, name, vault_path FROM collections WHERE id = ? AND is_active = 1;", (model_id,)
         ).fetchone()
         if not row:
             raise ValueError(f"Model #{model_id} does not exist in library.")
@@ -114,7 +114,7 @@ class StashService:
 
         file_id = item["file_id"]
         if item["item_type"] == "model":
-            row = conn.execute("SELECT vault_path FROM models WHERE id = ?;", (item["model_id"],)).fetchone()
+            row = conn.execute("SELECT vault_path FROM collections WHERE id = ?;", (item["model_id"],)).fetchone()
             path = Path(row["vault_path"])
             if not path.exists():
                 raise ValueError(f"Model #{item['model_id']} vault directory not found on storage: {path}")
@@ -280,7 +280,7 @@ class StashService:
                     fam.file_extension AS member_extension,
                     fam.is_supported AS member_is_supported
                 FROM stash_items si
-                LEFT JOIN models m ON si.model_id = m.id
+                LEFT JOIN collections m ON si.model_id = m.id
                 LEFT JOIN model_files mf ON si.file_id = mf.file_id
                 LEFT JOIN file_archive_submodels fas ON si.submodel_id = fas.id
                 LEFT JOIN file_archive_members fam ON si.archive_member_id = fam.id
@@ -488,7 +488,7 @@ class StashService:
                 raise ValueError(f"Stash #{stash_id} does not exist.")
 
             # Validate foreign reference existence
-            model = c.execute("SELECT id FROM models WHERE id = ? AND is_active = 1;", (model_id,)).fetchone()
+            model = c.execute("SELECT id FROM collections WHERE id = ? AND is_active = 1;", (model_id,)).fetchone()
             if not model:
                 raise ValueError(f"Model #{model_id} does not exist in library.")
 
@@ -638,7 +638,7 @@ class StashService:
             existing_dupes = {r["model_id"] for r in c.execute(dupe_query, [stash_id] + clean_ids).fetchall()}
 
             if has_vault:
-                models_query = f"SELECT id, name, vault_path FROM models WHERE is_active = 1 AND id IN ({placeholders});"
+                models_query = f"SELECT id, name, vault_path FROM collections WHERE is_active = 1 AND id IN ({placeholders});"
                 m_rows = {r["id"]: r for r in c.execute(models_query, clean_ids).fetchall()}
 
                 for mid in clean_ids:

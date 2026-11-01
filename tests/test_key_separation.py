@@ -31,10 +31,10 @@ class KeyCase(unittest.TestCase):
         create_database(self.path)
         self.conn = sqlite3.connect(self.path)
         self.conn.execute("PRAGMA foreign_keys = ON")
-        self.conn.execute("DELETE FROM models")
+        self.conn.execute("DELETE FROM collections")
         # A row at a high key, so the next insert gets a value nothing like the MMF ID.
         self.conn.execute(
-            "INSERT INTO models (id, name, source, raw_backup_path) VALUES (?, 'seed', 'external', '')", (LOCAL_ID - 1,)
+            "INSERT INTO collections (id, name, source, raw_backup_path) VALUES (?, 'seed', 'external', '')", (LOCAL_ID - 1,)
         )
 
     def tearDown(self):
@@ -60,7 +60,7 @@ class IngestTests(KeyCase):
         ids = self.conn.execute("SELECT file_id FROM model_files WHERE model_id = ? ORDER BY file_id", (first,)).fetchall()
         second = self.save(name="Renamed")
         self.assertEqual(first, second)
-        self.assertEqual(self.conn.execute("SELECT name FROM models WHERE id = ?", (first,)).fetchone()[0], "Renamed")
+        self.assertEqual(self.conn.execute("SELECT name FROM collections WHERE id = ?", (first,)).fetchone()[0], "Renamed")
         self.assertEqual(
             self.conn.execute("SELECT file_id FROM model_files WHERE model_id = ? ORDER BY file_id", (first,)).fetchall(), ids
         )
@@ -79,7 +79,7 @@ class IngestTests(KeyCase):
     def test_the_same_number_from_two_sources_does_not_collide(self):
         model_id = self.save()
         self.conn.execute(
-            "INSERT INTO models (name, source, external_key, raw_backup_path) VALUES ('Other', 'thingiverse', ?, '')", (str(MMF_ID),)
+            "INSERT INTO collections (name, source, external_key, raw_backup_path) VALUES ('Other', 'thingiverse', ?, '')", (str(MMF_ID),)
         )
         self.assertEqual(identity.find_model(self.conn, "mmf", MMF_ID), model_id)
         self.assertNotEqual(identity.find_model(self.conn, "thingiverse", MMF_ID), model_id)
@@ -123,7 +123,7 @@ class ReverseAuditTests(KeyCase):
 
 class DriftTests(KeyCase):
     def test_external_libraries_are_never_in_the_drift_scan(self):
-        self.conn.execute("UPDATE models SET vault_path = '/nas/Loot Studios/Golem'")
+        self.conn.execute("UPDATE collections SET vault_path = '/nas/Loot Studios/Golem'")
         self.conn.commit()
         VaultReconciler._instance = None
         self.addCleanup(setattr, VaultReconciler, "_instance", None)
@@ -133,7 +133,7 @@ class DriftTests(KeyCase):
 
     def test_canonical_folders_use_the_mmf_id(self):
         model_id = self.save()
-        self.conn.execute("UPDATE models SET vault_path = '/somewhere/else', release_month = '2024-01' WHERE id = ?", (model_id,))
+        self.conn.execute("UPDATE collections SET vault_path = '/somewhere/else', release_month = '2024-01' WHERE id = ?", (model_id,))
         self.conn.commit()
         VaultReconciler._instance = None
         self.addCleanup(setattr, VaultReconciler, "_instance", None)

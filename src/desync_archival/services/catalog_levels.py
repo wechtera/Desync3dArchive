@@ -34,7 +34,7 @@ def _attributes(path: str) -> tuple[str | None, int, int]:
 def sync_loose_artifacts(conn: sqlite3.Connection, model_id: int, name: str, root: Path, found: list[tuple[Path, int, int]]) -> None:
     """Keeps a linked model's artifacts equal to its printable files. Archives wait for a peek."""
     conn.execute(
-        "UPDATE catalog_models SET name = ?, state = ? WHERE id = ? AND state = ?;", (name, RESOLVED, model_id, PLACEHOLDER),
+        "UPDATE models SET name = ?, state = ? WHERE id = ? AND state = ?;", (name, RESOLVED, model_id, PLACEHOLDER),
     )
     file_ids = dict(conn.execute("SELECT filename, file_id FROM model_files WHERE model_id = ?;", (model_id,)).fetchall())
     by_key = dict(conn.execute("SELECT external_key, file_id FROM model_files WHERE model_id = ?;", (model_id,)).fetchall())
@@ -50,12 +50,12 @@ def sync_loose_artifacts(conn: sqlite3.Connection, model_id: int, name: str, roo
         seen.add(file_id)
         scale, supported, hollow = _attributes(rel_path)
         conn.execute(
-            "INSERT INTO model_artifacts (catalog_model_id, file_id, path, filename, size_bytes, scale, supported, hollow)"
+            "INSERT INTO model_artifacts (model_id, file_id, path, filename, size_bytes, scale, supported, hollow)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
             (model_id, file_id, rel_path, path.name, size, scale, supported, hollow),
         )
     for row in conn.execute(
-        "SELECT id, file_id FROM model_artifacts WHERE catalog_model_id = ? AND archive_member_id IS NULL;", (model_id,)
+        "SELECT id, file_id FROM model_artifacts WHERE model_id = ? AND archive_member_id IS NULL;", (model_id,)
     ).fetchall():
         if row[1] not in seen:
             conn.execute("DELETE FROM model_artifacts WHERE id = ?;", (row[0],))
@@ -71,9 +71,9 @@ def file_under_release(
         group_id = row[0] if row else conn.execute(
             "INSERT INTO model_groups (library_id, release_name, name) VALUES (?, ?, ?);", (library_id, release, group),
         ).lastrowid
-        conn.execute("INSERT INTO model_group_members (group_id, catalog_model_id) VALUES (?, ?);", (group_id, model_id))
+        conn.execute("INSERT INTO model_group_members (group_id, model_id) VALUES (?, ?);", (group_id, model_id))
     conn.executemany(
-        "INSERT INTO catalog_model_tags (catalog_model_id, tag) VALUES (?, ?);", [(model_id, clean_tag(t)) for t in tags],
+        "INSERT INTO model_tags (model_id, tag) VALUES (?, ?);", [(model_id, clean_tag(t)) for t in tags],
     )
 
 
@@ -87,8 +87,8 @@ def _signature(entries: list[sqlite3.Row]) -> frozenset[tuple[str, int]] | None:
 
 def _known_signatures(conn: sqlite3.Connection) -> dict[frozenset, int]:
     held: dict[int, list[sqlite3.Row]] = defaultdict(list)
-    for row in conn.execute("SELECT catalog_model_id, filename, size_bytes FROM model_artifacts;").fetchall():
-        held[row["catalog_model_id"]].append(row)
+    for row in conn.execute("SELECT model_id, filename, size_bytes FROM model_artifacts;").fetchall():
+        held[row["model_id"]].append(row)
     return {sig: model_id for model_id, entries in held.items() if (sig := _signature(entries))}
 
 
@@ -108,7 +108,7 @@ def _add_artifacts(conn: sqlite3.Connection, model_id: int, entries: list[sqlite
     for entry in entries:
         scale, supported, hollow = _attributes(entry["internal_path"])
         conn.execute(
-            "INSERT INTO model_artifacts (catalog_model_id, file_id, archive_member_id, path, filename, size_bytes, scale,"
+            "INSERT INTO model_artifacts (model_id, file_id, archive_member_id, path, filename, size_bytes, scale,"
             " supported, hollow) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
             (model_id, entry["file_id"], entry["id"], entry["internal_path"], entry["filename"], entry["size_bytes"],
              scale, supported, hollow),
@@ -124,7 +124,7 @@ def _store_model(
         # A shared model keeps every copy: either archive can supply it, and each stays findable.
         model_id = known[signature]
         conn.execute(
-            "INSERT INTO catalog_model_collections (catalog_model_id, collection_id) VALUES (?, ?);", (model_id, collection_id),
+            "INSERT INTO model_collections (model_id, collection_id) VALUES (?, ?);", (model_id, collection_id),
         )
         _add_artifacts(conn, model_id, entries)
         return model_id, False
@@ -132,12 +132,12 @@ def _store_model(
     if spare is not None:
         # The first model keeps the placeholder's ID, so anything pointing at it still works.
         model_id = spare
-        conn.execute("UPDATE catalog_models SET name = ?, state = ? WHERE id = ?;", (model.name, PROPOSED, model_id))
+        conn.execute("UPDATE models SET name = ?, state = ? WHERE id = ?;", (model.name, PROPOSED, model_id))
     else:
-        cursor = conn.execute("INSERT INTO catalog_models (name, state) VALUES (?, ?);", (model.name, PROPOSED))
+        cursor = conn.execute("INSERT INTO models (name, state) VALUES (?, ?);", (model.name, PROPOSED))
         model_id = int(cursor.lastrowid or 0)
         conn.execute(
-            "INSERT INTO catalog_model_collections (catalog_model_id, collection_id) VALUES (?, ?);", (model_id, collection_id),
+            "INSERT INTO model_collections (model_id, collection_id) VALUES (?, ?);", (model_id, collection_id),
         )
     _add_artifacts(conn, model_id, entries)
     if signature:
@@ -163,14 +163,14 @@ def assign_images(conn: sqlite3.Connection, collection_id: int) -> int:
         if r["internal_path"].lower().endswith(IMAGE_EXTENSIONS) and not r["internal_path"].startswith("/")
     ]
     models = conn.execute("""
-        SELECT DISTINCT m.id, m.name FROM catalog_models m JOIN model_artifacts a ON a.catalog_model_id = m.id
+        SELECT DISTINCT m.id, m.name FROM models m JOIN model_artifacts a ON a.model_id = m.id
         JOIN model_files f ON f.file_id = a.file_id WHERE f.model_id = ? AND m.image_path IS NULL;
     """, (collection_id,)).fetchall()
     assigned = 0
     for model in models:
         folders = {
             r[0].rpartition("/")[0] for r in conn.execute(
-                "SELECT path FROM model_artifacts WHERE catalog_model_id = ?;", (model["id"],)
+                "SELECT path FROM model_artifacts WHERE model_id = ?;", (model["id"],)
             ).fetchall()
         }
         slug = model_resolver.slug_of(model_resolver.words_in(model["name"]))
@@ -181,7 +181,7 @@ def assign_images(conn: sqlite3.Connection, collection_id: int) -> int:
             on_disk = app_config.previews_dir().resolve() / str(collection_id) / str(image["file_id"]) / name
             if on_disk.is_file() and on_disk.stat().st_size > 0:
                 conn.execute(
-                    "UPDATE catalog_models SET image_path = ? WHERE id = ?;",
+                    "UPDATE models SET image_path = ? WHERE id = ?;",
                     (f"previews/{collection_id}/{image['file_id']}/{name}", model["id"]),
                 )
                 assigned += 1
@@ -207,21 +207,21 @@ def rebuild_unreviewed(conn: sqlite3.Connection) -> dict[str, Any]:
             """, (collection_id,))
             conn.execute("DELETE FROM model_groups WHERE collection_id = ?;", (collection_id,))
             conn.execute(
-                "DELETE FROM catalog_model_collections WHERE collection_id = ? AND catalog_model_id != ?;",
+                "DELETE FROM model_collections WHERE collection_id = ? AND model_id != ?;",
                 (collection_id, collection_id),
             )
             conn.execute("""
-                UPDATE catalog_models SET name = (SELECT name FROM models WHERE id = ?), state = ?, merged_into = NULL,
+                UPDATE models SET name = (SELECT name FROM collections WHERE id = ?), state = ?, merged_into = NULL,
                     image_path = NULL
                 WHERE id = ?;
             """, (collection_id, PLACEHOLDER, collection_id))
             conn.execute(
-                "INSERT INTO catalog_model_collections (catalog_model_id, collection_id) VALUES (?, ?);",
+                "INSERT INTO model_collections (model_id, collection_id) VALUES (?, ?);",
                 (collection_id, collection_id),
             )
         conn.execute("""
-            DELETE FROM catalog_models WHERE state = ? AND id >= ? AND NOT EXISTS (
-                SELECT 1 FROM model_artifacts a WHERE a.catalog_model_id = catalog_models.id
+            DELETE FROM models WHERE state = ? AND id >= ? AND NOT EXISTS (
+                SELECT 1 FROM model_artifacts a WHERE a.model_id = models.id
             );
         """, (PROPOSED, FIRST_REAL_ID))
     return {"reset": len(targets), **build_archive_models(conn)}
@@ -237,10 +237,10 @@ def clean_orphan_links(conn: sqlite3.Connection) -> int:
         members = conn.execute("""
             DELETE FROM model_group_members
             WHERE group_id NOT IN (SELECT id FROM model_groups)
-               OR catalog_model_id NOT IN (SELECT id FROM catalog_models);
+               OR model_id NOT IN (SELECT id FROM models);
         """).rowcount
         tags = conn.execute(
-            "DELETE FROM catalog_model_tags WHERE catalog_model_id NOT IN (SELECT id FROM catalog_models);"
+            "DELETE FROM model_tags WHERE model_id NOT IN (SELECT id FROM models);"
         ).rowcount
     return members + tags
 
@@ -273,7 +273,7 @@ def build_archive_models(conn: sqlite3.Connection, only_collection: int | None =
         # New contents are something a human hasn't seen.
         conn.execute("UPDATE collection_reviews SET reviewed = 0 WHERE collection_id = ?;", (collection_id,))
         placeholder = conn.execute(
-            "SELECT state FROM catalog_models WHERE id = ?;", (collection_id,)
+            "SELECT state FROM models WHERE id = ?;", (collection_id,)
         ).fetchone()
         spare = collection_id if placeholder and placeholder["state"] == PLACEHOLDER else None
         first = None
@@ -296,7 +296,7 @@ def build_archive_models(conn: sqlite3.Connection, only_collection: int | None =
                     spare = None
                 first = first or model_id
                 conn.executemany(
-                    "INSERT INTO catalog_model_tags (catalog_model_id, tag) VALUES (?, ?);",
+                    "INSERT INTO model_tags (model_id, tag) VALUES (?, ?);",
                     [(model_id, clean_tag(tag)) for tag in model.tags],
                 )
                 summary["models" if created else "shared"] += 1
@@ -305,13 +305,13 @@ def build_archive_models(conn: sqlite3.Connection, only_collection: int | None =
                     group_id = _group_id(conn, collection_id, model.group)
                     groups.add(group_id)
                     conn.execute(
-                        "INSERT INTO model_group_members (group_id, catalog_model_id) VALUES (?, ?);", (group_id, model_id),
+                        "INSERT INTO model_group_members (group_id, model_id) VALUES (?, ?);", (group_id, model_id),
                     )
             if spare is not None and first is not None:
                 # Everything here is shared with another collection, so the placeholder redirects.
-                conn.execute("UPDATE catalog_models SET state = ?, merged_into = ? WHERE id = ?;", (MERGED, first, spare))
+                conn.execute("UPDATE models SET state = ?, merged_into = ? WHERE id = ?;", (MERGED, first, spare))
                 conn.execute(
-                    "DELETE FROM catalog_model_collections WHERE catalog_model_id = ? AND collection_id = ?;", (spare, collection_id),
+                    "DELETE FROM model_collections WHERE model_id = ? AND collection_id = ?;", (spare, collection_id),
                 )
         summary["collections"] += 1
         summary["groups"] += len(groups)

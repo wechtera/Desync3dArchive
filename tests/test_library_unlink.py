@@ -31,21 +31,21 @@ class UnlinkCase(unittest.TestCase):
         self.conn = sqlite3.connect(server.DB_PATH)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
-        for table in ("stash_items", "stashes", "models", "external_libraries", "releases"):
+        for table in ("stash_items", "stashes", "collections", "external_libraries", "releases"):
             self.conn.execute(f"DELETE FROM {table}")
         self.conn.execute(
-            "INSERT INTO models (id, name, designer_name, source, vault_path, raw_backup_path, release_month)"
+            "INSERT INTO collections (id, name, designer_name, source, vault_path, raw_backup_path, release_month)"
             " VALUES (100, 'Golem', 'Forge', 'external', ?, '', '2024-01')", (str(self.model_dir),)
         )
         self.conn.execute(
-            "INSERT INTO models (id, name, designer_name, source, vault_path, raw_backup_path, release_month)"
+            "INSERT INTO collections (id, name, designer_name, source, vault_path, raw_backup_path, release_month)"
             " VALUES (101, 'Sibling', 'Forge', 'external', ?, '', '2024-02')", (str(self.root / "Lib2" / "Sibling"),)
         )
         self.conn.execute(
-            "INSERT INTO models (id, name, designer_name, raw_backup_path) VALUES (50, 'MMF Golem', 'Other', '')"
+            "INSERT INTO collections (id, name, designer_name, raw_backup_path) VALUES (50, 'MMF Golem', 'Other', '')"
         )
         self.conn.execute("INSERT INTO external_libraries (id, name, path) VALUES (1, 'Lib', ?)", (str(self.library),))
-        self.conn.execute("UPDATE models SET library_id = 1 WHERE id = 100")
+        self.conn.execute("UPDATE collections SET library_id = 1 WHERE id = 100")
         self.conn.execute(
             "INSERT INTO releases (release_key, designer_name, designer_id, release_month, model_count, total_files, total_size_bytes)"
             " VALUES ('external_Forge_2024-01', 'Forge', 0, '2024-01', 1, 0, 0)"
@@ -65,7 +65,7 @@ class UnlinkCase(unittest.TestCase):
         return response.json()
 
     def active(self, model_id):
-        return self.conn.execute("SELECT is_active FROM models WHERE id = ?", (model_id,)).fetchone()[0]
+        return self.conn.execute("SELECT is_active FROM collections WHERE id = ?", (model_id,)).fetchone()[0]
 
     def catalog_ids(self):
         return {model["id"] for model in self.client.get("/api/models", params={"limit": 150}).json()["models"]}
@@ -116,7 +116,7 @@ class UnlinkTests(UnlinkCase):
         self.assertEqual(self.conn.execute("SELECT is_active FROM releases").fetchone()[0], 0)
 
     def test_a_release_shared_with_an_active_model_stays(self):
-        self.conn.execute("UPDATE models SET release_month = '2024-01' WHERE id = 101")
+        self.conn.execute("UPDATE collections SET release_month = '2024-01' WHERE id = 101")
         self.conn.commit()
         self.unlink()
         self.assertEqual(self.conn.execute("SELECT is_active FROM releases").fetchone()[0], 1)
@@ -163,7 +163,7 @@ class RelinkTests(UnlinkCase):
         indexer.scan_and_index_library(1)
 
         self.assertEqual(self.active(100), 1)
-        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM models WHERE source = 'external'").fetchone()[0], 2)
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM collections WHERE source = 'external'").fetchone()[0], 2)
         self.assertFalse(StashService(server.DB_PATH).get_stash_detail(7)["items"][0]["is_inactive"])
 
 

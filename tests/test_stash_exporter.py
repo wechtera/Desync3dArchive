@@ -68,7 +68,7 @@ class TestStashExporter(unittest.TestCase):
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
-                CREATE TABLE IF NOT EXISTS models (
+                CREATE TABLE IF NOT EXISTS collections (
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,
                     designer_name TEXT,
@@ -135,7 +135,7 @@ class TestStashExporter(unittest.TestCase):
             self.model_vault_dir.mkdir(parents=True, exist_ok=True)
 
             self.conn.execute("""
-                INSERT INTO models (id, name, designer_name, vault_path, raw_backup_path)
+                INSERT INTO collections (id, name, designer_name, vault_path, raw_backup_path)
                 VALUES (100, 'Ghul Squad', 'Archvillain Games', ?, '');
             """, (str(self.model_vault_dir),))
 

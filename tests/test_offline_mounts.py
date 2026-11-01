@@ -24,10 +24,10 @@ class OfflineCase(unittest.TestCase):
         self.conn = sqlite3.connect(server.DB_PATH)
         self.conn.row_factory = sqlite3.Row
         for table in ("stash_items", "stashes", "file_archive_members", "file_archive_submodels", "downloaded_files",
-                      "model_files", "models", "external_libraries"):
+                      "model_files", "collections", "external_libraries"):
             self.conn.execute(f"DELETE FROM {table}")
         self.conn.execute(
-            "INSERT INTO models (id, name, designer_name, source, vault_path, raw_backup_path)"
+            "INSERT INTO collections (id, name, designer_name, source, vault_path, raw_backup_path)"
             " VALUES (100, 'Golem', 'Forge', 'external', ?, '')", (str(self.model_path),)
         )
         self.conn.execute("INSERT INTO model_files (file_id, model_id, filename, size_bytes) VALUES (9, 100, 'g.zip', 5)")
@@ -42,7 +42,7 @@ class OfflineCase(unittest.TestCase):
             " VALUES (4, 3, 9, 'a/arm.stl', 'arm.stl', 5)"
         )
         self.conn.execute("INSERT INTO external_libraries (id, name, path) VALUES (1, 'Lib', ?)", (str(self.offline),))
-        self.conn.execute("UPDATE models SET library_id = 1 WHERE id = 100")
+        self.conn.execute("UPDATE collections SET library_id = 1 WHERE id = 100")
         self.conn.execute("INSERT INTO stashes (id, name) VALUES (7, 'Print soon')")
         self.conn.commit()
         self.client = TestClient(server.create_app(manage_workers=False), base_url="http://localhost")
@@ -66,7 +66,7 @@ class StashTests(OfflineCase):
         self.assertEqual(len(self.stash.get_stash_detail(7)["items"]), 1)
 
     def test_a_model_never_archived_is_still_refused(self):
-        self.conn.execute("UPDATE models SET vault_path = NULL WHERE id = 100")
+        self.conn.execute("UPDATE collections SET vault_path = NULL WHERE id = 100")
         self.conn.commit()
         with self.assertRaises(ValueError):
             self.stash.add_to_stash(7, "model", 100)
@@ -129,7 +129,7 @@ class ReconcileTests(OfflineCase):
         self.assertEqual(report["discrepancies"][0]["issues"][0]["defect"], "DIRECTORY_NOT_FOUND")
 
     def test_a_path_that_only_shares_a_prefix_is_audited(self):
-        self.conn.execute("UPDATE models SET vault_path = ? WHERE id = 100", (f"{self.offline}2/Golem",))
+        self.conn.execute("UPDATE collections SET vault_path = ? WHERE id = 100", (f"{self.offline}2/Golem",))
         self.conn.commit()
         self.assertEqual(self.audit()["summary"]["skipped_offline"], 0)
 

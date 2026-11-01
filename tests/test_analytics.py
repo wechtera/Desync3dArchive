@@ -7,7 +7,7 @@ from datetime import datetime
 def init_test_db(conn: sqlite3.Connection):
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.executescript("""
-        CREATE TABLE models (
+        CREATE TABLE collections (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
             designer_name TEXT,
@@ -23,14 +23,14 @@ def init_test_db(conn: sqlite3.Connection):
             model_id INTEGER NOT NULL,
             filename TEXT,
             size_bytes INTEGER,
-            FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE
+            FOREIGN KEY (model_id) REFERENCES collections(id) ON DELETE CASCADE
         );
 
-        CREATE TABLE model_tags (
+        CREATE TABLE collection_tags (
             model_id INTEGER,
             tag TEXT NOT NULL,
             PRIMARY KEY (model_id, tag),
-            FOREIGN KEY (model_id) REFERENCES models(id) ON DELETE CASCADE
+            FOREIGN KEY (model_id) REFERENCES collections(id) ON DELETE CASCADE
         );
 
         CREATE TABLE releases (
@@ -51,12 +51,12 @@ def init_test_db(conn: sqlite3.Connection):
 
 def flag_bonuses_and_compute_releases(conn: sqlite3.Connection):
     conn.execute("""
-        UPDATE models
+        UPDATE collections
         SET is_bonus = 1
         WHERE LOWER(name) LIKE '%reward%'
            OR LOWER(name) LIKE '%bonus%'
            OR id IN (
-               SELECT model_id FROM model_tags 
+               SELECT model_id FROM collection_tags 
                WHERE LOWER(tag) LIKE '%reward%' OR LOWER(tag) LIKE '%bonus%'
            );
     """)
@@ -75,9 +75,9 @@ def flag_bonuses_and_compute_releases(conn: sqlite3.Connection):
             MAX(m.primary_image_url) AS sample_image_url,
             GROUP_CONCAT(DISTINCT t.tag) AS all_tags,
             GROUP_CONCAT(m.description) AS all_descriptions
-        FROM models m
+        FROM collections m
         LEFT JOIN model_files f ON m.id = f.model_id
-        LEFT JOIN model_tags t ON m.id = t.model_id
+        LEFT JOIN collection_tags t ON m.id = t.model_id
         WHERE m.release_month IS NOT NULL AND m.release_month != ''
         GROUP BY m.designer_name, m.release_month;
     """
@@ -158,8 +158,8 @@ class TestReleaseAnalytics(unittest.TestCase):
         self.conn.close()
 
     def test_file_counts_and_sizes_aggregation(self):
-        self.conn.execute("INSERT INTO models (id, name, designer_name, designer_id, release_month, description) VALUES (1, 'Warrior', 'Rescale Miniatures', 101, '2024-05', 'Warrior')")
-        self.conn.execute("INSERT INTO models (id, name, designer_name, designer_id, release_month, description) VALUES (2, 'Mage', 'Rescale Miniatures', 101, '2024-05', 'Mage')")
+        self.conn.execute("INSERT INTO collections (id, name, designer_name, designer_id, release_month, description) VALUES (1, 'Warrior', 'Rescale Miniatures', 101, '2024-05', 'Warrior')")
+        self.conn.execute("INSERT INTO collections (id, name, designer_name, designer_id, release_month, description) VALUES (2, 'Mage', 'Rescale Miniatures', 101, '2024-05', 'Mage')")
         
         self.conn.execute("INSERT INTO model_files (file_id, model_id, filename, size_bytes) VALUES (10, 1, 'warrior.stl', 10485760)")
         self.conn.execute("INSERT INTO model_files (file_id, model_id, filename, size_bytes) VALUES (11, 1, 'warrior_sup.stl', 26214400)")
@@ -175,7 +175,7 @@ class TestReleaseAnalytics(unittest.TestCase):
 
     def test_bundle_heuristic_by_model_count_threshold(self):
         for i in range(1, 5):
-            self.conn.execute(f"INSERT INTO models (id, name, designer_name, designer_id, release_month, description) VALUES ({i}, 'Prop {i}', 'PropStudio', 202, '2024-06', 'Basic prop')")
+            self.conn.execute(f"INSERT INTO collections (id, name, designer_name, designer_id, release_month, description) VALUES ({i}, 'Prop {i}', 'PropStudio', 202, '2024-06', 'Basic prop')")
         
         flag_bonuses_and_compute_releases(self.conn)
 
@@ -183,12 +183,12 @@ class TestReleaseAnalytics(unittest.TestCase):
         self.assertEqual(row[0], 1)
 
     def test_bonus_and_reward_isolation(self):
-        self.conn.execute("INSERT INTO models (id, name, designer_name, designer_id, release_month, description) VALUES (1, 'Warrior', 'Studio', 10, '2024-05', 'Hero')")
-        self.conn.execute("INSERT INTO models (id, name, designer_name, designer_id, release_month, description) VALUES (2, 'Archer', 'Studio', 10, '2024-05', 'Hero')")
-        self.conn.execute("INSERT INTO models (id, name, designer_name, designer_id, release_month, description) VALUES (3, 'Mage', 'Studio', 10, '2024-05', 'Hero')")
-        self.conn.execute("INSERT INTO models (id, name, designer_name, designer_id, release_month, description) VALUES (4, '3-Month Loyalty Reward Dragon', 'Studio', 10, '2024-05', 'Loyalty drop')")
-        self.conn.execute("INSERT INTO models (id, name, designer_name, designer_id, release_month, description) VALUES (5, 'Mimic Chest', 'Studio', 10, '2024-05', 'Chest')")
-        self.conn.execute("INSERT INTO model_tags (model_id, tag) VALUES (5, 'patreon bonus')")
+        self.conn.execute("INSERT INTO collections (id, name, designer_name, designer_id, release_month, description) VALUES (1, 'Warrior', 'Studio', 10, '2024-05', 'Hero')")
+        self.conn.execute("INSERT INTO collections (id, name, designer_name, designer_id, release_month, description) VALUES (2, 'Archer', 'Studio', 10, '2024-05', 'Hero')")
+        self.conn.execute("INSERT INTO collections (id, name, designer_name, designer_id, release_month, description) VALUES (3, 'Mage', 'Studio', 10, '2024-05', 'Hero')")
+        self.conn.execute("INSERT INTO collections (id, name, designer_name, designer_id, release_month, description) VALUES (4, '3-Month Loyalty Reward Dragon', 'Studio', 10, '2024-05', 'Loyalty drop')")
+        self.conn.execute("INSERT INTO collections (id, name, designer_name, designer_id, release_month, description) VALUES (5, 'Mimic Chest', 'Studio', 10, '2024-05', 'Chest')")
+        self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (5, 'patreon bonus')")
 
         flag_bonuses_and_compute_releases(self.conn)
 

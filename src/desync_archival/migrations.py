@@ -100,6 +100,18 @@ def apply_pending(conn: sqlite3.Connection) -> int:
     return current_version(conn)
 
 
+# The row count check compares by table name, so a rename has to be declared here.
+TABLE_RENAMES = {
+    14: {
+        "models": "collections",
+        "model_tags": "collection_tags",
+        "catalog_models": "models",
+        "catalog_model_tags": "model_tags",
+        "catalog_model_collections": "model_collections",
+    },
+}
+
+
 def require_current(conn: sqlite3.Connection) -> None:
     current, latest = current_version(conn), latest_version()
     if current != latest:
@@ -133,7 +145,8 @@ def migrate_database(db_path: Path, confirm_production: bool = False) -> dict[st
         conn.close()
 
     after_counts = backup.verify(db_path)
-    changed = sorted(t for t, count in before_counts.items() if after_counts.get(t) != count)
+    renames = {old: new for version, table_map in TABLE_RENAMES.items() if before_version < version for old, new in table_map.items()}
+    changed = sorted(t for t, count in before_counts.items() if after_counts.get(renames.get(t, t)) != count)
     if changed:
         raise MigrationError(f"Row counts changed during migration: {changed}. Backup: {backup_path}")
     logger.info(f"Migrated {db_path.name} from version {before_version} to {after_version}")

@@ -139,7 +139,7 @@ class JobClaimTests(TempDb):
         conn = sqlite3.connect(self.db)
         conn.execute("PRAGMA foreign_keys = OFF")
         for model_id in range(1, 31):
-            conn.execute("INSERT INTO models (id, name, url, raw_backup_path) VALUES (?, 'M', '', '')", (model_id,))
+            conn.execute("INSERT INTO collections (id, name, url, raw_backup_path) VALUES (?, 'M', '', '')", (model_id,))
             conn.execute("INSERT INTO download_jobs (model_id, status) VALUES (?, ?)", (model_id, status))
         conn.commit()
         conn.close()

@@ -62,7 +62,7 @@ class TestStashRoutes(unittest.TestCase):
                     value TEXT NOT NULL,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
-                CREATE TABLE IF NOT EXISTS models (
+                CREATE TABLE IF NOT EXISTS collections (
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL,
                     designer_name TEXT,
@@ -139,7 +139,7 @@ class TestStashRoutes(unittest.TestCase):
                 zf.writestr("mummy_p1_khopesh.stl", b"MUMMY MESH STL CONTENT")
 
             self.conn.execute("""
-                INSERT INTO models (id, name, designer_name, vault_path, raw_backup_path)
+                INSERT INTO collections (id, name, designer_name, vault_path, raw_backup_path)
                 VALUES (200, 'Dune Mummy', 'Comet Lord', ?, '');
             """, (str(model_dir),))
 

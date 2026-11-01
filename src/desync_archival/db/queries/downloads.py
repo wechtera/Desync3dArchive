@@ -8,13 +8,13 @@ GET_DOWNLOADS_HISTORY_2 = """
                COALESCE(NULLIF(m.designer_name, ''), NULLIF(m.designer_username, ''), 'Unknown') AS creator_name,
                m.designer_name
         FROM download_jobs dj
-        LEFT JOIN models m ON dj.model_id = m.id
+        LEFT JOIN collections m ON dj.model_id = m.id
         {where_clause}
         {order_by}
         LIMIT ? OFFSET ?;
     """
 
-POST_DOWNLOADS_QUEUE_1 = "SELECT id FROM models WHERE designer_name = ? AND release_month = ? AND is_active = 1;"
+POST_DOWNLOADS_QUEUE_1 = "SELECT id FROM collections WHERE designer_name = ? AND release_month = ? AND is_active = 1;"
 
 POST_DOWNLOADS_QUEUE_2 = "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM model_files WHERE model_id = ?;"
 

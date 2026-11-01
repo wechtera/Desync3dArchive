@@ -1,5 +1,6 @@
 """The library scan: preview, approval, inventory, resume, and what a failed read must never do."""
 
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -69,7 +70,7 @@ class ScanCase(unittest.TestCase):
         return self.indexer.scan_and_index_library(1)
 
     def model_count(self):
-        return self.count("SELECT COUNT(*) FROM models WHERE source = 'external'")
+        return self.count("SELECT COUNT(*) FROM collections WHERE source = 'external'")
 
 
 class PreviewTests(ScanCase):
@@ -90,13 +91,13 @@ class PreviewTests(ScanCase):
         self.assertEqual(self.indexer.approve_candidates(conn, 1, ["2024-01 - Drop"]), {"approved": 1, "skipped": 2})
         conn.close()
         self.indexer.add_approved(1)
-        self.assertEqual([r[0] for r in self.rows("SELECT name FROM models WHERE source = 'external'")], ["Dragon"])
+        self.assertEqual([r[0] for r in self.rows("SELECT name FROM collections WHERE source = 'external'")], ["Dragon"])
 
     def test_known_folders_are_never_reclassified(self):
         conn = self.connect()
         with conn:
             conn.execute(
-                "INSERT INTO models (name, source, library_id, external_key, vault_path, raw_backup_path) VALUES ('Old', 'external', 1, ?, ?, '')",
+                "INSERT INTO collections (name, source, library_id, external_key, vault_path, raw_backup_path) VALUES ('Old', 'external', 1, ?, ?, '')",
                 (key_for(1, "2024-01 - Drop"), str(self.root / "2024-01 - Drop")),
             )
         conn.close()
@@ -105,7 +106,7 @@ class PreviewTests(ScanCase):
 
     def test_a_new_folder_is_found_and_added_alone(self):
         self.scan_everything()
-        before = {r[0]: r[1] for r in self.rows("SELECT name, id FROM models WHERE source = 'external'")}
+        before = {r[0]: r[1] for r in self.rows("SELECT name, id FROM collections WHERE source = 'external'")}
         self.add_model("2024-01 - Drop", "Newcomer")
 
         self.assertEqual(self.indexer.preview_library(1)["new"], 1)
@@ -114,7 +115,7 @@ class PreviewTests(ScanCase):
         conn.close()
         self.assertEqual(self.indexer.add_approved(1)["models_added"], 1)
 
-        after = {r[0]: r[1] for r in self.rows("SELECT name, id FROM models WHERE source = 'external'")}
+        after = {r[0]: r[1] for r in self.rows("SELECT name, id FROM collections WHERE source = 'external'")}
         self.assertEqual(set(after) - set(before), {"Newcomer"})
         self.assertEqual({k: after[k] for k in before}, before)
 
@@ -136,17 +137,17 @@ class CharacterLayoutTests(ScanCase):
         (self.root / "April 2024" / "Stat_Blocks.zip").write_bytes(b"zip")
 
     def bull(self):
-        return self.rows("SELECT * FROM models WHERE name = 'Brazen Bull'")[0]
+        return self.rows("SELECT * FROM collections WHERE name = 'Brazen Bull'")[0]
 
     def test_one_character_is_one_model_across_scales_and_variants(self):
         self.scan_everything()
-        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE name = 'Brazen Bull'"), 1)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE name = 'Brazen Bull'"), 1)
         self.assertEqual(self.count("SELECT COUNT(*) FROM model_files WHERE model_id = ?", self.bull()["id"]), 6)
         self.assertEqual(self.count("SELECT COUNT(*) FROM library_model_folders WHERE model_id = ?", self.bull()["id"]), 6)
 
     def test_a_bust_is_its_own_model(self):
         self.scan_everything()
-        row = self.rows("SELECT primary_category FROM models WHERE name = 'Brazen Bull Bust'")[0]
+        row = self.rows("SELECT primary_category FROM collections WHERE name = 'Brazen Bull Bust'")[0]
         self.assertEqual(row[0], "Busts")
 
     def test_the_category_comes_from_the_folders(self):
@@ -217,12 +218,12 @@ class InventoryTests(ScanCase):
 
     def test_rescanning_writes_nothing_new(self):
         self.scan_everything()
-        counts = [self.count(f"SELECT COUNT(*) FROM {t}") for t in ("models", "model_files", "downloaded_files", "library_work_queue", "model_tags")]
-        stamps = self.rows("SELECT id, updated_at FROM models ORDER BY id")
+        counts = [self.count(f"SELECT COUNT(*) FROM {t}") for t in ("models", "model_files", "downloaded_files", "library_work_queue", "collection_tags")]
+        stamps = self.rows("SELECT id, updated_at FROM collections ORDER BY id")
         result = self.indexer.rescan_known(1)
         self.assertEqual(result["models_changed"], 0)
-        self.assertEqual([self.count(f"SELECT COUNT(*) FROM {t}") for t in ("models", "model_files", "downloaded_files", "library_work_queue", "model_tags")], counts)
-        self.assertEqual([tuple(r) for r in self.rows("SELECT id, updated_at FROM models ORDER BY id")], [tuple(r) for r in stamps])
+        self.assertEqual([self.count(f"SELECT COUNT(*) FROM {t}") for t in ("models", "model_files", "downloaded_files", "library_work_queue", "collection_tags")], counts)
+        self.assertEqual([tuple(r) for r in self.rows("SELECT id, updated_at FROM collections ORDER BY id")], [tuple(r) for r in stamps])
 
     def test_a_changed_file_is_picked_up(self):
         self.scan_everything()
@@ -233,18 +234,18 @@ class InventoryTests(ScanCase):
 
     def test_tags_are_added_and_never_removed(self):
         self.scan_everything()
-        model_id = self.count("SELECT id FROM models WHERE name = 'Dragon'")
+        model_id = self.count("SELECT id FROM collections WHERE name = 'Dragon'")
         conn = self.connect()
         with conn:
-            conn.execute("INSERT INTO model_tags (model_id, tag) VALUES (?, 'my tag')", (model_id,))
+            conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (?, 'my tag')", (model_id,))
         conn.close()
         (self.root / "2024-02 - Next" / "Dragon" / "extra.stl").write_bytes(SOLID)
         self.indexer.rescan_known(1)
-        self.assertEqual(self.count("SELECT COUNT(*) FROM model_tags WHERE model_id = ? AND tag = 'my tag'", model_id), 1)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collection_tags WHERE model_id = ? AND tag = 'my tag'", model_id), 1)
 
     def test_a_changed_mount_path_duplicates_nothing(self):
         self.scan_everything()
-        ids = {r[0]: r[1] for r in self.rows("SELECT name, id FROM models WHERE source = 'external'")}
+        ids = {r[0]: r[1] for r in self.rows("SELECT name, id FROM collections WHERE source = 'external'")}
         moved = self.base / "Loot-1"
         self.root.rename(moved)
         conn = self.connect()
@@ -254,25 +255,25 @@ class InventoryTests(ScanCase):
 
         self.indexer.rescan_known(1)
 
-        self.assertEqual({r[0]: r[1] for r in self.rows("SELECT name, id FROM models WHERE source = 'external'")}, ids)
+        self.assertEqual({r[0]: r[1] for r in self.rows("SELECT name, id FROM collections WHERE source = 'external'")}, ids)
         self.assertEqual(self.count("SELECT COUNT(*) FROM downloaded_files WHERE vault_path LIKE ?", f"{moved}/%"), 3)
-        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE vault_path LIKE ?", f"{moved}/%"), 3)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE vault_path LIKE ?", f"{moved}/%"), 3)
 
     def test_rows_without_keys_are_adopted_not_duplicated(self):
         self.scan_everything()
         conn = self.connect()
         with conn:
-            conn.execute("UPDATE models SET external_key = NULL WHERE source = 'external'")
+            conn.execute("UPDATE collections SET external_key = NULL WHERE source = 'external'")
             conn.execute("UPDATE model_files SET external_key = NULL WHERE source = 'external'")
         conn.close()
-        ids = sorted(r[0] for r in self.rows("SELECT id FROM models WHERE source = 'external'"))
+        ids = sorted(r[0] for r in self.rows("SELECT id FROM collections WHERE source = 'external'"))
         files = self.count("SELECT COUNT(*) FROM model_files")
 
         self.scan_everything()
 
-        self.assertEqual(sorted(r[0] for r in self.rows("SELECT id FROM models WHERE source = 'external'")), ids)
+        self.assertEqual(sorted(r[0] for r in self.rows("SELECT id FROM collections WHERE source = 'external'")), ids)
         self.assertEqual(self.count("SELECT COUNT(*) FROM model_files"), files)
-        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE source = 'external' AND external_key IS NULL"), 0)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE source = 'external' AND external_key IS NULL"), 0)
 
     def test_a_stopped_add_keeps_its_work_and_resumes(self):
         self.indexer.preview_library(1)
@@ -323,21 +324,21 @@ class InventoryTests(ScanCase):
 class MountFailureTests(ScanCase):
     def test_a_read_error_mid_model_changes_nothing(self):
         self.scan_everything()
-        before = [tuple(r) for r in self.rows("SELECT id, pre_supported, is_active FROM models ORDER BY id")]
-        tags = self.count("SELECT COUNT(*) FROM model_tags")
+        before = [tuple(r) for r in self.rows("SELECT id, pre_supported, is_active FROM collections ORDER BY id")]
+        tags = self.count("SELECT COUNT(*) FROM collection_tags")
         with patch.object(external_indexer, "walk_files", side_effect=ScanReadError("gone")):
             result = self.indexer.rescan_known(1)
         self.assertFalse(result["success"])
         self.assertIn("could not be read", result["error"])
-        self.assertEqual([tuple(r) for r in self.rows("SELECT id, pre_supported, is_active FROM models ORDER BY id")], before)
-        self.assertEqual(self.count("SELECT COUNT(*) FROM model_tags"), tags)
+        self.assertEqual([tuple(r) for r in self.rows("SELECT id, pre_supported, is_active FROM collections ORDER BY id")], before)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collection_tags"), tags)
 
     def test_an_unmounted_library_flags_nothing_inactive(self):
         self.scan_everything()
         shutil.rmtree(self.root)
         result = self.indexer.rescan_known(1)
         self.assertFalse(result["success"])
-        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE is_active = 0"), 0)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE is_active = 0"), 0)
         self.assertEqual(self.count("SELECT COUNT(*) FROM inactive_log"), 0)
 
     def test_an_empty_root_counts_as_unmounted(self):
@@ -345,7 +346,7 @@ class MountFailureTests(ScanCase):
         shutil.rmtree(self.root)
         self.root.mkdir()
         self.assertFalse(self.indexer.rescan_known(1)["success"])
-        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE is_active = 0"), 0)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE is_active = 0"), 0)
 
     def test_a_failed_listing_is_not_an_empty_folder(self):
         with patch("os.scandir", side_effect=OSError("Input/output error")), self.assertRaises(ScanReadError):
@@ -361,7 +362,7 @@ class MissingTests(ScanCase):
         self.scan_everything()
         shutil.rmtree(self.root / "2024-01 - Drop" / "Golem")
         self.assertEqual(self.indexer.rescan_known(1)["models_missing"], 1)
-        row = self.rows("SELECT id, is_active FROM models WHERE name = 'Golem'")[0]
+        row = self.rows("SELECT id, is_active FROM collections WHERE name = 'Golem'")[0]
         self.assertEqual(row["is_active"], 0)
         log = self.rows("SELECT process, reason, item_name, resolved_at FROM inactive_log WHERE item_id = ?", row["id"])
         self.assertEqual(tuple(log[0]), ("library_scan", "folder_missing", "Golem", None))
@@ -369,12 +370,12 @@ class MissingTests(ScanCase):
     def test_a_returning_folder_comes_back_with_the_same_id(self):
         self.scan_everything()
         folder = self.root / "2024-01 - Drop" / "Golem"
-        model_id = self.count("SELECT id FROM models WHERE name = 'Golem'")
+        model_id = self.count("SELECT id FROM collections WHERE name = 'Golem'")
         shutil.move(str(folder), str(self.base / "held"))
         self.indexer.rescan_known(1)
         shutil.move(str(self.base / "held"), str(folder))
         self.indexer.rescan_known(1)
-        self.assertEqual(self.count("SELECT is_active FROM models WHERE id = ?", model_id), 1)
+        self.assertEqual(self.count("SELECT is_active FROM collections WHERE id = ?", model_id), 1)
         self.assertEqual(self.model_count(), 3)
         self.assertIsNotNone(self.rows("SELECT resolved_at FROM inactive_log WHERE item_id = ?", model_id)[0][0])
 
@@ -383,14 +384,14 @@ class MissingTests(ScanCase):
         drop = self.root / "2024-01 - Drop"
         (drop / "Golem").rename(drop / "Stone Golem")
         self.indexer.rescan_known(1)
-        self.assertEqual(self.count("SELECT is_active FROM models WHERE name = 'Golem'"), 0)
+        self.assertEqual(self.count("SELECT is_active FROM collections WHERE name = 'Golem'"), 0)
 
         self.assertEqual(self.indexer.preview_library(1)["new"], 1)
         conn = self.connect()
         self.indexer.approve_candidates(conn, 1, [])
         conn.close()
         self.indexer.add_approved(1)
-        self.assertEqual(self.count("SELECT is_active FROM models WHERE name = 'Stone Golem'"), 1)
+        self.assertEqual(self.count("SELECT is_active FROM collections WHERE name = 'Stone Golem'"), 1)
 
     def test_too_many_missing_at_once_is_held(self):
         for index in range(12):
@@ -399,7 +400,7 @@ class MissingTests(ScanCase):
         shutil.rmtree(self.root / "2024-03 - Big")
         result = self.indexer.rescan_known(1)
         self.assertEqual(result["missing_held"], 12)
-        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE is_active = 0"), 0)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE is_active = 0"), 0)
         self.assertEqual(self.rows("SELECT status FROM library_scan_runs WHERE mode = 'full' ORDER BY id DESC LIMIT 1")[0][0], "held")
 
     def test_a_missing_file_is_logged_once_and_resolves(self):
@@ -459,9 +460,9 @@ class ImageWorkerTests(ScanCase):
         with self.render_ok() as render, patch.object(self.worker.renderer, "is_available", return_value=True):
             self.drain()
         self.assertEqual(render.call_count, 2)
-        model_id = self.count("SELECT id FROM models WHERE name = 'Dragon'")
+        model_id = self.count("SELECT id FROM collections WHERE name = 'Dragon'")
         self.assertEqual((self.previews / str(model_id) / "cover.jpg").read_bytes(), b"art")
-        self.assertEqual(self.count("SELECT COUNT(*) FROM models WHERE primary_image_url LIKE '/previews/%'"), 3)
+        self.assertEqual(self.count("SELECT COUNT(*) FROM collections WHERE primary_image_url LIKE '/previews/%'"), 3)
 
     def test_it_waits_while_inventory_runs(self):
         self.scan_everything()
@@ -592,13 +593,15 @@ class MigrationTests(unittest.TestCase):
     def run_backfill(self):
         sql = Path(__file__).resolve().parents[1].joinpath("migrations", "0008_library_scan.sql").read_text(encoding="utf-8")
         backfill = sql[sql.index("-- A linked model's identity"):]
+        # Written for the old table names, which this test's schema has moved past.
+        backfill = re.sub(r"\bmodels\b", "collections", backfill)
         with self.conn:
             self.conn.executescript(backfill)
 
     def test_existing_rows_get_relative_keys_and_keep_their_ids(self):
         with self.conn:
             self.conn.execute(
-                "INSERT INTO models (id, name, source, library_id, vault_path, raw_backup_path) VALUES (2000000000, 'A', 'external', 1, '/Volumes/STL/Loot/Rel/A', '')"
+                "INSERT INTO collections (id, name, source, library_id, vault_path, raw_backup_path) VALUES (2000000000, 'A', 'external', 1, '/Volumes/STL/Loot/Rel/A', '')"
             )
             self.conn.execute("INSERT INTO model_files (file_id, model_id, source, filename) VALUES (7, 2000000000, 'external', 'a.stl')")
             self.conn.execute(
@@ -606,13 +609,13 @@ class MigrationTests(unittest.TestCase):
                 " VALUES (7, 2000000000, 'a', 'a', 'a', 1, '/Volumes/STL/Loot/Rel/A/a.stl')"
             )
         self.run_backfill()
-        self.assertEqual(self.conn.execute("SELECT external_key FROM models WHERE id = 2000000000").fetchone()[0], "1/Rel/A")
+        self.assertEqual(self.conn.execute("SELECT external_key FROM collections WHERE id = 2000000000").fetchone()[0], "1/Rel/A")
         self.assertEqual(self.conn.execute("SELECT external_key FROM model_files WHERE file_id = 7").fetchone()[0], "1/Rel/A/a.stl")
 
     def test_existing_tombstones_appear_in_the_log(self):
         with self.conn:
             self.conn.execute(
-                "INSERT INTO models (id, name, source, description, raw_backup_path) VALUES (5, '[Unavailable Model 5]', 'mmf', 'HTTP 404', '')"
+                "INSERT INTO collections (id, name, source, description, raw_backup_path) VALUES (5, '[Unavailable Model 5]', 'mmf', 'HTTP 404', '')"
             )
         self.run_backfill()
         row = self.conn.execute("SELECT process, reason, detail FROM inactive_log WHERE item_id = 5").fetchone()

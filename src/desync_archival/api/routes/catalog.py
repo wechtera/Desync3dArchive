@@ -196,7 +196,7 @@ def handle_get_models(
         args.append(month)
     if tag:
         clean_tag = tag.lstrip("#").strip().lower()
-        tag_clause = " AND m.id IN (SELECT model_id FROM model_tags WHERE tag = ? OR tag LIKE ?)"
+        tag_clause = " AND m.id IN (SELECT model_id FROM collection_tags WHERE tag = ? OR tag LIKE ?)"
         query += tag_clause
         count_query += tag_clause
         args.extend([clean_tag, f"%{clean_tag}%"])
@@ -205,14 +205,14 @@ def handle_get_models(
         search_clause = """ AND m.id IN (
             SELECT rowid FROM catalog_search WHERE name LIKE ?
             UNION SELECT rowid FROM catalog_search WHERE designer_name LIKE ?
-            UNION SELECT model_id FROM model_tags WHERE tag LIKE ?
+            UNION SELECT model_id FROM collection_tags WHERE tag LIKE ?
                 AND model_id IN (SELECT rowid FROM catalog_search WHERE tags LIKE ?)
-            UNION SELECT collection_id FROM catalog_model_collections
-                WHERE catalog_model_id IN (SELECT rowid FROM catalog_search_models WHERE name LIKE ?)
+            UNION SELECT collection_id FROM model_collections
+                WHERE model_id IN (SELECT rowid FROM catalog_search_models WHERE name LIKE ?)
             UNION SELECT collection_id FROM model_groups
                 WHERE id IN (SELECT rowid FROM catalog_search_groups WHERE name LIKE ?)
-            UNION SELECT c.collection_id FROM catalog_model_collections c
-                JOIN model_artifacts a ON a.catalog_model_id = c.catalog_model_id
+            UNION SELECT c.collection_id FROM model_collections c
+                JOIN model_artifacts a ON a.model_id = c.model_id
                 WHERE a.id IN (SELECT rowid FROM catalog_search_artifacts WHERE name LIKE ?)
         )"""
         query += search_clause
