@@ -63,6 +63,11 @@ def _apply_groups(conn: sqlite3.Connection, library_id: int, release: str, assig
 
 
 def save(conn: sqlite3.Connection, library_id: int, release: str, cards: list[dict]) -> dict[str, Any]:
+    """Applies edits. An emptied card keeps its row and redirects, so no ID dangles.
+
+    Raises:
+        ReviewError: The review can't be applied.
+    """
     conn.row_factory = sqlite3.Row
     artifacts = _artifacts(conn, library_id, release)
     if not artifacts:

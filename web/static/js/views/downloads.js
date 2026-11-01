@@ -102,6 +102,7 @@ export function setReconcileMode(mode) {
   }
 }
 
+/** Polls transfers while the Active view shows. Stops itself when the view is hidden. */
 export function startActiveTransfersPolling() {
   stopActiveTransfersPolling();
 
@@ -337,6 +338,7 @@ function updatePendingPagination(offset, count) {
   if (nextBtn) nextBtn.disabled = currentPendingPage >= totalPages;
 }
 
+/** Adds or removes one model from the selection, which survives paging. */
 export function toggleSelectPending(modelId, isChecked) {
   if (isChecked) {
     selectedPendingIds.add(modelId);
@@ -434,6 +436,7 @@ export async function clearQueueStatus(status = 'pending') {
   }
 }
 
+/** Purges pending, downloading and failed jobs, after asking. */
 export async function confirmPurgeIncomplete() {
   if (!confirm('Purge all pending and downloading jobs? Completed files will remain intact.')) return;
   try {
@@ -445,6 +448,7 @@ export async function confirmPurgeIncomplete() {
   }
 }
 
+/** Draws workers and the queue. Returns the status, or null on failure, so the poll can pace itself. */
 export async function renderActiveTransfers() {
   try {
     const data = await fetchDownloadsStatus();
@@ -1003,6 +1007,7 @@ export async function resetAllReconcileDiscrepancies() {
 export async function deleteSingleOrphan(path) {
   if (!confirm(`Permanently delete orphan directory from disk?\n\n${path}`)) return;
   try {
+    // FIXME(R-15): success is true even when errors is not empty, so a failed delete looks done.
     const res = await deleteOrphanDirectories([path]);
     if (res.success) {
       currentOrphanDirectories = currentOrphanDirectories.filter(o => o.directory_path !== path);
@@ -1172,6 +1177,7 @@ export async function triggerDuplicateScan(includeShared = false) {
 }
 
 // Results stay until each pair is acted on, so returning to the page finds them where they were.
+/** Shows the saved results, so returning to the page finds them where they were. */
 export async function loadDuplicateResults() {
   try {
     const data = await fetchLatestDuplicates();
@@ -1321,8 +1327,10 @@ function renderPathDriftResults(items) {
   render(htmlParts, container);
 }
 
+/** Moves one model's folder to its canonical path. Doesn't ask first. */
 export async function realignSinglePath(modelId) {
   try {
+    // FIXME(R-15): same here. Per-item errors are dropped, and this path never asks first.
     const res = await realignModelPaths([modelId]);
     if (res.success) {
       currentPathDrifts = currentPathDrifts.filter(it => it.model_id !== modelId);

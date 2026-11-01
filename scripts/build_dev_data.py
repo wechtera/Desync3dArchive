@@ -63,6 +63,7 @@ def is_within(path: Path, parent: Path) -> bool:
 
 
 def text_columns(conn: sqlite3.Connection) -> list[tuple[str, str]]:
+    """Lists every text column, which the secret sweep has to search."""
     tables = conn.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
     ).fetchall()
@@ -139,6 +140,11 @@ def sanitize_database(db_path: Path, source_root: Path, dest: Path) -> list[str]
 
 
 def verify_database(db_path: Path, secrets: list[str], forbidden_paths: list[str], dest: Path) -> None:
+    """Fails the build if a secret or production path survived in the copy.
+
+    Raises:
+        SanitizeError: The dev copy failed verification.
+    """
     conn = sqlite3.connect(db_path)
     try:
         settings = read_settings(conn)
@@ -198,6 +204,7 @@ def sample_model_ids(db_path: Path) -> list[int]:
 
 
 def copy_sample(source_root: Path, target_root: Path, model_ids: list[int]) -> None:
+    """Copies only the sample, so a dev build never pulls from the NAS."""
     (target_root / "previews").mkdir(parents=True, exist_ok=True)
     (target_root / "metadata").mkdir(parents=True, exist_ok=True)
     for model_id in model_ids:
@@ -210,6 +217,7 @@ def copy_sample(source_root: Path, target_root: Path, model_ids: list[int]) -> N
 
 
 def copy_old_app(source_root: Path, dest: Path) -> None:
+    """Copies the old code without cookies, browser profiles or scrape output."""
     old_app = dest / "old_app"
     old_app.mkdir()
     ignored = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "*cookies*", "*.db", "*.log")
@@ -218,6 +226,7 @@ def copy_old_app(source_root: Path, dest: Path) -> None:
 
 
 def clear_previous_build(dest: Path) -> None:
+    """Clears the last build, keeping recorded baselines."""
     for child in dest.iterdir():
         if child.name in KEPT_ON_REBUILD:
             continue
@@ -228,6 +237,11 @@ def clear_previous_build(dest: Path) -> None:
 
 
 def check_destination(source_root: Path, dest: Path, protected: list[Path], repo_root: Path) -> None:
+    """Refuses a destination that sits in production, the repository or a protected path.
+
+    Raises:
+        SanitizeError: The dev copy failed verification.
+    """
     if is_within(dest, source_root) or is_within(source_root, dest):
         raise SanitizeError("The destination and the source must not overlap")
     if is_within(dest, repo_root):
@@ -248,6 +262,11 @@ def build(
     repo_root: Path,
     forbidden_paths: list[str],
 ) -> None:
+    """Runs the whole build, and moves the database into place only after it verifies.
+
+    Raises:
+        SanitizeError: The dev copy failed verification.
+    """
     check_destination(source_root, dest, protected, repo_root)
     source_db = source_root / "library.db"
     if not source_db.is_file():

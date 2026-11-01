@@ -49,6 +49,11 @@ def _load() -> None:
 
 
 def app_env() -> str:
+    """Reads APP_ENV, which has no default so nothing can guess its way to production.
+
+    Raises:
+        SettingsError: The configuration is missing or invalid.
+    """
     _load()
     value = os.environ.get("APP_ENV", "").strip()
     if not value:
@@ -96,6 +101,7 @@ def login_required() -> bool:
 
 
 def secrets_file() -> Path:
+    """Where secrets live, outside the repository and data folder."""
     _load()
     value = os.environ.get("DESYNC_SECRETS_FILE", "").strip()
     return Path(value).expanduser().resolve() if value else Path.home() / ".config" / "desync-archival" / "secrets.json"
@@ -117,12 +123,14 @@ def tls_files() -> tuple[Path, Path] | None:
 
 
 def allowed_hosts() -> set[str]:
+    """Host header values the app accepts, which is what stops DNS rebinding."""
     _load()
     extra = os.environ.get("DESYNC_ALLOWED_HOSTS", "")
     return set(DEFAULT_ALLOWED_HOSTS) | {item.strip().lower() for item in extra.split(",") if item.strip()}
 
 
 def protected_paths() -> list[Path]:
+    """Locations a non-production run must never touch."""
     _load()
     paths = [REPO_ROOT.parent / "scrapepage_deprecated", Path.home() / "DESYNC_Data"]
     configured = os.environ.get("DESYNC_PROTECTED_PATHS", "")
@@ -137,6 +145,11 @@ def is_protected(path: Path | str) -> bool:
 
 
 def check_path(path: Path | str) -> None:
+    """Refuses a protected path outside production.
+
+    Raises:
+        ProductionPathError: A non-production run reached a production location.
+    """
     if not is_production() and is_protected(path):
         raise ProductionPathError(
             f"Refusing production path outside APP_ENV={PRODUCTION}: {Path(path).expanduser().resolve()}"
@@ -152,7 +165,9 @@ def allowed_roots() -> list[Path]:
 
 
 def is_allowed(path: Path | str) -> bool:
+    """Reports whether a path sits inside an allowed root, after resolving symlinks."""
     resolved = Path(path).expanduser().resolve()
+    # Safety: compares components after resolving, so symlinks and sibling prefixes can't pass.
     return any(resolved == root or root in resolved.parents for root in allowed_roots())
 
 
@@ -175,8 +190,14 @@ def _raw_data_dir() -> Path:
 
 
 def data_dir() -> Path:
+    """Returns the checked data folder. There is no default on purpose.
+
+    Raises:
+        SettingsError: The configuration is missing or invalid.
+    """
     path = _raw_data_dir()
     check_path(path)
+    # FIXME(S-14): any other non-production value, such as dev or test, skips this requirement.
     if app_env() == "development" and not os.environ.get("DESYNC_PROTECTED_PATHS", "").strip():
         raise SettingsError("DESYNC_PROTECTED_PATHS is required in development. See .env.example.")
     return path
@@ -223,12 +244,18 @@ def save_backup_paths(backup: str, mirror: str) -> None:
 
 
 def backup_mirror_dir() -> Path | None:
+    """The second backup folder, if any. Settings wins over the environment."""
     _load()
     value = _backup_path_choice("mirror_dir") or os.environ.get("DESYNC_BACKUP_MIRROR_DIR", "").strip()
     return Path(value).expanduser().resolve() if value else None
 
 
 def backup_dir() -> Path:
+    """The backup folder. Settings wins over the environment.
+
+    Raises:
+        SettingsError: The configuration is missing or invalid.
+    """
     _load()
     value = _backup_path_choice("backup_dir") or os.environ.get("DESYNC_BACKUP_DIR", "").strip()
     if not value:

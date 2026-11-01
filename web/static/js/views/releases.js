@@ -308,6 +308,7 @@ export async function queueReleasePack(releaseId) {
 }
 
 export async function cancelReleaseQueue(releaseId) {
+  // FIXME(R-12): the first part is a designer ID or `external`, not a name, so this matches the wrong models or none.
   const parts = releaseId.split('_');
   const data = await fetchModels({ designer: parts[0], month: parts[1], limit: 200 });
   const ids = data.models.map(m => m.id);

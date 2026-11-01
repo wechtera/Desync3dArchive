@@ -13,6 +13,7 @@ from desync_archival.db.queries import stash_service as queries
 
 
 class StashService:
+    """Stash manifests and items. Reads the catalog only, except for verify_on_storage."""
     def __init__(self, db_path: Optional[Union[Path, str]] = None):
         if db_path:
             self.db_path = Path(db_path).resolve()

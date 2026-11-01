@@ -45,6 +45,7 @@ def run_startup_analytics(conn: sqlite3.Connection):
 
         conn.execute(queries.DELETE_RELEASES)
 
+        # FIXME(R-11): files join tags, so each file counts once per tag. Sizes inflate the same way.
         cluster_query = """
             SELECT 
                 COALESCE(m.designer_id, 0) || '_' || m.release_month AS release_id,
@@ -143,6 +144,7 @@ def compute_catalog_audit(conn: sqlite3.Connection, designer: Optional[str] = No
     avg_count = sum(counts) / n if n > 0 else 0.0
     variance = sum((c - avg_count) ** 2 for c in counts) / (n - 1) if n > 1 else 0.0
     std_dev = math.sqrt(variance)
+    # Outlier band: 1.5 sample standard deviations, with a floor of 3 so small catalogs don't flag noise.
     sensitivity = max(1.5 * std_dev, 3.0)
 
     high_outliers = []

@@ -552,6 +552,7 @@ export async function handleSetActiveStash(stashId) {
   }
 }
 
+/** Deletes a stash after asking. Files are untouched. */
 export async function handleDeleteStash(stashId, stashName) {
   if (!confirm(`Delete stash manifest "${stashName}"?\n\nThis will only delete the logical staging manifest. Downloaded models and original library files on disk will NEVER be touched.`)) {
     return;

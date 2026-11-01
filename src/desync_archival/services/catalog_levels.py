@@ -22,6 +22,7 @@ MERGED = "merged"
 PLACEHOLDER = "placeholder"
 FIRST_REAL_ID = 1_000_000_000_000  # Placeholders share their collection's ID, so real models start here.
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+# Lookbehind stops 132mm or 1.32mm matching as 32mm.
 SCALE = re.compile(r"(?<![\d.])(\d+(?:\.\d+)?)\s?mm\b", re.IGNORECASE)
 
 
@@ -253,6 +254,7 @@ def clean_orphan_links(conn: sqlite3.Connection) -> int:
     return members + tags
 
 
+# FIXME(P-03): relearns everything for every peek, which blocks the E36 backfill.
 def build_archive_models(conn: sqlite3.Connection, only_collection: int | None = None) -> dict[str, Any]:
     """Adds whatever a peek stored that has no artifact yet, so it can run any number of times.
 

@@ -21,6 +21,8 @@ DECISIONS = ("keep", "ignore")
 
 
 def normalize_name(filename: str) -> str:
+    """Strips size prefixes and punctuation so renamed copies still match."""
+    # Strips a leading size or number, as in `[12.5 MB] name` or `003_name`.
     stem = re.sub(r"^\[?\d+(?:\.\d+)?\s*(?:mb|kb|gb|b)?\]?[_\-\s]+", "", filename.strip().lower())
     return re.sub(r"[^a-z0-9.]+", " ", stem).strip()
 
@@ -89,6 +91,7 @@ def _model_level(groups: list[list[dict[str, Any]]], file_counts: dict[int, int]
 
 
 def find_duplicates(conn: sqlite3.Connection, include_shared: bool = False) -> dict[str, Any]:
+    """Finds exact and likely duplicates from the catalog, without touching the NAS."""
     row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY).fetchone()
     ignored = [word.strip().lower() for word in (row[0] if row else DEFAULT_IGNORE_NAMES).split(",") if word.strip()]
 
@@ -100,6 +103,7 @@ def find_duplicates(conn: sqlite3.Connection, include_shared: bool = False) -> d
         names[item["model_id"]] = item["model_name"]
 
     if not include_shared:
+        # FIXME(R-13): a substring test, so `support` also drops every file named supported or unsupported.
         files = [f for f in files if not any(word in f["filename"].lower() for word in ignored)]
 
     by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -149,6 +153,11 @@ class DecisionRefused(ValueError):
 
 
 def decide(conn: sqlite3.Connection, first: int, second: int, decision: str) -> dict[str, Any]:
+    """Remembers a decision so a pair isn't raised again.
+
+    Raises:
+        DecisionRefused: The decision was refused.
+    """
     if decision not in DECISIONS:
         raise DecisionRefused("Choose keep or ignore.")
     low, high = _pair_key(first, second)

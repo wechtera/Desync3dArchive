@@ -181,6 +181,7 @@ SELECT_DOWNLOAD_JOBS = """
 
 COUNT_MODEL_FILES_FOR_QUEUE = "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM model_files WHERE model_id = ?;"
 
+# FIXME(R-17): no status guard, so queuing a model mid-download starts a second writer on its .part file.
 UPDATE_DOWNLOAD_JOBS_FOR_QUEUE = """
                 UPDATE download_jobs
                 SET status = 'pending', total_files = ?, total_bytes = ?,

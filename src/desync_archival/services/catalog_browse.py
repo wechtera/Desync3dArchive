@@ -65,6 +65,7 @@ def _summary(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
 
 
 def list_models(conn: sqlite3.Connection, search: str = "", page: int = 1, tag: str = "", creator: str = "") -> dict[str, Any]:
+    """Pages visible models. Merged and skipped models stay out of lists."""
     conn.row_factory = sqlite3.Row
     where, args = _VISIBLE, []
     if search:
@@ -89,6 +90,7 @@ def list_models(conn: sqlite3.Connection, search: str = "", page: int = 1, tag: 
 
 
 def model_detail(conn: sqlite3.Connection, model_id: int) -> dict[str, Any] | None:
+    """One model with artifacts, following merges so old IDs keep working."""
     conn.row_factory = sqlite3.Row
     row = conn.execute(queries.SELECT_MODELS_BY_ID, (model_id,)).fetchone()
     # Old IDs keep working after a merge, however many times it happened.

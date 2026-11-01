@@ -1,6 +1,7 @@
 import { fetchCreators } from '../api.js';
 import { html, render } from '../template.js';
 
+/** Fills the creator table and both creator filters from one request. */
 export async function loadCreators() {
   const creators = await fetchCreators();
 
@@ -33,6 +34,7 @@ export async function loadCreators() {
   }
 }
 
+/** Jumps to Releases, filtered to one creator. */
 export function filterByCreator(name) {
   window.switchTab('releases');
   const releaseSearch = document.getElementById('release-search');

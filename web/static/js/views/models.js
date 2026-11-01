@@ -243,6 +243,7 @@ export function changeModelPage(delta) {
   }
 }
 
+/** Filters to a tag, without opening the card behind the chip. */
 export function filterByTag(tagName, event) {
   if (event) event.stopPropagation();
   const tagInput = document.getElementById('model-tag-filter');
@@ -1156,6 +1157,7 @@ export async function openEphemeralRenderModal(sourceType, sourceId, initialView
   await switchEphemeralView(initialView);
 }
 
+/** Closes the viewer and frees its blob URL. */
 export function closeEphemeralRenderModal() {
   const modal = document.getElementById('modal-ephemeral-render');
   if (modal) modal.style.display = 'none';

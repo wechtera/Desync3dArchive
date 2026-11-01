@@ -55,6 +55,7 @@ def _tree(conn: sqlite3.Connection, library_id: int, release: str) -> dict[str, 
 
 
 def save_tree(conn: sqlite3.Connection, library_id: int, run_id: int, release: str, tree: dict[str, list[str]]) -> None:
+    """Stores a release's tree, so reviewing never walks the share again."""
     values = (run_id, json.dumps(tree["folders"]), json.dumps(tree["files"]), library_id, release)
     updated = conn.execute(
         queries.UPDATE_LIBRARY_RELEASE_TREES_RUN_ID_BY_LIBRARY_ID,
@@ -222,6 +223,11 @@ def release_view(conn: sqlite3.Connection, library_id: int, release: str) -> dic
 
 
 def save(conn: sqlite3.Connection, library_id: int, release: str, cards: list[dict], reviewed: bool) -> dict[str, Any]:
+    """Saves a human's cards. Added cards are history and stay as they were.
+
+    Raises:
+        ReviewError: The review can't be applied.
+    """
     latest = _latest_run(conn, library_id)
     tree = _tree(conn, library_id, release)
     if not latest or tree is None:
@@ -241,6 +247,11 @@ def save(conn: sqlite3.Connection, library_id: int, release: str, cards: list[di
 
 
 def reset(conn: sqlite3.Connection, library_id: int, release: str) -> dict[str, Any]:
+    """Puts a release back to the resolver's guess.
+
+    Raises:
+        ReviewError: The review can't be applied.
+    """
     latest = _latest_run(conn, library_id)
     tree = _tree(conn, library_id, release)
     if not latest or tree is None:

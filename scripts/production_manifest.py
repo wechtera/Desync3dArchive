@@ -21,6 +21,7 @@ IGNORED_NAMES = {".DS_Store"}
 
 
 def scan_root(root: Path) -> dict[str, Any]:
+    """Records size and modified time for a tree, without opening any file."""
     if not root.exists():
         return {"exists": False, "entries": {}, "errors": []}
     if not root.is_dir():

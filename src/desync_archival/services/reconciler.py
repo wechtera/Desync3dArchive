@@ -43,6 +43,7 @@ except ImportError:
 
 
 def validate_stl_file(file_path: Path) -> Tuple[bool, Optional[str]]:
+    """Checks a binary STL's size against its triangle count, or an ASCII STL's end marker."""
     try:
         file_size = file_path.stat().st_size
         if file_size < 84:
@@ -56,6 +57,7 @@ def validate_stl_file(file_path: Path) -> Tuple[bool, Optional[str]]:
             return False, "Could not read 84-byte STL header"
 
         num_triangles = struct.unpack("<I", header[80:84])[0]
+        # Binary STL layout: 80 byte header, 4 byte count, 50 bytes per triangle.
         expected_binary_size = 84 + (50 * num_triangles)
 
         if file_size == expected_binary_size:
@@ -98,6 +100,7 @@ def compute_file_sha256(file_path: Path, chunk_size: int = 1024 * 1024) -> str:
 
 
 class VaultReconciler:
+    """Audits the vault against the catalog and carries out the repairs. Process-wide singleton."""
     _instance: Optional["VaultReconciler"] = None
     _lock = threading.Lock()
 
@@ -128,6 +131,7 @@ class VaultReconciler:
         log_cb: Optional[Callable[[str], None]] = None,
         cancel_cb: Optional[Callable[[], bool]] = None,
     ) -> Dict[str, Any]:
+        """Runs a fast, deep or reverse audit. Unknown modes fall back to fast."""
         mode = str(scan_mode).lower().strip()
         if mode not in ("fast", "deep", "reverse"):
             mode = "fast"
@@ -153,6 +157,7 @@ class VaultReconciler:
             return self._execute_forward(nas_root, mode, progress, log, is_cancelled)
 
     def _execute_reverse(self, nas_root: Path, progress, log, is_cancelled) -> Dict[str, Any]:
+        # Matches 123_Name and bare [123]. An old `[123] Name` folder has a space and doesn't match.
         model_dir_regex = re.compile(r"^\[?(\d+)\]?(?:_(.*))?$")
         candidate_model_dirs: List[Path] = []
 
@@ -166,6 +171,7 @@ class VaultReconciler:
             root_path = Path(root)
             if root_path == nas_root:
                 # Ad-hoc imports follow no creator layout, and a numbered folder there would read as an orphan.
+                # Business rule: these folders follow no creator layout, so they must never read as orphans.
                 dirs[:] = [d for d in dirs if d not in (IMPORT_FOLDER, PENDING_DELETION_FOLDER)]
                 continue
             if root_path.name == "files":
@@ -533,6 +539,7 @@ class VaultReconciler:
         return offline
 
     def reset_reconciliation_models(self, model_ids: List[int], dry_run: bool = False) -> Dict[str, Any]:
+        """Forgets stored files and vault paths. Files on disk are left alone."""
         if not model_ids:
             return {"success": False, "error": "No model IDs provided."}
         clean_ids = [int(m) for m in model_ids if str(m).isdigit()]
@@ -558,6 +565,7 @@ class VaultReconciler:
         return {"success": True, "reset_count": len(clean_ids)}
 
     def delete_orphan_directories(self, paths: List[str], dry_run: bool = False) -> Dict[str, Any]:
+        """Permanently removes folders inside the vault root, and empties parents upward."""
         if not paths:
             return {"success": False, "error": "No directory paths provided."}
         nas_root = self.storage.get_root_path().resolve()
@@ -567,6 +575,7 @@ class VaultReconciler:
         for p_str in paths:
             try:
                 target = Path(p_str).resolve()
+                # Safety: containment only. FIXME(S-02): also require an audit-listed orphan, and refuse the two fixed folders.
                 if not target.is_relative_to(nas_root) or target == nas_root:
                     errors.append(f"Security: Refusing deletion outside vault root: {target}")
                     log_layer("storage", logging.ERROR, f"Refused orphan deletion outside NAS root: {target}")
@@ -608,6 +617,7 @@ class VaultReconciler:
                 if not model_id or not fpath_str:
                     continue
                 try:
+                    # FIXME(S-06): no vault check, so any file on this machine can be catalogued.
                     fpath = Path(fpath_str).resolve()
                     if not fpath.exists() or not fpath.is_file():
                         continue
@@ -636,6 +646,7 @@ class VaultReconciler:
         return {"success": True, "ingested_count": len(ingested), "errors": errors}
 
     def scan_staging_garbage(self) -> Dict[str, Any]:
+        """Lists staging entries whose job is gone, finished or failed."""
         work_dir = self.storage.get_work_path().resolve()
         in_flight_dir = work_dir / "in_flight"
         staged_dir = work_dir / "staged"
@@ -677,6 +688,7 @@ class VaultReconciler:
         return {"success": True, "total_items": len(garbage_items), "total_bytes": total_bytes, "items": garbage_items}
 
     def purge_staging_garbage(self, target_paths: Optional[List[str]] = None, dry_run: bool = False) -> Dict[str, Any]:
+        """Removes entries inside staging only."""
         work_dir = self.storage.get_work_path().resolve()
         in_flight_dir = (work_dir / "in_flight").resolve()
         staged_dir = (work_dir / "staged").resolve()
@@ -709,6 +721,7 @@ class VaultReconciler:
         return {"success": True, "purged_count": purged, "reclaimed_bytes": reclaimed, "errors": errors}
 
     def scan_path_drift(self) -> Dict[str, Any]:
+        """Compares each MMF folder with its canonical path, using the catalog and path resolution."""
         nas_root = self.storage.get_root_path().resolve()
         with self._get_db() as conn:
             models = conn.execute(queries.SELECT_COLLECTIONS_BY_SOURCE_VAULT_PATH).fetchall()
@@ -746,6 +759,7 @@ class VaultReconciler:
                     continue
                 try:
                     canon.parent.mkdir(parents=True, exist_ok=True)
+                    # FIXME(S-03): if canon exists, move nests cur inside it and the stored path is wrong.
                     shutil.move(str(cur), str(canon))
                     with conn:
                         conn.execute(queries.UPDATE_COLLECTIONS_VAULT_PATH_BY_ID, (str(canon), mid))
@@ -905,6 +919,7 @@ class VaultReconciler:
         log_cb: Optional[Callable[[str], None]] = None,
         cancel_cb: Optional[Callable[[], bool]] = None,
     ) -> Dict[str, Any]:
+        """Caches missing covers locally, so the UI never needs MMF's CDN."""
         log = log_cb or (lambda _: None)
         progress = progress_cb or (lambda _pct, _lbl: None)
         is_cancelled = cancel_cb or (lambda: False)
@@ -949,6 +964,7 @@ class VaultReconciler:
         log(f"Found {total} models missing local cover previews. Beginning download sweep...")
         log_layer("http", logging.INFO, f"Downloading missing catalog preview covers for {total} models.")
 
+        # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
             "Referer": "https://www.myminifactory.com/",

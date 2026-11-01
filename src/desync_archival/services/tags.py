@@ -34,6 +34,11 @@ def listing(conn: sqlite3.Connection, search: str = "", limit: int = PAGE_LIMIT)
 
 
 def create(conn: sqlite3.Connection, name: str) -> str:
+    """Creates a tag, or brings back a blocked one.
+
+    Raises:
+        TagRefused: The tag change wasn't made.
+    """
     tag = clean(name)
     if not tag:
         raise TagRefused("A tag needs a name.")
@@ -64,6 +69,7 @@ def rename(conn: sqlite3.Connection, old: str, new: str) -> str:
 
 
 def delete(conn: sqlite3.Connection, name: str) -> None:
+    """Blocks a tag and removes it everywhere, so imports can't bring it back."""
     with conn:
         conn.execute(queries.BLOCK_TAG, (name,))
         conn.execute(queries.DELETE_COLLECTION_TAG_EVERYWHERE, (name,))
@@ -72,6 +78,7 @@ def delete(conn: sqlite3.Connection, name: str) -> None:
 
 
 def add_to_model(conn: sqlite3.Connection, model_id: int, name: str) -> None:
+    """Adds an existing tag and clears any removal record."""
     tag = _existing(conn, clean(name))
     with conn:
         conn.execute(queries.INSERT_MODEL_TAG, (model_id, tag))

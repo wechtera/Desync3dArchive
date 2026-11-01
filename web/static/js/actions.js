@@ -19,6 +19,7 @@ function dispatch(event, attribute) {
   handler(...args);
 }
 
+/** Routes data-click, data-change and data-input to window handlers, because the CSP forbids inline handlers. */
 export function bindActions() {
   document.addEventListener('click', (event) => dispatch(event, 'data-click'));
   document.addEventListener('change', (event) => dispatch(event, 'data-change'));

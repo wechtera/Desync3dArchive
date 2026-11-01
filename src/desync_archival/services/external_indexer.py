@@ -72,6 +72,7 @@ def _read_failed(error: OSError) -> None:
 
 
 def list_dirs(path: Path) -> list[Path]:
+    """Lists visible folders, and raises on a failed read instead of reporting none."""
     # Not Path.iterdir in a try/except: a dropped mount must never read as an empty folder.
     try:
         with os.scandir(path) as entries:
@@ -85,6 +86,7 @@ def list_dirs(path: Path) -> list[Path]:
 
 
 def walk_files(root: Path) -> Iterator[tuple[Path, int, int]]:
+    """Yields files with size and mtime, and raises on a failed read."""
     # A review card can own a single file.
     if root.is_file():
         info = root.stat()
@@ -118,6 +120,7 @@ def release_month_of(release_name: str) -> str:
 
 def is_presupported(path_text: str) -> bool:
     # Lookbehind because "unsupported" contains "supported". Lychee and ready-to-slice ship supported.
+    # Lookbehind skips `unsupported`. Lychee and ready-to-slice exports always ship supported.
     return bool(re.search(r"(?<!un)supported|lychee|readytoslice", path_text, re.IGNORECASE))
 
 
@@ -151,6 +154,7 @@ def deactivate_library(conn: sqlite3.Connection, library_id: int) -> list[int]:
 
 
 class ExternalLibraryIndexer:
+    """Indexes a linked library in place. Reads source storage only."""
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path).resolve()
         self.previews_root = app_config.previews_dir().resolve()
@@ -499,6 +503,7 @@ class ExternalLibraryIndexer:
         progress: Callable[[float, str], None] = lambda _pct, _lbl: None,
         is_cancelled: Callable[[], bool] = lambda: False,
     ) -> dict[str, Any]:
+        """Reads the whole tree and proposes models, writing nothing."""
         # Known folders win over the classifier. One new "32mm" folder can flip a release to a single model.
         known_rel = {key.split("/", 1)[1] for key in known_keys}
         known_folders = known_folders or {}
@@ -595,6 +600,7 @@ class ExternalLibraryIndexer:
         log_cb: Callable[[str], None] | None = None,
         cancel_cb: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
+        """Stores a new preview and its candidates, keeping human reviews."""
         log = log_cb or (lambda _: None)
         with self._get_db() as conn:
             library = self._library(conn, library_id)
@@ -683,6 +689,7 @@ class ExternalLibraryIndexer:
         log_cb: Callable[[str], None] | None = None,
         cancel_cb: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
+        """Adds approved folders one commit at a time, so a stop loses only the current folder."""
         # Each folder commits alone, so a stop or crash loses at most the one in progress.
         progress = progress_cb or (lambda _pct, _lbl: None)
         log = log_cb or (lambda _: None)
@@ -768,6 +775,7 @@ class ExternalLibraryIndexer:
         log_cb: Callable[[str], None] | None = None,
         cancel_cb: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
+        """Checks known models against storage, and holds the result if too many look missing."""
         # Never creates a model. New folders only come in through an approved preview.
         progress = progress_cb or (lambda _pct, _lbl: None)
         log = log_cb or (lambda _: None)
@@ -824,6 +832,7 @@ class ExternalLibraryIndexer:
                 return summary
 
             newly_missing = [m for m in missing if m["is_active"] == 1]
+            # Safety: past this, assume a flaky mount and flag nothing.
             limit = max(MASS_MISSING_MIN, int(total_known * MASS_MISSING_SHARE))
             if len(newly_missing) > limit:
                 summary["missing_held"] = len(newly_missing)
@@ -855,6 +864,7 @@ class ExternalLibraryIndexer:
         self._refresh_library_totals(conn, library_id, full_scan)
 
     def scan_and_index_library(self, library_id: int, **callbacks: Any) -> dict[str, Any]:
+        """Runs preview, approve, add and rescan with no human step. For scripts and tests only."""
         # Skips the human approval step, so keep this to scripts and tests.
         preview = self.preview_library(library_id, **callbacks)
         if not preview.get("success"):

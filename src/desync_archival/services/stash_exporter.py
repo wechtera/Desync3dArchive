@@ -54,6 +54,7 @@ def is_supported_file(filename: str) -> bool:
 
 
 class StashExporter:
+    """Materializes a stash into a slicer-ready folder, using local scratch only."""
     def __init__(
         self,
         db_path: Optional[Union[Path, str]] = None,
@@ -128,6 +129,7 @@ class StashExporter:
 
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             folder_name = f"{timestamp}_{sanitize_folder_name(stash_name)}"
+            # FIXME(R-18): a failed export stays here with no manifest and looks like a good one. Build in a .partial folder.
             target_export_dir = export_root / folder_name
             target_export_dir.mkdir(parents=True, exist_ok=True)
 
@@ -305,9 +307,11 @@ class StashExporter:
             targets.append(m)
 
         if not targets:
+            # Business rule: a filter that matches nothing exports everything, so a submodel is never empty.
             targets = list(members)
 
         for m in targets:
+            # FIXME(R-03): format folders are dropped from submodels, so Supported/Head.stl and Unsupported/Head.stl collide here.
             dest_file = submodel_dir / m["filename"]
             sz = self._surgical_extract_single_member(archive_path, m["internal_path"], scratch_dir, dest_file)
             bytes_count += sz
@@ -474,6 +478,7 @@ class StashExporter:
             raise FileNotFoundError(f"Vault archive file does not exist on storage: {target}")
         return target
 
+    # FIXME(P-05): reopens the archive per member, and each RAR member is a new process.
     def _surgical_extract_single_member(
         self,
         archive_path: Path,
@@ -510,6 +515,7 @@ class StashExporter:
                 if not target_entry:
                     raise FileNotFoundError(f"Could not find entry '{internal_path}' inside zip {archive_path.name}")
 
+                # FIXME(S-04): no size cap. Zip members skip the limits in external.extract_all.
                 with zf.open(target_entry, "r") as src, open(temp_scratch_file, "wb") as dst:
                     shutil.copyfileobj(src, dst)
 
@@ -614,6 +620,7 @@ class StashExporter:
                     if filter_mode == "unsupported" and is_supp:
                         continue
 
+                    # FIXME(R-03): unlike the zip branch, a repeated name overwrites here.
                     out_file = dest_dir / item.name
                     sz = item.stat().st_size
                     shutil.move(str(item), str(out_file))

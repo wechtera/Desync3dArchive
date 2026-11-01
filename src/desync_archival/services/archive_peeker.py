@@ -74,6 +74,7 @@ class DiscoveredSubmodel:
 
 
 class ArchivePeeker:
+    """Reads an archive's listing, pulls its images and records its contents. Never changes the archive."""
     def __init__(self, db_path: Path, previews_root: Optional[Path] = None):
         self.db_path = Path(db_path).resolve()
         self.previews_root = Path(previews_root).resolve() if previews_root else app_config.previews_dir().resolve()
@@ -230,6 +231,7 @@ class ArchivePeeker:
             if res.returncode == 0:
                 lines = res.stdout.splitlines()
                 for line in lines:
+                    # Expects attributes, size, date, time, name. FIXME: `unrar v` prints packed size and ratio too, so this likely matches nothing.
                     m = re.search(r"^\s*([.\-A-Za-z]+)\s+(\d+)\s+[\d\-]+\s+[\d:]+\s+(.+)$", line)
                     if m:
                         attr, sz_str, file_p = m.groups()
@@ -286,8 +288,10 @@ class ArchivePeeker:
             with zipfile.ZipFile(archive_path, "r") as zf:
                 for img_path in filtered_targets:
                     try:
+                        # FIXME(R-03): basename only, so same-named images from different folders overwrite each other.
                         clean_name = re.sub(r"[^\w\-_\.]", "_", Path(img_path).name)
                         out_file = dest_dir / clean_name
+                        # FIXME(S-04): no size cap on a third-party archive.
                         with zf.open(img_path, "r") as src, open(out_file, "wb") as dst:
                             shutil.copyfileobj(src, dst)
                         extracted[img_path] = out_file
@@ -364,6 +368,7 @@ class ArchivePeeker:
         if out_file.exists() and out_file.stat().st_size > 0:
             return out_file
 
+        # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
             "Referer": "https://www.myminifactory.com/",
@@ -539,6 +544,7 @@ class ArchivePeeker:
             att_name = attendant_id.group(0).replace("_", " ").title() if attendant_id else "Jurakin Attendant"
             return f"Jurakin_{att_name}", att_name, rel_dir
 
+        # Matches a unit name plus one hex-style letter or digit, such as Ghul_A. The word list is creator-specific.
         unit_trooper_match = re.search(r"(?:^|_)((?:Ghul|Banshee|Ant|Beetle|Louse|Mosquito|Knight|Flea|Effigies|Gourdsouls?|Bitlings?|Smilers?|Weblings?)_?[A-F0-9])\b", fn_stem, re.IGNORECASE)
         if unit_trooper_match:
             trooper_token = unit_trooper_match.group(1).replace("_", " ").title()

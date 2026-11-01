@@ -22,6 +22,7 @@ PRINT_WORDS = frozenset({
     "nosupports", "supports", "support", "hollow", "hollowed", "solid", "files", "all", "readytoslice", "models",
     "scale", "no", "lys", "ctb",
 })
+# Whole-word scale such as 32mm, 1.5mm or fdm32mm.
 SCALE = re.compile(r"^(fdm)?[\d.]*\d+mm$")
 # Forms that are separate prints of the same subject, so they stay separate models.
 SEPARATE_FORMS = ("bust",)
@@ -58,6 +59,7 @@ CAMEL = re.compile(r"(?<=[a-z])(?=[A-Z])")
 
 @dataclass
 class ResolvedModel:
+    """A proposed model. A guess until a human reviews it."""
     key: str
     name: str
     form: str = ""
@@ -87,6 +89,7 @@ def slug_of(words: list[str]) -> str:
 
 
 def learn_variant_words(folders: list[str]) -> set[str]:
+    """Learns print words from the pile, using how many different words sit beside each one."""
     # Paths use / and exclude the file itself. Pass the whole pile: bigger piles learn better.
     # What a word sits beside is the tell. BrazenBull_32mm only ever sits beside print words, so a
     # character stays a character however many folders repeat it. Counting folders alone made any

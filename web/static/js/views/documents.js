@@ -72,6 +72,7 @@ function card(doc) {
   `;
 }
 
+/** Loads one page of PDFs. Filters run on the server, so this works offline. */
 export async function loadDocuments(nextPage = 1) {
   page = nextPage;
   const results = document.getElementById('document-results');

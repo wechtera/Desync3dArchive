@@ -79,6 +79,7 @@ def parse_cookies(text: str) -> dict[str, str]:
 
 
 def inspect_schema_drift(model_id: int, data: dict) -> list[tuple[str, str]]:
+    """Flags fields MMF added or dropped, so API changes show up in the data."""
     anomalies = []
     incoming_keys = set(data.keys())
     unexpected = incoming_keys - KNOWN_TOP_LEVEL_KEYS
@@ -196,6 +197,7 @@ def extract_normalized_records(model_id: int, data: dict, backup_path: Path):
 
 
 class TaskManager:
+    """Runs one background pipeline task at a time. Process-wide singleton."""
     _instance: Optional["TaskManager"] = None
     _cls_lock = threading.Lock()
 
@@ -239,6 +241,7 @@ class TaskManager:
             return
         try:
             cover_dir.mkdir(parents=True, exist_ok=True)
+            # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
             headers = {
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Referer": "https://www.myminifactory.com/",
@@ -259,11 +262,13 @@ class TaskManager:
             row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY, (key,)).fetchone()
             return row["value"] if row and row["value"] is not None else default
 
+    # FIXME(P-02): one connection and one fsync per line, and each append rewrites the whole log value.
     def _append_log(self, task_id: int, message: str):
         # This text lands in the database and the UI, which the logger's own filter never sees.
         message = redact(str(message))
         timestamp = datetime.now().strftime("%H:%M:%S")
         log_line = f"[{timestamp}] {message}"
+        # FIXME: stdout goes to server.out, which nothing rotates. The logger line below already records this.
         print(f"[Task #{task_id}] {log_line}")
         logger.info(f"[Task #{task_id}] {message}")
         with self._get_db() as conn:
@@ -382,6 +387,7 @@ class TaskManager:
 
         with self._get_db() as conn:
             auth_service.set_settings(conn, {
+                # FIXME(R-06): also stamped on failure, so a failed monthly backup isn't retried for 30 days.
                 "last_backup_epoch": str(time.time()),
                 "last_backup_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "last_backup_result": result,
@@ -532,6 +538,7 @@ class TaskManager:
                 task_id = cursor.lastrowid
                 conn.execute(queries.UPDATE_PIPELINE_TASKS_STARTED_AT_BY_ID, (task_id,))
 
+            # FIXME(R-16): _cancel_requested is one shared flag, so this un-cancels any older worker that is still running.
             self.active_task_id = task_id
             self._cancel_requested = False
 
@@ -558,6 +565,7 @@ class TaskManager:
         return {"success": True, "task_id": task_id, "task_type": task_type}
 
     def cancel_task(self, task_id: int) -> Dict[str, Any]:
+        """Flags cancellation and marks the row, before the worker has actually stopped."""
         with self._lock:
             self._cancel_requested = True
             if self.active_process and self.active_process.poll() is None:
@@ -572,7 +580,9 @@ class TaskManager:
             logger.info(f"[TaskManager] Cancelled task #{task_id} by operator.")
             return {"success": True, "task_id": task_id}
 
+    # FIXME(R-16): this frees the slot while a Python worker keeps running, so busy checks report idle.
     def kill_task(self, task_id: int) -> Dict[str, Any]:
+        """Kills any subprocess and releases the slot. A Python worker thread can't be killed."""
         with self._lock:
             self._cancel_requested = True
             if self.active_process and self.active_process.poll() is None:
@@ -662,6 +672,7 @@ class TaskManager:
             ).fetchone()[0]
 
     def clear_task_history(self) -> int:
+        """Deletes finished tasks, which also clears saved duplicate results."""
         with self._get_db() as conn:
             with conn:
                 cursor = conn.execute(queries.DELETE_PIPELINE_TASKS_BY_STATUS)
@@ -766,6 +777,7 @@ class TaskManager:
                 with self._get_db() as conn:
                     renewed = auth_service.keep_fresh_cookies(conn, cookies_dest.read_text(encoding="utf-8"))
                 self._append_log(task_id, f"Saved {renewed} renewed session cookies.")
+            # Safety: live session cookies. FIXME(S-07): move to finally, because earlier exits leave them on disk.
             cookies_dest.unlink(missing_ok=True)
 
             if self._cancel_requested:
@@ -920,6 +932,7 @@ class TaskManager:
         if skipped_count > 0:
             self._append_log(task_id, f"Skipping {skipped_count} active models already recorded in SQLite.")
 
+        # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
         base_headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
             "Accept": "application/json",
@@ -952,6 +965,7 @@ class TaskManager:
 
         async with httpx.AsyncClient(
             headers=active_headers,
+            # FIXME(S-01): same as the download client. These cookies have no domain.
             cookies=cookies_dict,
             timeout=20.0,
             follow_redirects=True,
@@ -1064,6 +1078,7 @@ class TaskManager:
                             if anomalies:
                                 conn.executemany(queries.INSERT_SCHEMA_ANOMALIES, [(local_id, anom[0], anom[1]) for anom in anomalies])
 
+                        # FIXME(P-06): a blocking HTTP call on the event loop, under db_lock, so ingest concurrency is one.
                         self._cache_cover(local_id, model_row[16])
 
                         with conn:

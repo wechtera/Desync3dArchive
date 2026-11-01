@@ -11,6 +11,7 @@ import { html } from './template.js';
 export function parseServerTime(val) {
   if (!val) return null;
   const text = String(val);
+  // A space and no zone means SQLite's CURRENT_TIMESTAMP, which is UTC.
   const isSqliteUtc = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(\.\d+)?$/.test(text);
   const date = new Date(isSqliteUtc ? `${text.replace(' ', 'T')}Z` : text);
   return Number.isNaN(date.getTime()) ? null : date;

@@ -68,6 +68,7 @@ SELECT_PIPELINE_TASKS_BY_STATUS_V3 = """
                 ORDER BY id DESC LIMIT 1;
             """
 
+# FIXME(P-01): the status poll reads full logs and reports for ten tasks, about 254 KB per poll today.
 SELECT_PIPELINE_TASKS_V2 = """
                 SELECT id, task_type, status, progress_pct, progress_label,
                        artifacts_json, result_summary_json, log_output,

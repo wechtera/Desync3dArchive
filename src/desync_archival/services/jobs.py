@@ -58,6 +58,7 @@ def busy_reason(conn, download_manager=None) -> str | None:
     ).fetchone()
     if running:
         return f"Task #{running[0]} ({running[1]}) is running. Wait for it, or cancel it, then try again."
+    # FIXME(R-17): offloads aren't checked, so a destructive action can start during one.
     active = getattr(download_manager, "active_downloads", None)
     if isinstance(active, dict) and active:
         return "Downloads are running. Pause them and wait for them to finish, then try again."

@@ -77,6 +77,7 @@ def handle_post_downloads_queue(
     release_id = body.get("release_id")
 
     if release_id and not model_ids:
+        # FIXME(R-12): the key starts with designer_id, or `external`, never the designer name, so this finds no models.
         parts = release_id.split("_", 1)
         if len(parts) == 2:
             designer, month = parts
@@ -100,6 +101,7 @@ def handle_post_downloads_queue(
     return {"success": True, "queued_count": queued_count}, 200
 
 
+# FIXME(R-17): deletes jobs in any state. DownloadManager.dequeue_models protects active ones, and nothing calls it.
 def handle_delete_downloads_queue(
     conn: sqlite3.Connection,
     download_manager: Optional[DownloadManager],
@@ -114,6 +116,7 @@ def handle_delete_downloads_queue(
         if purge_incomplete:
             conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS)
         elif clear_status:
+            # FIXME(S-09): any status is accepted, including staging_complete, whose staged files are the only copy.
             conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS_V2, (clear_status,))
         elif model_ids:
             clean_ids = [int(m) for m in model_ids if str(m).isdigit()]

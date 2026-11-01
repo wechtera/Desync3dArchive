@@ -58,6 +58,7 @@ def get_db() -> sqlite3.Connection:
 
 
 class RequestLoggingMiddleware:
+    """Outermost middleware, so refused requests are logged too. Query strings stay out of the log."""
     POLLED_PATHS = frozenset({
         "/api/tasks/status", "/api/downloads/status", "/api/storage/status", "/api/stashes/active",
         "/api/auth/status", "/api/health", "/healthz",
@@ -184,6 +185,7 @@ class SecurityMiddleware:
                 origin_port = str(parts.port or "")
             except ValueError:
                 origin_port = "invalid"
+            # Safety: compares host and port with Host. Together with the allowed Host list this stops DNS rebinding.
             if parts.scheme not in ("http", "https") or origin_host != host or origin_port != port:
                 return 403, "Origin not allowed"
 
@@ -191,6 +193,7 @@ class SecurityMiddleware:
             length = request.headers.get("content-length", "")
             has_body = "transfer-encoding" in request.headers or (length not in ("", "0"))
             content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+            # Safety: a cross-site form can't send JSON without a preflight, and no CORS headers are ever returned.
             if has_body and content_type != "application/json":
                 return 415, "Content-Type must be application/json"
             if length.isdigit() and int(length) > app_config.MAX_BODY_BYTES:
@@ -212,6 +215,7 @@ class LoginMiddleware:
         self.app = app
 
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        # Safety: exact match on purpose, so a new route is protected by default.
         if scope["type"] != "http" or not app_config.login_required() or scope["path"] in self.PUBLIC_PATHS:
             await self.app(scope, receive, send)
             return
@@ -229,6 +233,7 @@ class LoginMiddleware:
 
 
 def redirect_location(data: Any) -> str | None:
+    """Finds a redirect target in the old handlers' HTML, or dict results."""
     if isinstance(data, str):
         match = re.search(r"url=([^'>\s]+)", data) or re.search(r"href=['\"]([^'\"]+)['\"]", data)
         return match.group(1) if match else None
@@ -238,6 +243,7 @@ def redirect_location(data: Any) -> str | None:
 
 
 def build_response(data: Any, status: int = 200, extra_headers: dict | None = None) -> Response:
+    """Turns a handler's result into a Response. Bytes pass through, a str is sent as HTML, and anything else as JSON."""
     headers = dict(extra_headers or {})
 
     if status in REDIRECT_STATUSES:
@@ -250,6 +256,7 @@ def build_response(data: Any, status: int = 200, extra_headers: dict | None = No
         headers.setdefault("Content-Type", "application/octet-stream")
     elif isinstance(data, str):
         payload = data.encode("utf-8")
+        # FIXME(S-12): every str result becomes HTML. Only the OAuth callback page needs that.
         headers.setdefault("Content-Type", "text/html; charset=utf-8")
     else:
         payload = json.dumps(data).encode("utf-8")
@@ -259,6 +266,7 @@ def build_response(data: Any, status: int = 200, extra_headers: dict | None = No
 
 
 def parse_body(body_bytes: bytes) -> Any:
+    """Decodes a JSON body. Malformed input becomes an empty dict, so handlers treat it as no options."""
     if not body_bytes:
         return {}
     try:
@@ -268,9 +276,11 @@ def parse_body(body_bytes: bytes) -> Any:
 
 
 def serve_preview(rel_path: str) -> Response:
+    """Serves a cached preview, or a placeholder for anything missing or outside the previews folder."""
     file_path = (app_config.data_dir() / "previews" / rel_path).resolve()
 
     # An empty file is a failed extraction, and a blank tab tells the user nothing.
+    # Safety: checks the resolved path, so ../ and symlinks can't leave the previews folder.
     if not file_path.is_relative_to(PREVIEWS_DIR) or not file_path.is_file() or file_path.stat().st_size == 0:
         # Graceful SVG placeholder fallback instead of breaking 404 JSON
         return Response(
@@ -287,6 +297,7 @@ def serve_preview(rel_path: str) -> Response:
 
 
 def serve_document(key: str) -> Response:
+    """Serves a PDF inline, using the response status DocumentUnavailable carries."""
     conn = get_db_connection(DB_PATH)
     try:
         path = documents.locate(conn, key)
@@ -297,6 +308,7 @@ def serve_document(key: str) -> Response:
     return FileResponse(path, media_type="application/pdf", content_disposition_type="inline", filename=path.name)
 
 
+# FIXME(R-19): this runs before uvicorn binds the port, so a second process resets live jobs and starts workers.
 def start_managers() -> None:
     global download_manager, task_manager
     logger.info("[Server] Initializing database schema")
@@ -350,6 +362,7 @@ def backup_schedule() -> None:
 
 
 def stop_managers() -> None:
+    """Signals workers to stop. Daemon threads may still be mid-write when the process exits."""
     logger.info("[Server] Shutting down")
     schedule_stop.set()
     if image_worker.current:

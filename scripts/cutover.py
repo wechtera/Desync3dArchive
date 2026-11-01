@@ -133,6 +133,7 @@ def pick_sample(conn: sqlite3.Connection, size: int) -> list[int]:
 
 
 def reduce_to_sample(path: Path, size: int) -> list[int]:
+    """Cuts a copy down to a sample of collections and their rows, because cutover starts small."""
     conn = sqlite3.connect(path)
     try:
         conn.execute("PRAGMA foreign_keys = ON")
@@ -397,6 +398,7 @@ def run_stage(name: str, source: Path, workdir: Path, size: int | None) -> dict[
 
 
 def app_is_running(port: int) -> bool:
+    """Checks the port, because rollback must never run under a live app."""
     with socket.socket() as sock:
         sock.settimeout(1)
         return sock.connect_ex(("127.0.0.1", port)) == 0
@@ -425,6 +427,7 @@ def only_in_rolled_back(current: Path, restored: Path) -> dict[str, list]:
 
 
 def rollback(data_dir: Path, backup_file: Path, port: int, confirm: bool) -> dict[str, Any]:
+    """Moves the live database aside and restores a backup. Dry run without confirm, and refused while the app runs."""
     from desync_archival import backup, settings
 
     live = data_dir / "library.db"

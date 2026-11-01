@@ -191,6 +191,7 @@ export async function openBrowseGroup(groupId) {
 }
 
 // Reached from the Tags page and from a model's tag chips.
+/** Sets or clears the tag filter. Reached from the Tags page and from tag chips. */
 export function showTag(tag) {
   activeTag = tag;
   window.closeModal('model-view-modal');

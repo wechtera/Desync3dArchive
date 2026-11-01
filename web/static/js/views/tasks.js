@@ -42,6 +42,7 @@ function showFinishedScrape(active, recents) {
   }
 }
 
+/** Draws the active task and history, and returns the active task for the health poll. */
 export async function renderTasksView() {
   try {
     const data = await fetchTasksStatus();
@@ -377,6 +378,7 @@ export async function cancelActiveTask() {
   }
 }
 
+/** Force-releases the task slot, after asking. */
 export async function killActiveTask() {
   if (!confirm('Force-terminate running or stuck task? This will immediately release the task pipeline lock.')) return;
   const killBtn = document.getElementById('btn-kill-active-task');

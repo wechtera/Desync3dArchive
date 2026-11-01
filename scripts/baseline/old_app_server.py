@@ -26,6 +26,7 @@ _RealPopen = subprocess.Popen
 
 
 def is_loopback(host: object) -> bool:
+    """Treats empty and localhost hosts as local, because the harness may only reach this machine."""
     if host in ("localhost", "", None):
         return True
     try:
@@ -51,12 +52,14 @@ def guarded_connect_ex(self, address):
 
 
 def guarded_getaddrinfo(host, *args, **kwargs):
+    """getaddrinfo replacement, so a DNS lookup can't leak what the harness is doing."""
     if not is_loopback(host):
         raise socket.gaierror(f"Outside lookup blocked: {host}")
     return _real_getaddrinfo(host, *args, **kwargs)
 
 
 class GuardedPopen(_RealPopen):
+    """Popen replacement that refuses node, so a baseline can never start a real scrape."""
     def __init__(self, args, *rest, **kwargs):
         program = args[0] if isinstance(args, (list, tuple)) else str(args).split()[0]
         if Path(str(program)).name == "node":
@@ -65,6 +68,7 @@ class GuardedPopen(_RealPopen):
 
 
 def install_guards() -> None:
+    """Patches sockets and subprocess. Must run before any app module is imported."""
     socket.socket.connect = guarded_connect  # type: ignore[method-assign]
     socket.socket.connect_ex = guarded_connect_ex  # type: ignore[method-assign]
     socket.getaddrinfo = guarded_getaddrinfo  # type: ignore[assignment]
@@ -72,6 +76,7 @@ def install_guards() -> None:
 
 
 def run_server(server, data_root: Path, started: float) -> int:
+    """Serves the old http.server app on a free loopback port and prints the READY line the recorder waits for."""
     server.task_manager = server.TaskManager(server.DB_PATH, data_root)
     server.download_manager = server.DownloadManager(server.DB_PATH)
 
@@ -85,6 +90,7 @@ def run_server(server, data_root: Path, started: float) -> int:
 
 
 def serve_new(app_root: Path, port: int) -> int:
+    """Serves the migrated app against the same throwaway data, with secrets isolated per run."""
     os.environ["APP_ENV"] = "development"
     os.environ["DESYNC_HOST"] = "127.0.0.1"
     os.environ["DESYNC_REQUIRE_LOGIN"] = ""
@@ -123,6 +129,7 @@ def serve_new(app_root: Path, port: int) -> int:
 
 
 def main() -> int:
+    """Refuses to run outside a marked throwaway folder, then starts the selected code."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--app-root", type=Path, required=True)
     parser.add_argument("--code", choices=("old", "new"), default="old")

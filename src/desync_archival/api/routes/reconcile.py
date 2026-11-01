@@ -118,6 +118,7 @@ def handle_post_reconcile_delete_orphans(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
+    """POST /api/reconcile/delete-orphans. Permanently removes folders. Dry run without confirm."""
     paths = body.get("paths", [])
     if not paths:
         return {"error": "Missing paths list in request body"}, 400
@@ -141,6 +142,7 @@ def handle_post_reconcile_ingest_untracked(
     if not items:
         return {"error": "Missing items list in request body"}, 400
     reconciler, _ = _get_managers(conn)
+    # FIXME(S-06): writes catalog rows with no busy check or audit.
     res = reconciler.ingest_untracked_files(items)
     return res, 200 if res.get("success") else 400
 
@@ -151,6 +153,7 @@ def handle_get_reconcile_staging_garbage(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
+    """GET /api/reconcile/staging. Lists staging leftovers and records the check as a run."""
     reconciler, task_mgr = _get_managers(conn)
     res = reconciler.scan_staging_garbage()
     _record_check(task_mgr, "staging_scan", res, f"{len(res.get('items') or [])} leftovers found")
@@ -192,6 +195,7 @@ def handle_get_reconcile_duplicates(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
+    """GET /api/reconcile/duplicates. Runs the duplicate check and saves it with its job row."""
     include_shared = params.get("include_shared", ["0"])[0] == "1"
     found = duplicates.find_duplicates(conn, include_shared=include_shared)
     _, task_mgr = _get_managers(conn)
@@ -206,6 +210,7 @@ def handle_get_reconcile_duplicates_latest(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
+    """GET /api/reconcile/duplicates/latest. The saved results, minus pairs already acted on."""
     saved = duplicates.latest(conn)
     pending_deletion.mark_blocked(conn, saved["pairs"], jobs.busy_reason(conn, download_manager))
     return saved, 200
@@ -279,6 +284,7 @@ def handle_post_pending_deletion_purge(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
+    """POST /api/pending-deletion/purge. Lists, or with confirm erases, files past the wait."""
     try:
         return pending_deletion.purge(conn, bool(body.get("confirm")), [int(i) for i in body.get("ids") or []]), 200
     except pending_deletion.DeleteRefused as e:
@@ -291,8 +297,10 @@ def handle_post_reconcile_path_realign(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
+    """POST /api/reconcile/drift/realign. Moves folders on the NAS and rewrites their paths."""
     model_ids = body.get("model_ids")
     reconciler, _ = _get_managers(conn)
+    # FIXME(S-03): moves NAS folders with no dry run, busy check or audit. None means every drifted model.
     res = reconciler.realign_model_paths(model_ids=model_ids)
     return res, 200 if res.get("success") else 400
 

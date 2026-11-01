@@ -410,6 +410,7 @@ export async function loadImageQueue() {
   `, container);
 }
 
+/** Unlinks a library, after asking. Files are untouched. */
 export async function handleDeleteExternalLibrary(libraryId, libraryName) {
   if (!confirm(`Are you sure you want to unlink '${libraryName}'?\n\nNOTE: No physical files or directories on your storage will be touched or deleted.`)) {
     return;
@@ -453,6 +454,7 @@ function childrenOf(path) {
   return { folders: direct(review.data.folders), files: direct(review.data.files) };
 }
 
+// Keeps letters and digits in any script, so names compare across punctuation.
 const squash = (text) => text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
 // Flags arrive as sentences from the resolver. This turns each into what's wrong, what to do about

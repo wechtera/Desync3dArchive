@@ -43,6 +43,7 @@ def handle_get_scrapes_download(
     params: dict,
     task_manager: Optional[TaskManager] = None,
 ) -> tuple[Any, int]:
+    """GET /api/scrapes/download. Serves only the two scrape output files, by exact pattern."""
     rel_path = params.get("path", [""])[0].strip()
     if not rel_path or ".." in rel_path or rel_path.startswith("/") or rel_path.startswith("\\"):
         return {"error": "Invalid or unsafe path"}, 400
@@ -62,6 +63,7 @@ def handle_get_scrapes_download(
         return {"error": f"Artifact not found at {rel_path}"}, 404
 
     try:
+        # FIXME(S-12): a str response is sent as text/html, and this file holds third-party names.
         content = target.read_text(encoding="utf-8")
         return content, 200
     except UnicodeDecodeError:
@@ -170,6 +172,7 @@ def handle_post_tasks_clear(
     params: dict,
     task_manager: Optional[TaskManager] = None,
 ) -> tuple[dict[str, Any], int]:
+    """POST /api/tasks/clear. Deletes finished task history. Dry run without confirm."""
     if not task_manager:
         return {"error": "TaskManager not initialized"}, 500
     if not body.get("confirm"):

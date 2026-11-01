@@ -14,6 +14,7 @@ def handle_get_auth_status(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
+    """GET /api/auth/status. Retries the profile lookup when a fresh token has no username yet."""
     status = auth_service.get_auth_status(conn)
     if status["connected"] and not status["username"]:
         # A token can fail the profile lookup in the moment after sign-in, so try again here.

@@ -61,6 +61,7 @@ def is_secret_key(key: str) -> bool:
 
 
 def redact_url(url: str) -> str:
+    """Masks signed query values so snapshots never store a working download link."""
     parts = urllib.parse.urlsplit(url)
     if not parts.query:
         return url
@@ -76,6 +77,7 @@ def redact_url(url: str) -> str:
 
 
 def normalize_text(text: str, replacements: list[tuple[str, str]]) -> str:
+    """Rewrites paths, secrets and timestamps so two runs of the same contract compare equal."""
     for old, new in replacements:
         text = text.replace(old, new)
     text = URL_PATTERN.sub(lambda match: redact_url(match.group(0)), text)

@@ -25,6 +25,7 @@ add_route(router, "GET", "/api/metrics", plain(handlers.handle_get_metrics))
 add_route(router, "GET", "/api/models", plain(handlers.handle_get_models))
 add_route(router, "POST", ("/api/models/{model_id:int}/render-view", "/api/models/{model_id:int}/render-view/"),
           render_view, schemas.ModelViewBody)
+# FIXME(S-16): each call can start Blender, with no limit on how many run at once.
 add_route(router, ("GET", "POST"), ("/api/render/stl", "/api/render/stl/"), render_stl, schemas.RenderStlBody)
 add_route(router, "GET", "/api/models/detail", plain(handlers.handle_get_model_detail))
 add_route(router, "GET", "/api/models/item", plain(handlers.handle_get_model_detail))

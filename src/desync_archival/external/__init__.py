@@ -38,6 +38,7 @@ class ExtractionRefused(Exception):
 
 @dataclass(frozen=True)
 class ArchiveMember:
+    """One file listed in an archive. Size is declared by the archive, so it can lie."""
     path: str
     size: int
 
@@ -97,11 +98,13 @@ def run(cmd: list[str], timeout: float, check: bool = False) -> subprocess.Compl
 
 
 def unrar_extract_member(unrar: str, archive: Path, member: str, dest: Path, recurse: bool = False) -> list[str]:
+    """Builds an unrar command. -- stops a hostile member name reading as a switch."""
     flags = ["-y", "-r"] if recurse else ["-y"]
     return [unrar, "e", *flags, "--", str(archive), member, f"{dest}/"]
 
 
 def seven_zip_extract_member(seven_zip: str, archive: Path, member: str, dest: Path, recurse: bool = False) -> list[str]:
+    """Builds a 7-Zip command. -- stops a hostile member name reading as a switch."""
     flags = ["-r", "-y"] if recurse else ["-y"]
     return [seven_zip, "e", str(archive), f"-o{dest}", *flags, "--", member]
 
@@ -118,6 +121,7 @@ def member_commands(
 
     if extension == ".rar" and unrar:
         commands += [
+            # FIXME(R-03): a wildcard matches same-named files in other folders, and `e` flattens them. Try the exact path first.
             unrar_extract_member(unrar, archive, f"*{filename}", dest, recurse=True),
             unrar_extract_member(unrar, archive, filename, dest, recurse=True),
             unrar_extract_member(unrar, archive, backslashed, dest),
@@ -140,6 +144,7 @@ def regular_files(folder: Path) -> list[Path]:
 
 
 def is_safe_member(name: str) -> bool:
+    """Rejects absolute paths, drive letters and parent references under both path styles."""
     if not name or "\0" in name:
         return False
     for path in (PurePosixPath(name), PureWindowsPath(name)):
@@ -186,11 +191,17 @@ def _parse_unrar_listing(output: str) -> list[ArchiveMember]:
 
 
 def check_members(members: list[ArchiveMember], archive_name: str) -> None:
+    """Applies the path, count and size limits before anything is unpacked.
+
+    Raises:
+        ExtractionRefused: The archive broke a safety rule or no tool could read it.
+    """
     unsafe = [member.path for member in members if not is_safe_member(member.path)]
     if unsafe:
         raise ExtractionRefused(f"{archive_name} has unsafe member paths: {unsafe[:3]}")
     if len(members) > MAX_EXTRACTED_FILES:
         raise ExtractionRefused(f"{archive_name} has {len(members)} files, over the limit")
+    # Declared sizes can lie. _check_extracted re-measures after unpacking.
     if sum(member.size for member in members) > MAX_EXTRACTED_BYTES:
         raise ExtractionRefused(f"{archive_name} would unpack past the size limit")
 

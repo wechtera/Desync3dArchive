@@ -142,6 +142,7 @@ class LayerFilter(logging.Filter):
         # If the record belongs to a specific layer and that layer is disabled, suppress it
         if layer and layer in VALID_LAYERS:
             with _CONFIG_LOCK:
+                # FIXME(R-10): this filter drops ERROR lines too, so fixing log_layer alone isn't enough.
                 if layer not in _ACTIVE_LAYERS:
                     return False
         return True
@@ -150,6 +151,7 @@ class LayerFilter(logging.Filter):
 class RedactionFilter(logging.Filter):
     """Redacts each record once, before any handler sees it."""
     def filter(self, record: logging.LogRecord) -> bool:
+        """Redacts message and traceback before any handler formats them."""
         record.msg = redact(record.getMessage())
         record.args = None
         if record.exc_info:
@@ -277,6 +279,7 @@ def log_layer(layer: str, level: int, message: str, **kwargs):
     """
     clean_layer = layer.strip().lower()
     with _CONFIG_LOCK:
+        # FIXME(R-10): no layers are on by default, so this drops ERROR lines as well.
         if clean_layer in VALID_LAYERS and clean_layer not in _ACTIVE_LAYERS:
             return
 

@@ -15,6 +15,7 @@ class ModelViewBody(RequestBody):
 
 
 class RenderStlBody(RequestBody):
+    """Body of POST /api/render/stl. id, file_id and member_id are aliases the old UI sent."""
     source_type: str | None = None
     id: int | str | None = None
     file_id: int | str | None = None
@@ -58,12 +59,14 @@ class StashItemBody(RequestBody):
 
 
 class StashExportBody(RequestBody):
+    """Body of POST /api/stashes/{id}/export. sync exists for the contract harness."""
     filter: str | None = None
     filter_mode: str | None = None
     sync: bool = False
 
 
 class StorageConfigBody(RequestBody):
+    """Body of POST /api/storage/config. path and work_path are old aliases."""
     download_root_path: str | None = None
     path: str | None = None
     download_work_path: str | None = None

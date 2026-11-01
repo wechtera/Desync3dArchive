@@ -184,6 +184,7 @@ def create_backup(db_path: Path, keep: int = DEFAULT_RETENTION, full: bool = Fal
     os.close(os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
     try:
         _copy_database(db_path, temp, journal_mode="DELETE")
+        # FIXME(R-06): counts the live database after the copy, so any write in between fails a good backup.
         counts = verify(temp, expected=row_counts(db_path))
         temp.rename(target)
         _copy_secrets(target)
@@ -192,6 +193,7 @@ def create_backup(db_path: Path, keep: int = DEFAULT_RETENTION, full: bool = Fal
         logger.error(f"Backup of {db_path.name} failed")
         raise
 
+    # FIXME(R-07): quick pre-migration copies share this limit, so they can push out monthly full backups.
     removed = prune(directory, keep)
     if full:
         _archive_metadata(target)

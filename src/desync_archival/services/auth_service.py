@@ -36,6 +36,7 @@ AUTH_MANAGED_KEYS = ("mmf_access_token", "mmf_oauth_state", "mmf_token_expires_a
 
 
 def get_setting(conn: sqlite3.Connection, key: str, default: str = "") -> str:
+    """Reads one setting, preferring the secrets file for secret keys."""
     if key in SECRET_SETTING_KEYS:
         held = secret_store.load()
         if key in held:
@@ -45,6 +46,7 @@ def get_setting(conn: sqlite3.Connection, key: str, default: str = "") -> str:
 
 
 def set_settings(conn: sqlite3.Connection, mapping: dict[str, str]):
+    """Writes settings, sending secrets to the file and everything else to app_settings."""
     secret_store.save({k: v for k, v in mapping.items() if k in SECRET_SETTING_KEYS})
     with conn:
         for k, v in mapping.items():
@@ -54,6 +56,7 @@ def set_settings(conn: sqlite3.Connection, mapping: dict[str, str]):
 
 
 def get_auth_status(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Reports sign-in state. Never includes the token."""
     client_id = get_setting(conn, "mmf_client_id")
     access_token = get_setting(conn, "mmf_access_token")
     raw_expires = get_setting(conn, "mmf_token_expires_at", "0")

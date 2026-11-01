@@ -112,6 +112,7 @@ def _made_previews() -> dict[str, int]:
 def listing(
     conn: sqlite3.Connection, search: str = "", kind: str = "", creator: str = "", source: str = "", state: str = "", page: int = 1,
 ) -> dict[str, Any]:
+    """Pages PDFs across every source, from SQLite and the local preview folder only."""
     everything = list(_rows(conn))
     words = search.lower().split()
     def wanted(row: dict[str, Any]) -> bool:
@@ -140,6 +141,7 @@ def listing(
     }
 
 
+# FIXME(P-04): classifies every PDF to find one.
 def _find(conn: sqlite3.Connection, key: str) -> dict[str, Any]:
     row = next((r for r in _rows(conn) if r["key"] == key), None)
     if row is None:

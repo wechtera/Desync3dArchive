@@ -24,12 +24,14 @@ def login_page() -> Response:
 
 @router.get("/api/session")
 def session_status(request: Request) -> Response:
+    """GET /api/session. Public, and reveals only whether this browser is signed in."""
     token = request.cookies.get(login.COOKIE_NAME)
     return JSONResponse({"login_required": app_config.login_required(), "authenticated": login.session_valid(token)})
 
 
 @router.post("/api/login")
 async def log_in(request: Request) -> Response:
+    """POST /api/login. Checks the lockout before hashing, so a locked client can't burn CPU."""
     client = client_id(request)
     if login.is_locked_out(client):
         return JSONResponse({"error": "Too many attempts. Try again later."}, 429)
@@ -56,6 +58,7 @@ async def log_in(request: Request) -> Response:
 
 @router.post("/api/logout")
 def log_out(request: Request) -> Response:
+    """POST /api/logout. Ends the session on the server as well as clearing the cookie."""
     login.end_session(request.cookies.get(login.COOKIE_NAME))
     response = JSONResponse({"success": True})
     response.delete_cookie(login.COOKIE_NAME, path="/", httponly=True, secure=True, samesite="strict")

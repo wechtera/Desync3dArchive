@@ -43,6 +43,7 @@ def _derive(password: str, salt: bytes) -> bytes:
 
 
 def hash_password(password: str) -> dict[str, str]:
+    """Hashes with a fresh salt."""
     salt = secrets.token_bytes(16)
     return {
         "salt": base64.b64encode(salt).decode(),
@@ -68,10 +69,12 @@ def has_password() -> bool:
 
 
 def verify_password(password: str) -> bool:
+    """Checks a password in constant time."""
     stored = secret_store.read_file().get("login")
     if not stored:
         return False
     digest = _derive(password, base64.b64decode(stored["salt"]))
+    # Safety: constant-time, so timing can't reveal how much of the hash matched.
     return hmac.compare_digest(digest, base64.b64decode(stored["hash"]))
 
 
@@ -81,6 +84,7 @@ def _key(token: str) -> str:
 
 
 def create_session() -> str:
+    """Creates a session and returns the cookie value. Only its hash is kept."""
     token = secrets.token_urlsafe(32)
     with _lock:
         _sessions[_key(token)] = time.time() + SESSION_SECONDS
@@ -88,6 +92,7 @@ def create_session() -> str:
 
 
 def session_valid(token: str | None) -> bool:
+    """Checks a cookie value, dropping it once expired."""
     if not token:
         return False
     with _lock:

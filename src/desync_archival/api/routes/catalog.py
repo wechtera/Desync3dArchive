@@ -68,6 +68,7 @@ def handle_get_metrics(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
+    """GET /api/metrics. Header counts, computed from SQLite only."""
     counts = conn.execute(queries.SELECT_COLLECTIONS_COUNT_BY_X.format(VALID_MODEL_M=VALID_MODEL_M, VALID_MODEL_RAW=VALID_MODEL_RAW, VALID_RELEASE_COND=VALID_RELEASE_COND)).fetchone()
 
     data = {
@@ -104,6 +105,7 @@ def handle_get_creators(
     body: dict,
     params: dict,
 ) -> tuple[list[dict[str, Any]], int]:
+    """GET /api/creators. Creators with model counts, hiding tombstones and unknown designers."""
     creators = conn.execute(queries.SELECT_COLLECTIONS_BY_X.format(VALID_MODEL_M=VALID_MODEL_M)).fetchall()
     return [dict(r) for r in creators], 200
 
@@ -169,6 +171,7 @@ def handle_get_models(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
+    """GET /api/models. Pages collections, despite the name, with search and filters."""
     designer = params.get("designer", [None])[0]
     month = params.get("month", [None])[0]
     search = params.get("search", [""])[0].strip()

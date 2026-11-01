@@ -38,13 +38,16 @@ class SecretsError(RuntimeError):
 
 
 def read_file(path: Path | None = None) -> dict:
+    """Reads the secrets file. Any failure reads as empty."""
     try:
         return json.loads((path or app_config.secrets_file()).read_text(encoding="utf-8"))
+    # FIXME(R-09): a failed read looks empty, and save() then replaces the whole file, password hash included.
     except (OSError, ValueError):
         return {}
 
 
 def write_file(data: dict) -> Path:
+    """Replaces the secrets file through a 0600 temp file."""
     path = app_config.secrets_file()
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     temp = path.with_suffix(".tmp")

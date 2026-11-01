@@ -1,4 +1,5 @@
 const { chromium } = require('playwright-extra');
+// NOTE: browser signals stay on purpose. MMF's API has no library endpoint, and no other path exists yet (S-15).
 const stealth = require('puppeteer-extra-plugin-stealth')();
 const fs = require('fs');
 
@@ -9,6 +10,7 @@ const cookiesPath = cookiesFlag === -1 ? '' : process.argv[cookiesFlag + 1];
 const expectedFlag = process.argv.indexOf('--expected');
 const expectedCount = expectedFlag === -1 ? 0 : Number(process.argv[expectedFlag + 1]) || 0;
 // The API can hand over the whole library at once. Most of it counts as a full capture.
+// Business rule: 80% of the known count stops scrolling, so anything past it depends on the API payload.
 const fullPayloadCount = expectedCount > 0 ? Math.floor(expectedCount * 0.8) : Infinity;
 
 // The app reads one JSON object per line from stdout.
@@ -200,6 +202,7 @@ async function isLoginPage(page) {
       });
 
       for (const item of extracted) {
+        // The object ID is the last number in an MMF object URL.
         const directMatch = item.href.match(/3d-print-.*-(\d+)/);
         if (directMatch) {
           const id = directMatch[1];

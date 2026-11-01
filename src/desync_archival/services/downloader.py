@@ -72,6 +72,7 @@ class PathSanitizer:
 
     @staticmethod
     def inspect_filename(filename: str) -> tuple[str, bool, bool, str]:
+        """Strips the size markers MMF adds to some filenames."""
         p = Path(filename)
         ext = p.suffix.lstrip(".").upper()
         stem = p.stem
@@ -93,6 +94,7 @@ class PathSanitizer:
 class FileValidator:
     @staticmethod
     def validate_zip(zip_path: Path) -> tuple[bool, int, Optional[str]]:
+        """Reads every entry to check CRCs, so a truncated download can't pass."""
         if not zip_path.exists():
             return False, 0, f"File does not exist: {zip_path}"
         if zip_path.stat().st_size == 0:
@@ -112,6 +114,7 @@ class FileValidator:
 
 
 class DiskAdopter:
+    """Claims a file already on disk instead of downloading it again."""
     @staticmethod
     def try_adopt(
         conn: sqlite3.Connection,
@@ -179,6 +182,7 @@ def queue_models(conn: sqlite3.Connection, download_manager: Any, model_ids: lis
 
 
 class StorageManager:
+    """Resolves storage paths and caches disk metrics, so polling doesn't stat the NAS."""
     # The UI asks every few seconds, and a dropped mount showing for this long does no harm.
     METRICS_SECONDS = 30.0
 
@@ -192,6 +196,11 @@ class StorageManager:
             return row[0] if row and row[0] is not None else ""
 
     def get_root_path(self) -> Path:
+        """Returns the vault root, or raises if it can't be reached right now.
+
+        Raises:
+            StorageUnavailableError: The vault is unconfigured or unreachable.
+        """
         val = self._get_setting("download_root_path")
         if not val:
             raise StorageUnavailableError("NAS target storage path is unconfigured.")
@@ -216,6 +225,7 @@ class StorageManager:
         model_id: int,
         model_name: str,
     ) -> Path:
+        """Builds the older bracketed vault path."""
         clean_designer = PathSanitizer.sanitize_segment(designer_name)
         clean_cat = PathSanitizer.sanitize_segment(category)
         clean_model = PathSanitizer.sanitize_segment(model_name)
@@ -457,6 +467,7 @@ class DownloadManager:
             rows = conn.execute(queries.SELECT_APP_SETTINGS).fetchall()
             settings = {r["key"]: r["value"] for r in rows}
 
+            # FIXME(R-05): a non-numeric saved value raises here, and __init__ calls this, so the app can't start.
             self.worker_concurrency = max(1, min(16, int(settings.get("worker_concurrency", 2))))
             self.offloader_concurrency = max(1, min(8, int(settings.get("offloader_concurrency", 1))))
             self.batch_size = max(1, min(100, int(settings.get("batch_size", 5))))
@@ -488,11 +499,13 @@ class DownloadManager:
         log_layer("storage", logging.DEBUG, f"Engine settings loaded: Workers={self.worker_concurrency}, Offloaders={self.offloader_concurrency}, OAuth={'YES' if self.access_token else 'NO'}")
 
     def is_circuit_breaker_tripped(self) -> bool:
+        """Reads the breaker from the database, so it survives restarts."""
         with self._get_db() as conn:
             row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY_V2).fetchone()
             return bool(row and row["value"] == "1")
 
     def trip_circuit_breaker(self, reason: str):
+        """Holds all downloads after an auth failure, so a bad token can't hammer MMF."""
         with self._get_db() as conn:
             conn.execute(queries.INSERT_APP_SETTINGS)
             conn.execute(queries.INSERT_APP_SETTINGS_V2, (reason,))
@@ -505,6 +518,7 @@ class DownloadManager:
         logger.info("[Circuit Breaker] Reset by operator.")
 
     def start(self):
+        """Starts the worker threads. Does nothing if already running."""
         if self.is_running:
             return
         self._load_settings()
@@ -530,10 +544,12 @@ class DownloadManager:
         self.is_running = False
 
     def pause(self):
+        """Stops workers claiming new jobs. Transfers in progress run on."""
         self.is_paused = True
         logger.info("[DownloadManager] Engine paused by operator.")
 
     def resume(self):
+        """Reloads settings and lets workers claim jobs again."""
         self._load_settings()
         self.is_paused = False
         logger.info("[DownloadManager] Engine resumed by operator.")
@@ -591,6 +607,7 @@ class DownloadManager:
                 time.sleep(2.0)
                 continue
 
+            # FIXME(R-04): a sqlite3 error here ends this thread for good, and is_running stays True.
             job = self._claim_next_download_job()
             if not job:
                 time.sleep(1.5)
@@ -629,6 +646,7 @@ class DownloadManager:
         # --- PRE-DOWNLOAD OAUTH REFRESH: Fetch live authenticated URLs ---
         if self.access_token and mmf_id:
             api_url = f"https://www.myminifactory.com/api/v2/objects/{mmf_id}"
+            # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
             auth_headers = {
                 "Authorization": f"Bearer {self.access_token}",
                 "Accept": "application/json",
@@ -694,6 +712,7 @@ class DownloadManager:
         downloaded_bytes_acc = 0
         staged_files_info = []
 
+        # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
             "Referer": "https://www.myminifactory.com/library",
@@ -701,6 +720,7 @@ class DownloadManager:
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
 
+        # FIXME(S-01): a plain dict gives cookies no domain, so httpx sends them to every redirect host. Bind them to MMF.
         with httpx.Client(headers=headers, cookies=self.cookies, timeout=30.0, follow_redirects=True) as client:
             for file_row in files:
                 file_id = file_row["file_id"]
@@ -713,6 +733,7 @@ class DownloadManager:
 
                 cleaned_name = re.sub(r"^[0-9]+[_\-\s]+", "", filename)
                 part_path = in_flight_dir / f"{model_id}_{file_id}.part"
+                # FIXME(S-05): filename comes from MMF unsanitized, and two files can clean to the same name.
                 staged_path = staged_model_dir / cleaned_name
 
                 with self._lock:
@@ -823,6 +844,7 @@ class DownloadManager:
                     "cleaned_filename": cleaned_name,
                     "local_relative_path": nas_rel_path,
                     "expected_bytes": expected_size,
+                    # FIXME(R-01): this counts only this attempt, so a resumed file records too few bytes and can never offload.
                     "actual_bytes": bytes_received,
                     "file_extension": ext,
                     "staging_path": str(staged_path),
@@ -980,6 +1002,7 @@ class DownloadManager:
 
             t0 = time.time()
             bytes_streamed = 0
+            # FIXME(R-02): writes the final name directly. Use a temp name, verify the hash, then rename.
             with open(staging_path, "rb") as f_in, open(target_nas_path, "wb") as f_out:
                 while True:
                     buf = f_in.read(self.offload_chunk_size)
@@ -1001,6 +1024,7 @@ class DownloadManager:
                 target_nas_path.unlink(missing_ok=True)
                 raise IOError(f"Byte mismatch on NAS for {cleaned_name} (Expected {expected_bytes}, got {nas_size})")
 
+            # FIXME(R-02): this is the last local copy, and only size was checked. Compare record["sha256"] first.
             staging_path.unlink(missing_ok=True)
 
             nas_rel_path = str(Path(clean_creator) / rel_month / clean_model_folder / "files" / cleaned_name)

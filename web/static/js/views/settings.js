@@ -102,6 +102,7 @@ const EXTRA_COOKIE_FIELDS = [
   ['setting-cookie-cflb', 'cookie_cflb'],
 ];
 
+/** Fills the settings form. Secrets arrive only as configured flags. */
 export async function loadSettings() {
   try {
     const res = await fetch('/api/settings');
@@ -725,6 +726,7 @@ export async function purgeLogs(days = 14) {
   }
 }
 
+/** Saves the settings form. A blank secret field keeps the stored value. */
 export async function saveSettingsForm() {
   const getVal = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
 
@@ -810,6 +812,7 @@ export async function saveAuthCredentials() {
   }
 }
 
+/** Older name for saveAuthCredentials. */
 export function saveAuthSlug() {
   return saveAuthCredentials();
 }
@@ -933,7 +936,9 @@ export function selectCurrentBrowseFolder() {
   if (modal) modal.style.display = 'none';
 }
 
+/** Older name for loadSettingsView. */
 export const initSettingsView = loadSettingsView;
+/** Older name for loadDirectoryUsage. */
 export const refreshDirectoryUsage = loadDirectoryUsage;
 
 export async function purgeStashExports(days = 14) {

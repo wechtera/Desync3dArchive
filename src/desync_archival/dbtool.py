@@ -19,6 +19,7 @@ from desync_archival.services import (
 
 
 def set_password() -> int:
+    """Sets the app password from a prompt, or from stdin for scripted setup."""
     if sys.stdin.isatty():
         password = getpass.getpass("New app password: ")
         if password != getpass.getpass("Repeat it: "):
@@ -35,6 +36,7 @@ def set_password() -> int:
 
 
 def move_secrets(args: argparse.Namespace) -> int:
+    """Runs export-secrets or blank-secrets. Blanking is a dry run without --confirm."""
     conn = sqlite3.connect(settings.db_path())
     try:
         if args.command == "export-secrets":
@@ -52,6 +54,11 @@ def move_secrets(args: argparse.Namespace) -> int:
 
 
 def refuse_if_app_running() -> None:
+    """Probes the app's port, because a rewrite under a live app can lose its changes.
+
+    Raises:
+        MigrationError: The database can't be brought to this schema safely.
+    """
     # These rewrite tables the app is using. A stopped app is the only safe moment.
     with socket.socket() as probe:
         probe.settimeout(0.5)
@@ -148,6 +155,7 @@ def main() -> int:
             # Resolved because restore opens these as URIs, and those can't be relative.
             counts = backup.restore(args.backup_file.resolve(), args.target.resolve())
             print(f"restored {sum(counts.values())} rows to {args.target}")
+    # FIXME: BundleError and a bad --map value escape this as a traceback.
     except (backup.BackupError, migrations.MigrationError, settings.SettingsError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

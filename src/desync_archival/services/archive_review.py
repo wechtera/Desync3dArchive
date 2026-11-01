@@ -122,6 +122,11 @@ def _apply_groups(conn: sqlite3.Connection, collection_id: int, assigned: list[t
 
 
 def save(conn: sqlite3.Connection, collection_id: int, cards: list[dict], reviewed: bool) -> dict[str, Any]:
+    """Applies a human's cards. Every artifact has to end up on exactly one card.
+
+    Raises:
+        ReviewError: The review can't be applied.
+    """
     conn.row_factory = sqlite3.Row
     artifacts = _artifacts(conn, collection_id)
     if not artifacts:

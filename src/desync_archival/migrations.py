@@ -22,6 +22,11 @@ class MigrationError(RuntimeError):
 
 
 def load_migrations() -> list[tuple[int, Path]]:
+    """Lists migrations in order. Numbers must run from 1 with no gaps.
+
+    Raises:
+        MigrationError: The database can't be brought to this schema safely.
+    """
     found = []
     for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
         match = FILE_PATTERN.fullmatch(path.name)
@@ -113,6 +118,11 @@ TABLE_RENAMES = {
 
 
 def require_current(conn: sqlite3.Connection) -> None:
+    """Refuses to start on any other schema version, including a newer one.
+
+    Raises:
+        MigrationError: The database can't be brought to this schema safely.
+    """
     current, latest = current_version(conn), latest_version()
     if current != latest:
         raise MigrationError(
@@ -144,6 +154,7 @@ def migrate_database(db_path: Path, confirm_production: bool = False) -> dict[st
     finally:
         conn.close()
 
+    # FIXME(R-08): these checks run after COMMIT. A failure leaves the new schema in place, and a rerun reports nothing to do.
     after_counts = backup.verify(db_path)
     renames = {old: new for version, table_map in TABLE_RENAMES.items() if before_version < version for old, new in table_map.items()}
     changed = sorted(t for t, count in before_counts.items() if after_counts.get(renames.get(t, t)) != count)

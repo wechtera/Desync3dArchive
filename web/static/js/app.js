@@ -151,6 +151,7 @@ let isTaskRunning = false;
 // Core Metrics & View Refresh
 // -----------------------------------------------------------------------------
 
+/** Fills the header stats. Failures only log, because the header is not worth interrupting a view for. */
 export async function loadMetrics() {
   try {
     const data = await fetchMetrics();
@@ -210,6 +211,7 @@ export function refreshCurrentView() {
   }
 }
 
+/** Shows one view, starts or stops polling for it, and keeps the URL hash in step. */
 export function switchTab(tabName) {
   // If user requests legacy #tasks, redirect to settings and open the Tasks tab
   let shouldOpenTasks = false;
@@ -292,6 +294,7 @@ export function switchTab(tabName) {
 // Health Monitoring & Task Polling
 // -----------------------------------------------------------------------------
 
+/** Self-scheduling poll for banners, the stash widget and task state. Runs faster while a task is active. */
 export async function checkHealth() {
   try {
     const storageRes = await fetchStorageStatus().catch(() => null);
@@ -423,6 +426,7 @@ export function resetToHome(event) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+/** Opens a modal, sending the three with setup steps through their own openers. */
 export function openModal(modalId) {
   if (modalId === 'modal-scraper') return openScraperModal();
   if (modalId === 'modal-ingest') return openIngestModal();
@@ -686,6 +690,7 @@ function initApp() {
 const nativeFetch = window.fetch.bind(window);
 window.fetch = async (...args) => {
   const res = await nativeFetch(...args);
+  // Safety: the header tells an expired app session from an MMF 401 passed through.
   if (res.status === 401 && res.headers.get('X-Login-Required')) {
     window.location.href = '/login';
   }

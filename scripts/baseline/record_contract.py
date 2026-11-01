@@ -49,6 +49,7 @@ CLEAN_DB = "library.clean.db"
 
 @dataclass
 class Case:
+    """One request in the API contract. wait marks cases that start a background task."""
     name: str
     method: str
     path: str
@@ -57,6 +58,7 @@ class Case:
 
 
 def build_cases(db_path: Path, dest: Path) -> list[Case]:
+    """Builds the contract from real IDs in the throwaway database, so no snapshot hard-codes a row."""
     conn = sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True)
     model = conn.execute("SELECT id FROM models WHERE source = 'mmf' ORDER BY id LIMIT 1").fetchone()[0]
     stored = conn.execute("SELECT model_id FROM downloaded_files ORDER BY model_id LIMIT 1").fetchone()[0]
@@ -239,6 +241,7 @@ def request(port: int, case: Case, timeout: float = 180) -> dict[str, Any]:
 
 
 def wait_for_idle(port: int, limit: float = 60) -> None:
+    """Polls until background tasks finish, so the next case sees a settled database."""
     deadline = time.monotonic() + limit
     while time.monotonic() < deadline:
         status = request(port, Case("poll", "GET", "/api/tasks/status")).get("json")
@@ -252,6 +255,7 @@ def wait_for_idle(port: int, limit: float = 60) -> None:
 
 
 class Harness:
+    """Starts one server against a throwaway copy and always stops it."""
     def __init__(self, dest: Path, code: str = "old"):
         self.dest = dest
         self.code = code
@@ -356,6 +360,11 @@ def record_run(dest: Path, code: str = "old") -> tuple[dict[str, Any], float, li
 
 
 def record_performance(dest: Path, code: str = "old") -> dict[str, Any]:
+    """Times the catalog reads that the migration promised not to slow down.
+
+    Raises:
+        RuntimeError: The operation failed. The message says why.
+    """
     results: dict[str, Any] = {}
     startups = []
     for _ in range(5):
@@ -389,6 +398,7 @@ def route_patterns(app: Path) -> tuple[set[str], list[re.Pattern[str]]]:
 
 
 def uncovered_routes(app: Path, cases: list[Case]) -> list[str]:
+    """Finds old routes no contract case exercises, so none can dodge the contract."""
     paths = {case.path.split("?")[0] for case in cases}
     literals, patterns = route_patterns(app)
     missing = sorted(literal for literal in literals if literal not in paths)
@@ -397,6 +407,7 @@ def uncovered_routes(app: Path, cases: list[Case]) -> list[str]:
 
 
 def differing_fields(first: Any, second: Any, location: str = "$") -> list[str]:
+    """Reports fields that changed between two runs, which would otherwise be stored as false contract."""
     if type(first) is not type(second):
         return [location]
     if isinstance(first, dict):
@@ -418,6 +429,7 @@ def differing_fields(first: Any, second: Any, location: str = "$") -> list[str]:
 
 
 def production_secret_values(source_db: Path) -> list[str]:
+    """Reads real secret values only to prove that no snapshot contains them."""
     conn = sqlite3.connect(f"{source_db.as_uri()}?mode=ro", uri=True)
     try:
         marks = ",".join("?" * len(SECRET_KEYS))
@@ -481,6 +493,7 @@ def main() -> int:
 
 
 def record_baseline(dest: Path, source_db: Path) -> int:
+    """Records two runs and refuses to store fields that differ between them."""
     print("Run 1")
     first, _, cases = record_run(dest)
     print("Run 2")

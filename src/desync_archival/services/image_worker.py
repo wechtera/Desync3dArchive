@@ -35,6 +35,7 @@ current: Optional["ImageWorker"] = None
 
 
 def set_paused(conn: sqlite3.Connection, paused: bool) -> None:
+    """Stores pause in app_settings, so it survives a restart."""
     value = "1" if paused else "0"
     with conn:
         if not conn.execute(queries.UPDATE_APP_SETTINGS_VALUE_BY_KEY, (value, PAUSED_SETTING)).rowcount:
@@ -61,6 +62,7 @@ def status(conn: sqlite3.Connection) -> dict[str, Any]:
 
 
 class ImageWorker:
+    """Works through covers and peeks one at a time, behind any running inventory."""
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path).resolve()
         self.renderer = MeshRenderer()

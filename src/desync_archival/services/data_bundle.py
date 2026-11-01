@@ -30,6 +30,7 @@ class BundleError(RuntimeError):
 
 
 def stored_roots(db_path: Path) -> dict[str, list[str]]:
+    """Lists stored path prefixes, so the operator knows what --map has to cover."""
     conn = sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True)
     try:
         marks = ",".join("?" * len(PATH_SETTINGS))
@@ -44,6 +45,11 @@ def stored_roots(db_path: Path) -> dict[str, list[str]]:
 
 
 def export_bundle(db_path: Path, destination: Path, with_secrets: bool = False) -> dict[str, Any]:
+    """Writes the catalog, metadata and previews to an empty folder, with secrets only on request.
+
+    Raises:
+        BundleError: The bundle can't be written or used.
+    """
     if destination.exists() and any(destination.iterdir()):
         raise BundleError(f"{destination} isn't empty.")
     data = app_config.data_dir().resolve()
@@ -61,6 +67,7 @@ def export_bundle(db_path: Path, destination: Path, with_secrets: bool = False) 
         if app_config.previews_dir().is_dir():
             archive.add(app_config.previews_dir(), arcname="previews")
     if with_secrets and app_config.secrets_file().is_file():
+        # FIXME(S-07): world-readable until chmod below, and chmod may do nothing on a NAS share.
         shutil.copyfile(app_config.secrets_file(), destination / SECRETS)
         (destination / SECRETS).chmod(0o600)
 
@@ -103,6 +110,7 @@ def import_bundle(bundle: Path, data_dir: Path, path_map: dict[str, str]) -> dic
                 old, new = old.rstrip("/"), new.rstrip("/")
                 changed += _rewrite_prefix(conn, "external_libraries", "path", old, new)
                 changed += _rewrite_prefix(conn, "collections", "vault_path", old, new)
+                # FIXME(R-14): deleted_files, downloaded_files.staging_path and download_jobs.destination_path aren't rewritten.
                 changed += _rewrite_prefix(conn, "downloaded_files", "vault_path", old, new)
                 changed += conn.execute(
                     f"UPDATE app_settings SET value = ?2 || substr(value, length(?1) + 1)"

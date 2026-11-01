@@ -53,6 +53,11 @@ class _Progress:
         self.last = 0.0
 
     def advance(self, count: int, label: str) -> None:
+        """Counts bytes, and raises if the operator cancelled.
+
+        Raises:
+            ImportCancelled: The operator stopped the import.
+        """
         if self.cancelled():
             raise ImportCancelled
         self.done += count
@@ -147,6 +152,7 @@ def _import_group(
         return {"imported": 0, "repeats": len(repeats)}
 
     marker = hashlib.sha256("".join(d for _, _, d in fresh).encode()).hexdigest()
+    # FIXME(R-18): a cancel after this leaves files with no catalog rows, in a folder the orphan audit skips.
     folder = root / _folder_name(label, marker)
     copied = []
     for source, rel_path, digest in fresh:
@@ -196,6 +202,11 @@ def import_paths(
     log: Callable[[str], None] = lambda _: None, progress: Callable[[float, str], None] = lambda _p, _l: None,
     cancelled: Callable[[], bool] = lambda: False,
 ) -> dict[str, Any]:
+    """Imports each picked path as a group. Refuses up front if the vault lacks the space.
+
+    Raises:
+        ImportRefused: Nothing was imported. The message is shown to the user.
+    """
     root = import_root(conn)
     groups = [(p, [(f, str(f.relative_to(p))) for f in _files_under(p)] if p.is_dir() else [(p, p.name)]) for p in paths]
     size = sum(f.stat().st_size for _, files in groups for f, _ in files)

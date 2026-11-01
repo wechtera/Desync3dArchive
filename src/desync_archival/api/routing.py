@@ -18,6 +18,7 @@ GENERIC_ERROR = "Internal server error"
 
 @dataclass
 class RouteContext:
+    """Everything one request hands its handler, so handlers keep the old four-argument shape."""
     conn: sqlite3.Connection
     download_manager: Any
     task_manager: Any

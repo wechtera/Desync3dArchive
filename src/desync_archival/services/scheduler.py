@@ -194,5 +194,6 @@ def _integrity(conn: sqlite3.Connection, tasks: Any, downloads: Any) -> None:
 
 
 def tick(conn: sqlite3.Connection, tasks: Any, downloads: Any) -> None:
+    """Advances any sync in progress and starts whatever is due. Called every five minutes."""
     _sync(conn, tasks, downloads)
     _integrity(conn, tasks, downloads)

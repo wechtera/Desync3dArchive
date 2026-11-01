@@ -98,6 +98,7 @@ def _backups() -> list[dict[str, Any]]:
 
 
 def listing(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Lists every location with its purpose, reporting a missing path instead of failing."""
     stored = dict(conn.execute(queries.SELECT_PATH_SETTINGS).fetchall())
     return [
         *_configuration(),

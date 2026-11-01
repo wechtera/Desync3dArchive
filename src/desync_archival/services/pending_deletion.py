@@ -84,6 +84,7 @@ def _hold(root: Path, source: Path, tombstone: int) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(source), target)
     # A move keeps the old modified date, which would make a two year old file purgeable today.
+    # Business rule: the 14 day wait counts from this move.
     os.utime(target)
     return target
 
@@ -98,6 +99,11 @@ def _snapshot(conn: sqlite3.Connection, file_id: int, source: Path | None) -> st
 
 
 def delete_file(conn: sqlite3.Connection, file_id: int) -> dict[str, Any]:
+    """Tombstones a vault file, moves it aside and removes its rows, all or nothing.
+
+    Raises:
+        DeleteRefused: Nothing changed. Carries the message and response status.
+    """
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     row = conn.execute(queries.SELECT_FILE, (file_id,)).fetchone()
@@ -253,6 +259,7 @@ def listing(conn: sqlite3.Connection) -> dict[str, Any]:
 
 
 def summary(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Counts held files from the catalog, so Disk Usage needs no NAS."""
     count, size = conn.execute(queries.SUM_PENDING).fetchone()
     return {"count": count, "size_bytes": size, "wait_days": WAIT_DAYS}
 
@@ -273,6 +280,7 @@ def purge(conn: sqlite3.Connection, confirm: bool = False, ids: list[int] | None
     for row in conn.execute(queries.SELECT_PENDING).fetchall():
         path = Path(row["pending_path"])
         age = _age_days(path)
+        # FIXME(S-08): any stat failure reads as missing and skips the wait. Use deleted_at from the catalog.
         if age is not None and age < WAIT_DAYS:
             waiting += 1
             continue

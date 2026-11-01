@@ -131,6 +131,7 @@ def handle_add_stash_item(
     body: Optional[dict] = None,
     params: Optional[dict] = None,
 ) -> Tuple[Dict[str, Any], int]:
+    """POST /api/stashes/{id}/items. A repeat answers 409 so the UI can name the stash."""
     payload = body or {}
     item_type = str(payload.get("item_type", "")).strip()
     model_id = payload.get("model_id")
@@ -277,6 +278,7 @@ def handle_post_export_stash(
         filter_mode = "all"
 
     # Background pipeline execution via TaskManager when available (live web server)
+    # FIXME(S-13): sync is client-controlled, so a request can run an export outside the task lock.
     if task_manager is not None and not bool(payload.get("sync", False)):
         task_res = task_manager.start_task("stash_export", {
             "stash_id": stash_id,

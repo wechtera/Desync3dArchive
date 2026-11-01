@@ -562,6 +562,7 @@ def handle_get_models(
     body: dict | None = None,
     params: dict | None = None,
 ) -> tuple[dict[str, Any], int]:
+    """GET /api/catalog-models. Pages real models, with search, tag and creator filters."""
     query = params or {}
     try:
         page = int((query.get("page") or ["1"])[0])
@@ -715,6 +716,7 @@ def handle_post_import_file(
     params: dict | None = None,
     task_manager: Any = None,
 ) -> tuple[dict[str, Any], int]:
+    """POST /api/import-file. Checks the picked paths now, then starts the import job."""
     data = body or {}
     try:
         paths = file_import.check_paths([str(p) for p in data.get("paths") or []])
@@ -770,6 +772,7 @@ def _save_backup_paths(backup_path: str, mirror_path: str) -> tuple[dict[str, An
             return {"success": False, "error": f"{label} must be outside the data folder."}, 400
         if not path.parent.is_dir():
             return {"success": False, "error": f"{path.parent} isn't available. Is the drive mounted?"}, 400
+    # FIXME(S-11): skips check_settable_path, so backups holding secrets can go anywhere the app can write.
     app_config.save_backup_paths(backup_path, mirror_path)
     log_layer("storage", logging.INFO, "Backup folders changed in Settings")
     return {"success": True}, 200
@@ -895,6 +898,7 @@ def handle_get_documents(
     body: dict | None = None,
     params: dict | None = None,
 ) -> tuple[dict[str, Any], int]:
+    """GET /api/documents. Pages PDFs from the catalog, so it works offline."""
     query = params or {}
     def one(name: str) -> str:
         return (query.get(name) or [""])[0].strip()
@@ -1156,6 +1160,7 @@ def handle_post_logs_purge(
             for backup_log in LOGS_DIR.glob("vault.log.*"):
                 try:
                     sz = backup_log.stat().st_size
+                    # FIXME(S-10): ignores days, has no confirm and writes no audit row.
                     backup_log.unlink()
                     purged_disk_files += 1
                     reclaimed_bytes += sz
@@ -1234,6 +1239,7 @@ def handle_post_stashes_purge(
                     if mtime < cutoff_time:
                         folder_sz = sum(f.stat().st_size for f in item.rglob("*") if f.is_file())
                         if not dry_run:
+                            # Safety: age is the only test. FIXME(S-02): a stash path set to the vault would purge vault folders. Mark export folders.
                             shutil.rmtree(item)
                         purged_folders += 1
                         reclaimed_bytes += folder_sz

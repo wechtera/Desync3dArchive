@@ -21,6 +21,7 @@ import mathutils
 
 
 def setup_scene():
+    """Resets Blender and picks whichever EEVEE engine this version ships, so renders work across releases."""
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
 
@@ -40,6 +41,7 @@ def setup_scene():
 
 
 def create_resin_material():
+    """Builds the matte grey resin material, so renders read as unpainted prints."""
     mat = bpy.data.materials.new(name="Miniature_Resin_Matte")
     mat.use_nodes = True
     nodes = mat.node_tree.nodes
@@ -62,6 +64,7 @@ def create_resin_material():
 
 
 def setup_studio_lighting():
+    """Adds the fixed lights, so covers stay comparable across models."""
     # 1. Key Light (Top-front-right of the baseline camera)
     key = bpy.data.objects.new("KeyLight", bpy.data.lights.new("KeyLight", "SUN"))
     key.data.energy = 3.6
