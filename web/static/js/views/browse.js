@@ -108,8 +108,8 @@ export async function openBrowseModel(modelId) {
             ${facts.map(([label, value]) => html`<dt>${label}</dt><dd>${value}</dd>`)}
           </dl>
           ${model.groups.length ? html`
-            <p class="font-sm">Part of ${model.groups.map(g => html`
-              <button type="button" class="browse-link browse-group-link" @click=${() => openBrowseGroup(g.id)}>${g.name}</button>
+            <p class="model-view-groups font-sm">Part of ${model.groups.map(g => html`
+              <button type="button" class="btn-pill font-xs browse-group-link" @click=${() => openBrowseGroup(g.id)}>${g.name}</button>
             `)}</p>
           ` : nothing}
           ${model.url ? html`<p><a class="btn-pill font-xs model-source-link" href=${safeUrl(model.url)} target="_blank" rel="noopener noreferrer">View Source Page</a></p>` : nothing}

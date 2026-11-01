@@ -3199,3 +3199,98 @@ td { padding: 11px 12px; border-top: 1px solid var(--border-dim); vertical-align
   #view-downloads, #view-help, .settings-panel { max-width: 100vw; overflow-x: hidden; }
   pre, code { white-space: pre-wrap; overflow-wrap: anywhere; }
 }
+
+/* =========================================================================
+   One gutter, and layouts that flow at any window width.
+   ========================================================================= */
+
+:root { --gutter: clamp(12px, 2.4vw, 32px); --gap: clamp(10px, 1.2vw, 16px); }
+
+body > header { padding-left: var(--gutter); padding-right: var(--gutter); }
+
+/* The stats share the page's rhythm, and auto-fit stops a lone card wrapping onto its own row */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--gap);
+  margin: var(--gap) var(--gutter);
+  background: none;
+  border: 0;
+}
+.stat-card { border: 1px solid var(--border-dim); background: var(--surface); border-radius: var(--radius); padding: 12px 14px; }
+.stat-value { font-size: clamp(1.2rem, 1.8vw, 1.6rem); }
+
+#view-downloads, #view-settings, #view-stashes, #view-help { padding: 0 var(--gutter) 32px; }
+#browse-results { margin: 0 var(--gutter) 24px; }
+#view-browse > .controls, #view-models > .controls { margin-left: var(--gutter); margin-right: var(--gutter); }
+.grid { margin-left: var(--gutter); margin-right: var(--gutter); }
+#view-downloads .controls, #view-downloads .grid, #view-downloads table { margin-left: 0; margin-right: 0; }
+#view-downloads > div, #view-settings > div { min-width: 0; }
+.sub-tabs { margin: var(--gap) 0; }
+.settings-grid { gap: var(--gap); margin: 0; padding: 0; }
+
+.sync-banner, .sync-header, .sync-card { border-radius: var(--radius); }
+
+.btn-pill { font-size: 0.86rem; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; }
+.btn-pill.font-xs { font-size: 0.8rem; min-height: 30px; }
+select, input[type="text"] { font-size: 0.9rem; }
+.model-print-choice select, .review-actions select { height: 34px; padding: 4px 8px; }
+
+/* Model view */
+.model-view-head { grid-template-columns: clamp(140px, 22vw, 240px) minmax(0, 1fr); gap: clamp(14px, 2vw, 24px); }
+.model-view-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+.model-view-tags { gap: 5px; margin-top: 10px; }
+
+/* Review fits the window exactly, whatever its height */
+#library-review-modal { align-items: center; justify-content: center; padding: 2vh 2vw; }
+#library-review-modal .modal { width: 100%; max-width: 1560px; height: 96vh; max-height: 96vh; padding: clamp(14px, 1.6vw, 24px); }
+#library-review-modal .modal-header { padding-bottom: 8px; margin-bottom: 10px; }
+#library-review-modal .modal-title-accent { font-size: 1.2rem; }
+#library-review-body { gap: 10px; }
+.review-concerns { max-height: 28vh; flex: none; padding: 0 12px 8px; overflow-y: auto; }
+.review-concerns-title { font-size: 1rem; color: var(--warning); padding: 8px 0 4px; background: #1d221b; }
+.review-concern { display: block; width: auto; padding: 6px 0; border: 0; cursor: default; }
+.review-concern:hover { background: none; }
+.review-concern + .review-concern { border-top: 1px solid var(--border-dim); }
+.review-concern-cards { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 5px; }
+.review-concern-chip { background: var(--surface-elevated); border: 1px solid var(--border-dim); border-radius: var(--radius-small); color: var(--text-body); cursor: pointer; font: inherit; font-size: 0.8rem; padding: 2px 8px; }
+.review-concern-chip:hover { border-color: var(--border-strong); }
+.review-concern-chip.review-concern-focus { border-color: var(--info); background: rgba(143, 193, 201, 0.16); color: var(--text-main); }
+.review-legend { margin-top: 4px; }
+.review-layout { min-height: 0; overflow: hidden; }
+.review-tree { overflow: auto; }
+.review-row { font-size: 0.84rem; }
+.review-actions { margin-bottom: 6px; }
+
+/* A card is one tight line of fields, not three stacked boxes */
+.review-card { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 6px; padding: 8px 10px; margin-bottom: 6px; }
+.review-card > .flex { display: contents; }
+.review-card-group { margin-top: 0; grid-column: 3; grid-row: 1; }
+.review-card-actions, .review-flag, .review-card .text-dim { grid-column: 1 / -1; }
+.review-card-actions { margin-top: 0; }
+.review-flag { margin-top: 0; }
+.review-card input[type="text"] { padding: 4px 8px; font-size: 0.84rem; min-width: 0; width: 100%; }
+
+@media (max-width: 1100px) {
+  .review-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .review-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .review-card > .flex input.review-card-name { grid-column: 1 / -1; }
+  .review-card-group { grid-column: 2; grid-row: 2; }
+}
+
+@media (max-width: 760px) {
+  .review-layout { grid-template-columns: minmax(0, 1fr); overflow: visible; }
+  #library-review-modal .modal { height: auto; max-height: none; overflow-y: auto; }
+  .model-view-head { grid-template-columns: minmax(0, 1fr); }
+  .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Older rules gave these their own side margins, which doubled the page gutter */
+.sub-tabs { padding: 0; background: none; border-bottom: 0; }
+.audit-panel, .panel-spaced { margin-left: 0 !important; margin-right: 0 !important; border-radius: var(--radius); }
+.sync-grid { margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; }
+
+/* Six stats, or three, or two: never five and a straggler */
+#metrics-bar { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 1040px) { #metrics-bar { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 560px) { #metrics-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

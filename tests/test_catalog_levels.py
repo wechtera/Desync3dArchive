@@ -411,6 +411,14 @@ class CollectionMergeTests(BuildCase):
         self.assertEqual(self.one("SELECT COUNT(*) FROM models WHERE state = 'proposed'")[0], 1)
         self.assertEqual(self.one("SELECT COUNT(*) FROM model_artifacts")[0], 4)
 
+    def test_archives_peeked_one_at_a_time_still_make_one_model(self):
+        self.archive(self.collection, self.PLAIN)
+        self.build()
+        self.archive(self.collection, self.PRE)
+        self.build()
+        self.assertEqual(self.one("SELECT COUNT(*) FROM models WHERE state = 'proposed'")[0], 1)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM model_artifacts")[0], 4)
+
     def test_the_model_takes_the_fuller_folder_name(self):
         self.archive(self.collection, self.PLAIN)
         self.build()

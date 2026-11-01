@@ -584,7 +584,7 @@ test.describe('settings', () => {
     await page.locator('.preview-release-open').first().click();
     await expect(page.locator('#review-concerns')).toContainText('What to check (1)');
     await expect(page.locator('#review-concerns')).toContainText('Item inside a model');
-    await expect(page.locator('#review-concerns')).toContainText('click New Card');
+    await expect(page.locator('#review-concerns')).toContainText('New Card');
 
     // It opens on the concern: the folder that caused it stands out from the rest of the card.
     await expect(page.locator('.review-row[data-path="Drop/Voxshax/Tomb"]')).toHaveClass(/review-row-suspect/);
@@ -592,6 +592,27 @@ test.describe('settings', () => {
     await expect(page.locator('.review-row[data-path="Drop/Voxshax"]')).not.toHaveClass(/review-row-suspect/);
     await expect(page.locator('.review-card[data-card="Voxshax"]')).toHaveClass(/review-card-focus/);
     await expect(page.locator('.review-row[data-path="Drop/Busts/Lidda"]')).toHaveCount(0);
+  });
+
+  test('repeated warnings collapse into one entry with one merge', async ({ page }) => {
+    const release = structuredClone(reviewRelease);
+    release.cards = [
+      { key: '1', name: 'Mask', category: '', paths: ['Drop/Voxshax/b.stl'], skip: false, flags: [], group: '', tags: [] },
+      { key: '2', name: 'Mask L', category: '', paths: ['Drop/Voxshax/Tomb/c.stl'], skip: false, flags: ['Looks like a part of Mask'], group: '', tags: [] },
+      { key: '3', name: 'Mask R', category: '', paths: ['Drop/Busts/Lidda/a.stl'], skip: false, flags: ['Looks like a part of Mask'], group: '', tags: [] },
+    ];
+    await mock(page, '/api/settings/libraries/2/preview', reviewReport);
+    await page.route('**/api/settings/libraries/2/preview/release*', (route) => route.fulfill({ json: release }));
+    await mock(page, '/api/settings/libraries', { libraries: [{ id: 2, name: 'Lib', path: '/l', exists: true }], total: 1 });
+    await page.goto('/#downloads');
+    await page.locator('#group-external').click();
+    await page.locator('#sub-btn-libraries').click();
+    await page.locator('.preview-release-open').first().click();
+    await expect(page.locator('.review-concern')).toHaveCount(1);
+    await expect(page.locator('.review-concern-chip')).toHaveCount(2);
+    await page.locator('.review-merge').click();
+    await expect(page.locator('.review-card')).toHaveCount(1);
+    await expect(page.locator('.review-row[data-path="Drop/Busts/Lidda/a.stl"] .review-label')).toHaveText('Mask');
   });
 
   test('a possible duplicate lights up both cards', async ({ page }) => {
@@ -713,7 +734,7 @@ test.describe('settings', () => {
     await expect(page.locator('#library-review-title')).toContainText('Vampire Court - peeked');
     await expect(page.locator('#btn-review-reset')).toHaveCount(0);
     await expect(page.locator('#review-concerns')).toContainText('Possible part');
-    await expect(page.locator('#review-concerns')).toContainText('Move to Card');
+    await expect(page.locator('.review-merge')).toContainText('into Ghul A');
     await expect(page.locator('.review-row[data-path="3/a.zip/Ghuls/B.stl"]').or(page.locator('.review-row[data-path="3/a.zip/Ghuls"]')).first()).toBeVisible();
     await page.locator('.review-card[data-card="Ghul A"] .review-card-name').fill('Zombie');
     await page.locator('.review-row[data-path="3/a.zip"] .review-select').check();

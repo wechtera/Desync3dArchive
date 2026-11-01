@@ -452,14 +452,14 @@ function concernOf(flag) {
   if (close) {
     return {
       label: 'Possible duplicate', other: close[1], terms: [],
-      ask: `Compare with ${close[1]}. If they're one design, tick its rows and Move to Card. If they're different, leave both.`,
+      ask: `Compare with ${close[1]}. If they're one design, tick the rows and Move to Card.`,
     };
   }
   const part = flag.match(/^Looks like a part of (.+)$/);
   if (part) {
     return {
       label: 'Possible part', other: part[1], terms: [],
-      ask: `This may be a piece of ${part[1]}, not a model of its own. If so, tick its rows and Move to Card. If it's its own design, leave it.`,
+      ask: `May be a piece of ${part[1]}, not its own model. If so, merge it. If it's its own design, leave it.`,
     };
   }
   const parent = flag.match(/^Named from a parent folder, but its folder says (.+)$/);
@@ -505,19 +505,49 @@ function focusCard(card) {
   document.querySelector('.review-concern-focus')?.scrollIntoView({ block: 'nearest' });
 }
 
+// Twenty-six "part of Mask" warnings say one thing, so they read as one entry with one fix.
+function concernGroups() {
+  const groups = new Map();
+  for (const card of review.cards) {
+    for (const concern of concernsOf(card)) {
+      const key = `${concern.label}|${concern.other || concern.ask}`;
+      if (!groups.has(key)) groups.set(key, { ...concern, cards: [] });
+      groups.get(key).cards.push(card);
+    }
+  }
+  return [...groups.values()];
+}
+
+function mergeInto(group) {
+  const target = review.cards.find(c => c.name === group.other);
+  if (!target) return;
+  for (const card of group.cards) {
+    target.paths.push(...card.paths);
+    card.paths = [];
+  }
+  review.cards = review.cards.filter(c => c.paths.length);
+  review.dirty = true;
+  focusCard(target);
+}
+
 function drawConcerns() {
-  const flagged = review.cards.filter(c => concernsOf(c).length);
-  if (!flagged.length) return html`<p class="font-sm text-dim" id="review-concerns-none">Nothing is flagged here.</p>`;
+  const groups = concernGroups();
+  if (!groups.length) return html`<p class="font-sm text-dim" id="review-concerns-none">Nothing is flagged here.</p>`;
   return html`
     <div class="review-concerns" id="review-concerns">
-      <div class="font-sm review-concerns-title">What to check (${flagged.length})</div>
-      ${flagged.map(card => html`
-        <button type="button" class=${`review-concern ${card.key === review.focus ? 'review-concern-focus' : ''}`} @click=${() => focusCard(card)}>
-          <strong>${card.name}</strong>
-          ${concernsOf(card).map(c => html`
-            <span class="review-concern-line"><span class="review-concern-label">${c.label}</span> ${c.ask}</span>
-          `)}
-        </button>
+      <div class="review-concerns-title">What to check (${review.cards.filter(c => concernsOf(c).length).length})</div>
+      ${groups.map(group => html`
+        <div class="review-concern">
+          <div class="review-concern-line"><span class="review-concern-label">${group.label}</span> ${group.ask}</div>
+          <div class="review-concern-cards">
+            ${group.cards.map(card => html`
+              <button type="button" class=${`review-concern-chip ${card.key === review.focus ? 'review-concern-focus' : ''}`} @click=${() => focusCard(card)}>${card.name}</button>
+            `)}
+            ${group.label === 'Possible part' ? html`
+              <button type="button" class="btn-pill font-xs review-merge" @click=${() => mergeInto(group)}>Merge ${group.cards.length > 1 ? `all ${group.cards.length}` : ''} into ${group.other}</button>
+            ` : nothing}
+          </div>
+        </div>
       `)}
       <div class="font-xs text-dim review-legend">
         <span class="review-key review-key-focus"></span> card you're checking

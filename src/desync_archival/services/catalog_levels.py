@@ -289,9 +289,21 @@ def build_archive_models(conn: sqlite3.Connection, only_collection: int | None =
                 else:
                     merged[model.name.lower()] = (model, held)
 
+        # A fresh download peeks each archive on its own, so the sibling archive's models are
+        # already in the catalog by the time this one arrives.
+        named = {
+            r[1].lower(): r[0] for r in conn.execute("""
+                SELECT m.id, m.name FROM models m JOIN model_collections l ON l.model_id = m.id
+                WHERE l.collection_id = ? AND m.state IN (?, ?);
+            """, (collection_id, PROPOSED, RESOLVED)).fetchall()
+        }
         with conn:
-            for model, held in merged.values():
-                model_id, created = _store_model(conn, model, collection_id, spare, held, known)
+            for key, (model, held) in merged.items():
+                if key in named:
+                    model_id, created = named[key], False
+                    _add_artifacts(conn, model_id, held)
+                else:
+                    model_id, created = _store_model(conn, model, collection_id, spare, held, known)
                 if created and spare == model_id:
                     spare = None
                 first = first or model_id
