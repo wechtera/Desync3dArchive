@@ -91,6 +91,8 @@ Import File, under Manage / Retrieve / Reconcile Assets > External Vault, takes 
 
 Find Duplicates, under Vault Reconcile, compares whole files. Results stay on the card until each pair is acted on. Keep Both and Ignore are remembered, so that pair isn't raised again. Delete moves one file to `.Pending-Deletion` at the vault root, a hidden, fixed folder, and leaves a tombstone in the catalog. Linked library files are read-only and can't be deleted. Settings > Disk Usage lists that folder. Until a file is purged it can be restored to its old path with its catalog rows. A purge lists the files first, asks twice, and only covers files moved over 14 days ago.
 
+Bases and supports are left out by whole word, so `presupported` files are checked, and the results say how many files were left out. **Include shared bases and supports** checks those too.
+
 ### PDFs
 
 View Library > PDFs lists every PDF the catalog knows about, from MMF, linked libraries, imports and inside peeked archives. The list reads SQLite only, so it works with the NAS offline. **Update PDFs**, under Manage / Retrieve / Reconcile Assets > Vault Reconcile, records PDFs in linked libraries and makes first page previews with Ghostscript, kept locally. A PDF inside an archive can only be named once that archive is downloaded and peeked, so until then it shows as an archive not read yet.
@@ -118,7 +120,7 @@ Add `--with-secrets` to include your secrets, and keep that folder private. On t
 uv run python -m desync_archival.dbtool import /Volumes/NAS/desync-bundle --map /Volumes/STL=/mnt/nas
 ```
 
-`--map OLD=NEW` rewrites stored paths, and can be repeated. `MANIFEST.json` in the bundle lists the paths in use.
+`--map OLD=NEW` rewrites stored paths, and can be repeated. `MANIFEST.json` in the bundle lists the paths in use. A failed import adds no catalog, so the same command can run again.
 
 ## Running
 
@@ -126,7 +128,7 @@ uv run python -m desync_archival.dbtool import /Volumes/NAS/desync-bundle --map 
 uv run python -m desync_archival.api.server   # web UI at http://localhost:8080
 ./check.sh                                    # tests, lint, types and dependency audits
 uv run python -m desync_archival.dbtool status   # schema version
-uv run python -m desync_archival.dbtool migrate  # apply migrations, after a verified backup
+uv run python -m desync_archival.dbtool migrate  # back up, migrate a copy, check it, swap it in
 uv run python -m desync_archival.dbtool backup   # write a verified backup to DESYNC_BACKUP_DIR
 uv run python -m desync_archival.dbtool restore BACKUP_FILE NEW_PATH   # restore to a new path
 uv run python -m desync_archival.dbtool export-secrets   # copy secrets from the database to the secrets file
@@ -134,7 +136,9 @@ uv run python scripts/cutover.py --help   # staged migration rehearsal and rollb
 uv run python scripts/baseline/record_contract.py --compare   # compare the API to the snapshots
 ```
 
-The app never migrates a database by itself. If the schema is behind, it refuses to start and names the command to run. On production, `migrate` also needs `--confirm-production`.
+The app never migrates a database by itself. If the schema is behind, it refuses to start and names the command to run. On production, `migrate` also needs `--confirm-production`. The original only changes if every check on the copy passes. Stop the app first: `dbtool` refuses while the app is listening on its port.
+
+**Cancel** asks a task to stop, and it stays listed as running until its worker exits, so nothing else can start beside it. Both stop a scrape or archive unpacking within a second, and **Force Kill** ends a scrape's browser outright. A stuck Python worker can't be killed from outside, so if a task stays listed, restart the server.
 
 Sign in from Settings with **Connect**, which opens MMF's login page, where you also choose how long the sign-in lasts. Only the Client ID has to be saved first. The library scrape needs session cookies, which go in their own Settings fields, and it runs without a browser window by default. If Cloudflare asks for a check, turn that switch off and scrape in a visible window.
 

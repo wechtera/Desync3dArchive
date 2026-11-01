@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from desync_archival import settings as app_config
 from desync_archival.api import schemas
-from desync_archival.services import login
+from desync_archival.services import login, secret_store
 from desync_archival.services.logger import logger
 
 router = APIRouter()
@@ -42,7 +42,13 @@ async def log_in(request: Request) -> Response:
         return JSONResponse({"error": "A password is required."}, 400)
 
     # scrypt takes real time, so it stays off the event loop.
-    if not await run_in_threadpool(login.verify_password, body.password):
+    try:
+        matched = await run_in_threadpool(login.verify_password, body.password)
+    except secret_store.SecretsError as e:
+        # Not a wrong password, so it doesn't count toward the lockout.
+        logger.error(f"Login unavailable: {e}")
+        return JSONResponse({"error": "The password can't be read right now. See the server log."}, 503)
+    if not matched:
         login.record_failure(client)
         return JSONResponse({"error": "Wrong password."}, 401)
 

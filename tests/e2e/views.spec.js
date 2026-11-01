@@ -529,6 +529,22 @@ test.describe('stashes', () => {
     await expect(page.locator('#export-path-text')).toHaveText(HOSTILE);
   });
 
+  test('a failed report fetch keeps trying, and never shows an empty success', async ({ page }) => {
+    await open(page);
+    await page.route('**/api/stashes/3/export', (route) => route.fulfill({ json: { task_id: 8, stash_name: HOSTILE } }));
+    await mock(page, '/api/tasks/status', { active_task: null, recent_tasks: [{ id: 8, status: 'completed', progress_pct: 100 }] });
+    let replies = 0;
+    await page.route('**/api/tasks/8', (route) => {
+      replies += 1;
+      return replies === 1
+        ? route.fulfill({ status: 500, json: { error: 'busy' } })
+        : route.fulfill({ json: { id: 8, result_summary: { export_path: HOSTILE, total_files: 2, total_bytes: 1024 } } });
+    });
+    await page.locator('#btn-export-stash').click();
+    await expect(page.locator('#export-path-text')).toHaveText(HOSTILE);
+    expect(replies).toBeGreaterThan(1);
+  });
+
   test('a background export shows progress and can be cancelled', async ({ page }) => {
     await open(page);
     await page.route('**/api/stashes/3/export', (route) => route.fulfill({ json: { task_id: 8, stash_name: HOSTILE } }));

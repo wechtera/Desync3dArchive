@@ -1480,3 +1480,108 @@ class SecondReviewR14Tests(BundleImportR14Tests):
         data_bundle.import_bundle(self.bundle, self.fresh, {"/old/vault": "/new/vault"})
         rows = self.fresh_rows("SELECT raw_backup_path FROM collections WHERE name = 'A'")
         self.assertEqual(rows, [("/new/vault/meta/1.json",)])
+
+
+class SecondReviewSmallFixTests(TempCase):
+    def test_a_linked_database_path_keeps_its_link(self):
+        real = self.root / "real" / "library.db"
+        real.parent.mkdir()
+        create_database(real)
+        conn = sqlite3.connect(real)
+        conn.execute("PRAGMA user_version = 16")
+        conn.close()
+        link = self.root / "library.db"
+        link.symlink_to(real)
+        with patch.object(migrations, "apply_pending", side_effect=lambda c: 16), \
+                patch.object(migrations, "latest_version", return_value=17), \
+                patch.dict(os.environ, {"DESYNC_BACKUP_DIR": str(self.root / "backups")}):
+            migrations.migrate_database(link)
+        self.assertTrue(link.is_symlink())
+
+    def test_a_broken_secrets_file_answers_login_with_a_clear_503(self):
+        client = TestClient(server.create_app(manage_workers=False), base_url="http://localhost")
+        with patch.object(login, "verify_password", side_effect=secret_store.SecretsError("nope")), \
+                patch.object(login, "record_failure") as failure:
+            reply = client.post("/api/login", json={"password": "anything-long"})
+        self.assertEqual(reply.status_code, 503)
+        self.assertIn("error", reply.json())
+        failure.assert_not_called()
+
+    def test_set_password_reports_a_broken_secrets_file_without_a_traceback(self):
+        with patch.object(sys, "argv", ["dbtool", "set-password"]), \
+                patch.object(login, "set_password", side_effect=secret_store.SecretsError("nope")), \
+                patch("sys.stdin") as stdin, patch("sys.stderr") as stderr:
+            stdin.isatty.return_value = False
+            stdin.readline.return_value = "a-long-enough-password\n"
+            self.assertEqual(dbtool.main(), 1)
+        self.assertIn("nope", "".join(call.args[0] for call in stderr.write.call_args_list))
+
+    def test_a_failed_cover_copy_doesnt_fail_the_peek(self):
+        previews = self.root / "previews"
+        (previews / "7").mkdir(parents=True)
+        (previews / "7" / "cover.jpg").write_bytes(b"cover")
+        peeker = object.__new__(ArchivePeeker)
+        peeker.previews_root = previews
+        with patch("desync_archival.services.archive_peeker.shutil.copyfile", side_effect=OSError(28, "No space left")):
+            self.assertIsNone(peeker._fetch_catalog_fallback_image(7, previews / "7" / "99"))
+
+    def test_a_blocked_log_write_cant_be_overtaken(self):
+        db = self.root / "library.db"
+        create_database(db)
+        conn = sqlite3.connect(db)
+        with conn:
+            task = conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('x', 'running')").lastrowid
+        conn.close()
+        buffer = task_manager.TaskLogBuffer()
+        started, release = threading.Event(), threading.Event()
+        real = scoped_connection
+
+        def slow_first(path):
+            if not started.is_set():
+                started.set()
+                release.wait(5)
+            return real(path)
+
+        with patch.object(task_manager, "scoped_connection", slow_first), patch.object(task_manager, "LOG_FLUSH_SECONDS", 60):
+            buffer.add(db, task, "first")
+            first = threading.Thread(target=buffer.flush)
+            first.start()
+            self.assertTrue(started.wait(5))
+            buffer.add(db, task, "second")
+            second = threading.Thread(target=buffer.flush, args=(db, task))
+            second.start()
+            time.sleep(0.1)
+            release.set()
+            first.join(5)
+            second.join(5)
+        buffer.flush()
+        conn = sqlite3.connect(db)
+        log = conn.execute("SELECT log_output FROM pipeline_tasks WHERE id = ?", (task,)).fetchone()[0]
+        conn.close()
+        self.assertEqual(log.split(), ["first", "second"])
+
+    def test_a_vanished_staged_file_fails_its_job(self):
+        # Retrying can't bring it back, and a job stuck in staging_complete holds up every destructive action.
+        db = self.root / "library.db"
+        create_database(db)
+        conn = sqlite3.connect(db)
+        with conn:
+            model = conn.execute("INSERT INTO collections (name, source, raw_backup_path) VALUES ('A', 'mmf', 'm.json')").lastrowid
+            job = conn.execute("INSERT INTO download_jobs (model_id, status) VALUES (?, 'offloading')", (model,)).lastrowid
+        manager = object.__new__(DownloadManager)
+        manager.db_path = db
+        manager._lock = threading.Lock()
+        manager.is_paused = False
+        manager.active_offloads = {}
+        manager._offload_not_before = {}
+        manager.storage = MagicMock()
+        row = {"id": job, "model_id": model, "model_name": "A", "downloaded_bytes": 0, "retry_count": 0}
+        with patch.object(manager, "_claim_next_offload_job", return_value=row), \
+                patch.object(manager, "_process_nas_offload", side_effect=StagedFileMissing("gone")):
+            manager._offload_next(0)
+        status, message = conn.execute("SELECT status, error_message FROM download_jobs WHERE id = ?", (job,)).fetchone()
+        conn.close()
+        self.assertEqual(status, "failed")
+        self.assertIn("gone", message)
+        self.assertEqual(manager._offload_not_before, {})
+

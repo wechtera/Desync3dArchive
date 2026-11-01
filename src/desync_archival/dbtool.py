@@ -30,7 +30,7 @@ def set_password() -> int:
         password = sys.stdin.readline().rstrip("\n")
     try:
         print(f"password saved in {login.set_password(password)}")
-    except login.WeakPasswordError as e:
+    except (login.WeakPasswordError, secret_store.SecretsError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     return 0

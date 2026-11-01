@@ -168,12 +168,17 @@ def migrate_database(db_path: Path, confirm_production: bool = False) -> dict[st
     Steps commit as they go, so checking in place would be too late: a failure would leave the new
     schema behind, a rerun would report nothing to do, and the app would start on it.
 
+    The swap isn't safe beside a running app, whose connections would keep the old file. dbtool's
+    port check is the real guard against that, and the -wal check below only catches some cases.
+
     Raises:
-        MigrationError: The checks failed, or something else has the database open. Either way
-            the original is untouched.
+        MigrationError: The checks failed, or the database looks open elsewhere. Either way the
+            original is untouched.
     """
     if app_config.is_production() and not confirm_production:
         raise MigrationError("Refusing to migrate production without --confirm-production")
+    # Resolved so the swap replaces the real file, and not a link to it.
+    db_path = Path(db_path).resolve()
     app_config.check_path(db_path)
 
     conn = sqlite3.connect(db_path)
@@ -188,7 +193,8 @@ def migrate_database(db_path: Path, confirm_production: bool = False) -> dict[st
         return {"from": before_version, "to": before_version, "backup": None}
 
     # The last connection to close removes the -wal file, and ours just closed. One still here means
-    # another process has the database, and it would keep writing to the old file after the swap.
+    # another process is using the database. Its absence proves nothing, because connections close
+    # after each block now, so an idle app leaves no -wal.
     if _beside(db_path, "-wal").exists():
         raise MigrationError(f"{db_path.name} is still open in another process. Stop it first.")
 

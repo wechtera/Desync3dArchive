@@ -316,8 +316,11 @@ async function pollExportTaskProgress(taskId) {
     }
 
     if (targetTask.status === 'completed') {
+      // Before closing the progress dialog, so a failed fetch is retried below and not lost.
+      const reply = await fetch(`/api/tasks/${taskId}`);
+      if (!reply.ok) throw new Error(`Export report unavailable (${reply.status})`);
+      const finished = await reply.json();
       closeExportProgressModal();
-      const finished = await fetch(`/api/tasks/${taskId}`).then((reply) => reply.json());
       showExportSuccessModal(finished.result_summary || finished.artifacts || {});
       return;
     }
