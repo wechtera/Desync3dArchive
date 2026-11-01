@@ -31,6 +31,7 @@ from desync_archival import backup, dbtool, external, migrations
 from desync_archival import settings as app_config
 from desync_archival.api import server
 from desync_archival.services import (
+    archive_peeker,
     data_bundle,
     duplicates,
     jobs,
@@ -41,6 +42,7 @@ from desync_archival.services import (
 from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.db import get_db_connection, scoped_connection
 from desync_archival.services.downloader import DownloadManager, queue_models
+from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.stash_exporter import StashExporter
 from desync_archival.services.task_manager import TaskManager
 
@@ -1113,3 +1115,99 @@ class LogWritesP02Tests(TempCase):
         self.manager._append_log(self.task, "failed with Authorization: Bearer abc123secret")
         self.manager._flush_log(self.task)
         self.assertNotIn("abc123secret", self.log())
+
+
+class BackfillP03Tests(TempCase):
+    def setUp(self):
+        super().setUp()
+        self.db = self.root / "library.db"
+        create_database(self.db)
+        self.vault = self.root / "vault"
+        self.vault.mkdir()
+        self.previews = self.root / "previews"
+        conn = sqlite3.connect(self.db)
+        with conn:
+            conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('download_root_path', ?)", (str(self.vault),))
+            self.collection = conn.execute(
+                "INSERT INTO collections (name, source, vault_path, raw_backup_path) VALUES ('Pack', 'mmf', ?, 'm.json')", (str(self.vault),)
+            ).lastrowid
+            for file_id in (1, 2, 3):
+                archive = self.vault / f"pack{file_id}.zip"
+                with zipfile.ZipFile(archive, "w") as handle:
+                    handle.writestr(f"Hero{file_id}/Hero{file_id}_Body.stl", b"solid")
+                conn.execute("INSERT INTO model_files (file_id, model_id, filename) VALUES (?, ?, ?)", (file_id, self.collection, archive.name))
+                conn.execute(
+                    "INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path,"
+                    " actual_bytes, vault_path, file_extension) VALUES (?, ?, ?, ?, ?, 5, ?, '.zip')",
+                    (file_id, self.collection, archive.name, archive.name, archive.name, str(archive)),
+                )
+        conn.close()
+        env = patch.dict(os.environ, {"DESYNC_DATA_DIR": str(self.root)})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def counting(self):
+        return patch(
+            "desync_archival.services.archive_peeker.catalog_levels.build_archive_models",
+            wraps=archive_peeker.catalog_levels.build_archive_models,
+        )
+
+    def reconciler(self):
+        reconciler = object.__new__(VaultReconciler)
+        reconciler.db_path = self.db
+        reconciler.previews_root = self.previews
+        reconciler.storage = MagicMock()
+        reconciler.storage.get_root_path.return_value = self.vault
+        return reconciler
+
+    def artifacts(self):
+        conn = sqlite3.connect(self.db)
+        try:
+            return conn.execute("SELECT COUNT(*) FROM model_artifacts").fetchone()[0]
+        finally:
+            conn.close()
+
+    def test_a_backfill_builds_once_at_the_end(self):
+        with self.counting() as build:
+            report = self.reconciler().backfill_archive_peeks()
+        self.assertEqual(report["inspected"], 3)
+        self.assertEqual(build.call_count, 1)
+        self.assertEqual(build.call_args.args[1], None, "one build covers every collection")
+
+    def test_what_a_backfill_peeked_reaches_the_catalog(self):
+        self.reconciler().backfill_archive_peeks()
+        self.assertEqual(self.artifacts(), 3)
+
+    def test_a_cancelled_backfill_still_builds_what_it_peeked(self):
+        answers = iter([False, True])
+        with self.counting() as build:
+            report = self.reconciler().backfill_archive_peeks(cancel_cb=lambda: next(answers))
+        self.assertEqual(report["inspected"], 1)
+        self.assertEqual(build.call_count, 1)
+        self.assertEqual(self.artifacts(), 1)
+
+    def test_a_backfill_that_peeked_nothing_doesnt_build(self):
+        with self.counting() as build:
+            self.reconciler().backfill_archive_peeks(cancel_cb=lambda: True)
+        build.assert_not_called()
+
+    def test_a_failed_build_doesnt_fail_the_backfill(self):
+        with patch(
+            "desync_archival.services.archive_peeker.catalog_levels.build_archive_models",
+            side_effect=sqlite3.OperationalError("database is locked"),
+        ):
+            report = self.reconciler().backfill_archive_peeks()
+        self.assertTrue(report["success"])
+        self.assertEqual(report["inspected"], 3)
+
+    def test_a_single_peek_still_builds_on_its_own(self):
+        with self.counting() as build:
+            ArchivePeeker(self.db).inspect_and_record(self.collection, 1, self.vault / "pack1.zip")
+        self.assertEqual(build.call_count, 1)
+        self.assertEqual(self.artifacts(), 1)
+
+    def test_a_repeek_builds_once_too(self):
+        with self.counting() as build:
+            summary = archive_peeker.repeek_files(self.db, {1, 2, 3})
+        self.assertEqual(summary["repaired"], 3)
+        self.assertEqual(build.call_count, 1)

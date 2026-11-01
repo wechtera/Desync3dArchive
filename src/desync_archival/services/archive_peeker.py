@@ -89,8 +89,12 @@ class ArchivePeeker:
     def _get_db(self) -> sqlite3.Connection:
         return scoped_connection(self.db_path, foreign_keys=False)
 
-    def inspect_and_record(self, model_id: int, file_id: int, archive_path: Path) -> Dict[str, Any]:
-        """Entry point: inspects an archive, performs bidirectional segmentation, and records submodels."""
+    def inspect_and_record(self, model_id: int, file_id: int, archive_path: Path, build_catalog: bool = True) -> Dict[str, Any]:
+        """Entry point: inspects an archive, performs bidirectional segmentation, and records submodels.
+
+        A batch passes `build_catalog=False` and calls `finish_batch` once at the end, because
+        each build rereads every archive and relearns its words.
+        """
         archive_path = Path(archive_path).resolve()
         if not archive_path.exists():
             log_layer("archive", logging.ERROR, f"Archive missing: {archive_path}")
@@ -150,7 +154,7 @@ class ArchivePeeker:
         if not printable_members:
             log_layer("archive", logging.INFO, f"Model #{model_id} File #{file_id} classified as document/visual pack.")
             submodels = self._handle_document_pack(clean_members, extracted_images, model_id, file_id)
-            self._commit_to_database(file_id, model_id, submodels, clean_members)
+            self._commit_to_database(file_id, model_id, submodels, clean_members, build_catalog)
             return {
                 "success": True,
                 "archive_type": archive_type,
@@ -166,7 +170,7 @@ class ArchivePeeker:
         self._correlate_thumbnails(submodels, extracted_images, model_id, file_id)
 
         # 6. Persist to SQLite
-        self._commit_to_database(file_id, model_id, submodels, clean_members)
+        self._commit_to_database(file_id, model_id, submodels, clean_members, build_catalog)
 
         log_layer("archive", logging.INFO, f"Model #{model_id} ({archive_path.name}): Discovered {len(submodels)} submodels, {len(extracted_images)} renders.")
 
@@ -698,12 +702,25 @@ class ArchivePeeker:
             elif best_match and best_match.exists():
                 sm.preview_image_path = f"{preview_folder_name}/{model_id}/{file_id}/{best_match.name}"
 
+    def _build_catalog(self, conn: sqlite3.Connection, model_id: int | None, subject: str) -> None:
+        # A failure here must not undo a good peek. The next build picks these entries up.
+        try:
+            catalog_levels.build_archive_models(conn, model_id)
+        except sqlite3.Error as e:
+            log_layer("archive", logging.ERROR, f"Catalog levels not updated for {subject}: {e}")
+
+    def finish_batch(self) -> None:
+        """The one build after peeks that skipped their own. Learning from the whole pile also learns better."""
+        with self._get_db() as conn:
+            self._build_catalog(conn, None, "a batch of peeks")
+
     def _commit_to_database(
         self,
         file_id: int,
         model_id: int,
         submodels: List[DiscoveredSubmodel],
-        all_clean_members: List[ArchiveMemberInfo]
+        all_clean_members: List[ArchiveMemberInfo],
+        build_catalog: bool = True,
     ):
         # Updates in place. Stash items and artifacts cascade from these rows, so rewriting them with
         # new IDs used to delete whatever pointed into a re-peeked archive.
@@ -749,11 +766,8 @@ class ArchivePeeker:
             with conn:
                 conn.execute(queries.UPDATE_MODEL_FILES_PEEKED_AT_BY_FILE_ID, (file_id,))
 
-            # A failure here must not undo a good peek. The next build picks these entries up.
-            try:
-                catalog_levels.build_archive_models(conn, model_id)
-            except sqlite3.Error as e:
-                log_layer("archive", logging.ERROR, f"Catalog levels not updated for File #{file_id}: {e}")
+            if build_catalog:
+                self._build_catalog(conn, model_id, f"File #{file_id}")
         log_layer("sql", logging.DEBUG, f"Persisted {len(submodels)} submodels and {len(all_clean_members)} archive members for File #{file_id}")
 
 
@@ -769,8 +783,10 @@ def repeek_files(db_path: Path, file_ids: set[int]) -> dict[str, int]:
     peeker = ArchivePeeker(db_path)
     summary = {"archives": len(rows), "repaired": 0, "failed": 0}
     for row in rows:
-        result = peeker.inspect_and_record(row["model_id"], row["file_id"], Path(row["vault_path"] or ""))
+        result = peeker.inspect_and_record(row["model_id"], row["file_id"], Path(row["vault_path"] or ""), build_catalog=False)
         summary["repaired" if result.get("success") else "failed"] += 1
+    if summary["repaired"]:
+        peeker.finish_batch()
     log_layer("archive", logging.INFO, f"Repeek of {len(file_ids)} archives: {summary}")
     return summary
 

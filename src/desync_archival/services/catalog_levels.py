@@ -254,7 +254,7 @@ def clean_orphan_links(conn: sqlite3.Connection) -> int:
     return members + tags
 
 
-# FIXME(P-03): relearns everything for every peek, which blocks the E36 backfill.
+# NOTE: rereads every archive and relearns its words each call, so a batch of peeks runs this once.
 def build_archive_models(conn: sqlite3.Connection, only_collection: int | None = None) -> dict[str, Any]:
     """Adds whatever a peek stored that has no artifact yet, so it can run any number of times.
 

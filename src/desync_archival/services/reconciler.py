@@ -921,7 +921,7 @@ class VaultReconciler:
                     continue
 
             try:
-                peek_res = peeker.inspect_and_record(model_id, file_id, archive_file)
+                peek_res = peeker.inspect_and_record(model_id, file_id, archive_file, build_catalog=False)
                 if peek_res.get("success"):
                     sm_count = peek_res.get("submodels_count", 0)
                     img_count = peek_res.get("images_extracted", 0)
@@ -940,6 +940,10 @@ class VaultReconciler:
                 log(f"[ERROR] Model #{model_id} ('{cleaned_filename}'): {err_msg}")
                 log_layer("archive", logging.ERROR, f"Archive peek exception for Model #{model_id}: {e}")
                 errors.append(f"Model #{model_id} ({cleaned_filename}): {err_msg}")
+
+        if inspected:
+            progress(100.0, f"Building the catalog from {inspected} archives...")
+            peeker.finish_batch()
 
         summary = {
             "success": True,
