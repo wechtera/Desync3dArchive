@@ -1018,17 +1018,11 @@ class VaultReconciler:
         log(f"Found {total} models missing local cover previews. Beginning download sweep...")
         log_layer("http", logging.INFO, f"Downloading missing catalog preview covers for {total} models.")
 
-        # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-            "Referer": "https://www.myminifactory.com/",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-        }
-
         downloaded = 0
         errors: List[str] = []
 
-        with httpx.Client(headers=headers, timeout=15.0, follow_redirects=True) as client:
+        # NOTE: no browser signals here, by the owner's rule. A plain request works (S-15).
+        with httpx.Client(timeout=15.0, follow_redirects=True) as client:
             for i, r in enumerate(to_fetch, 1):
                 if is_cancelled():
                     log("Catalog preview backfill cancelled by operator.")

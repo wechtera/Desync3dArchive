@@ -367,16 +367,10 @@ class ArchivePeeker:
         if not url or not url.startswith(("http://", "https://")):
             return None
 
-        # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-            "Referer": "https://www.myminifactory.com/",
-            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
-        }
-
         try:
             log_layer("http", logging.DEBUG, f"ArchivePeeker downloading fallback catalog preview: {url}")
-            with httpx.Client(headers=headers, timeout=15.0, follow_redirects=True) as client:
+            # NOTE: no browser signals here, by the owner's rule. A plain request works (S-15).
+            with httpx.Client(timeout=15.0, follow_redirects=True) as client:
                 resp = client.get(url)
                 if resp.status_code == 200 and len(resp.content) > 0:
                     cover.parent.mkdir(parents=True, exist_ok=True)

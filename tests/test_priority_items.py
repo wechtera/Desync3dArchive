@@ -1585,3 +1585,72 @@ class SecondReviewSmallFixTests(TempCase):
         self.assertIn("gone", message)
         self.assertEqual(manager._offload_not_before, {})
 
+
+
+class ImageRequestsS15Tests(TempCase):
+    """Images go out as ourselves. Proven against MMF's image host on 2026-11-01, 5 of 5."""
+
+    IMAGE = "https://assets.myminifactory.com/object-assets/a/b/c.jpg"
+
+    def setUp(self):
+        super().setUp()
+        self.seen = []
+        real_client = httpx.Client
+
+        def answer(request):
+            self.seen.append(request)
+            return httpx.Response(200, content=b"image bytes", headers={"content-type": "image/jpeg"})
+
+        patcher = patch("httpx.Client", side_effect=lambda **kwargs: real_client(transport=httpx.MockTransport(answer), **kwargs))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def assert_plain(self):
+        self.assertEqual(len(self.seen), 1)
+        headers = self.seen[0].headers
+        self.assertTrue(headers["user-agent"].startswith("python-httpx/"), headers["user-agent"])
+        for name in ("referer", "cookie", "authorization"):
+            self.assertNotIn(name, headers)
+
+    def test_a_cover_during_ingest(self):
+        manager = object.__new__(TaskManager)
+        manager.root_dir = self.root
+        manager._cache_cover(7, self.IMAGE)
+        self.assert_plain()
+        self.assertEqual((self.root / "previews" / "7" / "cover.jpg").read_bytes(), b"image bytes")
+
+    def test_the_cover_backfill(self):
+        db = self.root / "library.db"
+        create_database(db)
+        conn = sqlite3.connect(db)
+        with conn:
+            conn.execute(
+                "INSERT INTO collections (id, name, source, raw_backup_path, primary_image_url) VALUES (7, 'A', 'mmf', 'm.json', ?)",
+                (self.IMAGE,),
+            )
+        conn.close()
+        reconciler = object.__new__(VaultReconciler)
+        reconciler.db_path = db
+        reconciler.previews_root = self.root / "previews"
+        reconciler.backfill_catalog_previews()
+        self.assert_plain()
+        self.assertEqual((self.root / "previews" / "7" / "cover.jpg").read_bytes(), b"image bytes")
+
+    def test_a_peek_fallback(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        self.addCleanup(conn.close)
+        conn.execute("CREATE TABLE collections (id INTEGER PRIMARY KEY, primary_image_url TEXT, external_key TEXT)")
+        conn.execute("INSERT INTO collections (id, primary_image_url) VALUES (7, ?)", (self.IMAGE,))
+        peeker = object.__new__(ArchivePeeker)
+        peeker.previews_root = self.root / "previews"
+        peeker._get_db = lambda: conn
+        found = peeker._fetch_catalog_fallback_image(7, self.root / "previews" / "7" / "99")
+        self.assert_plain()
+        self.assertEqual(found.read_bytes(), b"image bytes")
+
+    def test_browser_signals_stay_out_of_the_image_code(self):
+        # Moving the other three requests to OAuth (E50) lowers these counts, and they should only fall.
+        services = Path(__file__).resolve().parents[1] / "src/desync_archival/services"
+        for name, allowed in (("reconciler.py", 0), ("archive_peeker.py", 0), ("task_manager.py", 1), ("downloader.py", 2)):
+            self.assertEqual((services / name).read_text(encoding="utf-8").count("Mozilla/"), allowed, name)

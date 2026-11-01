@@ -289,13 +289,8 @@ class TaskManager:
             return
         try:
             cover_dir.mkdir(parents=True, exist_ok=True)
-            # NOTE: browser user agent on purpose, because no alternative exists yet. Don't change it without the owner (S-15).
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Referer": "https://www.myminifactory.com/",
-                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            }
-            with httpx.Client(headers=headers, timeout=12.0, follow_redirects=True) as client_img:
+            # NOTE: no browser signals here, by the owner's rule. A plain request works (S-15).
+            with httpx.Client(timeout=12.0, follow_redirects=True) as client_img:
                 resp = client_img.get(image_url)
                 if resp.status_code == 200 and len(resp.content) > 0:
                     cover_file.write_bytes(resp.content)
