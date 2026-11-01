@@ -349,8 +349,9 @@ class VaultReconciler:
                 log(f"[DEFECT] Model #{model_id}: Directory not found at '{model_dir}'")
                 log_layer("storage", logging.ERROR, f"Model #{model_id} directory missing on NAS: {model_dir}")
             else:
+                # Only a download writes this file. A linked library is read-only and never had one.
                 meta_file = model_dir / "metadata.json"
-                if not meta_file.exists():
+                if m["source"] == "mmf" and not meta_file.exists():
                     model_issues.append({
                         "file_id": None, "filename": "metadata.json", "expected_path": str(meta_file),
                         "defect": "METADATA_MISSING", "detail": "Embedded metadata.json is missing.",
@@ -412,7 +413,8 @@ class VaultReconciler:
                         })
                         defect_found = True
 
-                    if scan_mode == "deep" and not defect_found:
+                    # Linked libraries stay unhashed by design, and this would read all of them.
+                    if scan_mode == "deep" and not defect_found and m["source"] not in pending_deletion.LINKED_SOURCES:
                         ext = file_path.suffix.lower()
                         if ext == ".zip":
                             try:
@@ -469,6 +471,7 @@ class VaultReconciler:
                     "model_id": model_id,
                     "model_name": model_name,
                     "creator_name": creator,
+                    "source": m["source"],
                     "expected_dir": str(model_dir),
                     "issues": model_issues,
                 })
@@ -546,15 +549,22 @@ class VaultReconciler:
         if not model_ids:
             return {"success": False, "error": "No model IDs provided."}
         clean_ids = [int(m) for m in model_ids if str(m).isdigit()]
-        placeholders = ",".join("?" for _ in clean_ids)
-        if dry_run:
-            with self._get_db() as conn:
-                files = conn.execute(
-                    f"SELECT count(*) FROM downloaded_files WHERE model_id IN ({placeholders});", clean_ids
-                ).fetchone()[0]
-            return {"success": True, "dry_run": True, "would_reset": len(clean_ids), "file_records": files}
         with self._get_db() as conn:
             with conn:
+                # Only an MMF collection can be downloaded again. Forgetting a linked or imported one
+                # would just lose the catalog's record of files that are still there.
+                marks = ",".join("?" for _ in clean_ids)
+                not_mmf = {r[0] for r in conn.execute(queries.SELECT_NOT_MMF_MODELS.format(placeholders=marks), clean_ids)}
+                clean_ids = [model_id for model_id in clean_ids if model_id not in not_mmf]
+                placeholders = ",".join("?" for _ in clean_ids)
+                if dry_run:
+                    files = conn.execute(
+                        f"SELECT count(*) FROM downloaded_files WHERE model_id IN ({placeholders});", clean_ids
+                    ).fetchone()[0]
+                    return {
+                        "success": True, "dry_run": True, "would_reset": len(clean_ids), "file_records": files,
+                        "skipped_not_mmf": len(not_mmf),
+                    }
                 # A live job's rows are what tracks its staged files, which may be the only copy.
                 live = {r[0] for r in conn.execute(queries.SELECT_LIVE_JOB_MODELS.format(placeholders=placeholders), clean_ids)}
                 clean_ids = [model_id for model_id in clean_ids if model_id not in live]
@@ -569,7 +579,7 @@ class VaultReconciler:
                 for mid in clean_ids:
                     conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG, (mid,))
         log_layer("sql", logging.INFO, f"Reset {len(clean_ids)} reconciliation models for re-download: {clean_ids}")
-        return {"success": True, "reset_count": len(clean_ids), "skipped_live": len(live)}
+        return {"success": True, "reset_count": len(clean_ids), "skipped_live": len(live), "skipped_not_mmf": len(not_mmf)}
 
     def _orphan_refusal(self, target: Path, nas_root: Path, known_ids: dict, catalog_paths: list[str]) -> str | None:
         """Why a path can't go as an orphan. Checked at delete time, because an audit list goes stale."""

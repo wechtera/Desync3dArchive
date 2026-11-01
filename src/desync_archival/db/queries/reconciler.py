@@ -18,7 +18,7 @@ SELECT_MODEL_FILES_BY_MODEL_ID = """
                     """
 
 SELECT_COLLECTIONS_BY_MODEL_ID = """
-                SELECT DISTINCT m.id, m.name, m.designer_name, m.designer_username,
+                SELECT DISTINCT m.id, m.name, m.designer_name, m.designer_username, m.source,
                                 m.release_month, m.vault_path, m.external_key, dj.destination_path
                 FROM collections m
                 LEFT JOIN download_jobs dj ON dj.id = (SELECT MAX(id) FROM download_jobs WHERE model_id = m.id)
@@ -87,3 +87,5 @@ SELECT_LIVE_JOB_MODELS = """
     SELECT model_id FROM download_jobs
     WHERE model_id IN ({placeholders}) AND status IN ('downloading', 'staging_complete', 'offloading');
 """
+
+SELECT_NOT_MMF_MODELS = "SELECT id FROM collections WHERE id IN ({placeholders}) AND source != 'mmf';"

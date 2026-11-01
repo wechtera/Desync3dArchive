@@ -78,3 +78,39 @@ test.describe('polling, P-01', () => {
   });
 });
 
+
+test.describe('reconcile discrepancies, E49', () => {
+  const status = {
+    status: 'completed', has_data: true, scan_mode: 'deep', summary: { total_audited: 2, healthy: 0, discrepancies: 2 },
+    discrepancies: [
+      { model_id: 1, model_name: 'From MMF', creator_name: 'A', source: 'mmf', issues: [{ defect: 'METADATA_MISSING', detail: 'x', expected_path: '/v/a' }] },
+      { model_id: 2, model_name: 'Linked', creator_name: 'B', source: 'external', issues: [{ defect: 'FILE_NOT_FOUND', detail: 'y', expected_path: '/l/b' }] },
+    ],
+  };
+
+  test('only an MMF collection offers a reset', async ({ page }) => {
+    await page.route('**/api/reconcile/status*', (route) => route.fulfill({ json: status }));
+    await page.goto('/#downloads');
+    await page.locator('#group-reconcile').click();
+    await expect(page.locator('.reconcile-card')).toHaveCount(2);
+    await expect(page.locator('.reconcile-card').filter({ hasText: 'From MMF' }).getByRole('button', { name: 'Reset for Retry' })).toHaveCount(1);
+    const linked = page.locator('.reconcile-card').filter({ hasText: 'Linked' });
+    await expect(linked.getByRole('button', { name: 'Reset for Retry' })).toHaveCount(0);
+    await expect(linked).toContainText("Can't be reset");
+  });
+
+  test('reset all leaves linked collections out', async ({ page }) => {
+    let sent = null;
+    await page.route('**/api/reconcile/status*', (route) => route.fulfill({ json: status }));
+    await page.route('**/api/reconcile/reset', (route) => {
+      sent = route.request().postDataJSON();
+      return route.fulfill({ json: { success: true, reset_count: 1 } });
+    });
+    await page.goto('/#downloads');
+    await page.locator('#group-reconcile').click();
+    await expect(page.locator('.reconcile-card')).toHaveCount(2);
+    await page.evaluate(() => window.resetAllReconcileDiscrepancies());
+    await expect.poll(() => sent).toMatchObject({ model_ids: [1] });
+    await expect(page.locator('.reconcile-card')).toHaveCount(1);
+  });
+});

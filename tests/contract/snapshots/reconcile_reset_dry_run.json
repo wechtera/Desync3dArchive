@@ -13,6 +13,7 @@
     "json": {
       "dry_run": true,
       "file_records": 3,
+      "skipped_not_mmf": 0,
       "success": true,
       "would_reset": 1
     },

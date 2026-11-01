@@ -14,6 +14,7 @@
     "json": {
       "reset_count": 1,
       "skipped_live": 0,
+      "skipped_not_mmf": 0,
       "success": true
     },
     "location": null,

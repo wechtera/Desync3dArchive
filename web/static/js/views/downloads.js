@@ -760,7 +760,7 @@ export async function loadReconcileView() {
     if (countSpan) countSpan.textContent = currentDiscrepancies.length;
 
     if (fixAllBtn) {
-      fixAllBtn.style.display = currentDiscrepancies.length > 0 ? 'inline-flex' : 'none';
+      fixAllBtn.style.display = resettableDiscrepancies().length > 0 ? 'inline-flex' : 'none';
     }
 
     if (lastScanEl) {
@@ -965,9 +965,11 @@ function renderReconcileDiscrepancies(items) {
               Creator: ${m.creator_name}
             </div>
           </div>
-          <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.resetSingleReconcileModel(m.model_id)}>
-            Reset for Retry
-          </button>
+          ${m.source === 'mmf'
+            ? html`<button type="button" class="btn-pill btn-action-cancel" @click=${() => window.resetSingleReconcileModel(m.model_id)}>
+                Reset for Retry
+              </button>`
+            : html`<span class="font-xs text-dim">Can't be reset: only MMF downloads can be fetched again</span>`}
         </div>
         <div class="reconcile-card-body">
           ${issuesHtml}
@@ -987,7 +989,7 @@ export async function resetSingleReconcileModel(modelId) {
       const countSpan = document.getElementById('reconcile-defect-count');
       if (countSpan) countSpan.textContent = currentDiscrepancies.length;
       const fixAllBtn = document.getElementById('btn-fix-all-reconcile');
-      if (fixAllBtn) fixAllBtn.style.display = currentDiscrepancies.length > 0 ? 'inline-flex' : 'none';
+      if (fixAllBtn) fixAllBtn.style.display = resettableDiscrepancies().length > 0 ? 'inline-flex' : 'none';
       window.refreshCurrentView();
     }
   } catch (err) {
@@ -995,19 +997,25 @@ export async function resetSingleReconcileModel(modelId) {
   }
 }
 
+// Only an MMF download can be fetched again, so nothing else is offered a reset.
+function resettableDiscrepancies() {
+  return (currentDiscrepancies || []).filter((d) => d.source === 'mmf');
+}
+
 export async function resetAllReconcileDiscrepancies() {
-  if (!currentDiscrepancies || currentDiscrepancies.length === 0) return;
-  const count = currentDiscrepancies.length;
+  const resettable = resettableDiscrepancies();
+  if (resettable.length === 0) return;
+  const count = resettable.length;
   if (!confirm(`Reset all ${count} discrepant models in the database? Their vault records will be cleared and jobs placed in 'failed' status for batch retry.`)) return;
 
-  const ids = currentDiscrepancies.map(d => d.model_id);
+  const ids = resettable.map(d => d.model_id);
   try {
     const res = await resetReconcileModels(ids);
     if (res.success) {
-      currentDiscrepancies = [];
-      renderReconcileDiscrepancies([]);
+      currentDiscrepancies = currentDiscrepancies.filter(d => d.source !== 'mmf');
+      renderReconcileDiscrepancies(currentDiscrepancies);
       const countSpan = document.getElementById('reconcile-defect-count');
-      if (countSpan) countSpan.textContent = '0';
+      if (countSpan) countSpan.textContent = currentDiscrepancies.length;
       const fixAllBtn = document.getElementById('btn-fix-all-reconcile');
       if (fixAllBtn) fixAllBtn.style.display = 'none';
       window.refreshCurrentView();
