@@ -9,6 +9,7 @@ import sqlite3
 from collections import defaultdict
 from typing import Any
 
+from desync_archival.db.queries import archive_review as queries
 from desync_archival.services import model_resolver
 from desync_archival.services.catalog_levels import MERGED, RESOLVED, SKIPPED
 from desync_archival.services.library_review import DEFAULT_CATEGORY, ReviewError
@@ -17,11 +18,7 @@ MANY_MODELS = 20  # Past this, an archive is more likely over-split than really 
 
 
 def _artifacts(conn: sqlite3.Connection, collection_id: int) -> list[sqlite3.Row]:
-    return conn.execute("""
-        SELECT a.id, a.model_id, a.path, f.filename AS archive
-        FROM model_artifacts a JOIN model_files f ON f.file_id = a.file_id
-        WHERE f.model_id = ? AND a.archive_member_id IS NOT NULL ORDER BY a.path;
-    """, (collection_id,)).fetchall()
+    return conn.execute(queries.SELECT_MODEL_ARTIFACTS_BY_MODEL_ID, (collection_id,)).fetchall()
 
 
 def _shown_path(collection_id: int, row: sqlite3.Row) -> str:
@@ -61,23 +58,14 @@ def _review_flags(cards: list[dict[str, Any]]) -> None:
 def queue(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     """Worst first, so effort goes where a mistake is most likely."""
     conn.row_factory = sqlite3.Row
-    rows = conn.execute("""
-        SELECT m.id, m.name, COUNT(DISTINCT a.model_id) AS models, COUNT(a.id) AS artifacts,
-               COALESCE(MAX(r.reviewed), 0) AS reviewed, MAX(f.peeked_at) AS peeked_at,
-               (SELECT COUNT(*) FROM model_groups g WHERE g.collection_id = m.id) AS model_groups
-        FROM collections m
-        JOIN model_files f ON f.model_id = m.id
-        JOIN model_artifacts a ON a.file_id = f.file_id AND a.archive_member_id IS NOT NULL
-        LEFT JOIN collection_reviews r ON r.collection_id = m.id
-        GROUP BY m.id;
-    """).fetchall()
+    rows = conn.execute(queries.SELECT_MODEL_GROUPS_BY_COLLECTION_ID).fetchall()
     items = [{**dict(r), "reviewed": bool(r["reviewed"]), "suspect": r["models"] >= MANY_MODELS} for r in rows]
     return sorted(items, key=lambda i: (i["reviewed"], not i["suspect"], -i["models"], i["name"].lower()))
 
 
 def view(conn: sqlite3.Connection, collection_id: int) -> dict[str, Any]:
     conn.row_factory = sqlite3.Row
-    collection = conn.execute("SELECT name FROM collections WHERE id = ?;", (collection_id,)).fetchone()
+    collection = conn.execute(queries.SELECT_COLLECTIONS_NAME_BY_ID, (collection_id,)).fetchone()
     artifacts = _artifacts(conn, collection_id)
     if not collection or not artifacts:
         raise ReviewError("This collection has no peeked artifacts.")
@@ -91,14 +79,13 @@ def view(conn: sqlite3.Connection, collection_id: int) -> dict[str, Any]:
     marks = ",".join("?" * len(held))
     models = conn.execute(f"SELECT id, name, category, state FROM models WHERE id IN ({marks});", list(held)).fetchall()
     groups = dict(conn.execute(
-        "SELECT m.model_id, g.name FROM model_group_members m JOIN model_groups g ON g.id = m.group_id"
-        " WHERE g.collection_id = ?;", (collection_id,),
+        queries.SELECT_MODEL_GROUP_MEMBERS_BY_COLLECTION_ID, (collection_id,),
     ).fetchall())
     shared = dict(conn.execute(
         f"SELECT model_id, COUNT(*) FROM model_collections WHERE model_id IN ({marks})"
         " GROUP BY model_id;", list(held),
     ).fetchall())
-    review = conn.execute("SELECT reviewed FROM collection_reviews WHERE collection_id = ?;", (collection_id,)).fetchone()
+    review = conn.execute(queries.SELECT_COLLECTION_REVIEWS_REVIEWED_BY_COLLECTION_ID, (collection_id,)).fetchone()
     cards = [
         {
             "key": str(m["id"]), "name": m["name"], "category": m["category"] or "", "paths": held[m["id"]],
@@ -110,7 +97,7 @@ def view(conn: sqlite3.Connection, collection_id: int) -> dict[str, Any]:
     _review_flags(cards)
     return {
         "release": str(collection_id), "title": collection["name"], "folders": sorted(folders), "files": files,
-        "peeked_at": conn.execute("SELECT MAX(peeked_at) FROM model_files WHERE model_id = ?;", (collection_id,)).fetchone()[0],
+        "peeked_at": conn.execute(queries.MAX_MODEL_FILES_BY_MODEL_ID, (collection_id,)).fetchone()[0],
         "cards": cards,
         "reviewed": bool(review and review["reviewed"]), "changed": False, "locked": [], "settled": [],
     }
@@ -118,20 +105,20 @@ def view(conn: sqlite3.Connection, collection_id: int) -> dict[str, Any]:
 
 def _apply_groups(conn: sqlite3.Connection, collection_id: int, assigned: list[tuple[int, str]]) -> None:
     conn.execute(
-        "DELETE FROM model_group_members WHERE group_id IN (SELECT id FROM model_groups WHERE collection_id = ?);", (collection_id,),
+        queries.DELETE_MODEL_GROUP_MEMBERS_BY_GROUP_ID, (collection_id,),
     )
     wanted = {name for _, name in assigned if name}
-    existing = dict(conn.execute("SELECT name, id FROM model_groups WHERE collection_id = ?;", (collection_id,)).fetchall())
+    existing = dict(conn.execute(queries.SELECT_MODEL_GROUPS_BY_COLLECTION_ID_V2, (collection_id,)).fetchall())
     for name, group_id in existing.items():
         if name not in wanted:
-            conn.execute("DELETE FROM model_groups WHERE id = ?;", (group_id,))
+            conn.execute(queries.DELETE_MODEL_GROUPS_BY_ID, (group_id,))
     for model_id, name in assigned:
         if name:
             group_id = existing.get(name) or conn.execute(
-                "INSERT INTO model_groups (collection_id, name) VALUES (?, ?);", (collection_id, name),
+                queries.INSERT_MODEL_GROUPS, (collection_id, name),
             ).lastrowid
             existing[name] = group_id
-            conn.execute("INSERT INTO model_group_members (group_id, model_id) VALUES (?, ?);", (group_id, model_id))
+            conn.execute(queries.INSERT_MODEL_GROUP_MEMBERS, (group_id, model_id))
 
 
 def save(conn: sqlite3.Connection, collection_id: int, cards: list[dict], reviewed: bool) -> dict[str, Any]:
@@ -166,15 +153,15 @@ def save(conn: sqlite3.Connection, collection_id: int, cards: list[dict], review
             name, category = str(card["name"]).strip(), str(card.get("category") or "").strip() or DEFAULT_CATEGORY
             if key.isdigit() and int(key) in linked:
                 conn.execute(
-                    "UPDATE models SET name = ?, category = ?, state = ? WHERE id = ?;", (name, category, state, int(key)),
+                    queries.UPDATE_MODELS_NAME_BY_ID, (name, category, state, int(key)),
                 )
                 ids.append(int(key))
             elif any(owner == len(ids) for owner in owners.values()):
                 model_id = conn.execute(
-                    "INSERT INTO models (name, category, state) VALUES (?, ?, ?);", (name, category, state),
+                    queries.INSERT_MODELS, (name, category, state),
                 ).lastrowid
                 conn.execute(
-                    "INSERT INTO model_collections (model_id, collection_id) VALUES (?, ?);", (model_id, collection_id),
+                    queries.INSERT_MODEL_COLLECTIONS, (model_id, collection_id),
                 )
                 ids.append(model_id)
             else:
@@ -183,26 +170,26 @@ def save(conn: sqlite3.Connection, collection_id: int, cards: list[dict], review
         for path, owner in owners.items():
             target = ids[owner] if owner is not None else None
             if target is not None:
-                conn.execute("UPDATE model_artifacts SET model_id = ? WHERE id = ?;", (target, shown[path]["id"]))
+                conn.execute(queries.UPDATE_MODEL_ARTIFACTS_MODEL_ID_BY_ID, (target, shown[path]["id"]))
 
         kept = next(i for i in ids if i is not None)
         for model_id in linked - set(ids):
-            left = conn.execute("SELECT COUNT(*) FROM model_artifacts WHERE model_id = ?;", (model_id,)).fetchone()[0]
+            left = conn.execute(queries.COUNT_MODEL_ARTIFACTS_BY_MODEL_ID, (model_id,)).fetchone()[0]
             conn.execute(
-                "DELETE FROM model_collections WHERE model_id = ? AND collection_id = ?;", (model_id, collection_id),
+                queries.DELETE_MODEL_COLLECTIONS_BY_MODEL_ID, (model_id, collection_id),
             )
             if not left:
                 # An emptied model keeps its row and redirects, so an old ID never dangles.
-                conn.execute("UPDATE models SET state = ?, merged_into = ? WHERE id = ?;", (MERGED, kept, model_id))
+                conn.execute(queries.UPDATE_MODELS_STATE_BY_ID, (MERGED, kept, model_id))
 
         _apply_groups(conn, collection_id, [
             (model_id, str(card.get("group") or "").strip()) for card, model_id in zip(cards, ids, strict=True) if model_id
         ])
         updated = conn.execute(
-            "UPDATE collection_reviews SET reviewed = ?, updated_at = CURRENT_TIMESTAMP WHERE collection_id = ?;",
+            queries.UPDATE_COLLECTION_REVIEWS_REVIEWED_BY_COLLECTION_ID,
             (int(reviewed), collection_id),
         )
         if not updated.rowcount:
-            conn.execute("INSERT INTO collection_reviews (collection_id, reviewed) VALUES (?, ?);", (collection_id, int(reviewed)))
+            conn.execute(queries.INSERT_COLLECTION_REVIEWS, (collection_id, int(reviewed)))
     return {"success": True, "cards": len([i for i in ids if i]), "reviewed": reviewed}
 

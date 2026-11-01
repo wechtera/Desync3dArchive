@@ -19,6 +19,7 @@ import httpx
 
 from desync_archival import external
 from desync_archival import settings as app_config
+from desync_archival.db.queries import archive_peeker as queries
 from desync_archival.services import catalog_levels
 from desync_archival.services.logger import log_layer
 
@@ -328,13 +329,13 @@ class ArchivePeeker:
     def _fetch_catalog_fallback_image(self, model_id: int, dest_dir: Path) -> Optional[Path]:
         url = None
         with self._get_db() as conn:
-            row = conn.execute("SELECT primary_image_url FROM collections WHERE id = ?;", (model_id,)).fetchone()
+            row = conn.execute(queries.SELECT_COLLECTIONS_PRIMARY_IMAGE_URL_BY_ID, (model_id,)).fetchone()
             if row and row["primary_image_url"]:
                 url = row["primary_image_url"]
 
         if not url:
             with self._get_db() as conn:
-                key = conn.execute("SELECT external_key FROM collections WHERE id = ?;", (model_id,)).fetchone()
+                key = conn.execute(queries.SELECT_COLLECTIONS_EXTERNAL_KEY_BY_ID, (model_id,)).fetchone()
             meta_path = app_config.metadata_dir() / f"model_{key[0] if key else None}.json"
             if meta_path.exists():
                 try:
@@ -682,11 +683,11 @@ class ArchivePeeker:
             with conn:
                 old_subs = {
                     (r[1], r[2]): r[0] for r in conn.execute(
-                        "SELECT id, name, relative_dir FROM file_archive_submodels WHERE file_id = ?;", (file_id,)
+                        queries.SELECT_FILE_ARCHIVE_SUBMODELS_BY_FILE_ID, (file_id,)
                     ).fetchall()
                 }
                 old_members = dict(conn.execute(
-                    "SELECT internal_path, id FROM file_archive_members WHERE file_id = ?;", (file_id,)
+                    queries.SELECT_FILE_ARCHIVE_MEMBERS_BY_FILE_ID, (file_id,)
                 ).fetchall())
 
                 member_submodel_map: Dict[str, int] = {}
@@ -697,20 +698,9 @@ class ArchivePeeker:
                     )
                     submodel_id = old_subs.pop((sm.name, sm.relative_dir), None)
                     if submodel_id is not None:
-                        conn.execute("""
-                            UPDATE file_archive_submodels SET preview_image_path = ?, total_files = ?, total_bytes = ?,
-                                has_presupported = ?, has_unsupported = ?, has_slicer_project = ?, formats_json = ?,
-                                scales_json = ?
-                            WHERE id = ?;
-                        """, (*values, submodel_id))
+                        conn.execute(queries.UPDATE_FILE_ARCHIVE_SUBMODELS_PREVIEW_IMAGE_PATH_BY_ID, (*values, submodel_id))
                     else:
-                        submodel_id = conn.execute("""
-                            INSERT INTO file_archive_submodels (
-                                file_id, model_id, name, relative_dir, preview_image_path,
-                                total_files, total_bytes, has_presupported, has_unsupported,
-                                has_slicer_project, formats_json, scales_json, created_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
-                        """, (file_id, model_id, sm.name, sm.relative_dir, *values)).lastrowid
+                        submodel_id = conn.execute(queries.INSERT_FILE_ARCHIVE_SUBMODELS, (file_id, model_id, sm.name, sm.relative_dir, *values)).lastrowid
                     for m in sm.members:
                         member_submodel_map[m.internal_path] = submodel_id
 
@@ -718,24 +708,16 @@ class ArchivePeeker:
                     member_id = old_members.pop(m.internal_path, None)
                     row = (member_submodel_map.get(m.internal_path), m.filename, m.size_bytes, m.is_supported, m.file_extension)
                     if member_id is not None:
-                        conn.execute("""
-                            UPDATE file_archive_members
-                            SET submodel_id = ?, filename = ?, size_bytes = ?, is_supported = ?, file_extension = ?
-                            WHERE id = ?;
-                        """, (*row, member_id))
+                        conn.execute(queries.UPDATE_FILE_ARCHIVE_MEMBERS_SUBMODEL_ID_BY_ID, (*row, member_id))
                     else:
-                        conn.execute("""
-                            INSERT INTO file_archive_members (
-                                submodel_id, filename, size_bytes, is_supported, file_extension, file_id, internal_path
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?);
-                        """, (*row, file_id, m.internal_path))
+                        conn.execute(queries.INSERT_FILE_ARCHIVE_MEMBERS, (*row, file_id, m.internal_path))
 
                 # Whatever is left is really gone from the archive.
-                conn.executemany("DELETE FROM file_archive_members WHERE id = ?;", [(i,) for i in old_members.values()])
-                conn.executemany("DELETE FROM file_archive_submodels WHERE id = ?;", [(i,) for i in old_subs.values()])
+                conn.executemany(queries.DELETE_FILE_ARCHIVE_MEMBERS_BY_ID, [(i,) for i in old_members.values()])
+                conn.executemany(queries.DELETE_FILE_ARCHIVE_SUBMODELS_BY_ID, [(i,) for i in old_subs.values()])
 
             with conn:
-                conn.execute("UPDATE model_files SET peeked_at = CURRENT_TIMESTAMP WHERE file_id = ?;", (file_id,))
+                conn.execute(queries.UPDATE_MODEL_FILES_PEEKED_AT_BY_FILE_ID, (file_id,))
 
             # A failure here must not undo a good peek. The next build picks these entries up.
             try:

@@ -1,6 +1,6 @@
 """Raw SQL for the archives API routes. Names with braces take format() values, never user input."""
 
-GET_ARCHIVE_SUBMODELS_1 = """
+SELECT_MODEL_FILES_BY_FILE_ID = """
         SELECT mf.file_id, mf.model_id, mf.filename, mf.size_bytes,
                df.storage_tier, df.vault_path, df.downloaded_at
         FROM model_files mf
@@ -8,7 +8,7 @@ GET_ARCHIVE_SUBMODELS_1 = """
         WHERE mf.file_id = ?;
     """
 
-GET_ARCHIVE_SUBMODELS_2 = """
+SELECT_FILE_ARCHIVE_SUBMODELS_BY_FILE_ID = """
         SELECT id, file_id, model_id, name, relative_dir, preview_image_path,
                total_files, total_bytes, has_presupported, has_unsupported,
                has_slicer_project, formats_json, scales_json, created_at
@@ -17,7 +17,7 @@ GET_ARCHIVE_SUBMODELS_2 = """
         ORDER BY id ASC;
     """
 
-GET_ARCHIVE_SUBMODELS_3 = """
+SELECT_FILE_ARCHIVE_MEMBERS_BY_SUBMODEL_ID = """
             SELECT id, submodel_id, internal_path, filename, size_bytes,
                    is_supported, file_extension
             FROM file_archive_members
@@ -25,7 +25,7 @@ GET_ARCHIVE_SUBMODELS_3 = """
             ORDER BY filename ASC;
         """
 
-GET_ARCHIVE_RAW_1 = """
+SELECT_FILE_ARCHIVE_MEMBERS_BY_FILE_ID = """
         SELECT fam.id, fam.submodel_id, fam.internal_path, fam.filename,
                fam.size_bytes, fam.is_supported, fam.file_extension,
                fas.name AS submodel_name
@@ -35,4 +35,4 @@ GET_ARCHIVE_RAW_1 = """
         ORDER BY fam.internal_path ASC;
     """
 
-POST_ARCHIVE_PEEK_BACKFILL_1 = "PRAGMA database_list;"
+PRAGMA_ROW = "PRAGMA database_list;"

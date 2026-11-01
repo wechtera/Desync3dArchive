@@ -239,13 +239,13 @@ def handle_post_export_stash(
     If task_manager is provided (live server), runs asynchronously (HTTP 202).
     If task_manager is None (unit tests), runs synchronously (HTTP 200).
     """
-    stash = conn.execute(queries.POST_EXPORT_STASH_1, (stash_id,)).fetchone()
+    stash = conn.execute(queries.SELECT_STASHES_BY_ID, (stash_id,)).fetchone()
     if not stash:
         return {"error": f"Stash #{stash_id} not found."}, 404
 
     stash_name = stash["name"]
 
-    items = conn.execute(queries.POST_EXPORT_STASH_2, (stash_id,)).fetchall()
+    items = conn.execute(queries.SELECT_STASH_ITEMS_BY_STASH_ID, (stash_id,)).fetchall()
     if not items:
         return {"error": f"Stash '{stash_name}' (ID #{stash_id}) is empty. Add items before exporting."}, 400
 

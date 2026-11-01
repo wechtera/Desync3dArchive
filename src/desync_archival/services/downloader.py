@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from desync_archival import settings as app_config
+from desync_archival.db.queries import downloader as queries
 from desync_archival.services import identity, secret_store
 from desync_archival.services.logger import job_logged, log_layer, logger
 from desync_archival.services.paths import sanitize_segment
@@ -152,13 +153,10 @@ class DiskAdopter:
                 vals.append(expected_bytes)
 
             placeholders = ", ".join(["?"] * len(fields))
-            conn.execute("DELETE FROM downloaded_files WHERE file_id = ?;", (file_id,))
+            conn.execute(queries.DELETE_DOWNLOADED_FILES_BY_FILE_ID, (file_id,))
             conn.execute(f"INSERT INTO downloaded_files ({', '.join(fields)}) VALUES ({placeholders});", vals)
 
-            conn.execute("""
-                INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, logged_at)
-                VALUES (?, ?, 1, 'adopted', 200, CURRENT_TIMESTAMP);
-            """, (model_id, file_id))
+            conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG, (model_id, file_id))
 
         log_layer("storage", logging.INFO, f"Adopted pre-existing file on disk: {target_path.name} (Model #{model_id})")
         return True
@@ -170,7 +168,7 @@ class StorageManager:
 
     def _get_setting(self, key: str) -> str:
         with sqlite3.connect(str(self.db_path)) as conn:
-            row = conn.execute("SELECT value FROM app_settings WHERE key = ?;", (key,)).fetchone()
+            row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY, (key,)).fetchone()
             return row[0] if row and row[0] is not None else ""
 
     def get_root_path(self) -> Path:
@@ -279,9 +277,9 @@ class DownloadManager:
         with self._get_db() as conn:
             with conn:
                 if status:
-                    cur = conn.execute("DELETE FROM download_jobs WHERE status = ?;", (status,))
+                    cur = conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS, (status,))
                 else:
-                    cur = conn.execute("DELETE FROM download_jobs WHERE status NOT IN ('downloading', 'completed');")
+                    cur = conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS_V2)
                 purged = cur.rowcount
                 log_layer("storage", logging.INFO, f"Purged {purged} queue records (Filter: {status or 'all incomplete'}).")
                 return purged
@@ -329,11 +327,8 @@ class DownloadManager:
                             self.trip_circuit_breaker(reason)
                             with self._get_db() as conn:
                                 with conn:
-                                    conn.execute("UPDATE app_settings SET value = '1' WHERE key = 'circuit_breaker_tripped';")
-                                    conn.execute("""
-                                        INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, error_detail, logged_at)
-                                        VALUES (?, ?, ?, 'circuit_breaker_engaged', ?, ?, CURRENT_TIMESTAMP);
-                                    """, (model_id, file_id, attempt, resp.status_code, f"HTTP {resp.status_code}"))
+                                    conn.execute(queries.UPDATE_APP_SETTINGS_VALUE_BY_KEY)
+                                    conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V2, (model_id, file_id, attempt, resp.status_code, f"HTTP {resp.status_code}"))
                             if part_path.exists():
                                 part_path.unlink()
                             return False
@@ -343,10 +338,7 @@ class DownloadManager:
                             with self._get_db() as conn:
                                 with conn:
                                     status_str = "retry_scheduled" if attempt == 1 else "failed"
-                                    conn.execute("""
-                                        INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, error_detail, logged_at)
-                                        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
-                                    """, (model_id, file_id, attempt, status_str, resp.status_code, f"HTTP {resp.status_code}"))
+                                    conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V3, (model_id, file_id, attempt, status_str, resp.status_code, f"HTTP {resp.status_code}"))
                             if attempt == 2:
                                 if part_path.exists():
                                     part_path.unlink()
@@ -368,10 +360,7 @@ class DownloadManager:
                         with self._get_db() as conn:
                             with conn:
                                 status_str = "retry_scheduled" if attempt == 1 else "failed"
-                                conn.execute("""
-                                    INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, error_detail, logged_at)
-                                    VALUES (?, ?, ?, ?, 200, ?, CURRENT_TIMESTAMP);
-                                """, (model_id, file_id, attempt, status_str, err or "Corrupted ZIP"))
+                                conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V4, (model_id, file_id, attempt, status_str, err or "Corrupted ZIP"))
                         if attempt == 2:
                             return False
                         time.sleep(1.0)
@@ -409,13 +398,10 @@ class DownloadManager:
                             vals.append(file_ext)
 
                         placeholders = ", ".join(["?"] * len(fields))
-                        conn.execute("DELETE FROM downloaded_files WHERE file_id = ?;", (file_id,))
+                        conn.execute(queries.DELETE_DOWNLOADED_FILES_BY_FILE_ID, (file_id,))
                         conn.execute(f"INSERT INTO downloaded_files ({', '.join(fields)}) VALUES ({placeholders});", vals)
 
-                        conn.execute("""
-                            INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, logged_at)
-                            VALUES (?, ?, ?, 'completed', 200, CURRENT_TIMESTAMP);
-                        """, (model_id, file_id, attempt))
+                        conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V5, (model_id, file_id, attempt))
 
                 return True
 
@@ -426,10 +412,7 @@ class DownloadManager:
                 with self._get_db() as conn:
                     with conn:
                         status_str = "retry_scheduled" if attempt == 1 else "failed"
-                        conn.execute("""
-                            INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, error_detail, logged_at)
-                            VALUES (?, ?, ?, ?, 500, ?, CURRENT_TIMESTAMP);
-                        """, (model_id, file_id, attempt, status_str, str(e)))
+                        conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V6, (model_id, file_id, attempt, status_str, str(e)))
                 if attempt == 2:
                     return False
                 time.sleep(1.0)
@@ -444,7 +427,7 @@ class DownloadManager:
 
     def _load_settings(self):
         with self._get_db() as conn:
-            rows = conn.execute("SELECT key, value FROM app_settings").fetchall()
+            rows = conn.execute(queries.SELECT_APP_SETTINGS).fetchall()
             settings = {r["key"]: r["value"] for r in rows}
 
             self.worker_concurrency = max(1, min(16, int(settings.get("worker_concurrency", 2))))
@@ -479,25 +462,19 @@ class DownloadManager:
 
     def is_circuit_breaker_tripped(self) -> bool:
         with self._get_db() as conn:
-            row = conn.execute("SELECT value FROM app_settings WHERE key = 'circuit_breaker_tripped'").fetchone()
+            row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY_V2).fetchone()
             return bool(row and row["value"] == "1")
 
     def trip_circuit_breaker(self, reason: str):
         with self._get_db() as conn:
-            conn.execute("""
-                INSERT INTO app_settings (key, value, updated_at) VALUES ('circuit_breaker_tripped', '1', CURRENT_TIMESTAMP)
-                ON CONFLICT(key) DO UPDATE SET value = '1', updated_at = CURRENT_TIMESTAMP;
-            """)
-            conn.execute("""
-                INSERT INTO app_settings (key, value, updated_at) VALUES ('circuit_breaker_reason', ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP;
-            """, (reason,))
+            conn.execute(queries.INSERT_APP_SETTINGS)
+            conn.execute(queries.INSERT_APP_SETTINGS_V2, (reason,))
         logger.error(f"[Circuit Breaker] TRIPPED: {reason}")
 
     def reset_circuit_breaker(self):
         with self._get_db() as conn:
-            conn.execute("UPDATE app_settings SET value = '0' WHERE key = 'circuit_breaker_tripped';")
-            conn.execute("UPDATE app_settings SET value = '' WHERE key = 'circuit_breaker_reason';")
+            conn.execute(queries.UPDATE_APP_SETTINGS_VALUE_BY_KEY_V2)
+            conn.execute(queries.UPDATE_APP_SETTINGS_VALUE_BY_KEY_V3)
         logger.info("[Circuit Breaker] Reset by operator.")
 
     def start(self):
@@ -571,11 +548,7 @@ class DownloadManager:
             row = conn.execute(query).fetchone()
 
             # The status check makes this atomic: if two workers read one row, only one updates it.
-            if row and conn.execute("""
-                UPDATE download_jobs
-                SET status = 'downloading', started_at = CURRENT_TIMESTAMP
-                WHERE id = ? AND status = 'pending';
-            """, (row["id"],)).rowcount == 1:
+            if row and conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID, (row["id"],)).rowcount == 1:
                 return row
         return None
 
@@ -652,7 +625,7 @@ class DownloadManager:
                             with conn:
                                 if archive_dl_url:
                                     conn.execute(
-                                        "UPDATE collections SET archive_download_url = ? WHERE id = ?;",
+                                        queries.UPDATE_COLLECTIONS_ARCHIVE_DOWNLOAD_URL_BY_ID,
                                         (archive_dl_url, model_id),
                                     )
                                 for rf in remote_files:
@@ -660,12 +633,7 @@ class DownloadManager:
                                     rf_url = rf.get("download_url")
                                     rf_size = rf.get("size")
                                     if rf_id and rf_url:
-                                        conn.execute("""
-                                            UPDATE model_files
-                                            SET download_url = ?,
-                                                size_bytes = COALESCE(?, size_bytes)
-                                            WHERE source = 'mmf' AND external_key = ?;
-                                        """, (rf_url, rf_size, str(rf_id)))
+                                        conn.execute(queries.UPDATE_MODEL_FILES_DOWNLOAD_URL_BY_SOURCE, (rf_url, rf_size, str(rf_id)))
                         log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Live URLs updated for Model #{model_id} (ArchiveURL={bool(archive_dl_url)})")
                     elif resp.status_code == 401:
                         self.trip_circuit_breaker("MyMiniFactory OAuth token expired (HTTP 401). Please re-authenticate in Settings.")
@@ -674,26 +642,17 @@ class DownloadManager:
                 log_layer("http", logging.WARNING, f"Worker #{worker_id}: Could not refresh live OAuth metadata for Model #{model_id}: {req_err}")
 
         with self._get_db() as conn:
-            files = conn.execute("""
-                SELECT mf.file_id, mf.filename, mf.download_url, mf.size_bytes
-                FROM model_files mf WHERE mf.model_id = ?;
-            """, (model_id,)).fetchall()
+            files = conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID, (model_id,)).fetchall()
 
             # Fallback: Adopt archive_download_url as synthetic ZIP file if no separate file items exist
             if not files:
-                m_row = conn.execute("SELECT name, archive_download_url FROM collections WHERE id = ?;", (model_id,)).fetchone()
+                m_row = conn.execute(queries.SELECT_COLLECTIONS_BY_ID, (model_id,)).fetchone()
                 if m_row and m_row["archive_download_url"] and mmf_id:
                     clean_m = sanitize_segment(m_row["name"] or f"Model_{model_id}")
                     archive_filename = f"{mmf_id}_{clean_m}.zip"
                     with conn:
-                        conn.execute("""
-                            INSERT INTO model_files (source, external_key, model_id, filename, size_bytes, download_url, created_at)
-                            VALUES (?, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP);
-                        """, ("mmf", identity.archive_file_key(mmf_id), model_id, archive_filename, m_row["archive_download_url"]))
-                    files = conn.execute("""
-                        SELECT mf.file_id, mf.filename, mf.download_url, mf.size_bytes
-                        FROM model_files mf WHERE mf.model_id = ?;
-                    """, (model_id,)).fetchall()
+                        conn.execute(queries.INSERT_MODEL_FILES, ("mmf", identity.archive_file_key(mmf_id), model_id, archive_filename, m_row["archive_download_url"]))
+                    files = conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID_V2, (model_id,)).fetchall()
                     log_layer("archive", logging.INFO, f"Adopted archive_download_url as synthetic bundle '{archive_filename}' for Model #{model_id}")
 
         if not files:
@@ -808,10 +767,7 @@ class DownloadManager:
                             warn_msg = f"Archive peaking notice for file {file_id}: {peek_res.get('error')}"
                             log_layer("archive", logging.WARNING, f"Worker #{worker_id}: {warn_msg}")
                             with self._get_db() as conn:
-                                conn.execute("""
-                                    INSERT INTO download_audit_log (model_id, attempt_number, status, error_detail)
-                                    VALUES (?, 1, 'warning', ?);
-                                """, (model_id, warn_msg))
+                                conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V7, (model_id, warn_msg))
                         else:
                             log_layer(
                                 "archive",
@@ -823,10 +779,7 @@ class DownloadManager:
                         log_layer("archive", logging.WARNING, f"Worker #{worker_id}: {warn_msg}")
                         try:
                             with self._get_db() as conn:
-                                conn.execute("""
-                                    INSERT INTO download_audit_log (model_id, attempt_number, status, error_detail)
-                                    VALUES (?, 1, 'warning', ?);
-                                """, (model_id, warn_msg))
+                                conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V7, (model_id, warn_msg))
                         except Exception:
                             pass
 
@@ -852,50 +805,25 @@ class DownloadManager:
         with self._get_db() as conn:
             with conn:
                 for s in staged_files_info:
-                    updated = conn.execute("""
-                        UPDATE downloaded_files
-                        SET storage_tier = 'local', staging_path = ?, local_relative_path = ?,
-                            actual_bytes = ?, sha256 = ?, downloaded_at = CURRENT_TIMESTAMP
-                        WHERE file_id = ?;
-                    """, (s["staging_path"], s["local_relative_path"], s["actual_bytes"], s["sha256"], s["file_id"]))
+                    updated = conn.execute(queries.UPDATE_DOWNLOADED_FILES_STORAGE_TIER_BY_FILE_ID, (s["staging_path"], s["local_relative_path"], s["actual_bytes"], s["sha256"], s["file_id"]))
                     if updated.rowcount:
                         continue
-                    conn.execute("""
-                        INSERT INTO downloaded_files (
-                            file_id, model_id, original_filename, cleaned_filename,
-                            local_relative_path, expected_bytes, actual_bytes,
-                            file_extension, storage_tier, staging_path, sha256, downloaded_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'local', ?, ?, CURRENT_TIMESTAMP);
-                    """, (
+                    conn.execute(queries.INSERT_DOWNLOADED_FILES, (
                         s["file_id"], model_id, s["original_filename"], s["cleaned_filename"],
                         s["local_relative_path"], s["expected_bytes"], s["actual_bytes"],
                         s["file_extension"], s["staging_path"], s["sha256"]
                     ))
 
-                conn.execute("""
-                    UPDATE download_jobs
-                    SET status = 'staging_complete',
-                        downloaded_files = ?,
-                        downloaded_bytes = ?,
-                        total_bytes = ?
-                    WHERE id = ?;
-                """, (len(staged_files_info), downloaded_bytes_acc, total_bytes, job["id"]))
+                conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V2, (len(staged_files_info), downloaded_bytes_acc, total_bytes, job["id"]))
 
         log_layer("storage", logging.INFO, f"Worker #{worker_id}: Model #{model_id} staging complete ({len(staged_files_info)} files, {downloaded_bytes_acc} bytes). Queued for NAS offload.")
 
     def _handle_download_failure(self, job_id: int, model_id: int, error_msg: str):
         logger.error(f"[DownloadManager] Job #{job_id} (Model #{model_id}) failed: {error_msg}")
         with self._get_db() as conn:
-            conn.execute("""
-                UPDATE download_jobs
-                SET status = 'failed', retry_count = retry_count + 1, error_message = ?
-                WHERE id = ?;
-            """, (error_msg, job_id))
+            conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V3, (error_msg, job_id))
 
-            conn.execute("""
-                INSERT INTO download_audit_log (model_id, attempt_number, status, error_detail)
-                VALUES (?, 1, 'failed', ?);
-            """, (model_id, error_msg))
+            conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V8, (model_id, error_msg))
 
     def _claim_next_offload_job(self) -> Optional[sqlite3.Row]:
         with self._get_db() as conn:
@@ -910,7 +838,7 @@ class DownloadManager:
             """).fetchone()
 
             if row and conn.execute(
-                "UPDATE download_jobs SET status = 'offloading' WHERE id = ? AND status = 'staging_complete';",
+                queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V4,
                 (row["id"],),
             ).rowcount == 1:
                 return row
@@ -952,9 +880,7 @@ class DownloadManager:
             except Exception as e:
                 log_layer("storage", logging.ERROR, f"Offloader #{worker_id}: Transfer failed for Model #{model_id}: {e}")
                 with self._get_db() as conn:
-                    conn.execute("""
-                        UPDATE download_jobs SET status = 'staging_complete', error_message = ? WHERE id = ?;
-                    """, (f"NAS Offload Delayed: {e}", job["id"]))
+                    conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V5, (f"NAS Offload Delayed: {e}", job["id"]))
             finally:
                 with self._lock:
                     self.active_offloads.pop(worker_id, None)
@@ -963,7 +889,7 @@ class DownloadManager:
 
     def _write_model_metadata_json(self, conn: sqlite3.Connection, model_id: int, target_dir: Path):
         """Dumps formatted metadata.json directly into the object directory on the NAS."""
-        model_row = conn.execute("SELECT * FROM collections WHERE id = ?", (model_id,)).fetchone()
+        model_row = conn.execute(queries.SELECT_COLLECTIONS_BY_ID_V2, (model_id,)).fetchone()
         raw_payload = None
 
         if model_row and model_row["raw_backup_path"]:
@@ -987,7 +913,7 @@ class DownloadManager:
             target_file.write_text(json.dumps(raw_payload, indent=2), encoding="utf-8")
         elif model_row:
             meta = dict(model_row)
-            meta["tags"] = [r[0] for r in conn.execute("SELECT tag FROM collection_tags WHERE model_id = ?", (model_id,)).fetchall()]
+            meta["tags"] = [r[0] for r in conn.execute(queries.SELECT_COLLECTION_TAGS_TAG_BY_MODEL_ID, (model_id,)).fetchall()]
             target_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
     @job_logged(lambda self, worker_id, job, *_: f"offload-{job['id']}")
@@ -1003,10 +929,7 @@ class DownloadManager:
         files_dest_dir.mkdir(parents=True, exist_ok=True)
 
         with self._get_db() as conn:
-            records = conn.execute("""
-                SELECT * FROM downloaded_files
-                WHERE model_id = ? AND storage_tier = 'local';
-            """, (model_id,)).fetchall()
+            records = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_MODEL_ID, (model_id,)).fetchall()
 
             self._write_model_metadata_json(conn, model_id, model_dest_dir)
 
@@ -1055,14 +978,7 @@ class DownloadManager:
 
             nas_rel_path = str(Path(clean_creator) / rel_month / clean_model_folder / "files" / cleaned_name)
             with self._get_db() as conn:
-                conn.execute("""
-                    UPDATE downloaded_files
-                    SET storage_tier = 'nas',
-                        staging_path = NULL,
-                        vault_path = ?,
-                        local_relative_path = ?
-                    WHERE file_id = ?;
-                """, (str(target_nas_path), nas_rel_path, file_id))
+                conn.execute(queries.UPDATE_DOWNLOADED_FILES_STORAGE_TIER_BY_FILE_ID_V2, (str(target_nas_path), nas_rel_path, file_id))
 
         try:
             staged_parent = Path(records[0]["staging_path"]).parent
@@ -1073,35 +989,20 @@ class DownloadManager:
 
         with self._get_db() as conn:
             with conn:
-                conn.execute("""
-                    UPDATE download_jobs
-                    SET status = 'completed',
-                        completed_at = CURRENT_TIMESTAMP,
-                        destination_path = ?
-                    WHERE id = ?;
-                """, (str(model_dest_dir), job["id"]))
+                conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V6, (str(model_dest_dir), job["id"]))
 
-                conn.execute("""
-                    UPDATE collections
-                    SET vault_path = ?
-                    WHERE id = ?;
-                """, (str(model_dest_dir), model_id))
+                conn.execute(queries.UPDATE_COLLECTIONS_VAULT_PATH_BY_ID, (str(model_dest_dir), model_id))
 
-                conn.execute("""
-                    INSERT INTO download_audit_log (model_id, attempt_number, status, error_detail)
-                    VALUES (?, 1, 'completed', ?);
-                """, (model_id, f"Archived to: {model_dest_dir}"))
+                conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V9, (model_id, f"Archived to: {model_dest_dir}"))
 
         log_layer("storage", logging.INFO, f"Offloader #{worker_id}: Model #{model_id} permanently archived to {model_dest_dir}")
 
     def get_status(self) -> Dict[str, Any]:
         with self._get_db() as conn:
-            cb_row = conn.execute("SELECT value FROM app_settings WHERE key = 'circuit_breaker_tripped'").fetchone()
-            cb_reason = conn.execute("SELECT value FROM app_settings WHERE key = 'circuit_breaker_reason'").fetchone()
+            cb_row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY_V2).fetchone()
+            cb_reason = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY_V3).fetchone()
 
-            counts = conn.execute("""
-                SELECT status, COUNT(*) as c FROM download_jobs GROUP BY status;
-            """).fetchall()
+            counts = conn.execute(queries.SELECT_DOWNLOAD_JOBS).fetchall()
             status_map = {r["status"]: r["c"] for r in counts}
 
             creator_expr, _, joins = self._get_model_meta_query_parts(conn)

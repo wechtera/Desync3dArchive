@@ -29,8 +29,14 @@ import httpx
 
 from desync_archival import backup
 from desync_archival import settings as app_config
-from desync_archival.services import auth_service, jobs
-from desync_archival.services import identity, inactive_log, secret_store
+from desync_archival.db.queries import task_manager as queries
+from desync_archival.services import (
+    auth_service,
+    identity,
+    inactive_log,
+    jobs,
+    secret_store,
+)
 from desync_archival.services.analytics import run_startup_analytics
 from desync_archival.services.logger import job_logged, log_layer, logger
 from desync_archival.services.paths import sanitize_segment
@@ -249,7 +255,7 @@ class TaskManager:
         if key in secret_store.KEYS and key in secret_store.load():
             return secret_store.load()[key]
         with self._get_db() as conn:
-            row = conn.execute("SELECT value FROM app_settings WHERE key = ?;", (key,)).fetchone()
+            row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY, (key,)).fetchone()
             return row["value"] if row and row["value"] is not None else default
 
     def _append_log(self, task_id: int, message: str):
@@ -259,20 +265,12 @@ class TaskManager:
         logger.info(f"[Task #{task_id}] {message}")
         with self._get_db() as conn:
             with conn:
-                conn.execute("""
-                    UPDATE pipeline_tasks
-                    SET log_output = COALESCE(log_output, '') || ? || '\n'
-                    WHERE id = ?;
-                """, (log_line, task_id))
+                conn.execute(queries.UPDATE_PIPELINE_TASKS_LOG_OUTPUT_BY_ID, (log_line, task_id))
 
     def _update_progress(self, task_id: int, pct: float, label: str):
         with self._get_db() as conn:
             with conn:
-                conn.execute("""
-                    UPDATE pipeline_tasks
-                    SET progress_pct = ?, progress_label = ?
-                    WHERE id = ?;
-                """, (round(pct, 1), label, task_id))
+                conn.execute(queries.UPDATE_PIPELINE_TASKS_PROGRESS_PCT_BY_ID, (round(pct, 1), label, task_id))
 
     def _finalize_task(
         self,
@@ -286,25 +284,11 @@ class TaskManager:
         artifacts_json = json.dumps(artifacts or {})
         with self._get_db() as conn:
             with conn:
-                conn.execute("""
-                    UPDATE pipeline_tasks
-                    SET status = ?,
-                        progress_pct = CASE WHEN ? = 'completed' THEN 100.0 ELSE progress_pct END,
-                        progress_label = ?,
-                        result_summary_json = ?,
-                        result_json = ?,
-                        artifacts_json = ?,
-                        completed_at = CURRENT_TIMESTAMP
-                    WHERE id = ?;
-                """, (status, status, label, summary_json, artifacts_json, artifacts_json, task_id))
+                conn.execute(queries.UPDATE_PIPELINE_TASKS_STATUS_BY_ID, (status, status, label, summary_json, artifacts_json, artifacts_json, task_id))
 
     def get_active_task(self) -> Optional[Dict[str, Any]]:
         with self._get_db() as conn:
-            row = conn.execute("""
-                SELECT * FROM pipeline_tasks
-                WHERE status IN ('running', 'pending')
-                ORDER BY id DESC LIMIT 1;
-            """).fetchone()
+            row = conn.execute(queries.SELECT_PIPELINE_TASKS_BY_STATUS).fetchone()
 
             if not row:
                 return None
@@ -326,10 +310,7 @@ class TaskManager:
 
     def get_recent_tasks(self, limit: int = 15) -> List[Dict[str, Any]]:
         with self._get_db() as conn:
-            rows = conn.execute("""
-                SELECT * FROM pipeline_tasks
-                ORDER BY id DESC LIMIT ?;
-            """, (limit,)).fetchall()
+            rows = conn.execute(queries.SELECT_PIPELINE_TASKS, (limit,)).fetchall()
 
         results = []
         for r in rows:
@@ -447,7 +428,7 @@ class TaskManager:
         with self._lock:
             with self._get_db() as conn:
                 running = conn.execute(
-                    "SELECT id, task_type FROM pipeline_tasks WHERE status = 'running' ORDER BY id DESC LIMIT 1;"
+                    queries.SELECT_PIPELINE_TASKS_BY_STATUS_V2
                 ).fetchone()
 
                 if running:
@@ -462,12 +443,9 @@ class TaskManager:
                     task_params["db_path"] = str(self.db_path)
 
                 params_json = json.dumps(task_params)
-                cursor = conn.execute("""
-                    INSERT INTO pipeline_tasks (task_type, status, progress_pct, progress_label, params_json, log_output)
-                    VALUES (?, 'running', 0.0, 'Initializing background worker...', ?, '');
-                """, (task_type, params_json))
+                cursor = conn.execute(queries.INSERT_PIPELINE_TASKS, (task_type, params_json))
                 task_id = cursor.lastrowid
-                conn.execute("UPDATE pipeline_tasks SET started_at = CURRENT_TIMESTAMP WHERE id = ?;", (task_id,))
+                conn.execute(queries.UPDATE_PIPELINE_TASKS_STARTED_AT_BY_ID, (task_id,))
 
             self.active_task_id = task_id
             self._cancel_requested = False
@@ -502,13 +480,7 @@ class TaskManager:
 
             with self._get_db() as conn:
                 with conn:
-                    conn.execute("""
-                        UPDATE pipeline_tasks
-                        SET status = 'cancelled',
-                            progress_label = 'Cancelled by operator',
-                            completed_at = CURRENT_TIMESTAMP
-                        WHERE id = ? AND status = 'running';
-                    """, (task_id,))
+                    conn.execute(queries.UPDATE_PIPELINE_TASKS_STATUS_BY_ID_V2, (task_id,))
             logger.info(f"[TaskManager] Cancelled task #{task_id} by operator.")
             return {"success": True, "task_id": task_id}
 
@@ -525,31 +497,15 @@ class TaskManager:
 
             with self._get_db() as conn:
                 with conn:
-                    conn.execute("""
-                        UPDATE pipeline_tasks
-                        SET status = 'cancelled',
-                            progress_label = 'Terminated by operator (force kill)',
-                            completed_at = CURRENT_TIMESTAMP
-                        WHERE id = ?;
-                    """, (task_id,))
+                    conn.execute(queries.UPDATE_PIPELINE_TASKS_STATUS_BY_ID_V3, (task_id,))
             logger.warning(f"[TaskManager] Force killed task #{task_id} by operator.")
             return {"success": True, "task_id": task_id}
 
     def get_status(self) -> Dict[str, Any]:
         with self._get_db() as conn:
-            active_row = conn.execute("""
-                SELECT * FROM pipeline_tasks
-                WHERE status = 'running'
-                ORDER BY id DESC LIMIT 1;
-            """).fetchone()
+            active_row = conn.execute(queries.SELECT_PIPELINE_TASKS_BY_STATUS_V3).fetchone()
 
-            recent_rows = conn.execute("""
-                SELECT id, task_type, status, progress_pct, progress_label,
-                       artifacts_json, result_summary_json, log_output,
-                       created_at, started_at, completed_at
-                FROM pipeline_tasks
-                ORDER BY id DESC LIMIT 10;
-            """).fetchall()
+            recent_rows = conn.execute(queries.SELECT_PIPELINE_TASKS_V2).fetchall()
 
         active_data = None
         if active_row:
@@ -592,13 +548,7 @@ class TaskManager:
 
             with self._get_db() as conn:
                 with conn:
-                    conn.execute("""
-                        UPDATE pipeline_tasks
-                        SET status = 'cancelled',
-                            progress_label = 'Cancelled by operator',
-                            completed_at = CURRENT_TIMESTAMP
-                        WHERE status = 'running';
-                    """)
+                    conn.execute(queries.UPDATE_PIPELINE_TASKS_STATUS_BY_STATUS)
             return True
 
     def kill_active_task(self) -> bool:
@@ -614,28 +564,19 @@ class TaskManager:
 
             with self._get_db() as conn:
                 with conn:
-                    conn.execute("""
-                        UPDATE pipeline_tasks
-                        SET status = 'cancelled',
-                            progress_label = 'Terminated by operator (force kill)',
-                            completed_at = CURRENT_TIMESTAMP
-                        WHERE status = 'running';
-                    """)
+                    conn.execute(queries.UPDATE_PIPELINE_TASKS_STATUS_BY_STATUS_V2)
             return True
 
     def count_clearable_tasks(self) -> int:
         with self._get_db() as conn:
             return conn.execute(
-                "SELECT count(*) FROM pipeline_tasks WHERE status IN ('completed', 'failed', 'cancelled', 'interrupted');"
+                queries.COUNT_PIPELINE_TASKS_BY_STATUS
             ).fetchone()[0]
 
     def clear_task_history(self) -> int:
         with self._get_db() as conn:
             with conn:
-                cursor = conn.execute("""
-                    DELETE FROM pipeline_tasks
-                    WHERE status IN ('completed', 'failed', 'cancelled', 'interrupted');
-                """)
+                cursor = conn.execute(queries.DELETE_PIPELINE_TASKS_BY_STATUS)
                 return cursor.rowcount
 
     def list_scrape_directories(self) -> List[Dict[str, Any]]:
@@ -708,7 +649,7 @@ class TaskManager:
         self._update_progress(task_id, 5.0, "Launching Playwright browser...")
 
         with self._get_db() as conn:
-            expected_count = conn.execute("SELECT count(*) FROM collections WHERE source = 'mmf';").fetchone()[0]
+            expected_count = conn.execute(queries.COUNT_COLLECTIONS_BY_SOURCE).fetchone()[0]
         cmd = [node_bin, str(scrape_script), "--cookies", str(cookies_dest), "--expected", str(expected_count)]
         if self._get_setting("scraper_headless", "1") != "0":
             cmd.append("--headless")
@@ -793,14 +734,14 @@ class TaskManager:
 
         with self._lock:
             with self._get_db() as conn:
-                running = conn.execute("SELECT id FROM pipeline_tasks WHERE status = 'running'").fetchone()
+                running = conn.execute(queries.SELECT_PIPELINE_TASKS_ID_BY_STATUS).fetchone()
                 if running:
                     return {"error": f"A pipeline task (Task #{running['id']}) is already running."}, 409
 
                 active_ids = {
                     row["external_key"]
                     for row in conn.execute(
-                        "SELECT external_key FROM collections WHERE source = 'mmf' AND name IS NOT NULL AND name NOT LIKE '[Unavailable Model%';"
+                        queries.SELECT_COLLECTIONS_EXTERNAL_KEY_BY_SOURCE
                     ).fetchall()
                 }
                 pending_ids = [mid for mid in clean_ids if str(mid) not in active_ids]
@@ -818,15 +759,7 @@ class TaskManager:
                         "creators": {},
                         "completed_at": datetime.now().isoformat(),
                     }
-                    cursor = conn.execute("""
-                        INSERT INTO pipeline_tasks (
-                            task_type, status, progress_pct, progress_label,
-                            log_output, started_at, completed_at, result_summary_json, artifacts_json
-                        ) VALUES (
-                            'metadata_ingest', 'completed', 100.0, 'Database is up to date (0 models to process)',
-                            ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, '{}'
-                        );
-                    """, (
+                    cursor = conn.execute(queries.INSERT_PIPELINE_TASKS_V2, (
                         f"Source: {source_label}\nSubmitted: {len(clean_ids)}\nSkipped (already active in DB): {skipped_count}\nPending/Retry: 0\nDatabase up to date.",
                         json.dumps(summary),
                     ))
@@ -839,12 +772,9 @@ class TaskManager:
                         "new": 0,
                     }, 200
 
-                cursor = conn.execute("""
-                    INSERT INTO pipeline_tasks (task_type, status, progress_pct, progress_label, params_json, log_output)
-                    VALUES ('metadata_ingest', 'running', 0.0, 'Initializing metadata ingestion...', ?, '');
-                """, (json.dumps({"source": source_label, "count": len(clean_ids)}),))
+                cursor = conn.execute(queries.INSERT_PIPELINE_TASKS_V3, (json.dumps({"source": source_label, "count": len(clean_ids)}),))
                 task_id = cursor.lastrowid
-                conn.execute("UPDATE pipeline_tasks SET started_at = CURRENT_TIMESTAMP WHERE id = ?;", (task_id,))
+                conn.execute(queries.UPDATE_PIPELINE_TASKS_STARTED_AT_BY_ID, (task_id,))
 
             self.active_task_id = task_id
             self._cancel_requested = False
@@ -1026,12 +956,12 @@ class TaskManager:
 
                             archive_dl = data.get("archive_download_url")
                             if archive_dl:
-                                conn.execute("UPDATE collections SET archive_download_url = ? WHERE id = ?;", (archive_dl, local_id))
+                                conn.execute(queries.UPDATE_COLLECTIONS_ARCHIVE_DOWNLOAD_URL_BY_ID, (archive_dl, local_id))
 
-                            conn.execute("DELETE FROM collection_tags WHERE model_id = ?;", (local_id,))
+                            conn.execute(queries.DELETE_COLLECTION_TAGS_BY_MODEL_ID, (local_id,))
                             if tag_rows:
                                 conn.executemany(
-                                    "INSERT OR IGNORE INTO collection_tags (model_id, tag) VALUES (?, ?);",
+                                    queries.INSERT_COLLECTION_TAGS,
                                     [(local_id, tag) for _, tag in tag_rows],
                                 )
 
@@ -1040,10 +970,7 @@ class TaskManager:
                             )
 
                             if anomalies:
-                                conn.executemany("""
-                                    INSERT INTO schema_anomalies (model_id, anomaly_type, details)
-                                    VALUES (?, ?, ?);
-                                """, [(local_id, anom[0], anom[1]) for anom in anomalies])
+                                conn.executemany(queries.INSERT_SCHEMA_ANOMALIES, [(local_id, anom[0], anom[1]) for anom in anomalies])
 
                         self._cache_cover(local_id, model_row[16])
 
@@ -1346,7 +1273,12 @@ class TaskManager:
             return self._cancel_requested
 
         try:
-            from desync_archival.services.external_indexer import ADD, FULL, PREVIEW, ExternalLibraryIndexer
+            from desync_archival.services.external_indexer import (
+                ADD,
+                FULL,
+                PREVIEW,
+                ExternalLibraryIndexer,
+            )
             indexer = ExternalLibraryIndexer(self.db_path)
             mode = params.get("mode", FULL)
             run_pass = {

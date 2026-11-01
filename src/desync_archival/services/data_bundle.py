@@ -14,6 +14,7 @@ from typing import Any
 
 from desync_archival import backup
 from desync_archival import settings as app_config
+from desync_archival.db.queries import data_bundle as queries
 from desync_archival.services.logger import logger
 
 DATABASE = "library.db"
@@ -33,7 +34,7 @@ def stored_roots(db_path: Path) -> dict[str, list[str]]:
     try:
         marks = ",".join("?" * len(PATH_SETTINGS))
         return {
-            "libraries": [r[0] for r in conn.execute("SELECT path FROM external_libraries").fetchall()],
+            "libraries": [r[0] for r in conn.execute(queries.SELECT_EXTERNAL_LIBRARIES_PATH).fetchall()],
             "settings": [r[0] for r in conn.execute(
                 f"SELECT DISTINCT value FROM app_settings WHERE key IN ({marks}) AND value != ''", PATH_SETTINGS,
             ).fetchall()],

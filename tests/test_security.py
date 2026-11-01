@@ -398,7 +398,7 @@ class V9RedirectTests(AppCase):
 
 class V11ErrorAndBodyTests(AppCase):
     def test_exception_detail_goes_to_the_log_not_the_client(self):
-        with patch("desync_archival.api.routes.catalog.queries.GET_METRICS_1", new="SELECT private path /secret/place"):
+        with patch("desync_archival.api.routes.catalog.queries.SELECT_COLLECTIONS_COUNT_BY_X", new="SELECT private path /secret/place"):
             response = self.client.get("/api/metrics")
         self.assertEqual((response.status_code, response.json()), (500, {"error": GENERIC_ERROR}))
         self.assertIn("Unhandled error in GET /api/metrics", log.APP_LOG_PATH.read_text(encoding="utf-8"))

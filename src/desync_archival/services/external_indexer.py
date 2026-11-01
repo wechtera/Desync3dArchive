@@ -16,8 +16,20 @@ from pathlib import Path
 from typing import Any
 
 from desync_archival import settings as app_config
-from desync_archival.services import catalog_levels, inactive_log, library_review, model_resolver
-from desync_archival.services.library_review import ADDED, APPROVED, GONE, PROPOSED, SKIPPED
+from desync_archival.db.queries import external_indexer as queries
+from desync_archival.services import (
+    catalog_levels,
+    inactive_log,
+    library_review,
+    model_resolver,
+)
+from desync_archival.services.library_review import (
+    ADDED,
+    APPROVED,
+    GONE,
+    PROPOSED,
+    SKIPPED,
+)
 from desync_archival.services.model_resolver import primary_folder_rank
 
 try:
@@ -124,24 +136,17 @@ def sanitize_title(name: str) -> str:
 
 def deactivate_library(conn: sqlite3.Connection, library_id: int) -> list[int]:
     """Flags a library and its contents inactive and deletes nothing. Relinking reactivates them."""
-    model_ids = [row[0] for row in conn.execute("SELECT id FROM collections WHERE library_id = ?;", (library_id,)).fetchall()]
+    model_ids = [row[0] for row in conn.execute(queries.SELECT_COLLECTIONS_ID_BY_LIBRARY_ID, (library_id,)).fetchall()]
 
     with conn:
-        conn.executemany("UPDATE collections SET is_active = 0 WHERE id = ?;", [(mid,) for mid in model_ids])
-        conn.execute("UPDATE external_libraries SET is_active = 0 WHERE id = ?;", (library_id,))
-        names = conn.execute("SELECT id, name FROM collections WHERE library_id = ?;", (library_id,)).fetchall()
+        conn.executemany(queries.UPDATE_COLLECTIONS_IS_ACTIVE_BY_ID, [(mid,) for mid in model_ids])
+        conn.execute(queries.UPDATE_EXTERNAL_LIBRARIES_IS_ACTIVE_BY_ID, (library_id,))
+        names = conn.execute(queries.SELECT_COLLECTIONS_BY_LIBRARY_ID, (library_id,)).fetchall()
         for model_id, name in names:
             inactive_log.record(
                 conn, inactive_log.MODEL, model_id, name, inactive_log.LIBRARY_UNLINK, inactive_log.LIBRARY_UNLINKED,
             )
-        conn.execute("""
-            UPDATE releases SET is_active = 0
-            WHERE release_key LIKE 'external\\_%' ESCAPE '\\' AND NOT EXISTS (
-                SELECT 1 FROM collections m
-                WHERE m.source = 'external' AND m.is_active = 1
-                  AND m.designer_name = releases.designer_name AND m.release_month = releases.release_month
-            );
-        """)
+        conn.execute(queries.UPDATE_RELEASES_IS_ACTIVE_BY_RELEASE_KEY)
     return model_ids
 
 
@@ -244,7 +249,7 @@ class ExternalLibraryIndexer:
     # -------------------------------------------------------------------------
 
     def _library(self, conn: sqlite3.Connection, library_id: int) -> sqlite3.Row | None:
-        return conn.execute("SELECT * FROM external_libraries WHERE id = ? AND is_active = 1;", (library_id,)).fetchone()
+        return conn.execute(queries.SELECT_EXTERNAL_LIBRARIES_BY_ID, (library_id,)).fetchone()
 
     def _check_root(self, root: Path) -> list[Path]:
         # An unmounted share can list as an empty folder, and that must not look like deleted models.
@@ -255,25 +260,22 @@ class ExternalLibraryIndexer:
 
     def _known_folders(self, conn: sqlite3.Connection, library_id: int) -> dict[str, set[str]]:
         held: dict[str, set[str]] = {}
-        for row in conn.execute("""
-            SELECT m.external_key, f.rel_path FROM library_model_folders f JOIN collections m ON m.id = f.model_id
-            WHERE m.library_id = ? AND m.external_key IS NOT NULL AND f.excluded = 0;
-        """, (library_id,)).fetchall():
+        for row in conn.execute(queries.SELECT_LIBRARY_MODEL_FOLDERS_BY_LIBRARY_ID, (library_id,)).fetchall():
             held.setdefault(row[0].split("/", 1)[1], set()).add(row[1])
         return held
 
     def _folders_of(self, conn: sqlite3.Connection, model_id: int, rel_path: str) -> list[str]:
-        rows = conn.execute("SELECT rel_path FROM library_model_folders WHERE model_id = ? AND excluded = 0 ORDER BY id;", (model_id,)).fetchall()
+        rows = conn.execute(queries.SELECT_LIBRARY_MODEL_FOLDERS_REL_PATH_BY_MODEL_ID, (model_id,)).fetchall()
         return [r[0] for r in rows] or [rel_path]
 
     def _excludes_of(self, conn: sqlite3.Connection, model_id: int) -> list[str]:
-        rows = conn.execute("SELECT rel_path FROM library_model_folders WHERE model_id = ? AND excluded = 1;", (model_id,)).fetchall()
+        rows = conn.execute(queries.SELECT_LIBRARY_MODEL_FOLDERS_REL_PATH_BY_MODEL_ID_EXCLUDED, (model_id,)).fetchall()
         return [r[0] for r in rows]
 
     def _adopt_keyless_models(self, conn: sqlite3.Connection, library_id: int, root: Path) -> None:
         # Without a key these would show up as new and hit the duplicate path trigger.
         rows = conn.execute(
-            "SELECT id, vault_path FROM collections WHERE source = 'external' AND library_id = ? AND external_key IS NULL;",
+            queries.SELECT_COLLECTIONS_BY_SOURCE,
             (library_id,),
         ).fetchall()
         with conn:
@@ -281,60 +283,48 @@ class ExternalLibraryIndexer:
                 path = Path(row["vault_path"] or "")
                 if path.is_relative_to(root):
                     key = key_for(library_id, str(path.relative_to(root)))
-                    conn.execute("UPDATE collections SET external_key = ? WHERE id = ?;", (key, row["id"]))
+                    conn.execute(queries.UPDATE_COLLECTIONS_EXTERNAL_KEY_BY_ID, (key, row["id"]))
 
     def _open_run(self, conn: sqlite3.Connection, library_id: int, mode: str) -> int:
         # Reusing the row is what makes resume work: models stamped with this run ID get skipped.
         last = conn.execute(
-            "SELECT id, status FROM library_scan_runs WHERE library_id = ? AND mode = ? ORDER BY id DESC LIMIT 1;",
+            queries.SELECT_LIBRARY_SCAN_RUNS_BY_LIBRARY_ID,
             (library_id, mode),
         ).fetchone()
         with conn:
             if last and last["status"] != "completed":
-                conn.execute("UPDATE library_scan_runs SET status = 'running', finished_at = NULL WHERE id = ?;", (last["id"],))
+                conn.execute(queries.UPDATE_LIBRARY_SCAN_RUNS_STATUS_BY_ID, (last["id"],))
                 return last["id"]
-            cursor = conn.execute("INSERT INTO library_scan_runs (library_id, mode) VALUES (?, ?);", (library_id, mode))
+            cursor = conn.execute(queries.INSERT_LIBRARY_SCAN_RUNS, (library_id, mode))
             return int(cursor.lastrowid or 0)
 
     def _close_run(self, conn: sqlite3.Connection, run_id: int, status: str, report: dict[str, Any]) -> None:
         with conn:
             conn.execute(
-                "UPDATE library_scan_runs SET status = ?, report_json = ?, finished_at = CURRENT_TIMESTAMP WHERE id = ?;",
+                queries.UPDATE_LIBRARY_SCAN_RUNS_STATUS_BY_ID_V2,
                 (status, json.dumps(report), run_id),
             )
 
     def _refresh_release(self, conn: sqlite3.Connection, default_creator: str, release_month: str) -> None:
         # Counted, not added, so a rescan can't inflate it.
-        model_count = conn.execute("""
-            SELECT COUNT(*) FROM collections
-            WHERE source = 'external' AND is_active = 1 AND designer_name = ? AND release_month = ?;
-        """, (default_creator, release_month)).fetchone()[0]
+        model_count = conn.execute(queries.COUNT_COLLECTIONS_BY_SOURCE, (default_creator, release_month)).fetchone()[0]
         release_id = f"external_{default_creator}_{release_month}"
         updated = conn.execute(
-            "UPDATE releases SET model_count = ?, is_active = 1 WHERE release_key = ?;", (model_count, release_id)
+            queries.UPDATE_RELEASES_MODEL_COUNT_BY_RELEASE_KEY, (model_count, release_id)
         )
         if not updated.rowcount:
-            conn.execute("""
-                INSERT INTO releases (
-                    release_key, designer_name, designer_id, release_month,
-                    model_count, total_files, total_size_bytes
-                ) VALUES (?, ?, 0, ?, ?, 0, 0);
-            """, (release_id, default_creator, release_month, model_count))
+            conn.execute(queries.INSERT_RELEASES, (release_id, default_creator, release_month, model_count))
 
     def _refresh_library_totals(self, conn: sqlite3.Connection, library_id: int, full_scan: bool) -> None:
         # Stopped or partial runs used to stamp last_scanned_at and overwrite totals with partial counts.
-        models, files, size = conn.execute("""
-            SELECT COUNT(DISTINCT m.id), COUNT(df.file_id), COALESCE(SUM(df.actual_bytes), 0)
-            FROM collections m LEFT JOIN downloaded_files df ON df.model_id = m.id
-            WHERE m.library_id = ? AND m.is_active = 1;
-        """, (library_id,)).fetchone()
+        models, files, size = conn.execute(queries.COUNT_COLLECTIONS_BY_LIBRARY_ID, (library_id,)).fetchone()
         with conn:
             conn.execute(
-                "UPDATE external_libraries SET total_models = ?, total_files = ?, disk_bytes = ? WHERE id = ?;",
+                queries.UPDATE_EXTERNAL_LIBRARIES_TOTAL_MODELS_BY_ID,
                 (models, files, size, library_id),
             )
             if full_scan:
-                conn.execute("UPDATE external_libraries SET last_scanned_at = CURRENT_TIMESTAMP WHERE id = ?;", (library_id,))
+                conn.execute(queries.UPDATE_EXTERNAL_LIBRARIES_LAST_SCANNED_AT_BY_ID, (library_id,))
 
     def _sync_model(
         self,
@@ -372,12 +362,7 @@ class ExternalLibraryIndexer:
 
         with conn:
             if model is None:
-                cursor = conn.execute("""
-                    INSERT INTO collections (
-                        library_id, name, designer_name, designer_username, primary_category, pre_supported,
-                        release_month, vault_path, source, external_key, raw_backup_path, updated_at, last_scan_run_id
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'external', ?, '', CURRENT_TIMESTAMP, ?)
-                """, (
+                cursor = conn.execute(queries.INSERT_COLLECTIONS, (
                     library_id, name, default_creator, default_creator, category,
                     has_presupported, release_month, str(model_dir), key_for(library_id, rel_path), run_id,
                 ))
@@ -392,23 +377,19 @@ class ExternalLibraryIndexer:
                     or model["is_active"] != 1 or model["library_id"] != library_id
                 )
                 if changed:
-                    conn.execute("""
-                        UPDATE collections SET vault_path = ?, pre_supported = ?, is_active = 1, library_id = ?,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?;
-                    """, (str(model_dir), has_presupported, library_id, model_id))
+                    conn.execute(queries.UPDATE_COLLECTIONS_VAULT_PATH_BY_ID, (str(model_dir), has_presupported, library_id, model_id))
                     inactive_log.resolve(conn, inactive_log.MODEL, model_id, inactive_log.FOLDER_MISSING)
                     inactive_log.resolve(conn, inactive_log.MODEL, model_id, inactive_log.LIBRARY_UNLINKED)
-                conn.execute("UPDATE collections SET last_scan_run_id = ? WHERE id = ?;", (run_id, model_id))
+                conn.execute(queries.UPDATE_COLLECTIONS_LAST_SCAN_RUN_ID_BY_ID, (run_id, model_id))
 
             # A character's key isn't a real folder, so it needs rows even with only one folder.
             if folders != [rel_path] or excludes:
                 conn.executemany(
-                    "INSERT INTO library_model_folders (model_id, rel_path) VALUES (?, ?);",
+                    queries.INSERT_LIBRARY_MODEL_FOLDERS,
                     [(model_id, folder) for folder in folders],
                 )
                 conn.executemany(
-                    "INSERT INTO library_model_folders (model_id, rel_path, excluded) VALUES (?, ?, 1);",
+                    queries.INSERT_LIBRARY_MODEL_FOLDERS_V2,
                     [(model_id, path) for path in excludes],
                 )
             files_changed = self._sync_files(conn, library_id, root, model_id, name, found)
@@ -422,14 +403,14 @@ class ExternalLibraryIndexer:
                     tags.add("bust")
                 # Add only. A repeat is ignored by a trigger, and tags are never removed.
                 conn.executemany(
-                    "INSERT INTO collection_tags (model_id, tag) VALUES (?, ?);",
+                    queries.INSERT_COLLECTION_TAGS,
                     [(model_id, tag.strip()) for tag in tags if tag.strip()],
                 )
                 self._record_job(conn, model_id, str(model_dir), len(found), sum(size for _, size, _ in found))
 
             cover = self.previews_root / str(model_id) / "cover.jpg"
             if not image_url or not cover.exists() or cover.stat().st_size == 0:
-                conn.execute("INSERT INTO library_work_queue (kind, model_id) VALUES (?, ?);", (COVER, model_id))
+                conn.execute(queries.INSERT_LIBRARY_WORK_QUEUE, (COVER, model_id))
 
         return len(found), changed or files_changed
 
@@ -443,16 +424,12 @@ class ExternalLibraryIndexer:
         found: list[tuple[Path, int, int]],
     ) -> bool:
         known = {}
-        for row in conn.execute("""
-            SELECT mf.file_id, mf.filename, mf.external_key, df.vault_path, df.actual_bytes, df.modified_ns
-            FROM model_files mf LEFT JOIN downloaded_files df ON df.file_id = mf.file_id
-            WHERE mf.model_id = ?;
-        """, (model_id,)).fetchall():
+        for row in conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID, (model_id,)).fetchall():
             key = row["external_key"]
             if not key and row["vault_path"]:
                 # A row from before keys existed is adopted, not added a second time.
                 key = key_for(library_id, str(Path(row["vault_path"]).relative_to(root)))
-                conn.execute("UPDATE model_files SET external_key = ? WHERE file_id = ?;", (key, row["file_id"]))
+                conn.execute(queries.UPDATE_MODEL_FILES_EXTERNAL_KEY_BY_FILE_ID, (key, row["file_id"]))
             known[key] = row
 
         changed = False
@@ -465,22 +442,14 @@ class ExternalLibraryIndexer:
             is_archive = path.suffix.lower() in ARCHIVE_EXTENSIONS
 
             if row is None:
-                cursor = conn.execute("""
-                    INSERT INTO model_files (model_id, filename, size_bytes, download_url, created_at, source, external_key)
-                    VALUES (?, ?, ?, '', CURRENT_TIMESTAMP, 'external', ?);
-                """, (model_id, path.name, size, key))
+                cursor = conn.execute(queries.INSERT_MODEL_FILES, (model_id, path.name, size, key))
                 file_id = int(cursor.lastrowid or 0)
-                conn.execute("""
-                    INSERT INTO downloaded_files (
-                        file_id, model_id, original_filename, cleaned_filename, local_relative_path, expected_bytes,
-                        actual_bytes, file_extension, storage_tier, vault_path, modified_ns, downloaded_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'nas', ?, ?, CURRENT_TIMESTAMP);
-                """, (file_id, model_id, path.name, path.name, f"files/{path.name}", size, size,
+                conn.execute(queries.INSERT_DOWNLOADED_FILES, (file_id, model_id, path.name, path.name, f"files/{path.name}", size, size,
                       path.suffix.lower(), str(path), modified))
                 changed = True
                 if is_archive:
                     conn.execute(
-                        "INSERT INTO library_work_queue (kind, model_id, file_id) VALUES (?, ?, ?);",
+                        queries.INSERT_LIBRARY_WORK_QUEUE_V2,
                         (PEEK, model_id, file_id),
                     )
                 continue
@@ -488,16 +457,16 @@ class ExternalLibraryIndexer:
             file_id = row["file_id"]
             content_changed = row["actual_bytes"] != size or (row["modified_ns"] not in (None, modified))
             if content_changed or row["vault_path"] != str(path) or row["modified_ns"] is None:
-                conn.execute("UPDATE model_files SET size_bytes = ? WHERE file_id = ?;", (size, file_id))
+                conn.execute(queries.UPDATE_MODEL_FILES_SIZE_BYTES_BY_FILE_ID, (size, file_id))
                 conn.execute(
-                    "UPDATE downloaded_files SET actual_bytes = ?, expected_bytes = ?, vault_path = ?, modified_ns = ? WHERE file_id = ?;",
+                    queries.UPDATE_DOWNLOADED_FILES_ACTUAL_BYTES_BY_FILE_ID,
                     (size, size, str(path), modified, file_id),
                 )
             if content_changed:
                 changed = True
                 if is_archive:
                     conn.execute(
-                        "UPDATE library_work_queue SET status = 'pending', attempts = 0 WHERE kind = ? AND file_id = ?;",
+                        queries.UPDATE_LIBRARY_WORK_QUEUE_STATUS_BY_KIND,
                         (PEEK, file_id),
                     )
             inactive_log.resolve(conn, inactive_log.FILE, file_id, inactive_log.FILE_MISSING)
@@ -513,19 +482,9 @@ class ExternalLibraryIndexer:
         return changed
 
     def _record_job(self, conn: sqlite3.Connection, model_id: int, path: str, files: int, size: int) -> None:
-        updated = conn.execute("""
-            UPDATE download_jobs
-            SET status = 'completed', total_files = ?, downloaded_files = ?, total_bytes = ?, downloaded_bytes = ?,
-                destination_path = ?, completed_at = CURRENT_TIMESTAMP
-            WHERE model_id = ?;
-        """, (files, files, size, size, path, model_id))
+        updated = conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_MODEL_ID, (files, files, size, size, path, model_id))
         if not updated.rowcount:
-            conn.execute("""
-                INSERT INTO download_jobs (
-                    model_id, status, total_files, downloaded_files, total_bytes, downloaded_bytes,
-                    destination_path, enqueued_at, completed_at
-                ) VALUES (?, 'completed', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-            """, (model_id, files, files, size, size, path))
+            conn.execute(queries.INSERT_DOWNLOAD_JOBS, (model_id, files, files, size, size, path))
 
     # -------------------------------------------------------------------------
     # Preview: reads the library and writes no catalog rows
@@ -645,7 +604,7 @@ class ExternalLibraryIndexer:
             self._adopt_keyless_models(conn, library_id, root)
             known = {
                 r[0] for r in conn.execute(
-                    "SELECT external_key FROM collections WHERE library_id = ? AND external_key IS NOT NULL;", (library_id,)
+                    queries.SELECT_COLLECTIONS_EXTERNAL_KEY_BY_LIBRARY_ID, (library_id,)
                 ).fetchall()
             }
             run_id = self._open_run(conn, library_id, PREVIEW)
@@ -664,13 +623,13 @@ class ExternalLibraryIndexer:
                 return {"success": True, "stopped": True, "run_id": run_id, "new": 0}
 
             with conn:
-                conn.execute("DELETE FROM library_candidates WHERE library_id = ? AND status = ?;", (library_id, PROPOSED))
+                conn.execute(queries.DELETE_LIBRARY_CANDIDATES_BY_LIBRARY_ID, (library_id, PROPOSED))
                 for name, tree in trees.items():
                     library_review.save_tree(conn, library_id, run_id, name, tree)
                 reviewed = library_review.merge_preview(conn, library_id, run_id, report, trees)
                 decided = {
                     r[0] for r in conn.execute(
-                        "SELECT rel_path FROM library_candidates WHERE library_id = ?;", (library_id,)
+                        queries.SELECT_LIBRARY_CANDIDATES_REL_PATH_BY_LIBRARY_ID, (library_id,)
                     ).fetchall()
                 }
                 for release in report["releases"]:
@@ -682,13 +641,12 @@ class ExternalLibraryIndexer:
                             # Only a later scale reopens a settled folder. A skipped one stays skipped.
                             if item.get("extends"):
                                 conn.execute(
-                                    "UPDATE library_candidates SET status = ?, folders_json = ? WHERE library_id = ? AND rel_path = ?;",
+                                    queries.UPDATE_LIBRARY_CANDIDATES_STATUS_BY_LIBRARY_ID,
                                     (PROPOSED, folders, library_id, item["rel_path"]),
                                 )
                             continue
                         conn.execute(
-                            "INSERT INTO library_candidates (library_id, run_id, rel_path, release_name, name, category,"
-                            " folders_json, exclude_json, status, group_name, tags_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+                            queries.INSERT_LIBRARY_CANDIDATES,
                             (library_id, run_id, item["rel_path"], release["name"], item["name"], item["category"], folders,
                              json.dumps(item.get("exclude") or []), PROPOSED, item.get("group") or "",
                              json.dumps(item.get("tags") or [])),
@@ -708,7 +666,7 @@ class ExternalLibraryIndexer:
                 (SKIPPED, library_id, PROPOSED, *skip_releases),
             ).rowcount if skip_releases else 0
             approved = conn.execute(
-                "UPDATE library_candidates SET status = ? WHERE library_id = ? AND status = ?;",
+                queries.UPDATE_LIBRARY_CANDIDATES_STATUS_BY_LIBRARY_ID_V2,
                 (APPROVED, library_id, PROPOSED),
             ).rowcount
         return {"approved": approved, "skipped": skipped}
@@ -737,9 +695,7 @@ class ExternalLibraryIndexer:
             default_creator = library["default_creator"] or library["name"]
             run_id = self._open_run(conn, library_id, ADD)
             candidates = conn.execute(
-                "SELECT id, rel_path, name, category, folders_json, exclude_json, group_name, tags_json, release_name"
-                " FROM library_candidates"
-                " WHERE library_id = ? AND status = ? ORDER BY rel_path;",
+                queries.SELECT_LIBRARY_CANDIDATES_BY_LIBRARY_ID,
                 (library_id, APPROVED),
             ).fetchall()
 
@@ -759,25 +715,25 @@ class ExternalLibraryIndexer:
                     if not any((root / folder).exists() for folder in folders):
                         self._check_root(root)
                         with conn:
-                            conn.execute("UPDATE library_candidates SET status = ? WHERE id = ?;", (GONE, candidate["id"]))
+                            conn.execute(queries.UPDATE_LIBRARY_CANDIDATES_STATUS_BY_ID, (GONE, candidate["id"]))
                         continue
 
                     # A folder can become known after its preview, and it must not be added twice.
                     key = key_for(library_id, rel_path)
                     existing = conn.execute(
-                        "SELECT * FROM collections WHERE source = 'external' AND (external_key = ? OR vault_path = ?);",
+                        queries.SELECT_COLLECTIONS_BY_SOURCE_VAULT_PATH,
                         (key, str(root / folders[0])),
                     ).fetchone()
                     if existing and existing["external_key"] != key:
                         with conn:
-                            conn.execute("UPDATE collections SET external_key = ? WHERE id = ?;", (key, existing["id"]))
+                            conn.execute(queries.UPDATE_COLLECTIONS_EXTERNAL_KEY_BY_ID, (key, existing["id"]))
                     count, _ = self._sync_model(
                         conn, library, root, existing, rel_path, candidate["category"], run_id, candidate["name"], folders,
                         json.loads(candidate["exclude_json"]),
                     )
-                    model_id = conn.execute("SELECT id FROM collections WHERE external_key = ?;", (key,)).fetchone()[0]
+                    model_id = conn.execute(queries.SELECT_COLLECTIONS_ID_BY_EXTERNAL_KEY, (key,)).fetchone()[0]
                     with conn:
-                        conn.execute("UPDATE library_candidates SET status = ? WHERE id = ?;", (ADDED, candidate["id"]))
+                        conn.execute(queries.UPDATE_LIBRARY_CANDIDATES_STATUS_BY_ID, (ADDED, candidate["id"]))
                         catalog_levels.file_under_release(
                             conn, model_id, library_id, candidate["release_name"], candidate["group_name"],
                             json.loads(candidate["tags_json"]),
@@ -819,13 +775,8 @@ class ExternalLibraryIndexer:
             default_creator = library["default_creator"] or library["name"]
             self._adopt_keyless_models(conn, library_id, root)
             run_id = self._open_run(conn, library_id, FULL)
-            models = conn.execute("""
-                SELECT * FROM collections
-                WHERE library_id = ? AND source = 'external' AND external_key IS NOT NULL
-                  AND COALESCE(last_scan_run_id, 0) != ?
-                ORDER BY external_key;
-            """, (library_id, run_id)).fetchall()
-            total_known = conn.execute("SELECT COUNT(*) FROM collections WHERE library_id = ?;", (library_id,)).fetchone()[0]
+            models = conn.execute(queries.SELECT_COLLECTIONS_BY_LIBRARY_ID_SOURCE, (library_id, run_id)).fetchall()
+            total_known = conn.execute(queries.COUNT_COLLECTIONS_BY_LIBRARY_ID_V2, (library_id,)).fetchone()[0]
 
             checked = changed = files = 0
             missing: list[sqlite3.Row] = []
@@ -874,7 +825,7 @@ class ExternalLibraryIndexer:
             else:
                 with conn:
                     for model in newly_missing:
-                        conn.execute("UPDATE collections SET is_active = 0 WHERE id = ?;", (model["id"],))
+                        conn.execute(queries.UPDATE_COLLECTIONS_IS_ACTIVE_BY_ID, (model["id"],))
                         inactive_log.record(
                             conn, inactive_log.MODEL, model["id"], model["name"], inactive_log.LIBRARY_SCAN,
                             inactive_log.FOLDER_MISSING, model["vault_path"],
@@ -916,7 +867,7 @@ class ExternalLibraryIndexer:
         INVARIANT: MUST NOT delete or touch any physical files on storage.
         """
         with self._get_db() as conn:
-            lib_row = conn.execute("SELECT id, name, path FROM external_libraries WHERE id = ?;", (library_id,)).fetchone()
+            lib_row = conn.execute(queries.SELECT_EXTERNAL_LIBRARIES_BY_ID_V2, (library_id,)).fetchone()
             if not lib_row:
                 return {"success": False, "error": f"External library #{library_id} not found."}
 

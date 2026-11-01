@@ -11,6 +11,8 @@ from collections import defaultdict
 from itertools import combinations
 from typing import Any
 
+from desync_archival.db.queries import duplicates as queries
+
 DEFAULT_IGNORE_NAMES = "base,support"
 MAX_LISTED = 200
 
@@ -21,14 +23,7 @@ def normalize_name(filename: str) -> str:
 
 
 def _catalog_files(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    rows = conn.execute("""
-        SELECT mf.file_id, mf.model_id, mf.filename, COALESCE(df.actual_bytes, mf.size_bytes) AS size_bytes,
-               df.sha256, m.name AS model_name, m.source
-        FROM model_files mf
-        JOIN collections m ON m.id = mf.model_id
-        LEFT JOIN downloaded_files df ON df.file_id = mf.file_id
-        WHERE m.is_active = 1 AND mf.filename IS NOT NULL AND mf.filename != '';
-    """).fetchall()
+    rows = conn.execute(queries.SELECT_MODEL_FILES_BY_IS_ACTIVE).fetchall()
     columns = ("file_id", "model_id", "filename", "size_bytes", "sha256", "model_name", "source")
     return [dict(zip(columns, tuple(row), strict=True)) for row in rows]
 
@@ -71,7 +66,7 @@ def _model_level(groups: list[list[dict[str, Any]]], file_counts: dict[int, int]
 
 
 def find_duplicates(conn: sqlite3.Connection, include_shared: bool = False) -> dict[str, Any]:
-    row = conn.execute("SELECT value FROM app_settings WHERE key = 'duplicate_ignore_names';").fetchone()
+    row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY).fetchone()
     ignored = [word.strip().lower() for word in (row[0] if row else DEFAULT_IGNORE_NAMES).split(",") if word.strip()]
 
     files = _catalog_files(conn)

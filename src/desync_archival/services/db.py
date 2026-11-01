@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Union
 
 from desync_archival import settings as app_config
+from desync_archival.db.queries import db as queries
 from desync_archival.services import secret_store
 
 
@@ -50,16 +51,14 @@ def seed_default_settings(conn: sqlite3.Connection):
             ("mmf_username", ""),
             ("mmf_oauth_state", ""),
         ]
-        conn.executemany("""
-            INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)
-        """, defaults)
+        conn.executemany(queries.INSERT_APP_SETTINGS, defaults)
 
         # A blanked row looks empty, so without this check every start refilled it from the old file.
         if secret_store.load().get("cookies_json"):
             return
         # Seed cookies_json if row exists but is empty
-        row = conn.execute("SELECT value FROM app_settings WHERE key = 'cookies_json';").fetchone()
+        row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY).fetchone()
         if row:
             val = row[0]
             if (not val or str(val).strip() in ("", "{}")) and initial_cookies != "{}":
-                conn.execute("UPDATE app_settings SET value = ? WHERE key = 'cookies_json';", (initial_cookies,))
+                conn.execute(queries.UPDATE_APP_SETTINGS_VALUE_BY_KEY, (initial_cookies,))

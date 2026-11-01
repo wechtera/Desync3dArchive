@@ -29,17 +29,17 @@ def handle_get_archive_submodels(
 
     file_id = int(file_id_raw)
 
-    file_row = conn.execute(queries.GET_ARCHIVE_SUBMODELS_1, (file_id,)).fetchone()
+    file_row = conn.execute(queries.SELECT_MODEL_FILES_BY_FILE_ID, (file_id,)).fetchone()
 
     if not file_row:
         return {"error": f"File #{file_id} not found in database"}, 404
 
-    submodels = conn.execute(queries.GET_ARCHIVE_SUBMODELS_2, (file_id,)).fetchall()
+    submodels = conn.execute(queries.SELECT_FILE_ARCHIVE_SUBMODELS_BY_FILE_ID, (file_id,)).fetchall()
 
     result_submodels = []
     for sm in submodels:
         sm_id = sm["id"]
-        members = conn.execute(queries.GET_ARCHIVE_SUBMODELS_3, (sm_id,)).fetchall()
+        members = conn.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS_BY_SUBMODEL_ID, (sm_id,)).fetchall()
 
         formats = []
         if sm["formats_json"]:
@@ -99,7 +99,7 @@ def handle_get_archive_raw(
 
     file_id = int(file_id_raw)
 
-    members = [m for m in conn.execute(queries.GET_ARCHIVE_RAW_1, (file_id,)).fetchall() if not m["internal_path"].startswith("/")]
+    members = [m for m in conn.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS_BY_FILE_ID, (file_id,)).fetchall() if not m["internal_path"].startswith("/")]
 
     if not members:
         return {
@@ -128,7 +128,7 @@ def handle_post_archive_peek_backfill(
     Dispatches task_type = 'archive_peek_backfill' via TaskManager.
     """
     if task_manager is None:
-        db_path = Path(conn.execute(queries.POST_ARCHIVE_PEEK_BACKFILL_1).fetchone()[2])
+        db_path = Path(conn.execute(queries.PRAGMA_ROW).fetchone()[2])
         reconciler = VaultReconciler(db_path)
         report = reconciler.backfill_archive_peeks(model_ids=body.get("model_ids"))
         return report, 200

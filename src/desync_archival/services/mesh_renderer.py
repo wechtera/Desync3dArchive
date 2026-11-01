@@ -17,6 +17,7 @@ from typing import List, Optional, Union
 
 from desync_archival import external
 from desync_archival import settings as app_config
+from desync_archival.db.queries import mesh_renderer as queries
 
 SCRIPT_PATH = app_config.blender_script()
 
@@ -203,7 +204,7 @@ class MeshRenderer:
 
         try:
             if stype == "archive_member":
-                m_row = conn.execute("SELECT id, file_id, internal_path, filename FROM file_archive_members WHERE id = ?;", (source_id,)).fetchone()
+                m_row = conn.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS_BY_ID, (source_id,)).fetchone()
                 if not m_row:
                     raise FileNotFoundError(f"Archive member #{source_id} not found in catalog.")
 
@@ -211,7 +212,7 @@ class MeshRenderer:
                 internal_path = m_row["internal_path"]
                 filename = m_row["filename"]
 
-                arc_row = conn.execute("SELECT vault_path, staging_path FROM downloaded_files WHERE file_id = ?;", (file_id,)).fetchone()
+                arc_row = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_FILE_ID, (file_id,)).fetchone()
                 if not arc_row:
                     raise FileNotFoundError(f"Parent archive for member #{source_id} not found in downloaded_files.")
 
@@ -233,18 +234,9 @@ class MeshRenderer:
                 target_stl = None
 
                 if stype == "file":
-                    row = conn.execute("""
-                        SELECT df.file_id, df.model_id, df.vault_path, df.staging_path, df.cleaned_filename, df.file_extension
-                        FROM downloaded_files df
-                        WHERE df.file_id = ?;
-                    """, (source_id,)).fetchone()
+                    row = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_FILE_ID_V2, (source_id,)).fetchone()
                     if not row:
-                        row = conn.execute("""
-                            SELECT mf.file_id, mf.model_id, df.vault_path, df.staging_path, mf.filename AS cleaned_filename, NULL AS file_extension
-                            FROM model_files mf
-                            LEFT JOIN downloaded_files df ON mf.file_id = df.file_id
-                            WHERE mf.file_id = ?;
-                        """, (source_id,)).fetchone()
+                        row = conn.execute(queries.SELECT_MODEL_FILES_BY_FILE_ID, (source_id,)).fetchone()
 
                     if not row:
                         raise FileNotFoundError(f"File #{source_id} not found in database.")
@@ -294,12 +286,7 @@ class MeshRenderer:
         scratch_dir: Path,
     ) -> Optional[Path]:
         """Inspects archive members for a file, peeking if needed, and extracts the top candidate STL."""
-        members = conn.execute("""
-            SELECT id, internal_path, filename, size_bytes, is_supported
-            FROM file_archive_members
-            WHERE file_id = ?
-              AND (LOWER(file_extension) = '.stl' OR LOWER(filename) LIKE '%.stl');
-        """, (file_id,)).fetchall()
+        members = conn.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS_BY_FILE_ID, (file_id,)).fetchall()
 
         if not members:
             # Auto-peek archive if not yet indexed
@@ -307,15 +294,10 @@ class MeshRenderer:
                 from desync_archival.services.archive_peeker import ArchivePeeker
                 db_path = Path(conn.execute("PRAGMA database_list;").fetchone()[2]).resolve()
                 peeker = ArchivePeeker(db_path)
-                m_row = conn.execute("SELECT model_id FROM downloaded_files WHERE file_id = ?;", (file_id,)).fetchone()
+                m_row = conn.execute(queries.SELECT_DOWNLOADED_FILES_MODEL_ID_BY_FILE_ID, (file_id,)).fetchone()
                 mid = m_row[0] if m_row else 0
                 peeker.inspect_and_record(mid, file_id, archive_path)
-                members = conn.execute("""
-                    SELECT id, internal_path, filename, size_bytes, is_supported
-                    FROM file_archive_members
-                    WHERE file_id = ?
-                      AND (LOWER(file_extension) = '.stl' OR LOWER(filename) LIKE '%.stl');
-                """, (file_id,)).fetchall()
+                members = conn.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS_BY_FILE_ID_LOWER, (file_id,)).fetchall()
             except Exception:
                 pass
 
@@ -354,7 +336,7 @@ class MeshRenderer:
         scratch_dir: Path,
     ) -> Optional[Path]:
         """Resolves the best STL candidate for a model from loose vault files or internal archive members."""
-        model = conn.execute("SELECT vault_path FROM collections WHERE id = ?;", (model_id,)).fetchone()
+        model = conn.execute(queries.SELECT_COLLECTIONS_VAULT_PATH_BY_ID, (model_id,)).fetchone()
         if model and model["vault_path"]:
             vp = Path(model["vault_path"])
             if vp.exists() and vp.is_dir():
@@ -365,12 +347,7 @@ class MeshRenderer:
                 return vp
 
         # Loose files before archives, because extracting costs real time on the NAS.
-        loose_rows = conn.execute("""
-            SELECT df.vault_path, df.staging_path
-            FROM downloaded_files df
-            WHERE df.model_id = ?
-              AND (LOWER(df.file_extension) = '.stl' OR LOWER(df.cleaned_filename) LIKE '%.stl');
-        """, (model_id,)).fetchall()
+        loose_rows = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_MODEL_ID, (model_id,)).fetchall()
 
         for lr in loose_rows:
             for p_str in (lr["vault_path"], lr["staging_path"]):
@@ -379,15 +356,7 @@ class MeshRenderer:
                     if c.exists() and c.is_file() and c.suffix.lower() == ".stl":
                         return c
 
-        arc_rows = conn.execute("""
-            SELECT df.file_id, df.vault_path, df.staging_path
-            FROM downloaded_files df
-            WHERE df.model_id = ?
-              AND (LOWER(df.file_extension) IN ('.zip', '.rar', '.7z')
-                   OR LOWER(df.cleaned_filename) LIKE '%.zip'
-                   OR LOWER(df.cleaned_filename) LIKE '%.rar'
-                   OR LOWER(df.cleaned_filename) LIKE '%.7z');
-        """, (model_id,)).fetchall()
+        arc_rows = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_MODEL_ID_LOWER, (model_id,)).fetchall()
 
         for ar in arc_rows:
             for p_str in (ar["vault_path"], ar["staging_path"]):

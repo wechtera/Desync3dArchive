@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import httpx
 
 from desync_archival import settings as app_config
+from desync_archival.db.queries import reconciler as queries
 from desync_archival.services.downloader import StorageManager, StorageUnavailableError
 from desync_archival.services.logger import log_layer
 from desync_archival.services.paths import sanitize_segment
@@ -180,7 +181,7 @@ class VaultReconciler:
         with self._get_db() as conn:
             # Vault folders carry the MMF ID, which is not the internal key.
             model_id_by_mmf_id = dict(conn.execute(
-                "SELECT external_key, id FROM collections WHERE source = 'mmf' AND external_key IS NOT NULL;"
+                queries.SELECT_COLLECTIONS_BY_SOURCE
             ).fetchall())
 
         orphan_directories: List[Dict[str, Any]] = []
@@ -229,13 +230,8 @@ class VaultReconciler:
             had_untracked = False
             if files_dir.exists() and files_dir.is_dir():
                 with self._get_db() as conn:
-                    model_row = conn.execute("SELECT name, designer_name FROM collections WHERE id = ?", (local_id,)).fetchone()
-                    db_files = conn.execute("""
-                        SELECT mf.filename, df.cleaned_filename
-                        FROM model_files mf
-                        LEFT JOIN downloaded_files df ON mf.file_id = df.file_id
-                        WHERE mf.model_id = ?;
-                    """, (local_id,)).fetchall()
+                    model_row = conn.execute(queries.SELECT_COLLECTIONS_BY_ID, (local_id,)).fetchone()
+                    db_files = conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID, (local_id,)).fetchall()
 
                 tracked = set()
                 for f in db_files:
@@ -289,14 +285,7 @@ class VaultReconciler:
 
     def _execute_forward(self, nas_root: Path, scan_mode: str, progress, log, is_cancelled) -> Dict[str, Any]:
         with self._get_db() as conn:
-            models = conn.execute("""
-                SELECT DISTINCT m.id, m.name, m.designer_name, m.designer_username,
-                                m.release_month, m.vault_path, m.external_key, dj.destination_path
-                FROM collections m
-                LEFT JOIN download_jobs dj ON dj.id = (SELECT MAX(id) FROM download_jobs WHERE model_id = m.id)
-                WHERE m.is_active = 1 AND (dj.status = 'completed' OR m.vault_path IS NOT NULL)
-                ORDER BY m.id DESC;
-            """).fetchall()
+            models = conn.execute(queries.SELECT_COLLECTIONS_BY_MODEL_ID).fetchall()
 
         total = len(models)
         log(f"Found {total} models marked as completed/archived. Initiating forward integrity scan...")
@@ -355,13 +344,7 @@ class VaultReconciler:
                     log_layer("storage", logging.WARNING, f"Model #{model_id} metadata.json missing.")
 
                 with self._get_db() as conn:
-                    expected_files = conn.execute("""
-                        SELECT mf.file_id, mf.filename, mf.size_bytes,
-                               df.vault_path, df.local_relative_path, df.sha256
-                        FROM model_files mf
-                        LEFT JOIN downloaded_files df ON mf.file_id = df.file_id
-                        WHERE mf.model_id = ?;
-                    """, (model_id,)).fetchall()
+                    expected_files = conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID_V2, (model_id,)).fetchall()
 
                 if not expected_files:
                     model_issues.append({
@@ -460,7 +443,7 @@ class VaultReconciler:
                                 else:
                                     with self._get_db() as uconn:
                                         with uconn:
-                                            uconn.execute("UPDATE downloaded_files SET sha256 = ? WHERE file_id = ?;", (cur_sha, file_id))
+                                            uconn.execute(queries.UPDATE_DOWNLOADED_FILES_SHA_BY_FILE_ID, (cur_sha, file_id))
                                     baselined_hashes += 1
                                     log_layer("storage", logging.DEBUG, f"Baselined SHA-256 for Model #{model_id}: {filename}")
                             except Exception as sh_err:
@@ -500,12 +483,7 @@ class VaultReconciler:
         summary = report_data.get("summary", {})
         with self._get_db() as conn:
             with conn:
-                conn.execute("""
-                    INSERT INTO reconciliation_runs (
-                        status, scan_mode, progress_pct, current_item, total_audited,
-                        healthy_count, discrepancy_count, report_json, completed_at
-                    ) VALUES (?, ?, 100.0, 'Audit completed.', ?, ?, ?, ?, CURRENT_TIMESTAMP);
-                """, (
+                conn.execute(queries.INSERT_RECONCILIATION_RUNS, (
                     status, scan_mode, summary.get("total_audited", 0),
                     summary.get("healthy", 0), summary.get("discrepancies", 0),
                     json.dumps(report_data)
@@ -513,7 +491,7 @@ class VaultReconciler:
 
     def get_status(self) -> Dict[str, Any]:
         with self._get_db() as conn:
-            row = conn.execute("SELECT * FROM reconciliation_runs ORDER BY id DESC LIMIT 1;").fetchone()
+            row = conn.execute(queries.SELECT_RECONCILIATION_RUNS).fetchone()
             if not row:
                 return {
                     "status": "idle", "scan_mode": "fast",
@@ -542,7 +520,7 @@ class VaultReconciler:
 
     def _offline_library_roots(self) -> list[str]:
         with self._get_db() as conn:
-            roots = [row[0] for row in conn.execute("SELECT path FROM external_libraries WHERE is_active = 1;")]
+            roots = [row[0] for row in conn.execute(queries.SELECT_EXTERNAL_LIBRARIES_PATH_BY_IS_ACTIVE)]
         offline = [f"{root}/" for root in roots if not Path(root).is_dir()]
         if offline:
             log_layer("storage", logging.WARNING, f"Audit skipping offline libraries: {offline}")
@@ -569,10 +547,7 @@ class VaultReconciler:
                     WHERE model_id IN ({placeholders});
                 """, clean_ids)
                 for mid in clean_ids:
-                    conn.execute("""
-                        INSERT INTO download_audit_log (model_id, attempt_number, status, error_detail)
-                        VALUES (?, 1, 'failed', 'Reconciliation reset: model marked for re-download');
-                    """, (mid,))
+                    conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG, (mid,))
         log_layer("sql", logging.INFO, f"Reset {len(clean_ids)} reconciliation models for re-download: {clean_ids}")
         return {"success": True, "reset_count": len(clean_ids)}
 
@@ -630,7 +605,7 @@ class VaultReconciler:
                     fpath = Path(fpath_str).resolve()
                     if not fpath.exists() or not fpath.is_file():
                         continue
-                    model_row = conn.execute("SELECT id, name, designer_name, release_month, external_key, source FROM collections WHERE id = ?", (model_id,)).fetchone()
+                    model_row = conn.execute(queries.SELECT_COLLECTIONS_BY_ID_V2, (model_id,)).fetchone()
                     if not model_row:
                         continue
                     filename = fpath.name
@@ -643,19 +618,10 @@ class VaultReconciler:
                     rel_p = str(Path(clean_c) / clean_m / clean_obj / "files" / filename)
 
                     with conn:
-                        cur = conn.execute("""
-                            INSERT INTO model_files (model_id, filename, size_bytes, download_url, created_at, source)
-                            VALUES (?, ?, ?, '', CURRENT_TIMESTAMP, ?);
-                        """, (model_id, filename, sz, model_row["source"]))
+                        cur = conn.execute(queries.INSERT_MODEL_FILES, (model_id, filename, sz, model_row["source"]))
                         new_file_id = cur.lastrowid
-                        conn.execute("""
-                            INSERT INTO downloaded_files (
-                                file_id, model_id, original_filename, cleaned_filename,
-                                local_relative_path, expected_bytes, actual_bytes,
-                                file_extension, storage_tier, vault_path, sha256, downloaded_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'nas', ?, ?, CURRENT_TIMESTAMP);
-                        """, (new_file_id, model_id, filename, filename, rel_p, sz, sz, ext, str(fpath), sha))
-                        conn.execute("UPDATE collections SET vault_path = ? WHERE id = ?;", (str(fpath.parent.parent), model_id))
+                        conn.execute(queries.INSERT_DOWNLOADED_FILES, (new_file_id, model_id, filename, filename, rel_p, sz, sz, ext, str(fpath), sha))
+                        conn.execute(queries.UPDATE_COLLECTIONS_VAULT_PATH_BY_ID, (str(fpath.parent.parent), model_id))
                     ingested.append(fpath_str)
                     log_layer("storage", logging.INFO, f"Ingested untracked file: {fpath.name} -> Model #{model_id}")
                 except Exception as e:
@@ -671,8 +637,8 @@ class VaultReconciler:
         total_bytes = 0
 
         with self._get_db() as conn:
-            jobs_map = {r["model_id"]: r["status"] for r in conn.execute("SELECT model_id, status FROM download_jobs;").fetchall()}
-            active_staging = {r[0] for r in conn.execute("SELECT DISTINCT model_id FROM downloaded_files WHERE storage_tier = 'local';").fetchall()}
+            jobs_map = {r["model_id"]: r["status"] for r in conn.execute(queries.SELECT_DOWNLOAD_JOBS).fetchall()}
+            active_staging = {r[0] for r in conn.execute(queries.SELECT_DOWNLOADED_FILES_MODEL_ID_BY_STORAGE_TIER).fetchall()}
 
         if in_flight_dir.exists():
             for part in in_flight_dir.glob("*.part"):
@@ -739,7 +705,7 @@ class VaultReconciler:
     def scan_path_drift(self) -> Dict[str, Any]:
         nas_root = self.storage.get_root_path().resolve()
         with self._get_db() as conn:
-            models = conn.execute("SELECT id, name, designer_name, designer_username, release_month, vault_path, external_key FROM collections WHERE source = 'mmf' AND vault_path IS NOT NULL;").fetchall()
+            models = conn.execute(queries.SELECT_COLLECTIONS_BY_SOURCE_VAULT_PATH).fetchall()
         drift_items = []
         for m in models:
             mid = m["id"]
@@ -776,14 +742,12 @@ class VaultReconciler:
                     canon.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(cur), str(canon))
                     with conn:
-                        conn.execute("UPDATE collections SET vault_path = ? WHERE id = ?;", (str(canon), mid))
-                        conn.execute("UPDATE download_jobs SET destination_path = ? WHERE model_id = ?;", (str(canon), mid))
-                        files = conn.execute("SELECT file_id, cleaned_filename FROM downloaded_files WHERE model_id = ?;", (mid,)).fetchall()
+                        conn.execute(queries.UPDATE_COLLECTIONS_VAULT_PATH_BY_ID, (str(canon), mid))
+                        conn.execute(queries.UPDATE_DOWNLOAD_JOBS_DESTINATION_PATH_BY_MODEL_ID, (str(canon), mid))
+                        files = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_MODEL_ID, (mid,)).fetchall()
                         rel_nas = canon.relative_to(nas_root)
                         for f in files:
-                            conn.execute("""
-                                UPDATE downloaded_files SET vault_path = ?, local_relative_path = ? WHERE file_id = ?;
-                            """, (str(canon / "files" / f["cleaned_filename"]), str(rel_nas / "files" / f["cleaned_filename"]), f["file_id"]))
+                            conn.execute(queries.UPDATE_DOWNLOADED_FILES_VAULT_PATH_BY_FILE_ID, (str(canon / "files" / f["cleaned_filename"]), str(rel_nas / "files" / f["cleaned_filename"]), f["file_id"]))
                     realigned += 1
                     log_layer("storage", logging.INFO, f"Realigned Model #{mid} storage path to: {canon}")
                 except Exception as e:

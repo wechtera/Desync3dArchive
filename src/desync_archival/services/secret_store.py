@@ -11,6 +11,7 @@ import threading
 from pathlib import Path
 
 from desync_archival import settings as app_config
+from desync_archival.db.queries import secret_store as queries
 from desync_archival.services.logger import logger
 
 KEYS = (
@@ -96,6 +97,6 @@ def blank_database(conn: sqlite3.Connection) -> list[str]:
     if missing:
         raise SecretsError(f"Not in the secrets file, so nothing was blanked: {missing}")
     with conn:
-        conn.executemany("UPDATE app_settings SET value = '' WHERE key = ?;", [(key,) for key in stored])
+        conn.executemany(queries.UPDATE_APP_SETTINGS_VALUE_BY_KEY, [(key,) for key in stored])
     logger.warning(f"Blanked {len(stored)} secrets in app_settings")
     return sorted(stored)

@@ -64,7 +64,7 @@ def handle_post_storage_config(
 
     with conn:
         for k, v in updates:
-            conn.execute(queries.POST_STORAGE_CONFIG_1, (k, v))
+            conn.execute(queries.INSERT_APP_SETTINGS, (k, v))
 
     if download_manager:
         download_manager._load_settings()

@@ -3,6 +3,7 @@
 import sqlite3
 from typing import Any
 
+from desync_archival.db.queries import catalog_browse as queries
 from desync_archival.services.catalog_levels import MERGED, SKIPPED
 from desync_archival.services.stash_service import StashService
 
@@ -26,18 +27,11 @@ _SEARCH = """
 
 
 def _groups_of(conn: sqlite3.Connection, model_id: int) -> list[dict[str, Any]]:
-    return [dict(r) for r in conn.execute("""
-        SELECT g.id, g.name FROM model_groups g JOIN model_group_members m ON m.group_id = g.id
-        WHERE m.model_id = ? ORDER BY g.name;
-    """, (model_id,)).fetchall()]
+    return [dict(r) for r in conn.execute(queries.SELECT_MODEL_GROUPS_BY_MODEL_ID, (model_id,)).fetchall()]
 
 
 def _collections_of(conn: sqlite3.Connection, model_id: int) -> list[dict[str, Any]]:
-    return [dict(r) for r in conn.execute("""
-        SELECT c.id, c.name, c.designer_name, c.primary_image_url FROM collections c
-        JOIN model_collections l ON l.collection_id = c.id
-        WHERE l.model_id = ? ORDER BY c.id;
-    """, (model_id,)).fetchall()]
+    return [dict(r) for r in conn.execute(queries.SELECT_COLLECTIONS_BY_MODEL_ID, (model_id,)).fetchall()]
 
 
 def _summary(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
@@ -69,34 +63,21 @@ def list_models(conn: sqlite3.Connection, search: str = "", page: int = 1) -> di
 
 def model_detail(conn: sqlite3.Connection, model_id: int) -> dict[str, Any] | None:
     conn.row_factory = sqlite3.Row
-    row = conn.execute("SELECT id, name, category, state, merged_into, image_path FROM models WHERE id = ?;", (model_id,)).fetchone()
+    row = conn.execute(queries.SELECT_MODELS_BY_ID, (model_id,)).fetchone()
     # Old IDs keep working after a merge, however many times it happened.
     seen = set()
     while row and row["merged_into"] and row["id"] not in seen:
         seen.add(row["id"])
         row = conn.execute(
-            "SELECT id, name, category, state, merged_into, image_path FROM models WHERE id = ?;", (row["merged_into"],)
+            queries.SELECT_MODELS_BY_ID, (row["merged_into"],)
         ).fetchone()
     if not row:
         return None
-    artifacts = conn.execute("""
-        SELECT a.id, a.filename, a.path, a.size_bytes, a.scale, a.supported, a.hollow, a.file_id, a.archive_member_id,
-               f.filename AS archive, f.model_id AS collection_id, m.submodel_id
-        FROM model_artifacts a LEFT JOIN model_files f ON f.file_id = a.file_id
-        LEFT JOIN file_archive_members m ON m.id = a.archive_member_id
-        WHERE a.model_id = ? ORDER BY a.scale, a.filename;
-    """, (row["id"],)).fetchall()
+    artifacts = conn.execute(queries.SELECT_MODEL_ARTIFACTS_BY_MODEL_ID, (row["id"],)).fetchall()
     # A model sold twice has each file twice. One line each, and the first copy supplies it.
     unique = {(a["filename"].lower(), a["size_bytes"]): dict(a) for a in reversed(artifacts)}
-    tags = [r[0] for r in conn.execute("""
-        SELECT tag FROM model_tags WHERE model_id = ?1
-        UNION SELECT t.tag FROM collection_tags t JOIN model_collections l ON l.collection_id = t.model_id
-        WHERE l.model_id = ?1 ORDER BY 1;
-    """, (row["id"],)).fetchall()]
-    first = conn.execute("""
-        SELECT c.release_month, c.url, c.published_at FROM collections c JOIN model_collections l ON l.collection_id = c.id
-        WHERE l.model_id = ? ORDER BY c.id LIMIT 1;
-    """, (row["id"],)).fetchone()
+    tags = [r[0] for r in conn.execute(queries.SELECT_MODEL_TAGS_TAG_BY_MODEL_ID, (row["id"],)).fetchall()]
+    first = conn.execute(queries.SELECT_COLLECTIONS_BY_MODEL_ID_V2, (row["id"],)).fetchone()
     return {
         **_summary(conn, row), **(dict(first) if first else {}), "tags": tags,
         "artifacts": sorted(unique.values(), key=lambda a: (a["scale"] or "", a["filename"].lower())),
@@ -107,15 +88,10 @@ def model_detail(conn: sqlite3.Connection, model_id: int) -> dict[str, Any] | No
 
 def group_detail(conn: sqlite3.Connection, group_id: int) -> dict[str, Any] | None:
     conn.row_factory = sqlite3.Row
-    group = conn.execute("SELECT id, name, collection_id, release_name FROM model_groups WHERE id = ?;", (group_id,)).fetchone()
+    group = conn.execute(queries.SELECT_MODEL_GROUPS_BY_ID, (group_id,)).fetchone()
     if not group:
         return None
-    rows = conn.execute("""
-        SELECT m.id, m.name, m.category, m.state, m.image_path,
-               (SELECT COUNT(*) FROM model_artifacts a WHERE a.model_id = m.id) AS artifacts
-        FROM models m JOIN model_group_members g ON g.model_id = m.id
-        WHERE g.group_id = ? AND m.state NOT IN (?, ?) ORDER BY m.name COLLATE NOCASE;
-    """, (group_id, MERGED, SKIPPED)).fetchall()
+    rows = conn.execute(queries.SELECT_MODEL_ARTIFACTS_BY_MODEL_ID_STATE, (group_id, MERGED, SKIPPED)).fetchall()
     return {**dict(group), "models": [_summary(conn, r) for r in rows]}
 
 

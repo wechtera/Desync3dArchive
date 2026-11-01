@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from desync_archival.db.queries import auth_service as queries
 from desync_archival.services import secret_store
 from desync_archival.services.logger import log_layer, logger
 
@@ -38,7 +39,7 @@ def get_setting(conn: sqlite3.Connection, key: str, default: str = "") -> str:
         held = secret_store.load()
         if key in held:
             return held[key]
-    row = conn.execute("SELECT value FROM app_settings WHERE key = ?;", (key,)).fetchone()
+    row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY, (key,)).fetchone()
     return row["value"] if row and row["value"] is not None else default
 
 
@@ -48,11 +49,7 @@ def set_settings(conn: sqlite3.Connection, mapping: dict[str, str]):
         for k, v in mapping.items():
             if k in SECRET_SETTING_KEYS:
                 continue
-            conn.execute("""
-                INSERT INTO app_settings (key, value, updated_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP;
-            """, (k, str(v)))
+            conn.execute(queries.INSERT_APP_SETTINGS, (k, str(v)))
 
 
 def get_auth_status(conn: sqlite3.Connection) -> dict[str, Any]:

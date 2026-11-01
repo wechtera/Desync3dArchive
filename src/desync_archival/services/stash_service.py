@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from desync_archival import settings as app_config
+from desync_archival.db.queries import stash_service as queries
 
 
 class StashService:
@@ -36,7 +37,7 @@ class StashService:
             m_cols = {r[1] for r in conn.execute("PRAGMA table_info(collections);").fetchall()}
             if "vault_path" not in m_cols:
                 return False
-            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()}
+            tables = {r[0] for r in conn.execute(queries.SELECT_SQLITE_MASTER_NAME_BY_TYPE).fetchall()}
             if "downloaded_files" not in tables:
                 return False
             return True
@@ -49,7 +50,7 @@ class StashService:
             return
 
         row = conn.execute(
-            "SELECT id, name, vault_path FROM collections WHERE id = ? AND is_active = 1;", (model_id,)
+            queries.SELECT_COLLECTIONS_BY_ID, (model_id,)
         ).fetchone()
         if not row:
             raise ValueError(f"Model #{model_id} does not exist in library.")
@@ -62,11 +63,7 @@ class StashService:
         if not self._has_vault_columns(conn):
             return
 
-        row = conn.execute("""
-            SELECT file_id, vault_path, staging_path, storage_tier
-            FROM downloaded_files
-            WHERE file_id = ?;
-        """, (file_id,)).fetchone()
+        row = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_FILE_ID, (file_id,)).fetchone()
 
         if not row or row["storage_tier"] not in ("nas", "local"):
             raise ValueError(f"File #{file_id} must be downloaded before adding to a stash.")
@@ -77,7 +74,7 @@ class StashService:
 
         resolved_file_id = file_id
         if resolved_file_id is None:
-            row = conn.execute("SELECT file_id FROM file_archive_submodels WHERE id = ?;", (submodel_id,)).fetchone()
+            row = conn.execute(queries.SELECT_FILE_ARCHIVE_SUBMODELS_FILE_ID_BY_ID, (submodel_id,)).fetchone()
             if row:
                 resolved_file_id = row["file_id"]
 
@@ -95,7 +92,7 @@ class StashService:
 
         resolved_file_id = file_id
         if resolved_file_id is None:
-            row = conn.execute("SELECT file_id FROM file_archive_members WHERE id = ?;", (archive_member_id,)).fetchone()
+            row = conn.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS_FILE_ID_BY_ID, (archive_member_id,)).fetchone()
             if row:
                 resolved_file_id = row["file_id"]
 
@@ -114,20 +111,20 @@ class StashService:
 
         file_id = item["file_id"]
         if item["item_type"] == "model":
-            row = conn.execute("SELECT vault_path FROM collections WHERE id = ?;", (item["model_id"],)).fetchone()
+            row = conn.execute(queries.SELECT_COLLECTIONS_VAULT_PATH_BY_ID, (item["model_id"],)).fetchone()
             path = Path(row["vault_path"])
             if not path.exists():
                 raise ValueError(f"Model #{item['model_id']} vault directory not found on storage: {path}")
             return
 
         if file_id is None and item["submodel_id"] is not None:
-            row = conn.execute("SELECT file_id FROM file_archive_submodels WHERE id = ?;", (item["submodel_id"],)).fetchone()
+            row = conn.execute(queries.SELECT_FILE_ARCHIVE_SUBMODELS_FILE_ID_BY_ID, (item["submodel_id"],)).fetchone()
             file_id = row["file_id"]
         elif file_id is None:
-            row = conn.execute("SELECT file_id FROM file_archive_members WHERE id = ?;", (item["archive_member_id"],)).fetchone()
+            row = conn.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS_FILE_ID_BY_ID, (item["archive_member_id"],)).fetchone()
             file_id = row["file_id"]
 
-        row = conn.execute("SELECT vault_path, staging_path, storage_tier FROM downloaded_files WHERE file_id = ?;", (file_id,)).fetchone()
+        row = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_FILE_ID_V2, (file_id,)).fetchone()
         target = Path(row["vault_path"]) if (row["storage_tier"] == "nas" and row["vault_path"]) else Path(row["staging_path"] or "")
         if not target.is_file():
             raise ValueError(f"File #{file_id} not found on storage: {target}")
@@ -153,17 +150,14 @@ class StashService:
         def _execute(c: sqlite3.Connection) -> Dict[str, Any]:
             with c:
                 if make_active:
-                    c.execute("UPDATE stashes SET is_active = 0 WHERE is_active = 1;")
+                    c.execute(queries.UPDATE_STASHES_IS_ACTIVE_BY_IS_ACTIVE)
 
                 cur = c.execute(
-                    """
-                    INSERT INTO stashes (name, description, is_active, created_at, updated_at)
-                    VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-                    """,
+                    queries.INSERT_STASHES,
                     (clean_name, clean_desc, 1 if make_active else 0),
                 )
                 stash_id = cur.lastrowid
-                row = c.execute("SELECT * FROM stashes WHERE id = ?;", (stash_id,)).fetchone()
+                row = c.execute(queries.SELECT_STASHES_BY_ID, (stash_id,)).fetchone()
 
                 data = dict(row)
                 data["is_active"] = bool(data["is_active"])
@@ -236,7 +230,7 @@ class StashService:
         """Resolves full metadata, resolved titles, creator info, thumbnails, and sizes for a stash."""
 
         def _execute(c: sqlite3.Connection) -> Optional[Dict[str, Any]]:
-            stash_row = c.execute("SELECT * FROM stashes WHERE id = ?;", (stash_id,)).fetchone()
+            stash_row = c.execute(queries.SELECT_STASHES_BY_ID, (stash_id,)).fetchone()
             if not stash_row:
                 return None
 
@@ -378,16 +372,16 @@ class StashService:
 
         def _execute(c: sqlite3.Connection) -> Dict[str, Any]:
             with c:
-                exists = c.execute("SELECT id FROM stashes WHERE id = ?;", (stash_id,)).fetchone()
+                exists = c.execute(queries.SELECT_STASHES_ID_BY_ID, (stash_id,)).fetchone()
                 if not exists:
                     raise ValueError(f"Stash #{stash_id} does not exist.")
 
-                c.execute("UPDATE stashes SET is_active = 0 WHERE is_active = 1;")
+                c.execute(queries.UPDATE_STASHES_IS_ACTIVE_BY_IS_ACTIVE)
                 c.execute(
-                    "UPDATE stashes SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?;",
+                    queries.UPDATE_STASHES_IS_ACTIVE_BY_ID,
                     (stash_id,),
                 )
-                row = c.execute("SELECT * FROM stashes WHERE id = ?;", (stash_id,)).fetchone()
+                row = c.execute(queries.SELECT_STASHES_BY_ID, (stash_id,)).fetchone()
                 data = dict(row)
                 data["is_active"] = True
                 return data
@@ -444,11 +438,11 @@ class StashService:
 
         def _execute(c: sqlite3.Connection) -> bool:
             with c:
-                exists = c.execute("SELECT id FROM stashes WHERE id = ?;", (stash_id,)).fetchone()
+                exists = c.execute(queries.SELECT_STASHES_ID_BY_ID, (stash_id,)).fetchone()
                 if not exists:
                     return False
 
-                c.execute("DELETE FROM stashes WHERE id = ?;", (stash_id,))
+                c.execute(queries.DELETE_STASHES_BY_ID, (stash_id,))
                 return True
 
         if conn:
@@ -483,27 +477,27 @@ class StashService:
         clean_notes = (notes or "").strip()
 
         def _execute(c: sqlite3.Connection) -> Dict[str, Any]:
-            stash = c.execute("SELECT id, name FROM stashes WHERE id = ?;", (stash_id,)).fetchone()
+            stash = c.execute(queries.SELECT_STASHES_BY_ID_V2, (stash_id,)).fetchone()
             if not stash:
                 raise ValueError(f"Stash #{stash_id} does not exist.")
 
             # Validate foreign reference existence
-            model = c.execute("SELECT id FROM collections WHERE id = ? AND is_active = 1;", (model_id,)).fetchone()
+            model = c.execute(queries.SELECT_COLLECTIONS_ID_BY_ID, (model_id,)).fetchone()
             if not model:
                 raise ValueError(f"Model #{model_id} does not exist in library.")
 
             if file_id is not None:
-                file_row = c.execute("SELECT file_id FROM model_files WHERE file_id = ?;", (file_id,)).fetchone()
+                file_row = c.execute(queries.SELECT_MODEL_FILES_FILE_ID_BY_FILE_ID, (file_id,)).fetchone()
                 if not file_row:
                     raise ValueError(f"File #{file_id} does not exist in library.")
 
             if submodel_id is not None:
-                sm_row = c.execute("SELECT id FROM file_archive_submodels WHERE id = ?;", (submodel_id,)).fetchone()
+                sm_row = c.execute(queries.SELECT_FILE_ARCHIVE_SUBMODELS_ID_BY_ID, (submodel_id,)).fetchone()
                 if not sm_row:
                     raise ValueError(f"Submodel #{submodel_id} does not exist.")
 
             if archive_member_id is not None:
-                mem_row = c.execute("SELECT id FROM file_archive_members WHERE id = ?;", (archive_member_id,)).fetchone()
+                mem_row = c.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS_ID_BY_ID, (archive_member_id,)).fetchone()
                 if not mem_row:
                     raise ValueError(f"Archive member #{archive_member_id} does not exist.")
 
@@ -520,15 +514,7 @@ class StashService:
 
             # Duplicate check
             existing = c.execute(
-                """
-                SELECT id FROM stash_items
-                WHERE stash_id = ?
-                  AND item_type = ?
-                  AND model_id = ?
-                  AND COALESCE(file_id, 0) = ?
-                  AND COALESCE(submodel_id, 0) = ?
-                  AND COALESCE(archive_member_id, 0) = ?;
-                """,
+                queries.SELECT_STASH_ITEMS_ID_BY_STASH_ID,
                 (
                     stash_id,
                     clean_type,
@@ -552,18 +538,13 @@ class StashService:
 
             with c:
                 cur = c.execute(
-                    """
-                    INSERT INTO stash_items (
-                        stash_id, item_type, model_id, file_id, submodel_id,
-                        archive_member_id, notes, added_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
-                    """,
+                    queries.INSERT_STASH_ITEMS,
                     (stash_id, clean_type, model_id, file_id, submodel_id, archive_member_id, clean_notes),
                 )
                 item_id = cur.lastrowid
-                c.execute("UPDATE stashes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?;", (stash_id,))
+                c.execute(queries.UPDATE_STASHES_UPDATED_AT_BY_ID, (stash_id,))
 
-                row = c.execute("SELECT * FROM stash_items WHERE id = ?;", (item_id,)).fetchone()
+                row = c.execute(queries.SELECT_STASH_ITEMS_BY_ID, (item_id,)).fetchone()
                 data = dict(row)
                 data["item_id"] = item_id
                 data["stash_name"] = stash["name"]
@@ -584,14 +565,14 @@ class StashService:
         def _execute(c: sqlite3.Connection) -> bool:
             with c:
                 row = c.execute(
-                    "SELECT stash_id FROM stash_items WHERE id = ?;", (stash_item_id,)
+                    queries.SELECT_STASH_ITEMS_STASH_ID_BY_ID, (stash_item_id,)
                 ).fetchone()
                 if not row:
                     return False
 
                 sid = row["stash_id"]
-                c.execute("DELETE FROM stash_items WHERE id = ?;", (stash_item_id,))
-                c.execute("UPDATE stashes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?;", (sid,))
+                c.execute(queries.DELETE_STASH_ITEMS_BY_ID, (stash_item_id,))
+                c.execute(queries.UPDATE_STASHES_UPDATED_AT_BY_ID, (sid,))
                 return True
 
         if conn:
@@ -608,7 +589,7 @@ class StashService:
         """Atomically adds multiple entire models to a stash manifest, skipping un-downloaded items."""
 
         def _execute(c: sqlite3.Connection) -> Dict[str, Any]:
-            stash = c.execute("SELECT id, name FROM stashes WHERE id = ?;", (stash_id,)).fetchone()
+            stash = c.execute(queries.SELECT_STASHES_BY_ID_V2, (stash_id,)).fetchone()
             if not stash:
                 raise ValueError(f"Stash #{stash_id} does not exist.")
 
@@ -671,16 +652,13 @@ class StashService:
             with c:
                 for mid in added_models:
                     c.execute(
-                        """
-                        INSERT INTO stash_items (stash_id, item_type, model_id, added_at)
-                        VALUES (?, 'model', ?, CURRENT_TIMESTAMP);
-                        """,
+                        queries.INSERT_STASH_ITEMS_V2,
                         (stash_id, mid),
                     )
                     added += 1
 
                 if added > 0:
-                    c.execute("UPDATE stashes SET updated_at = CURRENT_TIMESTAMP WHERE id = ?;", (stash_id,))
+                    c.execute(queries.UPDATE_STASHES_UPDATED_AT_BY_ID, (stash_id,))
 
             return {
                 "success": True,

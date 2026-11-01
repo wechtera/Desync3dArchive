@@ -22,9 +22,9 @@ from desync_archival.services import (
     audit,
     auth_service,
     catalog_browse,
-    jobs,
     image_worker,
     inactive_log,
+    jobs,
     library_review,
     secret_store,
 )
@@ -123,9 +123,9 @@ def _bg_calculate_library_telemetry(db_path: Path, library_id: int, lib_path: Pa
         total_files, total_bytes = _fast_dir_stats(lib_path)
 
         conn = sqlite3.connect(str(db_path), timeout=45.0)
-        conn.execute(queries.BG_CALCULATE_LIBRARY_TELEMETRY_1)
+        conn.execute(queries.PRAGMA_ROW)
         with conn:
-            conn.execute(queries.BG_CALCULATE_LIBRARY_TELEMETRY_2, (total_bytes, total_files, library_id))
+            conn.execute(queries.UPDATE_EXTERNAL_LIBRARIES_DISK_BYTES_BY_ID, (total_bytes, total_files, library_id))
         conn.close()
 
         log_layer("storage", logging.INFO, f"Background disk usage scan completed for Library #{library_id}: {format_bytes(total_bytes)} across {total_files:,} files.")
@@ -199,7 +199,7 @@ def handle_get_settings(
     """Retrieves all key-value configuration pairs from app_settings."""
     try:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(queries.GET_SETTINGS_1).fetchall()
+        rows = conn.execute(queries.SELECT_APP_SETTINGS).fetchall()
         settings = {r["key"]: r["value"] for r in rows} if rows else {}
     except Exception:
         settings = {}
@@ -258,7 +258,7 @@ def handle_post_settings(
     with conn:
         for k, v in data.items():
             if k not in secret_store.KEYS:
-                conn.execute(queries.POST_SETTINGS_1, (str(k), str(v) if v is not None else ""))
+                conn.execute(queries.INSERT_APP_SETTINGS, (str(k), str(v) if v is not None else ""))
 
     if download_manager and hasattr(download_manager, "_load_settings"):
         download_manager._load_settings()
@@ -283,7 +283,7 @@ def handle_get_external_libraries(
     formatted disk usage, model counts, and scan timestamps.
     """
     conn.row_factory = sqlite3.Row
-    rows = conn.execute(queries.GET_EXTERNAL_LIBRARIES_1).fetchall()
+    rows = conn.execute(queries.SELECT_EXTERNAL_LIBRARIES_BY_IS_ACTIVE).fetchall()
 
     libraries = []
     for r in rows:
@@ -342,15 +342,15 @@ def handle_post_external_library(
     default_creator = str(data.get("default_creator", "")).strip() or lib_path.name
 
     with conn:
-        if not conn.execute(queries.POST_EXTERNAL_LIBRARY_1, (name, default_creator, str(lib_path))).rowcount:
+        if not conn.execute(queries.UPDATE_EXTERNAL_LIBRARIES_NAME_BY_PATH, (name, default_creator, str(lib_path))).rowcount:
             conn.execute(queries.POST_EXTERNAL_LIBRARY_1B, (name, str(lib_path), default_creator))
-        row = conn.execute(queries.POST_EXTERNAL_LIBRARY_2, (str(lib_path),)).fetchone()
+        row = conn.execute(queries.SELECT_EXTERNAL_LIBRARIES_ID_BY_PATH, (str(lib_path),)).fetchone()
         lib_id = row[0] if row else None
 
     # Resolve database path for the background worker
     db_path = None
     try:
-        db_path = Path(conn.execute(queries.POST_EXTERNAL_LIBRARY_3).fetchone()[2]).resolve()
+        db_path = Path(conn.execute(queries.PRAGMA_ROW_V2).fetchone()[2]).resolve()
     except Exception:
         db_path = app_config.db_path()
 
@@ -395,7 +395,7 @@ def handle_delete_external_library(
     conn.row_factory = sqlite3.Row
     if reason := jobs.busy_reason(conn, download_manager):
         return {"success": False, "error": reason}, 409
-    row = conn.execute(queries.DELETE_EXTERNAL_LIBRARY_1, (library_id,)).fetchone()
+    row = conn.execute(queries.SELECT_EXTERNAL_LIBRARIES_BY_ID, (library_id,)).fetchone()
     if not row:
         return {"error": f"External library #{library_id} not found."}, 404
 
@@ -428,7 +428,7 @@ def handle_post_external_library_scan(
     Dispatches task_type = 'external_library_reconcile' to scan and index the external library in-place.
     """
     conn.row_factory = sqlite3.Row
-    row = conn.execute(queries.POST_EXTERNAL_LIBRARY_SCAN_1, (library_id,)).fetchone()
+    row = conn.execute(queries.SELECT_EXTERNAL_LIBRARIES_BY_ID_IS_ACTIVE, (library_id,)).fetchone()
     if not row:
         return {"error": f"External library #{library_id} not found."}, 404
 
@@ -752,7 +752,7 @@ def handle_get_directory_usage(
     settings = {}
     try:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(queries.GET_DIRECTORY_USAGE_1).fetchall()
+        rows = conn.execute(queries.SELECT_APP_SETTINGS_V2).fetchall()
         settings = {r["key"]: r["value"] for r in rows} if rows else {}
     except Exception:
         pass
@@ -814,11 +814,11 @@ def handle_get_directory_usage(
     audit_count = 0
     task_count = 0
     try:
-        tables = {r[0] for r in conn.execute(queries.GET_DIRECTORY_USAGE_2).fetchall()}
+        tables = {r[0] for r in conn.execute(queries.SELECT_SQLITE_MASTER_NAME_BY_TYPE).fetchall()}
         if "download_audit_log" in tables:
-            audit_count = conn.execute(queries.GET_DIRECTORY_USAGE_3).fetchone()[0]
+            audit_count = conn.execute(queries.COUNT_DOWNLOAD_AUDIT_LOG).fetchone()[0]
         if "pipeline_tasks" in tables:
-            task_count = conn.execute(queries.GET_DIRECTORY_USAGE_4).fetchone()[0]
+            task_count = conn.execute(queries.COUNT_PIPELINE_TASKS).fetchone()[0]
     except Exception:
         pass
 
@@ -906,8 +906,8 @@ def handle_post_logging_config(
     layers_str = ",".join(layers)
 
     with conn:
-        conn.execute(queries.POST_LOGGING_CONFIG_1, (level,))
-        conn.execute(queries.POST_LOGGING_CONFIG_2, (layers_str,))
+        conn.execute(queries.INSERT_APP_SETTINGS_V2, (level,))
+        conn.execute(queries.INSERT_APP_SETTINGS_V3, (layers_str,))
 
     set_logging_config(level, layers)
 
@@ -950,16 +950,16 @@ def handle_post_logs_purge(
     pruned_rows = 0
     try:
         with conn:
-            tables = {r[0] for r in conn.execute(queries.POST_LOGS_PURGE_1).fetchall()}
+            tables = {r[0] for r in conn.execute(queries.SELECT_SQLITE_MASTER_NAME_BY_TYPE_V2).fetchall()}
             if "download_audit_log" in tables:
                 cur1 = conn.execute(
-                    queries.POST_LOGS_PURGE_2,
+                    queries.DELETE_DOWNLOAD_AUDIT_LOG_BY_LOGGED_AT,
                     (f"-{days} days",)
                 )
                 pruned_rows += cur1.rowcount if cur1 else 0
             if "pipeline_tasks" in tables:
                 cur2 = conn.execute(
-                    queries.POST_LOGS_PURGE_3,
+                    queries.DELETE_PIPELINE_TASKS_BY_STATUS,
                     (f"-{days} days",)
                 )
                 pruned_rows += cur2.rowcount if cur2 else 0
@@ -993,7 +993,7 @@ def handle_post_stashes_purge(
     settings = {}
     try:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute(queries.POST_STASHES_PURGE_1).fetchall()
+        rows = conn.execute(queries.SELECT_APP_SETTINGS_BY_KEY).fetchall()
         settings = {r["key"]: r["value"] for r in rows}
     except Exception:
         pass

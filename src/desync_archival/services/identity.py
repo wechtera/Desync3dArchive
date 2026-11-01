@@ -7,6 +7,8 @@ ID, so code must always go through external_key to talk to MMF, and never assume
 import sqlite3
 from collections.abc import Iterable
 
+from desync_archival.db.queries import identity as queries
+
 MMF = "mmf"
 
 MODEL_COLUMNS = (
@@ -18,14 +20,14 @@ MODEL_COLUMNS = (
 
 def find_model(conn: sqlite3.Connection, source: str, external_key: object) -> int | None:
     row = conn.execute(
-        "SELECT id FROM collections WHERE source = ? AND external_key = ?;", (source, str(external_key))
+        queries.SELECT_COLLECTIONS_ID_BY_SOURCE, (source, str(external_key))
     ).fetchone()
     return row[0] if row else None
 
 
 def mmf_key(conn: sqlite3.Connection, model_id: int) -> str | None:
     """The ID MMF knows a model by, or None for anything that did not come from MMF."""
-    row = conn.execute("SELECT external_key FROM collections WHERE id = ? AND source = ?;", (model_id, MMF)).fetchone()
+    row = conn.execute(queries.SELECT_COLLECTIONS_EXTERNAL_KEY_BY_ID, (model_id, MMF)).fetchone()
     return row[0] if row else None
 
 
@@ -43,7 +45,7 @@ def save_mmf_model(conn: sqlite3.Connection, mmf_id: object, values: tuple) -> i
     )
     if updated.rowcount:
         return conn.execute(
-            "SELECT id FROM collections WHERE source = ? AND external_key = ?;", (MMF, str(mmf_id))
+            queries.SELECT_COLLECTIONS_ID_BY_SOURCE, (MMF, str(mmf_id))
         ).fetchone()[0]
 
     columns = ", ".join(MODEL_COLUMNS)
@@ -64,19 +66,13 @@ def save_mmf_files(conn: sqlite3.Connection, model_id: int, file_rows: Iterable[
     for key, filename, size_bytes, download_url, created_at in file_rows:
         key = str(key)
         kept.add(key)
-        updated = conn.execute("""
-            UPDATE model_files SET model_id = ?, filename = ?, size_bytes = ?, download_url = ?, created_at = ?
-            WHERE source = ? AND external_key = ?;
-        """, (model_id, filename, size_bytes, download_url, created_at, MMF, key))
+        updated = conn.execute(queries.UPDATE_MODEL_FILES_MODEL_ID_BY_SOURCE, (model_id, filename, size_bytes, download_url, created_at, MMF, key))
         if not updated.rowcount:
-            conn.execute("""
-                INSERT INTO model_files (model_id, filename, size_bytes, download_url, created_at, source, external_key)
-                VALUES (?, ?, ?, ?, ?, ?, ?);
-            """, (model_id, filename, size_bytes, download_url, created_at, MMF, key))
+            conn.execute(queries.INSERT_MODEL_FILES, (model_id, filename, size_bytes, download_url, created_at, MMF, key))
 
     for file_id, key in conn.execute(
-        "SELECT file_id, external_key FROM model_files WHERE model_id = ?;", (model_id,)
+        queries.SELECT_MODEL_FILES_BY_MODEL_ID, (model_id,)
     ).fetchall():
-        downloaded = conn.execute("SELECT 1 FROM downloaded_files WHERE file_id = ?;", (file_id,)).fetchone()
+        downloaded = conn.execute(queries.SELECT_DOWNLOADED_FILES_1_BY_FILE_ID, (file_id,)).fetchone()
         if key not in kept and not downloaded:
-            conn.execute("DELETE FROM model_files WHERE file_id = ?;", (file_id,))
+            conn.execute(queries.DELETE_MODEL_FILES_BY_FILE_ID, (file_id,))

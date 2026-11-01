@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Set
 
 from desync_archival import settings as app_config
+from desync_archival.db.queries import logger as queries
 
 LOGS_DIR = app_config.logs_dir()
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -253,7 +254,7 @@ def init_logging_from_db(db_path: Path):
     try:
         with sqlite3.connect(str(db_path)) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT key, value FROM app_settings WHERE key IN ('log_level', 'log_layers');").fetchall()
+            rows = conn.execute(queries.SELECT_APP_SETTINGS_BY_KEY).fetchall()
             settings = {r["key"]: r["value"] for r in rows}
 
             level = settings.get("log_level", "INFO")

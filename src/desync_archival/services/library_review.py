@@ -9,6 +9,7 @@ import json
 import sqlite3
 from typing import Any
 
+from desync_archival.db.queries import library_review as queries
 from desync_archival.services import model_resolver
 
 PROPOSED = "proposed"
@@ -45,7 +46,7 @@ def _within(path: str, held: set[str]) -> bool:
 
 def _tree(conn: sqlite3.Connection, library_id: int, release: str) -> dict[str, list[str]] | None:
     row = conn.execute(
-        "SELECT folders_json, files_json FROM library_release_trees WHERE library_id = ? AND release_name = ?;",
+        queries.SELECT_LIBRARY_RELEASE_TREES_BY_LIBRARY_ID,
         (library_id, release),
     ).fetchone()
     return {"folders": json.loads(row[0]), "files": json.loads(row[1])} if row else None
@@ -54,12 +55,12 @@ def _tree(conn: sqlite3.Connection, library_id: int, release: str) -> dict[str, 
 def save_tree(conn: sqlite3.Connection, library_id: int, run_id: int, release: str, tree: dict[str, list[str]]) -> None:
     values = (run_id, json.dumps(tree["folders"]), json.dumps(tree["files"]), library_id, release)
     updated = conn.execute(
-        "UPDATE library_release_trees SET run_id = ?, folders_json = ?, files_json = ? WHERE library_id = ? AND release_name = ?;",
+        queries.UPDATE_LIBRARY_RELEASE_TREES_RUN_ID_BY_LIBRARY_ID,
         values,
     )
     if not updated.rowcount:
         conn.execute(
-            "INSERT INTO library_release_trees (run_id, folders_json, files_json, library_id, release_name) VALUES (?, ?, ?, ?, ?);",
+            queries.INSERT_LIBRARY_RELEASE_TREES,
             values,
         )
 
@@ -68,20 +69,19 @@ def _saved(conn: sqlite3.Connection, library_id: int) -> dict[str, dict[str, Any
     return {
         row[0]: {"cards": json.loads(row[1]), "reviewed": bool(row[2])}
         for row in conn.execute(
-            "SELECT release_name, cards_json, reviewed FROM library_release_reviews WHERE library_id = ?;", (library_id,)
+            queries.SELECT_LIBRARY_RELEASE_REVIEWS_BY_LIBRARY_ID, (library_id,)
         ).fetchall()
     }
 
 
 def _store(conn: sqlite3.Connection, library_id: int, release: str, cards: list[dict], reviewed: bool) -> None:
     updated = conn.execute(
-        "UPDATE library_release_reviews SET cards_json = ?, reviewed = ?, updated_at = CURRENT_TIMESTAMP"
-        " WHERE library_id = ? AND release_name = ?;",
+        queries.UPDATE_LIBRARY_RELEASE_REVIEWS_CARDS_JSON_BY_LIBRARY_ID,
         (json.dumps(cards), int(reviewed), library_id, release),
     )
     if not updated.rowcount:
         conn.execute(
-            "INSERT INTO library_release_reviews (library_id, release_name, cards_json, reviewed) VALUES (?, ?, ?, ?);",
+            queries.INSERT_LIBRARY_RELEASE_REVIEWS,
             (library_id, release, json.dumps(cards), int(reviewed)),
         )
 
@@ -91,18 +91,17 @@ def _known_paths(conn: sqlite3.Connection, library_id: int, release: str) -> tup
     prefix = f"{release}/"
     keys = {
         row[0].split("/", 1)[1] for row in conn.execute(
-            "SELECT external_key FROM collections WHERE library_id = ? AND external_key IS NOT NULL;", (library_id,)
+            queries.SELECT_COLLECTIONS_EXTERNAL_KEY_BY_LIBRARY_ID, (library_id,)
         ).fetchall()
     }
     held = {
         row[0] for row in conn.execute(
-            "SELECT f.rel_path FROM library_model_folders f JOIN collections m ON m.id = f.model_id"
-            " WHERE m.library_id = ? AND f.excluded = 0;", (library_id,)
+            queries.SELECT_LIBRARY_MODEL_FOLDERS_REL_PATH_BY_LIBRARY_ID, (library_id,)
         ).fetchall()
     }
     # Approved cards count as taken too, even before the add reaches them.
     for rel_path, folders in conn.execute(
-        "SELECT rel_path, folders_json FROM library_candidates WHERE library_id = ? AND release_name = ? AND status IN (?, ?);",
+        queries.SELECT_LIBRARY_CANDIDATES_BY_LIBRARY_ID,
         (library_id, release, APPROVED, ADDED),
     ).fetchall():
         keys.add(rel_path)
@@ -112,7 +111,7 @@ def _known_paths(conn: sqlite3.Connection, library_id: int, release: str) -> tup
 
 def _settled(conn: sqlite3.Connection, library_id: int, release: str) -> dict[str, str]:
     return dict(conn.execute(
-        "SELECT rel_path, status FROM library_candidates WHERE library_id = ? AND release_name = ? AND status IN (?, ?);",
+        queries.SELECT_LIBRARY_CANDIDATES_BY_LIBRARY_ID_RELEASE_NAME,
         (library_id, release, APPROVED, ADDED),
     ).fetchall())
 
@@ -133,7 +132,7 @@ def write_candidates(
     keys, held = _known_paths(conn, library_id, release)
     carved = carve({c["key"]: c["paths"] for c in cards}, keys | held)
     conn.execute(
-        "DELETE FROM library_candidates WHERE library_id = ? AND release_name = ? AND status IN (?, ?);",
+        queries.DELETE_LIBRARY_CANDIDATES_BY_LIBRARY_ID,
         (library_id, release, PROPOSED, SKIPPED),
     )
     for card in cards:
@@ -143,8 +142,7 @@ def write_candidates(
         # Folders first: the first member becomes the model's vault path, and art and renders look there.
         paths = sorted(card["paths"], key=lambda p: (p in files, model_resolver.primary_folder_rank(p)))
         conn.execute(
-            "INSERT INTO library_candidates (library_id, run_id, rel_path, release_name, name, category, folders_json,"
-            " exclude_json, status, group_name, tags_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+            queries.INSERT_LIBRARY_CANDIDATES,
             (library_id, run_id, rel_path, release, card["name"], card["category"], json.dumps(paths),
              json.dumps(carved[card["key"]]), SKIPPED if card.get("skip") else PROPOSED,
              card.get("group") or "", json.dumps(card.get("tags") or [])),
@@ -182,8 +180,7 @@ def _clean(cards: list[dict], paths: set[str], locked: set[str], release: str, t
 
 def _latest_run(conn: sqlite3.Connection, library_id: int) -> tuple[int, dict[str, Any]] | None:
     row = conn.execute(
-        "SELECT id, report_json FROM library_scan_runs WHERE library_id = ? AND mode = 'preview' AND status = 'completed'"
-        " ORDER BY id DESC LIMIT 1;", (library_id,),
+        queries.SELECT_LIBRARY_SCAN_RUNS_BY_LIBRARY_ID, (library_id,),
     ).fetchone()
     return (row[0], json.loads(row[1])) if row and row[1] else None
 
@@ -248,7 +245,7 @@ def reset(conn: sqlite3.Connection, library_id: int, release: str) -> dict[str, 
     cards = _code_cards(latest[1], release)
     with conn:
         conn.execute(
-            "DELETE FROM library_release_reviews WHERE library_id = ? AND release_name = ?;", (library_id, release)
+            queries.DELETE_LIBRARY_RELEASE_REVIEWS_BY_LIBRARY_ID, (library_id, release)
         )
         write_candidates(conn, library_id, latest[0], release, cards, set(tree["files"]))
     return {"success": True, "cards": len(cards)}
@@ -316,13 +313,13 @@ def approve_ready(conn: sqlite3.Connection, library_id: int, hold_releases: list
     with conn:
         approved = sum(
             conn.execute(
-                "UPDATE library_candidates SET status = ? WHERE library_id = ? AND rel_path = ? AND status = ?;",
+                queries.UPDATE_LIBRARY_CANDIDATES_STATUS_BY_LIBRARY_ID,
                 (APPROVED, library_id, rel_path, PROPOSED),
             ).rowcount
             for rel_path in ready
         )
     waiting = conn.execute(
-        "SELECT COUNT(*) FROM library_candidates WHERE library_id = ? AND status = ?;", (library_id, PROPOSED)
+        queries.COUNT_LIBRARY_CANDIDATES_BY_LIBRARY_ID, (library_id, PROPOSED)
     ).fetchone()[0]
     return {"approved": approved, "waiting": waiting}
 
@@ -331,7 +328,7 @@ def with_reviews(conn: sqlite3.Connection, library_id: int, report: dict[str, An
     """The report as the human left it. Saved cards replace the resolver's guess for that release."""
     saved = _saved(conn, library_id)
     settled = {r[0] for r in conn.execute(
-        "SELECT rel_path FROM library_candidates WHERE library_id = ? AND status IN (?, ?);", (library_id, APPROVED, ADDED)
+        queries.SELECT_LIBRARY_CANDIDATES_REL_PATH_BY_LIBRARY_ID, (library_id, APPROVED, ADDED)
     ).fetchall()}
     for entry in report.get("releases", []):
         review = saved.get(entry["name"])

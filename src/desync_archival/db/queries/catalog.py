@@ -1,6 +1,6 @@
 """Raw SQL for the catalog API routes. Names with braces take format() values, never user input."""
 
-GET_METRICS_1 = """
+SELECT_COLLECTIONS_COUNT_BY_X = """
         SELECT 
             (SELECT COUNT(*) FROM collections WHERE {VALID_MODEL_RAW}) AS total_models,
             (SELECT COUNT(*) FROM collections WHERE is_bonus = 1 AND {VALID_MODEL_RAW}) AS total_bonus_models,
@@ -15,7 +15,7 @@ GET_METRICS_1 = """
             (SELECT COUNT(*) FROM releases WHERE is_likely_bundle = 1 AND {VALID_RELEASE_COND}) AS likely_bundles;
     """
 
-GET_CREATORS_1 = """
+SELECT_COLLECTIONS_BY_X = """
         SELECT 
             designer_name,
             designer_id,
@@ -31,9 +31,9 @@ GET_CREATORS_1 = """
         ORDER BY total_models DESC;
     """
 
-GET_RELEASES_1 = "SELECT COUNT(*) FROM releases r {where_clause};"
+COUNT_RELEASES = "SELECT COUNT(*) FROM releases r {where_clause};"
 
-GET_RELEASES_2 = """
+SELECT_COLLECTIONS_BY_DESIGNER_NAME = """
         SELECT r.*,
             (SELECT m.id FROM collections m 
              WHERE m.designer_name = r.designer_name 
@@ -62,7 +62,7 @@ GET_RELEASES_2 = """
         LIMIT ? OFFSET ?;
     """
 
-GET_MODELS_1 = """
+SELECT_MODEL_FILES_BY_MODEL_ID = """
         SELECT m.id, m.name, m.designer_name, m.designer_username, m.primary_category, m.release_month,
                m.published_at, m.is_bonus, m.pre_supported, m.primary_image_url, m.url,
                (SELECT COUNT(*) FROM model_files f WHERE f.model_id = m.id) AS file_count,
@@ -84,20 +84,20 @@ GET_MODELS_1 = """
         WHERE {VALID_MODEL_M}
     """
 
-GET_MODELS_2 = """
+COUNT_COLLECTIONS_BY_MODEL_ID = """
         SELECT COUNT(*)
         FROM collections m
         LEFT JOIN download_jobs j ON j.id = (SELECT MAX(id) FROM download_jobs WHERE model_id = m.id)
         WHERE {VALID_MODEL_M}
     """
 
-GET_MODEL_DETAIL_1 = "SELECT * FROM collections WHERE id = ? AND {VALID_MODEL_RAW};"
+SELECT_COLLECTIONS_BY_ID = "SELECT * FROM collections WHERE id = ? AND {VALID_MODEL_RAW};"
 
-GET_MODEL_DETAIL_2 = "SELECT tag FROM collection_tags WHERE model_id = ? ORDER BY tag ASC;"
+SELECT_COLLECTION_TAGS_TAG_BY_MODEL_ID = "SELECT tag FROM collection_tags WHERE model_id = ? ORDER BY tag ASC;"
 
-GET_MODEL_DETAIL_3 = "SELECT name FROM sqlite_master WHERE type='table' AND name='downloaded_files';"
+SELECT_SQLITE_MASTER_NAME_BY_TYPE = "SELECT name FROM sqlite_master WHERE type='table' AND name='downloaded_files';"
 
-GET_MODEL_DETAIL_4 = """
+SELECT_MODEL_FILES_BY_MODEL_ID_V2 = """
                 SELECT 
                     f.file_id, f.filename, f.size_bytes, f.download_url, f.created_at,
                     df.storage_tier, df.local_relative_path, df.actual_bytes,
@@ -108,7 +108,7 @@ GET_MODEL_DETAIL_4 = """
                 ORDER BY f.size_bytes DESC, f.filename ASC;
             """
 
-GET_MODEL_DETAIL_5 = """
+SELECT_MODEL_FILES_BY_MODEL_ID_V3 = """
                 SELECT file_id, filename, size_bytes, download_url, created_at,
                        NULL AS storage_tier, NULL AS local_relative_path, NULL AS actual_bytes,
                        0 AS is_downloaded
@@ -117,13 +117,13 @@ GET_MODEL_DETAIL_5 = """
                 ORDER BY size_bytes DESC, filename ASC;
             """
 
-GET_MODEL_DETAIL_6 = "SELECT name FROM sqlite_master WHERE type='table' AND name='download_jobs';"
+SELECT_SQLITE_MASTER_NAME_BY_TYPE_V2 = "SELECT name FROM sqlite_master WHERE type='table' AND name='download_jobs';"
 
-GET_MODEL_DETAIL_7 = "SELECT status, downloaded_files, downloaded_bytes, total_files, total_bytes, enqueued_at, completed_at, error_message FROM download_jobs WHERE model_id = ? ORDER BY id DESC LIMIT 1;"
+SELECT_DOWNLOAD_JOBS_BY_MODEL_ID = "SELECT status, downloaded_files, downloaded_bytes, total_files, total_bytes, enqueued_at, completed_at, error_message FROM download_jobs WHERE model_id = ? ORDER BY id DESC LIMIT 1;"
 
-GET_MODEL_FILES_1 = "SELECT id, name, designer_name, url, primary_image_url FROM collections WHERE id = ? AND {VALID_MODEL_RAW};"
+SELECT_COLLECTIONS_BY_ID_V2 = "SELECT id, name, designer_name, url, primary_image_url FROM collections WHERE id = ? AND {VALID_MODEL_RAW};"
 
-GET_MODEL_FILES_2 = """
+SELECT_MODEL_FILES_BY_MODEL_ID_V4 = """
         SELECT 
             f.file_id, f.filename, f.size_bytes, f.download_url, f.created_at,
             df.local_relative_path, df.actual_bytes,
@@ -134,13 +134,13 @@ GET_MODEL_FILES_2 = """
         ORDER BY f.size_bytes DESC, f.filename ASC;
     """
 
-POST_MODEL_RENDER_VIEW_1 = """
+SELECT_COLLECTIONS_BY_ID_V3 = """
         SELECT id, name, designer_name, vault_path, primary_image_url,
                {source_expr}
         FROM collections WHERE id = ?;
     """
 
-POST_MODEL_RENDER_VIEW_2 = """
+SELECT_DOWNLOADED_FILES_BY_MODEL_ID = """
                 SELECT df.vault_path, df.staging_path
                 FROM downloaded_files df
                 WHERE df.model_id = ?
@@ -148,4 +148,4 @@ POST_MODEL_RENDER_VIEW_2 = """
                 ORDER BY df.actual_bytes DESC;
             """
 
-POST_MODEL_RENDER_VIEW_3 = "UPDATE collections SET primary_image_url = ? WHERE id = ?;"
+UPDATE_COLLECTIONS_PRIMARY_IMAGE_URL_BY_ID = "UPDATE collections SET primary_image_url = ? WHERE id = ?;"

@@ -15,7 +15,7 @@ from desync_archival.services.task_manager import TaskManager
 
 
 def _get_managers(conn: sqlite3.Connection) -> tuple[VaultReconciler, TaskManager]:
-    db_path = Path(conn.execute(queries.GET_MANAGERS_1).fetchone()[2])
+    db_path = Path(conn.execute(queries.PRAGMA_ROW).fetchone()[2])
     return VaultReconciler(db_path), TaskManager(db_path)
 
 

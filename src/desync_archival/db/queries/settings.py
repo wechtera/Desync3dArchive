@@ -1,22 +1,22 @@
 """Raw SQL for the settings API routes. Names with braces take format() values, never user input."""
 
-BG_CALCULATE_LIBRARY_TELEMETRY_1 = "PRAGMA busy_timeout = 45000;"
+PRAGMA_ROW = "PRAGMA busy_timeout = 45000;"
 
-BG_CALCULATE_LIBRARY_TELEMETRY_2 = """
+UPDATE_EXTERNAL_LIBRARIES_DISK_BYTES_BY_ID = """
                 UPDATE external_libraries
                 SET disk_bytes = ?, total_files = ?
                 WHERE id = ?;
             """
 
-GET_SETTINGS_1 = "SELECT key, value FROM app_settings;"
+SELECT_APP_SETTINGS = "SELECT key, value FROM app_settings;"
 
-POST_SETTINGS_1 = """
+INSERT_APP_SETTINGS = """
                 INSERT INTO app_settings (key, value, updated_at)
                 VALUES (?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP;
             """
 
-GET_EXTERNAL_LIBRARIES_1 = """
+SELECT_EXTERNAL_LIBRARIES_BY_IS_ACTIVE = """
         SELECT id, name, path, default_creator, disk_bytes, total_models,
                total_files, last_scanned_at, created_at
         FROM external_libraries
@@ -24,42 +24,42 @@ GET_EXTERNAL_LIBRARIES_1 = """
         ORDER BY id ASC;
     """
 
-POST_EXTERNAL_LIBRARY_1 = """
+UPDATE_EXTERNAL_LIBRARIES_NAME_BY_PATH = """
             UPDATE external_libraries SET name = ?, default_creator = ?, is_active = 1 WHERE path = ?;
         """
 
 POST_EXTERNAL_LIBRARY_1B = "INSERT INTO external_libraries (name, path, default_creator) VALUES (?, ?, ?);"
 
-POST_EXTERNAL_LIBRARY_2 = "SELECT id FROM external_libraries WHERE path = ?;"
+SELECT_EXTERNAL_LIBRARIES_ID_BY_PATH = "SELECT id FROM external_libraries WHERE path = ?;"
 
-POST_EXTERNAL_LIBRARY_3 = "PRAGMA database_list;"
+PRAGMA_ROW_V2 = "PRAGMA database_list;"
 
-DELETE_EXTERNAL_LIBRARY_1 = "SELECT id, name, path FROM external_libraries WHERE id = ? AND is_active = 1;"
+SELECT_EXTERNAL_LIBRARIES_BY_ID = "SELECT id, name, path FROM external_libraries WHERE id = ? AND is_active = 1;"
 
-POST_EXTERNAL_LIBRARY_SCAN_1 = "SELECT id, name, path, default_creator FROM external_libraries WHERE id = ? AND is_active = 1;"
+SELECT_EXTERNAL_LIBRARIES_BY_ID_IS_ACTIVE = "SELECT id, name, path, default_creator FROM external_libraries WHERE id = ? AND is_active = 1;"
 
-GET_DIRECTORY_USAGE_1 = "SELECT key, value FROM app_settings;"
+SELECT_APP_SETTINGS_V2 = "SELECT key, value FROM app_settings;"
 
-GET_DIRECTORY_USAGE_2 = "SELECT name FROM sqlite_master WHERE type='table';"
+SELECT_SQLITE_MASTER_NAME_BY_TYPE = "SELECT name FROM sqlite_master WHERE type='table';"
 
-GET_DIRECTORY_USAGE_3 = "SELECT COUNT(*) FROM download_audit_log;"
+COUNT_DOWNLOAD_AUDIT_LOG = "SELECT COUNT(*) FROM download_audit_log;"
 
-GET_DIRECTORY_USAGE_4 = "SELECT COUNT(*) FROM pipeline_tasks;"
+COUNT_PIPELINE_TASKS = "SELECT COUNT(*) FROM pipeline_tasks;"
 
-POST_LOGGING_CONFIG_1 = """
+INSERT_APP_SETTINGS_V2 = """
             INSERT INTO app_settings (key, value, updated_at) VALUES ('log_level', ?, CURRENT_TIMESTAMP)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP;
         """
 
-POST_LOGGING_CONFIG_2 = """
+INSERT_APP_SETTINGS_V3 = """
             INSERT INTO app_settings (key, value, updated_at) VALUES ('log_layers', ?, CURRENT_TIMESTAMP)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP;
         """
 
-POST_LOGS_PURGE_1 = "SELECT name FROM sqlite_master WHERE type='table';"
+SELECT_SQLITE_MASTER_NAME_BY_TYPE_V2 = "SELECT name FROM sqlite_master WHERE type='table';"
 
-POST_LOGS_PURGE_2 = "DELETE FROM download_audit_log WHERE logged_at < datetime('now', ?);"
+DELETE_DOWNLOAD_AUDIT_LOG_BY_LOGGED_AT = "DELETE FROM download_audit_log WHERE logged_at < datetime('now', ?);"
 
-POST_LOGS_PURGE_3 = "DELETE FROM pipeline_tasks WHERE status IN ('completed', 'failed', 'cancelled') AND completed_at < datetime('now', ?);"
+DELETE_PIPELINE_TASKS_BY_STATUS = "DELETE FROM pipeline_tasks WHERE status IN ('completed', 'failed', 'cancelled') AND completed_at < datetime('now', ?);"
 
-POST_STASHES_PURGE_1 = "SELECT key, value FROM app_settings WHERE key = 'stash_download_path';"
+SELECT_APP_SETTINGS_BY_KEY = "SELECT key, value FROM app_settings WHERE key = 'stash_download_path';"

@@ -38,7 +38,7 @@ def handle_get_downloads_history(
         where_clause += " AND dj.status = ?"
         args.append(status)
 
-    count_query = queries.GET_DOWNLOADS_HISTORY_1.format(where_clause=where_clause)
+    count_query = queries.COUNT_DOWNLOAD_JOBS.format(where_clause=where_clause)
     total_count = conn.execute(count_query, args).fetchone()[0]
 
     order_by = " ORDER BY dj.enqueued_at DESC"
@@ -49,7 +49,7 @@ def handle_get_downloads_history(
     elif sort == "completed_asc":
         order_by = " ORDER BY dj.completed_at ASC NULLS LAST, dj.id ASC"
 
-    query = queries.GET_DOWNLOADS_HISTORY_2.format(order_by=order_by, where_clause=where_clause)
+    query = queries.SELECT_DOWNLOAD_JOBS.format(order_by=order_by, where_clause=where_clause)
     rows = conn.execute(query, args + [limit, offset]).fetchall()
 
     history = []
@@ -81,7 +81,7 @@ def handle_post_downloads_queue(
         if len(parts) == 2:
             designer, month = parts
             rows = conn.execute(
-                queries.POST_DOWNLOADS_QUEUE_1,
+                queries.SELECT_COLLECTIONS_ID_BY_DESIGNER_NAME,
                 (designer, month),
             ).fetchall()
             model_ids = [r[0] for r in rows]
@@ -98,14 +98,14 @@ def handle_post_downloads_queue(
                 continue
 
             file_stats = conn.execute(
-                queries.POST_DOWNLOADS_QUEUE_2,
+                queries.COUNT_MODEL_FILES_BY_MODEL_ID,
                 (mid_int,),
             ).fetchone()
             total_files = file_stats[0] or 0
             total_bytes = file_stats[1] or 0
 
-            if not conn.execute(queries.POST_DOWNLOADS_QUEUE_3, (total_files, total_bytes, mid_int)).rowcount:
-                conn.execute(queries.POST_DOWNLOADS_QUEUE_4, (mid_int, total_files, total_bytes))
+            if not conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_MODEL_ID, (total_files, total_bytes, mid_int)).rowcount:
+                conn.execute(queries.INSERT_DOWNLOAD_JOBS, (mid_int, total_files, total_bytes))
             queued_count += 1
 
     if download_manager:
@@ -129,9 +129,9 @@ def handle_delete_downloads_queue(
 
     with conn:
         if purge_incomplete:
-            conn.execute(queries.DELETE_DOWNLOADS_QUEUE_1)
+            conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS)
         elif clear_status:
-            conn.execute(queries.DELETE_DOWNLOADS_QUEUE_2, (clear_status,))
+            conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS_V2, (clear_status,))
         elif model_ids:
             clean_ids = [int(m) for m in model_ids if str(m).isdigit()]
             if clean_ids:
@@ -163,11 +163,11 @@ def handle_post_downloads_control(
         download_manager.resume()
     elif action == "retry_failed":
         with conn:
-            conn.execute(queries.POST_DOWNLOADS_CONTROL_1)
+            conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_STATUS)
         download_manager.resume()
     elif action == "purge_incomplete":
         with conn:
-            conn.execute(queries.POST_DOWNLOADS_CONTROL_2)
+            conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS_V3)
     else:
         return {"error": f"Unknown action: {action}"}, 400
 

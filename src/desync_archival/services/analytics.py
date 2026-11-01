@@ -10,6 +10,7 @@ import sqlite3
 from datetime import datetime
 from typing import Any, Optional
 
+from desync_archival.db.queries import analytics as queries
 from desync_archival.services.logger import log_layer
 
 MONTH = re.compile(r"\d{4}-\d{2}")
@@ -38,25 +39,11 @@ def run_startup_analytics(conn: sqlite3.Connection):
     """
     log_layer("sql", logging.INFO, "Starting catalog continuity calculation and monthly release clustering...")
     with conn:
-        conn.execute("""
-            UPDATE collections 
-            SET release_month = substr(published_at, 1, 7)
-            WHERE (release_month IS NULL OR release_month = '') 
-              AND published_at IS NOT NULL;
-        """)
+        conn.execute(queries.UPDATE_COLLECTIONS_RELEASE_MONTH)
 
-        conn.execute("""
-            UPDATE collections
-            SET is_bonus = 1
-            WHERE LOWER(name) LIKE '%reward%'
-               OR LOWER(name) LIKE '%bonus%'
-               OR id IN (
-                   SELECT model_id FROM collection_tags 
-                   WHERE LOWER(tag) LIKE '%reward%' OR LOWER(tag) LIKE '%bonus%'
-               );
-        """)
+        conn.execute(queries.UPDATE_COLLECTIONS_IS_BONUS_BY_LOWER)
 
-        conn.execute("DELETE FROM releases;")
+        conn.execute(queries.DELETE_RELEASES)
 
         cluster_query = """
             SELECT 
@@ -108,13 +95,7 @@ def run_startup_analytics(conn: sqlite3.Connection):
                 top_tags,
             ))
 
-        conn.executemany("""
-            INSERT INTO releases (
-                release_key, designer_name, designer_id, release_month,
-                model_count, bonus_count, total_files, total_size_bytes,
-                is_likely_bundle, sample_image_url, common_tags
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, release_rows)
+        conn.executemany(queries.INSERT_RELEASES, release_rows)
 
     log_layer("sql", logging.INFO, f"Catalog analytics populated {len(release_rows)} distinct monthly release packs.")
 
@@ -128,25 +109,15 @@ def compute_catalog_audit(conn: sqlite3.Connection, designer: Optional[str] = No
     log_layer("sql", logging.DEBUG, f"Computing continuity audit for: {designer or 'Entire Library'}")
 
     if designer:
-        rows = conn.execute("""
-            SELECT release_month, model_count, bonus_count 
-            FROM releases 
-            WHERE designer_name = ? 
-            ORDER BY release_month ASC;
-        """, (designer,)).fetchall()
+        rows = conn.execute(queries.SELECT_RELEASES_BY_DESIGNER_NAME, (designer,)).fetchall()
         bonus_row = conn.execute(
-            "SELECT COUNT(*) FROM collections WHERE designer_name = ? AND is_bonus = 1 AND is_active = 1;",
+            queries.COUNT_COLLECTIONS_BY_DESIGNER_NAME,
             (designer,)
         ).fetchone()
         total_bonus = bonus_row[0] if bonus_row else 0
     else:
-        rows = conn.execute("""
-            SELECT release_month, SUM(model_count) AS model_count, SUM(bonus_count) AS bonus_count
-            FROM releases 
-            GROUP BY release_month
-            ORDER BY release_month ASC;
-        """).fetchall()
-        bonus_row = conn.execute("SELECT COUNT(*) FROM collections WHERE is_bonus = 1 AND is_active = 1;").fetchone()
+        rows = conn.execute(queries.SELECT_RELEASES).fetchall()
+        bonus_row = conn.execute(queries.COUNT_COLLECTIONS_BY_IS_BONUS).fetchone()
         total_bonus = bonus_row[0] if bonus_row else 0
 
     if not rows:

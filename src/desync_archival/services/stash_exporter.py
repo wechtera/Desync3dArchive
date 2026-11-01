@@ -23,6 +23,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from desync_archival import external
 from desync_archival import settings as app_config
+from desync_archival.db.queries import stash_exporter as queries
 
 try:
     from desync_archival.services.logger import log_layer, logger
@@ -78,7 +79,7 @@ class StashExporter:
         return c
 
     def _get_setting(self, conn: sqlite3.Connection, key: str, default: str = "") -> str:
-        row = conn.execute("SELECT value FROM app_settings WHERE key = ?;", (key,)).fetchone()
+        row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY, (key,)).fetchone()
         return row[0] if row and row[0] is not None else default
 
     def resolve_paths(self, conn: sqlite3.Connection) -> Tuple[Path, Path, Path]:
@@ -114,12 +115,12 @@ class StashExporter:
         c = self._get_connection(conn)
         should_close = conn is None
         try:
-            stash = c.execute("SELECT id, name, description FROM stashes WHERE id = ?;", (stash_id,)).fetchone()
+            stash = c.execute(queries.SELECT_STASHES_BY_ID, (stash_id,)).fetchone()
             if not stash:
                 raise ValueError(f"Stash #{stash_id} does not exist.")
 
             stash_name = stash["name"]
-            items = c.execute("SELECT * FROM stash_items WHERE stash_id = ? ORDER BY id ASC;", (stash_id,)).fetchall()
+            items = c.execute(queries.SELECT_STASH_ITEMS_BY_STASH_ID, (stash_id,)).fetchall()
             if not items:
                 raise ValueError(f"Stash '{stash_name}' (ID #{stash_id}) has no items to export.")
 
@@ -155,7 +156,7 @@ class StashExporter:
                         progress_cb(pct, f"Extracting item {idx}/{total_items}...")
 
                     inactive = c.execute(
-                        "SELECT 1 FROM collections WHERE id = ? AND is_active = 0;", (item["model_id"],)
+                        queries.SELECT_COLLECTIONS_1_BY_ID, (item["model_id"],)
                     ).fetchone()
                     if inactive:
                         skipped_inactive += 1
@@ -235,7 +236,7 @@ class StashExporter:
         item_type = item["item_type"]
         model_id = item["model_id"]
 
-        model_row = conn.execute("SELECT id, name, designer_name, vault_path FROM collections WHERE id = ?;", (model_id,)).fetchone()
+        model_row = conn.execute(queries.SELECT_COLLECTIONS_BY_ID, (model_id,)).fetchone()
         if not model_row or not model_row["vault_path"]:
             raise ValueError(f"Model #{model_id} has no vault directory. Cannot export.")
 
@@ -271,19 +272,19 @@ class StashExporter:
         model_name: str,
     ) -> Dict[str, Any]:
         submodel_id = item["submodel_id"]
-        sm_row = conn.execute("SELECT * FROM file_archive_submodels WHERE id = ?;", (submodel_id,)).fetchone()
+        sm_row = conn.execute(queries.SELECT_FILE_ARCHIVE_SUBMODELS_BY_ID, (submodel_id,)).fetchone()
         if not sm_row:
             raise ValueError(f"Submodel #{submodel_id} not found in catalog.")
 
         submodel_name = sm_row["name"] or f"Submodel_{submodel_id}"
         file_id = sm_row["file_id"]
 
-        archive_row = conn.execute("SELECT vault_path, staging_path, storage_tier FROM downloaded_files WHERE file_id = ?;", (file_id,)).fetchone()
+        archive_row = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_FILE_ID, (file_id,)).fetchone()
         if not archive_row:
             raise ValueError(f"Parent archive for submodel #{submodel_id} not found in downloaded_files.")
 
         archive_path = self._resolve_archive_disk_path(archive_row)
-        members = conn.execute("SELECT * FROM file_archive_members WHERE submodel_id = ?;", (submodel_id,)).fetchall()
+        members = conn.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS_BY_SUBMODEL_ID, (submodel_id,)).fetchall()
 
         submodel_dir = model_dir / sanitize_folder_name(submodel_name)
         submodel_dir.mkdir(parents=True, exist_ok=True)
@@ -339,12 +340,12 @@ class StashExporter:
         model_name: str,
     ) -> Dict[str, Any]:
         member_id = item["archive_member_id"]
-        m_row = conn.execute("SELECT * FROM file_archive_members WHERE id = ?;", (member_id,)).fetchone()
+        m_row = conn.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS_BY_ID, (member_id,)).fetchone()
         if not m_row:
             raise ValueError(f"Archive member #{member_id} not found in catalog.")
 
         file_id = m_row["file_id"]
-        archive_row = conn.execute("SELECT vault_path, staging_path, storage_tier FROM downloaded_files WHERE file_id = ?;", (file_id,)).fetchone()
+        archive_row = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_FILE_ID, (file_id,)).fetchone()
         if not archive_row:
             raise ValueError(f"Parent archive for member #{member_id} not found in downloaded_files.")
 
@@ -352,7 +353,7 @@ class StashExporter:
 
         target_dir = model_dir
         if m_row["submodel_id"]:
-            sm = conn.execute("SELECT name, preview_image_path, model_id FROM file_archive_submodels WHERE id = ?;", (m_row["submodel_id"],)).fetchone()
+            sm = conn.execute(queries.SELECT_FILE_ARCHIVE_SUBMODELS_BY_ID_V2, (m_row["submodel_id"],)).fetchone()
             if sm:
                 target_dir = model_dir / sanitize_folder_name(sm["name"])
                 target_dir.mkdir(parents=True, exist_ok=True)
@@ -387,7 +388,7 @@ class StashExporter:
         model_name: str,
     ) -> Dict[str, Any]:
         file_id = item["file_id"]
-        archive_row = conn.execute("SELECT * FROM downloaded_files WHERE file_id = ?;", (file_id,)).fetchone()
+        archive_row = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_FILE_ID_V2, (file_id,)).fetchone()
         if not archive_row:
             raise ValueError(f"File #{file_id} not found in downloaded_files.")
 
@@ -431,7 +432,7 @@ class StashExporter:
         creator_name: str,
         model_name: str,
     ) -> Dict[str, Any]:
-        file_rows = conn.execute("SELECT * FROM downloaded_files WHERE model_id = ?;", (model_id,)).fetchall()
+        file_rows = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_MODEL_ID, (model_id,)).fetchall()
         if not file_rows:
             raise ValueError(f"Model #{model_id} has no downloaded files recorded.")
 

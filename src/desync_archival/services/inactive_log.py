@@ -6,6 +6,8 @@ Nothing here commits, so a record lands in the same transaction as the change it
 import sqlite3
 from typing import Any
 
+from desync_archival.db.queries import inactive_log as queries
+
 MODEL = "model"
 FILE = "file"
 
@@ -32,7 +34,7 @@ def record(
 ) -> None:
     # Safe to call on every rescan: a trigger drops repeats of an open row.
     conn.execute(
-        "INSERT INTO inactive_log (item_type, item_id, item_name, process, reason, detail) VALUES (?, ?, ?, ?, ?, ?);",
+        queries.INSERT_INACTIVE_LOG,
         (item_type, item_id, item_name, process, reason, detail),
     )
 
@@ -68,8 +70,7 @@ def query(
     ).fetchall()
     total = conn.execute(f"SELECT COUNT(*) FROM inactive_log {where};", args).fetchone()[0]
     counts = conn.execute(
-        "SELECT process, reason, COUNT(*) FROM inactive_log WHERE resolved_at IS NULL GROUP BY process, reason"
-        " ORDER BY process, reason;"
+        queries.SELECT_INACTIVE_LOG_BY_RESOLVED_AT
     ).fetchall()
     return {
         "items": [dict(zip(columns, tuple(row))) for row in rows],

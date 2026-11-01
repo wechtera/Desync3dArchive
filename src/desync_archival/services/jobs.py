@@ -7,6 +7,7 @@ turns anything still marked as in progress into a state the app can act on.
 import sqlite3
 from typing import Any
 
+from desync_archival.db.queries import jobs as queries
 from desync_archival.services.logger import logger
 
 RUNNING = "running"
@@ -33,18 +34,14 @@ def recover_interrupted(conn: sqlite3.Connection) -> dict[str, Any]:
     """Runs at startup, before any worker exists, so nothing in progress can be live."""
     with conn:
         tasks = conn.execute(
-            """
-            UPDATE pipeline_tasks
-            SET status = ?, progress_label = 'Interrupted by an app restart', completed_at = CURRENT_TIMESTAMP
-            WHERE status = ?;
-            """,
+            queries.UPDATE_PIPELINE_TASKS_STATUS_BY_STATUS,
             (INTERRUPTED, RUNNING),
         ).rowcount
         downloads = conn.execute(
-            "UPDATE download_jobs SET status = 'pending', started_at = NULL WHERE status = 'downloading';"
+            queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_STATUS
         ).rowcount
         offloads = conn.execute(
-            "UPDATE download_jobs SET status = 'staging_complete' WHERE status = 'offloading';"
+            queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_STATUS_V2
         ).rowcount
 
     result = {"tasks_interrupted": tasks, "downloads_requeued": downloads, "offloads_requeued": offloads}
@@ -56,7 +53,7 @@ def recover_interrupted(conn: sqlite3.Connection) -> dict[str, Any]:
 def busy_reason(conn, download_manager=None) -> str | None:
     """Why a destructive action must wait, or None. Job starts refuse each other on their own."""
     running = conn.execute(
-        "SELECT id, task_type FROM pipeline_tasks WHERE status = 'running' ORDER BY id DESC LIMIT 1;"
+        queries.SELECT_PIPELINE_TASKS_BY_STATUS
     ).fetchone()
     if running:
         return f"Task #{running[0]} ({running[1]}) is running. Wait for it, or cancel it, then try again."

@@ -68,7 +68,7 @@ def handle_get_metrics(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
-    counts = conn.execute(queries.GET_METRICS_1.format(VALID_MODEL_M=VALID_MODEL_M, VALID_MODEL_RAW=VALID_MODEL_RAW, VALID_RELEASE_COND=VALID_RELEASE_COND)).fetchone()
+    counts = conn.execute(queries.SELECT_COLLECTIONS_COUNT_BY_X.format(VALID_MODEL_M=VALID_MODEL_M, VALID_MODEL_RAW=VALID_MODEL_RAW, VALID_RELEASE_COND=VALID_RELEASE_COND)).fetchone()
 
     data = {
         "total_models": counts["total_models"],
@@ -104,7 +104,7 @@ def handle_get_creators(
     body: dict,
     params: dict,
 ) -> tuple[list[dict[str, Any]], int]:
-    creators = conn.execute(queries.GET_CREATORS_1.format(VALID_MODEL_M=VALID_MODEL_M)).fetchall()
+    creators = conn.execute(queries.SELECT_COLLECTIONS_BY_X.format(VALID_MODEL_M=VALID_MODEL_M)).fetchall()
     return [dict(r) for r in creators], 200
 
 
@@ -127,10 +127,10 @@ def handle_get_releases(
     if bundles_only:
         where_clause += " AND r.is_likely_bundle = 1"
 
-    count_query = queries.GET_RELEASES_1.format(where_clause=where_clause)
+    count_query = queries.COUNT_RELEASES.format(where_clause=where_clause)
     total_count = conn.execute(count_query, args).fetchone()[0]
 
-    query = queries.GET_RELEASES_2.format(VALID_MODEL_M=VALID_MODEL_M, where_clause=where_clause)
+    query = queries.SELECT_COLLECTIONS_BY_DESIGNER_NAME.format(VALID_MODEL_M=VALID_MODEL_M, where_clause=where_clause)
     rows = conn.execute(query, args + [limit, offset]).fetchall()
 
     enriched = []
@@ -179,8 +179,8 @@ def handle_get_models(
     limit = max(1, min(150, int(params.get("limit", [24])[0])))
     offset = max(0, int(params.get("offset", [0])[0]))
 
-    query = queries.GET_MODELS_1.format(VALID_MODEL_M=VALID_MODEL_M)
-    count_query = queries.GET_MODELS_2.format(VALID_MODEL_M=VALID_MODEL_M)
+    query = queries.SELECT_MODEL_FILES_BY_MODEL_ID.format(VALID_MODEL_M=VALID_MODEL_M)
+    count_query = queries.COUNT_COLLECTIONS_BY_MODEL_ID.format(VALID_MODEL_M=VALID_MODEL_M)
     args = []
 
     if only_bonus:
@@ -287,7 +287,7 @@ def handle_get_model_detail(
 
     model_id = int(raw_id)
     cursor = conn.execute(
-        queries.GET_MODEL_DETAIL_1.format(VALID_MODEL_RAW=VALID_MODEL_KNOWN), 
+        queries.SELECT_COLLECTIONS_BY_ID.format(VALID_MODEL_RAW=VALID_MODEL_KNOWN), 
         (model_id,)
     )
     row = cursor.fetchone()
@@ -303,7 +303,7 @@ def handle_get_model_detail(
 
     try:
         tag_rows = conn.execute(
-            queries.GET_MODEL_DETAIL_2, (model_id,)
+            queries.SELECT_COLLECTION_TAGS_TAG_BY_MODEL_ID, (model_id,)
         ).fetchall()
         model_data["tags"] = [r[0] for r in tag_rows if r[0]]
     except Exception:
@@ -312,13 +312,13 @@ def handle_get_model_detail(
     files = []
     try:
         has_df = conn.execute(
-            queries.GET_MODEL_DETAIL_3
+            queries.SELECT_SQLITE_MASTER_NAME_BY_TYPE
         ).fetchone()
 
         if has_df:
-            file_rows = conn.execute(queries.GET_MODEL_DETAIL_4, (model_id,)).fetchall()
+            file_rows = conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID_V2, (model_id,)).fetchall()
         else:
-            file_rows = conn.execute(queries.GET_MODEL_DETAIL_5, (model_id,)).fetchall()
+            file_rows = conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID_V3, (model_id,)).fetchall()
 
         for fr in file_rows:
             if isinstance(fr, sqlite3.Row):
@@ -336,11 +336,11 @@ def handle_get_model_detail(
 
     try:
         has_dj = conn.execute(
-            queries.GET_MODEL_DETAIL_6
+            queries.SELECT_SQLITE_MASTER_NAME_BY_TYPE_V2
         ).fetchone()
         if has_dj:
             job_row = conn.execute(
-                queries.GET_MODEL_DETAIL_7,
+                queries.SELECT_DOWNLOAD_JOBS_BY_MODEL_ID,
                 (model_id,)
             ).fetchone()
             if job_row:
@@ -420,14 +420,14 @@ def handle_get_model_files(
 
     model_id = int(raw_model_id)
     model = conn.execute(
-        queries.GET_MODEL_FILES_1.format(VALID_MODEL_RAW=VALID_MODEL_KNOWN),
+        queries.SELECT_COLLECTIONS_BY_ID_V2.format(VALID_MODEL_RAW=VALID_MODEL_KNOWN),
         (model_id,),
     ).fetchone()
 
     if not model:
         return {"error": f"Model {model_id} not found or missing metadata"}, 404
 
-    files = conn.execute(queries.GET_MODEL_FILES_2, (model_id,)).fetchall()
+    files = conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID_V4, (model_id,)).fetchall()
 
     total_size = sum(f["size_bytes"] or 0 for f in files)
     return {
@@ -469,7 +469,7 @@ def handle_post_model_render_view(
 
     source_expr = "COALESCE(source, 'mmf') AS source"
 
-    model = conn.execute(queries.POST_MODEL_RENDER_VIEW_1.format(source_expr=source_expr), (model_id,)).fetchone()
+    model = conn.execute(queries.SELECT_COLLECTIONS_BY_ID_V3.format(source_expr=source_expr), (model_id,)).fetchone()
 
     if not model:
         return {"error": f"Model #{model_id} not found."}, 404
@@ -515,7 +515,7 @@ def handle_post_model_render_view(
                 candidate_stl = v_path
 
         if not candidate_stl:
-            file_rows = conn.execute(queries.POST_MODEL_RENDER_VIEW_2, (model_id,)).fetchall()
+            file_rows = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_MODEL_ID, (model_id,)).fetchall()
 
             for fr in file_rows:
                 for p_str in (fr["vault_path"], fr["staging_path"]):
@@ -541,7 +541,7 @@ def handle_post_model_render_view(
 
         if view == "front_left" and not model["primary_image_url"]:
             with conn:
-                conn.execute(queries.POST_MODEL_RENDER_VIEW_3, (f"/previews/{model_id}/cover.jpg", model_id))
+                conn.execute(queries.UPDATE_COLLECTIONS_PRIMARY_IMAGE_URL_BY_ID, (f"/previews/{model_id}/cover.jpg", model_id))
 
         return {
             "success": True,

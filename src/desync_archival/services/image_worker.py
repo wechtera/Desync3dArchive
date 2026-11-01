@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from desync_archival import settings as app_config
+from desync_archival.db.queries import image_worker as queries
 from desync_archival.services import inactive_log
 from desync_archival.services.external_indexer import COVER, ExternalLibraryIndexer
 from desync_archival.services.logger import log_layer, logger
@@ -35,25 +36,25 @@ current: Optional["ImageWorker"] = None
 def set_paused(conn: sqlite3.Connection, paused: bool) -> None:
     value = "1" if paused else "0"
     with conn:
-        if not conn.execute("UPDATE app_settings SET value = ? WHERE key = ?;", (value, PAUSED_SETTING)).rowcount:
-            conn.execute("INSERT INTO app_settings (key, value) VALUES (?, ?);", (PAUSED_SETTING, value))
+        if not conn.execute(queries.UPDATE_APP_SETTINGS_VALUE_BY_KEY, (value, PAUSED_SETTING)).rowcount:
+            conn.execute(queries.INSERT_APP_SETTINGS, (PAUSED_SETTING, value))
 
 
 def is_paused(conn: sqlite3.Connection) -> bool:
-    row = conn.execute("SELECT value FROM app_settings WHERE key = ?;", (PAUSED_SETTING,)).fetchone()
+    row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY, (PAUSED_SETTING,)).fetchone()
     return bool(row) and row[0] == "1"
 
 
 def retry_failed(conn: sqlite3.Connection) -> int:
     with conn:
         return conn.execute(
-            "UPDATE library_work_queue SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE status = 'failed';"
+            queries.UPDATE_LIBRARY_WORK_QUEUE_STATUS_BY_STATUS
         ).rowcount
 
 
 def status(conn: sqlite3.Connection) -> dict[str, Any]:
     counts = {"pending": 0, "done": 0, "failed": 0, "no_source": 0, "skipped": 0}
-    for row in conn.execute("SELECT status, COUNT(*) FROM library_work_queue GROUP BY status;").fetchall():
+    for row in conn.execute(queries.SELECT_LIBRARY_WORK_QUEUE).fetchall():
         counts[row[0]] = row[1]
     return {"paused": is_paused(conn), "state": current.state if current else STOPPED, "counts": counts}
 
@@ -108,20 +109,11 @@ class ImageWorker:
             if is_paused(conn):
                 return self._set_state(PAUSED)
             if conn.execute(
-                "SELECT 1 FROM pipeline_tasks WHERE status = 'running' AND task_type = 'external_library_reconcile' LIMIT 1;"
+                queries.SELECT_PIPELINE_TASKS_1_BY_STATUS
             ).fetchone():
                 return self._set_state(WAITING_FOR_INVENTORY)
 
-            job = conn.execute("""
-                SELECT q.id, q.kind, q.model_id, q.file_id, m.name, m.vault_path, m.is_active, m.external_key,
-                       l.path AS library_path
-                FROM library_work_queue q
-                JOIN collections m ON m.id = q.model_id
-                JOIN external_libraries l ON l.id = m.library_id
-                WHERE q.status = 'pending'
-                ORDER BY CASE q.kind WHEN 'cover' THEN 0 ELSE 1 END, q.id
-                LIMIT 1;
-            """).fetchone()
+            job = conn.execute(queries.SELECT_LIBRARY_WORK_QUEUE_BY_STATUS).fetchone()
             if not job:
                 return self._set_state(IDLE)
 
@@ -140,8 +132,7 @@ class ImageWorker:
     def _finish(self, conn: sqlite3.Connection, job: sqlite3.Row, state: str, detail: str = "") -> None:
         with conn:
             conn.execute(
-                "UPDATE library_work_queue SET status = ?, attempts = attempts + 1, detail = ?,"
-                " updated_at = CURRENT_TIMESTAMP WHERE id = ?;",
+                queries.UPDATE_LIBRARY_WORK_QUEUE_STATUS_BY_ID,
                 (state, detail, job["id"]),
             )
 
@@ -159,7 +150,7 @@ class ImageWorker:
 
     def _best_stl(self, conn: sqlite3.Connection, job: sqlite3.Row, model_dir: Path) -> Path | None:
         # A character's main folder can be Lychee-only, so try its other scales and variants.
-        rows = conn.execute("SELECT rel_path FROM library_model_folders WHERE model_id = ? AND excluded = 0 ORDER BY id;", (job["model_id"],)).fetchall()
+        rows = conn.execute(queries.SELECT_LIBRARY_MODEL_FOLDERS_REL_PATH_BY_MODEL_ID, (job["model_id"],)).fetchall()
         for folder in [model_dir, *(Path(job["library_path"]) / r[0] for r in rows)]:
             # A review card can own single files, and rglob finds nothing under a file.
             if folder.is_file():
@@ -203,7 +194,7 @@ class ImageWorker:
                     return self._fail(conn, job, "failed", inactive_log.RENDER_FAILED, f"Blender failed on {best_stl.name}")
 
         with conn:
-            conn.execute("UPDATE collections SET primary_image_url = ? WHERE id = ?;", (f"/previews/{model_id}/cover.jpg", model_id))
+            conn.execute(queries.UPDATE_COLLECTIONS_PRIMARY_IMAGE_URL_BY_ID, (f"/previews/{model_id}/cover.jpg", model_id))
             inactive_log.resolve(conn, inactive_log.MODEL, model_id, inactive_log.RENDER_FAILED)
             inactive_log.resolve(conn, inactive_log.MODEL, model_id, inactive_log.NO_SOURCE)
         self._finish(conn, job, "done")
@@ -212,7 +203,7 @@ class ImageWorker:
     def _peek(self, conn: sqlite3.Connection, job: sqlite3.Row) -> str:
         from desync_archival.services.archive_peeker import ArchivePeeker
 
-        row = conn.execute("SELECT vault_path FROM downloaded_files WHERE file_id = ?;", (job["file_id"],)).fetchone()
+        row = conn.execute(queries.SELECT_DOWNLOADED_FILES_VAULT_PATH_BY_FILE_ID, (job["file_id"],)).fetchone()
         if not row:
             self._finish(conn, job, "skipped", "The file is no longer in the catalog")
             return WORKING
