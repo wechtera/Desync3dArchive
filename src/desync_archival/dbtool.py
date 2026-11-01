@@ -88,6 +88,7 @@ def main() -> int:
             conn.execute("PRAGMA foreign_keys = ON;")
             try:
                 print(catalog_levels.rebuild_unreviewed(conn) if args.rebuild else catalog_levels.build_archive_models(conn))
+                print(f"orphan links cleared: {catalog_levels.clean_orphan_links(conn)}")
             finally:
                 conn.close()
         elif args.command == "repeek-broken":

@@ -201,6 +201,19 @@ class BuildTests(BuildCase):
         self.assertGreaterEqual(self.search("catalog_search_artifacts", "32mm_Ghoul_B"), 1)
 
 
+class OrphanLinkTests(BuildCase):
+    def test_links_to_missing_rows_are_cleared_and_real_ones_stay(self):
+        self.archive(self.collection, self.GHOULS)
+        self.build()
+        keep = self.one("SELECT COUNT(*) FROM model_group_members")[0]
+        self.conn.execute("PRAGMA foreign_keys = OFF")
+        with self.conn:
+            self.conn.execute("INSERT INTO model_group_members (group_id, catalog_model_id) VALUES (9999, 1)")
+            self.conn.execute("INSERT INTO catalog_model_tags (catalog_model_id, tag) VALUES (9999, 'x')")
+        self.assertEqual(catalog_levels.clean_orphan_links(self.conn), 2)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM model_group_members")[0], keep)
+
+
 class PeekTests(unittest.TestCase):
     """A real peek of a real zip, because the danger is in how it rewrites its rows."""
 

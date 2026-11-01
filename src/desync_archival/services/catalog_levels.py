@@ -227,6 +227,24 @@ def rebuild_unreviewed(conn: sqlite3.Connection) -> dict[str, Any]:
     return {"reset": len(targets), **build_archive_models(conn)}
 
 
+def clean_orphan_links(conn: sqlite3.Connection) -> int:
+    """Clears links to rows that are gone. An early rebuild ran with foreign keys off and left some.
+
+    Not a migration, because the migration runner refuses any change in row counts. IDs here are
+    never reused, so these links could never attach to the wrong thing.
+    """
+    with conn:
+        members = conn.execute("""
+            DELETE FROM model_group_members
+            WHERE group_id NOT IN (SELECT id FROM model_groups)
+               OR catalog_model_id NOT IN (SELECT id FROM catalog_models);
+        """).rowcount
+        tags = conn.execute(
+            "DELETE FROM catalog_model_tags WHERE catalog_model_id NOT IN (SELECT id FROM catalog_models);"
+        ).rowcount
+    return members + tags
+
+
 def build_archive_models(conn: sqlite3.Connection, only_collection: int | None = None) -> dict[str, Any]:
     """Adds whatever a peek stored that has no artifact yet, so it can run any number of times.
 
