@@ -21,7 +21,11 @@ from db_helper import create_database
 from desync_archival.services import auth_service, jobs
 from desync_archival.services.db import get_db_connection
 from desync_archival.services.downloader import DownloadManager, can_resume
-from desync_archival.services.task_manager import TaskManager, parse_scrape_event
+from desync_archival.services.task_manager import (
+    TASK_LOGS,
+    TaskManager,
+    parse_scrape_event,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -54,6 +58,7 @@ class TempDb(unittest.TestCase):
         return task_id
 
     def task(self, task_id):
+        TASK_LOGS.flush()
         conn = sqlite3.connect(self.db)
         row = conn.execute(
             "SELECT status, progress_pct, progress_label, log_output FROM pipeline_tasks WHERE id = ?", (task_id,)

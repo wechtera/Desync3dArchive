@@ -10,6 +10,11 @@ from desync_archival.db.queries import db as queries
 from desync_archival.services import secret_store
 
 
+# FULL fsyncs every commit. In WAL mode a power cut under NORMAL can lose the last commits but can't
+# corrupt the database, and the owner accepted that on 2026-11-01 (P-02).
+SYNCHRONOUS = "PRAGMA synchronous = NORMAL;"
+
+
 class ScopedConnection(sqlite3.Connection):
     """Closes when its outermost `with` ends.
 
@@ -40,6 +45,7 @@ def get_db_connection(db_path: Path | str) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.execute("PRAGMA busy_timeout = 45000;")
+    conn.execute(SYNCHRONOUS)
     return conn
 
 
@@ -47,6 +53,7 @@ def scoped_connection(db_path: Path | str, foreign_keys: bool = True) -> ScopedC
     conn = sqlite3.connect(str(db_path), timeout=45.0, factory=ScopedConnection)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout = 45000;")
+    conn.execute(SYNCHRONOUS)
     if foreign_keys:
         conn.execute("PRAGMA foreign_keys = ON;")
     return conn

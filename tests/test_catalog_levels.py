@@ -680,6 +680,7 @@ class TaskLogTests(unittest.TestCase):
         with conn:
             task = conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('t', 'running')").lastrowid
         manager._append_log(task, 'failed with Authorization: Bearer abcdefghijklmnop1234')
+        manager._flush_log(task)
         logged = conn.execute("SELECT log_output FROM pipeline_tasks WHERE id = ?", (task,)).fetchone()[0]
         self.assertNotIn("abcdefghijklmnop1234", logged)
         self.assertIn("failed with", logged)

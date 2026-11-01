@@ -29,7 +29,7 @@ from desync_archival.services import documents, image_worker, jobs, login, sched
 from desync_archival.services.db import get_db_connection, seed_default_settings
 from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
 from desync_archival.services.logger import init_logging_from_db, log_context, logger
-from desync_archival.services.task_manager import TaskManager
+from desync_archival.services.task_manager import TASK_LOGS, TaskManager
 
 DB_PATH = app_config.db_path().resolve()
 PREVIEWS_DIR = app_config.previews_dir().resolve()
@@ -370,6 +370,7 @@ def stop_managers() -> None:
         image_worker.current.stop()
     if download_manager:
         download_manager.stop()
+    TASK_LOGS.flush()
 
 
 def create_app(manage_workers: bool = True) -> FastAPI:

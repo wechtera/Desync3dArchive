@@ -199,6 +199,48 @@ def extract_normalized_records(model_id: int, data: dict, backup_path: Path):
     return model_row, tag_rows, file_rows
 
 
+LOG_FLUSH_SECONDS = 1.0
+
+
+class TaskLogBuffer:
+    """Holds task log lines briefly, so a burst is one write.
+
+    Each line used to be a connection and a commit, and each append rewrites the whole log value.
+    Every line also goes to vault.log first, so a write that fails loses nothing for good.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._lines: dict[tuple[Path, int], list[str]] = {}
+        self._timer: threading.Timer | None = None
+
+    def add(self, db_path: Path, task_id: int, line: str) -> None:
+        with self._lock:
+            self._lines.setdefault((db_path, task_id), []).append(line)
+            if self._timer is None:
+                self._timer = threading.Timer(LOG_FLUSH_SECONDS, self.flush)
+                self._timer.daemon = True
+                self._timer.start()
+
+    def flush(self, db_path: Path | None = None, task_id: int | None = None) -> None:
+        """Writes one task's lines, or everyone's when called with nothing."""
+        with self._lock:
+            if task_id is None:
+                pending, self._lines = self._lines, {}
+                self._timer = None
+            else:
+                key = (db_path, task_id)
+                pending = {key: self._lines.pop(key)} if key in self._lines else {}
+        for (path, owner), lines in pending.items():
+            try:
+                with scoped_connection(path) as conn:
+                    conn.execute(queries.UPDATE_PIPELINE_TASKS_LOG_OUTPUT_BY_ID, ("\n".join(lines), owner))
+            except sqlite3.Error as e:
+                logger.warning(f"Task #{owner}: {len(lines)} log lines stayed in vault.log only: {e}")
+
+
+TASK_LOGS = TaskLogBuffer()
+
 CANCELLING_LABEL = "Cancelling. Waiting for the task to stop."
 KILLING_LABEL = "Force kill sent. If this stays here, the worker is stuck, so restart the server."
 
@@ -265,7 +307,6 @@ class TaskManager:
             row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY, (key,)).fetchone()
             return row["value"] if row and row["value"] is not None else default
 
-    # FIXME(P-02): one connection and one fsync per line, and each append rewrites the whole log value.
     def _append_log(self, task_id: int, message: str):
         # This text lands in the database and the UI, which the logger's own filter never sees.
         message = redact(str(message))
@@ -274,9 +315,10 @@ class TaskManager:
         # FIXME: stdout goes to server.out, which nothing rotates. The logger line below already records this.
         print(f"[Task #{task_id}] {log_line}")
         logger.info(f"[Task #{task_id}] {message}")
-        with self._get_db() as conn:
-            with conn:
-                conn.execute(queries.UPDATE_PIPELINE_TASKS_LOG_OUTPUT_BY_ID, (log_line, task_id))
+        TASK_LOGS.add(self.db_path, task_id, log_line)
+
+    def _flush_log(self, task_id: int) -> None:
+        TASK_LOGS.flush(self.db_path, task_id)
 
     def _update_progress(self, task_id: int, pct: float, label: str):
         with self._get_db() as conn:
@@ -291,6 +333,7 @@ class TaskManager:
         summary: dict,
         artifacts: Optional[dict] = None,
     ):
+        self._flush_log(task_id)
         summary_json = json.dumps(summary)
         artifacts_json = json.dumps(artifacts or {})
         with self._get_db() as conn:
@@ -512,6 +555,7 @@ class TaskManager:
 
     def _close_row(self, task_id: int) -> None:
         """Cancel leaves closing the row to the worker, so one that returned without a result would look busy forever."""
+        self._flush_log(task_id)
         if self._cancelled(task_id):
             status, label = jobs.CANCELLED, "Cancelled by operator"
         else:

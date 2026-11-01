@@ -30,9 +30,16 @@ from fastapi.testclient import TestClient
 from desync_archival import backup, dbtool, external, migrations
 from desync_archival import settings as app_config
 from desync_archival.api import server
-from desync_archival.services import data_bundle, duplicates, jobs, login, secret_store
+from desync_archival.services import (
+    data_bundle,
+    duplicates,
+    jobs,
+    login,
+    secret_store,
+    task_manager,
+)
 from desync_archival.services.archive_peeker import ArchivePeeker
-from desync_archival.services.db import get_db_connection
+from desync_archival.services.db import get_db_connection, scoped_connection
 from desync_archival.services.downloader import DownloadManager, queue_models
 from desync_archival.services.stash_exporter import StashExporter
 from desync_archival.services.task_manager import TaskManager
@@ -270,8 +277,9 @@ class MigrationR08Tests(TempCase):
 
     def test_a_backup_is_still_taken_first(self):
         result = migrations.migrate_database(self.db)
-        self.assertTrue(Path(result["backup"]).is_file())
-        self.assertEqual(backup.row_counts(Path(result["backup"]))["stashes"], 1)
+        copy = Path(str(result["backup"]))
+        self.assertTrue(copy.is_file())
+        self.assertEqual(backup.row_counts(copy)["stashes"], 1)
 
 
 class BundleImportR14Tests(TempCase):
@@ -1023,3 +1031,85 @@ class StatusPollP01Tests(TempCase):
     def test_a_short_queue_is_all_there(self):
         data = self.queue(3)()
         self.assertEqual((len(data["queued_jobs"]), data["queued_total"]), (3, 3))
+
+
+class LogWritesP02Tests(TempCase):
+    def setUp(self):
+        super().setUp()
+        self.db = self.root / "library.db"
+        create_database(self.db)
+        self.manager = object.__new__(TaskManager)
+        self.manager.db_path = self.db
+        self.manager._lock = threading.Lock()
+        self.manager.active_task_id = None
+        self.manager._cancel_events = {}
+        conn = sqlite3.connect(self.db)
+        with conn:
+            self.task = conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('vault_reconcile', 'running')").lastrowid
+            self.other = conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('vault_reconcile', 'running')").lastrowid
+        conn.close()
+        self.addCleanup(task_manager.TASK_LOGS.flush)
+
+    def log(self, task=None):
+        conn = sqlite3.connect(self.db)
+        try:
+            return conn.execute("SELECT log_output FROM pipeline_tasks WHERE id = ?", (task or self.task,)).fetchone()[0] or ""
+        finally:
+            conn.close()
+
+    def test_both_factories_use_normal_sync(self):
+        # WAL with NORMAL can lose the last commits in a power cut, but can't corrupt. Approved 2026-11-01.
+        with scoped_connection(self.db) as conn:
+            self.assertEqual(conn.execute("PRAGMA synchronous").fetchone()[0], 1)
+        conn = get_db_connection(self.db)
+        self.assertEqual(conn.execute("PRAGMA synchronous").fetchone()[0], 1)
+        conn.close()
+
+    def test_a_burst_of_lines_is_one_write(self):
+        with patch.object(task_manager, "scoped_connection", wraps=scoped_connection) as connect:
+            for index in range(100):
+                self.manager._append_log(self.task, f"line {index}")
+            self.assertEqual(connect.call_count, 0)
+            self.manager._flush_log(self.task)
+        self.assertEqual(connect.call_count, 1)
+        lines = self.log().splitlines()
+        self.assertEqual(len(lines), 100)
+        self.assertTrue(lines[0].endswith("line 0"))
+        self.assertTrue(lines[99].endswith("line 99"))
+
+    def test_a_quiet_task_still_shows_its_lines(self):
+        with patch.object(task_manager, "LOG_FLUSH_SECONDS", 0.02):
+            self.manager._append_log(self.task, "only line")
+            deadline = time.monotonic() + 3
+            while "only line" not in self.log() and time.monotonic() < deadline:
+                time.sleep(0.01)
+        self.assertIn("only line", self.log())
+
+    def test_the_last_lines_are_written_before_the_task_finishes(self):
+        self.manager._append_log(self.task, "the last line")
+        self.manager._finalize_task(self.task, jobs.COMPLETED, "done", {})
+        self.assertIn("the last line", self.log())
+
+    def test_a_worker_that_returns_without_a_result_keeps_its_lines(self):
+        self.manager._append_log(self.task, "the last line")
+        self.manager._close_row(self.task)
+        self.assertIn("the last line", self.log())
+
+    def test_tasks_keep_their_own_lines(self):
+        self.manager._append_log(self.task, "first task")
+        self.manager._append_log(self.other, "second task")
+        self.manager._flush_log(self.task)
+        self.assertIn("first task", self.log())
+        self.assertEqual(self.log(self.other), "")
+        task_manager.TASK_LOGS.flush()
+        self.assertIn("second task", self.log(self.other))
+
+    def test_a_failed_write_doesnt_stop_the_worker(self):
+        self.manager._append_log(self.task, "kept in vault.log")
+        with patch.object(task_manager, "scoped_connection", side_effect=sqlite3.OperationalError("database is locked")):
+            self.manager._flush_log(self.task)
+
+    def test_lines_are_still_redacted(self):
+        self.manager._append_log(self.task, "failed with Authorization: Bearer abc123secret")
+        self.manager._flush_log(self.task)
+        self.assertNotIn("abc123secret", self.log())
