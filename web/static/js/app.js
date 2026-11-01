@@ -297,6 +297,8 @@ export function switchTab(tabName) {
 /** Self-scheduling poll for banners, the stash widget and task state. Runs faster while a task is active. */
 export async function checkHealth() {
   try {
+    // Every poll reads the database, and a hidden tab has nothing to show for it.
+    if (document.hidden) return;
     const storageRes = await fetchStorageStatus().catch(() => null);
     if (storageRes) {
       const banner = document.getElementById('banner-storage');
@@ -683,6 +685,9 @@ function initApp() {
   switchTab(initialTab);
   loadMetrics();
   checkHealth();
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) checkHealth();
+  });
   markSettingsAttention();
 }
 

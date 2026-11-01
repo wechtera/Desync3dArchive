@@ -671,23 +671,24 @@ class TaskManager:
             except Exception:
                 active_data["artifacts"] = {}
 
-        recent_list = []
-        for r in recent_rows:
-            item = dict(r)
-            try:
-                item["result_summary"] = json.loads(r["result_summary_json"] or "{}")
-            except Exception:
-                item["result_summary"] = {}
-            try:
-                item["artifacts"] = json.loads(r["artifacts_json"] or "{}")
-            except Exception:
-                item["artifacts"] = {}
-            recent_list.append(item)
-
         return {
             "active_task": active_data,
-            "recent_tasks": recent_list,
+            "recent_tasks": [dict(row) for row in recent_rows],
         }
+
+    def get_task(self, task_id: int) -> Optional[Dict[str, Any]]:
+        """One task with its log and reports, which the status poll leaves out."""
+        with self._get_db() as conn:
+            row = conn.execute(queries.SELECT_PIPELINE_TASK_BY_ID, (task_id,)).fetchone()
+        if not row:
+            return None
+        task = dict(row)
+        for field, column in (("result_summary", "result_summary_json"), ("artifacts", "artifacts_json")):
+            try:
+                task[field] = json.loads(task.pop(column) or "{}")
+            except ValueError:
+                task[field] = {}
+        return task
 
     def cancel_active_task(self) -> bool:
         with self._lock:

@@ -115,6 +115,11 @@ export function startActiveTransfersPolling() {
       return;
     }
 
+    if (document.hidden) {
+      activeTransfersTimer = setTimeout(poll, 2500);
+      return;
+    }
+
     const data = await renderActiveTransfers();
     const hasActive = Boolean(
       (data?.active_downloads && data.active_downloads.length > 0) ||
@@ -528,7 +533,8 @@ export async function renderActiveTransfers() {
       if (jobs.length === 0) {
         render(html`<tr><td colspan="8" class="td-empty">No jobs currently queued.</td></tr>`, activeTbody);
       } else {
-        render(jobs.map(j => html`
+        const more = (data.queued_total || jobs.length) - jobs.length;
+        const rows = jobs.map(j => html`
           <tr>
             <td class="font-mono">${j.model_id}</td>
             <td><strong>${j.model_name || `Model #${j.model_id}`}</strong></td>
@@ -541,7 +547,8 @@ export async function renderActiveTransfers() {
               <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.dequeueSingleModel(j.model_id)}>Cancel</button>
             </td>
           </tr>
-        `), activeTbody);
+        `);
+        render(html`${rows}${more > 0 ? html`<tr><td colspan="8" class="td-empty">And ${more.toLocaleString()} more in the queue.</td></tr>` : nothing}`, activeTbody);
       }
     }
 

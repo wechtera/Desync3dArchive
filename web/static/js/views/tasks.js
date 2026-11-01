@@ -1,4 +1,5 @@
 import {
+  fetchTask,
   fetchTasksStatus,
   cancelTask,
   killTask,
@@ -14,7 +15,7 @@ import { html, render } from '../template.js';
 // The scrape the dialog launched, until its result has been shown.
 let watchedScrapeId = null;
 
-function showFinishedScrape(active, recents) {
+async function showFinishedScrape(active, recents) {
   if (watchedScrapeId === null || (active && active.id === watchedScrapeId)) return;
   const task = recents.find(t => t.id === watchedScrapeId);
   if (!task || task.status === 'running') return;
@@ -33,7 +34,8 @@ function showFinishedScrape(active, recents) {
   if (summaryEl) summaryEl.textContent = task.progress_label || `Scrape ${task.status}.`;
   if (progressEl) progressEl.style.width = `${task.progress_pct || 0}%`;
   if (logEl) {
-    logEl.textContent = task.log_output || '';
+    const detail = await fetchTask(task.id).catch(() => null);
+    logEl.textContent = detail?.log_output || '';
     logEl.scrollTop = logEl.scrollHeight;
   }
   if (triggerBtn) {

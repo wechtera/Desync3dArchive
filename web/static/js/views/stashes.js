@@ -317,8 +317,8 @@ async function pollExportTaskProgress(taskId) {
 
     if (targetTask.status === 'completed') {
       closeExportProgressModal();
-      const exportSummary = targetTask.result_summary || targetTask.artifacts || {};
-      showExportSuccessModal(exportSummary);
+      const finished = await fetch(`/api/tasks/${taskId}`).then((reply) => reply.json());
+      showExportSuccessModal(finished.result_summary || finished.artifacts || {});
       return;
     }
 

@@ -942,3 +942,84 @@ class PeekFallbackE47Tests(TempCase):
         self.cover()
         found = self.peeker._fetch_catalog_fallback_image(7, self.folder)
         self.assertEqual(found.relative_to(self.previews).as_posix(), "7/99/catalog_primary.jpg")
+
+
+class StatusPollP01Tests(TempCase):
+    def setUp(self):
+        super().setUp()
+        create_database(server.DB_PATH)
+        self.conn = get_db_connection(server.DB_PATH)
+        self.addCleanup(self.conn.close)
+        with self.conn:
+            self.conn.execute("DELETE FROM pipeline_tasks")
+            self.conn.execute("DELETE FROM download_jobs")
+            self.conn.execute("DELETE FROM collections")
+        self.manager = object.__new__(TaskManager)
+        self.manager.db_path = server.DB_PATH
+        self.client = TestClient(server.create_app(manage_workers=False), base_url="http://localhost")
+        self.client.__enter__()
+        self.addCleanup(self.client.__exit__, None, None, None)
+        for patcher in (patch.object(server, "task_manager", self.manager),):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def task(self, status="completed", log="a log line\n", summary=None):
+        with self.conn:
+            return self.conn.execute(
+                "INSERT INTO pipeline_tasks (task_type, status, log_output, result_summary_json, artifacts_json)"
+                " VALUES ('stash_export', ?, ?, ?, '{\"folder\": \"x\"}')",
+                (status, log, json.dumps(summary or {"files": 3})),
+            ).lastrowid
+
+    def test_the_poll_leaves_out_logs_and_reports(self):
+        self.task(log="x" * 500_000, summary={"pairs": ["y" * 500_000]})
+        body = self.client.get("/api/tasks/status")
+        self.assertLess(len(body.content), 2_000)
+        recent = body.json()["recent_tasks"][0]
+        for field in ("log_output", "result_summary", "artifacts", "artifacts_json", "result_summary_json"):
+            self.assertNotIn(field, recent)
+        self.assertEqual(recent["status"], "completed")
+
+    def test_the_active_task_keeps_its_live_log(self):
+        self.task(status="running", log="working\n")
+        self.assertEqual(self.client.get("/api/tasks/status").json()["active_task"]["log_output"], "working\n")
+
+    def test_one_task_can_be_fetched_whole(self):
+        task = self.task()
+        data = self.client.get(f"/api/tasks/{task}").json()
+        self.assertEqual(data["log_output"], "a log line\n")
+        self.assertEqual(data["result_summary"], {"files": 3})
+        self.assertEqual(data["artifacts"], {"folder": "x"})
+
+    def test_an_unknown_task_is_a_404(self):
+        self.assertEqual(self.client.get("/api/tasks/999999").status_code, 404)
+
+    def test_status_is_not_read_as_a_task_id(self):
+        self.assertEqual(self.client.get("/api/tasks/status").status_code, 200)
+
+    def queue(self, count):
+        with self.conn:
+            for index in range(count):
+                model = self.conn.execute(
+                    "INSERT INTO collections (name, source, raw_backup_path) VALUES (?, 'mmf', 'm.json')", (f"M{index}",)
+                ).lastrowid
+                self.conn.execute("INSERT INTO download_jobs (model_id, status) VALUES (?, 'pending')", (model,))
+        manager = object.__new__(DownloadManager)
+        manager.db_path = server.DB_PATH
+        manager._lock = threading.Lock()
+        manager.active_downloads = {}
+        manager.active_offloads = {}
+        manager.is_running = True
+        manager.is_paused = False
+        manager.access_token = ""
+        manager.token_expires_at = 0
+        return manager.get_status
+
+    def test_a_long_queue_comes_back_one_page_with_the_real_total(self):
+        data = self.queue(DownloadManager.QUEUED_JOBS_PAGE + 25)()
+        self.assertEqual(len(data["queued_jobs"]), DownloadManager.QUEUED_JOBS_PAGE)
+        self.assertEqual(data["queued_total"], DownloadManager.QUEUED_JOBS_PAGE + 25)
+
+    def test_a_short_queue_is_all_there(self):
+        data = self.queue(3)()
+        self.assertEqual((len(data["queued_jobs"]), data["queued_total"]), (3, 3))

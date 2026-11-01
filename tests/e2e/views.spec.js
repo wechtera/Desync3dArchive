@@ -173,9 +173,10 @@ test.describe('tasks', () => {
     await page.route('**/api/tasks/status*', (route) => route.fulfill({
       json: {
         active_task: null,
-        recent_tasks: started ? [task({ id: 9, status: 'failed', progress_pct: 5, progress_label: label, log_output: 'login page' })] : [],
+        recent_tasks: started ? [task({ id: 9, status: 'failed', progress_pct: 5, progress_label: label })] : [],
       },
     }));
+    await mock(page, '/api/tasks/9', { id: 9, log_output: 'login page' });
     await page.goto('/#downloads');
     await page.evaluate(() => window.openModal('modal-scraper'));
     await page.locator('#btn-trigger-scrape').click();
@@ -517,6 +518,15 @@ test.describe('stashes', () => {
     await page.getByRole('button', { name: 'Done' }).click();
     await expect(page.locator('#stash-export-success-modal')).toHaveCount(0);
     await expect(page.locator('#btn-export-stash')).toHaveText('Prepare for Slicer');
+  });
+
+  test('a finished background export fetches its report, because the poll leaves it out, P-01', async ({ page }) => {
+    await open(page);
+    await page.route('**/api/stashes/3/export', (route) => route.fulfill({ json: { task_id: 8, stash_name: HOSTILE } }));
+    await mock(page, '/api/tasks/status', { active_task: null, recent_tasks: [{ id: 8, status: 'completed', progress_pct: 100 }] });
+    await mock(page, '/api/tasks/8', { id: 8, status: 'completed', result_summary: { export_path: HOSTILE, total_files: 2, total_bytes: 1024 } });
+    await page.locator('#btn-export-stash').click();
+    await expect(page.locator('#export-path-text')).toHaveText(HOSTILE);
   });
 
   test('a background export shows progress and can be cancelled', async ({ page }) => {

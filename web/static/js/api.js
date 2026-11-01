@@ -265,6 +265,11 @@ export async function fetchTasksStatus() {
   return request('/api/tasks/status');
 }
 
+// The status poll leaves out logs and reports, so a finished task's come from here.
+export async function fetchTask(taskId) {
+  return request(`/api/tasks/${taskId}`);
+}
+
 export async function cancelTask() {
   return request('/api/tasks/cancel', {
     method: 'POST',

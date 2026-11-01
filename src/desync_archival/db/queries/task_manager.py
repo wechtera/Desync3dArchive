@@ -68,10 +68,9 @@ SELECT_PIPELINE_TASKS_BY_STATUS_V3 = """
                 ORDER BY id DESC LIMIT 1;
             """
 
-# FIXME(P-01): the status poll reads full logs and reports for ten tasks, about 254 KB per poll today.
+# Status only, because every open tab reads this. Logs and reports come from SELECT_PIPELINE_TASK_BY_ID.
 SELECT_PIPELINE_TASKS_V2 = """
                 SELECT id, task_type, status, progress_pct, progress_label,
-                       artifacts_json, result_summary_json, log_output,
                        created_at, started_at, completed_at
                 FROM pipeline_tasks
                 ORDER BY id DESC LIMIT 10;
@@ -136,6 +135,8 @@ INSERT_FINISHED_TASK = """
     INSERT INTO pipeline_tasks (task_type, status, progress_pct, progress_label, log_output, started_at, completed_at, result_summary_json)
     VALUES (?, ?, 100.0, ?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?);
 """
+
+SELECT_PIPELINE_TASK_BY_ID = "SELECT * FROM pipeline_tasks WHERE id = ?;"
 
 UPDATE_RUNNING_TASK_LABEL = "UPDATE pipeline_tasks SET progress_label = ? WHERE id = ? AND status = 'running';"
 

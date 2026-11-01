@@ -55,3 +55,26 @@ test('the duplicate panel says how many files it left out, R-13', async ({ page 
   await expect(panel).toContainText('13,579 files named as bases or supports were left out.');
 });
 
+test.describe('polling, P-01', () => {
+  test('a hidden tab stops polling and catches up when shown', async ({ page }) => {
+    let polls = 0;
+    await page.route('**/api/tasks/status*', (route) => {
+      polls += 1;
+      return route.fulfill({ json: { active_task: null, recent_tasks: [] } });
+    });
+    const setHidden = (hidden) => page.evaluate((value) => {
+      Object.defineProperty(document, 'hidden', { configurable: true, value });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, hidden);
+    await page.goto('/');
+    await expect.poll(() => polls).toBeGreaterThan(0);
+    await setHidden(true);
+    await page.waitForTimeout(200);
+    const before = polls;
+    await page.evaluate(() => window.checkHealth());
+    expect(polls).toBe(before);
+    await setHidden(false);
+    await expect.poll(() => polls).toBeGreaterThan(before);
+  });
+});
+

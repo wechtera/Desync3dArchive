@@ -303,6 +303,9 @@ class StorageManager:
 
 
 class DownloadManager:
+    # The Active view polls every second, so a 4,000 model queue can't go in the answer each time.
+    QUEUED_JOBS_PAGE = 200
+
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self.storage = StorageManager(db_path)
@@ -1154,9 +1157,10 @@ class DownloadManager:
                 JOIN collections m ON dj.model_id = m.id
                 {joins}
                 WHERE dj.status IN ('pending', 'downloading', 'staging_complete', 'offloading')
-                ORDER BY dj.enqueued_at ASC;
+                ORDER BY dj.enqueued_at ASC
+                LIMIT ?;
             """
-            queued_rows = conn.execute(queued_query).fetchall()
+            queued_rows = conn.execute(queued_query, (self.QUEUED_JOBS_PAGE,)).fetchall()
             queued_jobs = [dict(r) for r in queued_rows]
 
         with self._lock:
@@ -1173,6 +1177,7 @@ class DownloadManager:
             "active_offloads": active_off_list,
             "active_workers": active_dl_list,
             "queued_jobs": queued_jobs,
+            "queued_total": sum(status_map.get(status, 0) for status in ("pending", *queries.LIVE_JOB_STATUSES)),
             "counts": {
                 "pending": status_map.get("pending", 0),
                 "downloading": status_map.get("downloading", 0),

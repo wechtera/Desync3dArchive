@@ -20,6 +20,20 @@ def handle_get_tasks_status(
     return task_manager.get_status(), 200
 
 
+def handle_get_task(
+    conn: sqlite3.Connection,
+    task_id: int,
+    download_manager: Any,
+    body: dict,
+    params: dict,
+    task_manager: TaskManager | None = None,
+) -> tuple[dict[str, Any], int]:
+    if not task_manager:
+        return {"error": "TaskManager not initialized"}, 500
+    task = task_manager.get_task(task_id)
+    return (task, 200) if task else ({"error": f"Task #{task_id} not found"}, 404)
+
+
 def handle_get_scrapes_list(
     conn: sqlite3.Connection,
     download_manager: Any,
