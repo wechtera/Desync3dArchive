@@ -23,3 +23,23 @@ SELECT_FILE_ARCHIVE_SUBMODELS_BY_ID_V2 = "SELECT name, preview_image_path, model
 SELECT_DOWNLOADED_FILES_BY_FILE_ID_V2 = "SELECT * FROM downloaded_files WHERE file_id = ?;"
 
 SELECT_DOWNLOADED_FILES_BY_MODEL_ID = "SELECT * FROM downloaded_files WHERE model_id = ?;"
+
+SELECT_SUBMODEL_BYTES = "SELECT total_bytes FROM file_archive_submodels WHERE id = ?;"
+
+SELECT_MEMBER_BYTES = "SELECT size_bytes FROM file_archive_members WHERE id = ?;"
+
+# Peeked archives list what they unpack to. Otherwise the archive's own size is all that's known.
+SELECT_FILE_UNPACKED_BYTES = """
+    SELECT COALESCE(
+        (SELECT NULLIF(SUM(size_bytes), 0) FROM file_archive_members WHERE file_id = ?1),
+        (SELECT actual_bytes FROM downloaded_files WHERE file_id = ?1)
+    );
+"""
+
+SELECT_MODEL_UNPACKED_BYTES = """
+    SELECT SUM(COALESCE(
+        (SELECT NULLIF(SUM(m.size_bytes), 0) FROM file_archive_members m WHERE m.file_id = d.file_id),
+        d.actual_bytes
+    ))
+    FROM downloaded_files d WHERE d.model_id = ?;
+"""

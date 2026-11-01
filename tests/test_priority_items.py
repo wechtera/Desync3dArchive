@@ -385,3 +385,142 @@ class BundleImportR14Tests(TempCase):
                 patch.object(dbtool, "refuse_if_app_running"), patch("sys.stderr") as stderr:
             self.assertEqual(dbtool.main(), 1)
         self.assertIn("isn't a data bundle", "".join(call.args[0] for call in stderr.write.call_args_list))
+
+
+class ExtractionLimitS04Tests(TempCase):
+    def setUp(self):
+        super().setUp()
+        self.folder = self.root / "scratch"
+        self.folder.mkdir()
+        self.archive = self.root / "pack.rar"
+        self.archive.write_bytes(b"not read by the fake tool")
+
+    def fake_tool(self, body):
+        tool = self.root / "tool.py"
+        tool.write_text(body, encoding="utf-8")
+        return [sys.executable, str(tool), str(self.folder)]
+
+    def free_space(self, free):
+        return patch("desync_archival.external.shutil.disk_usage", return_value=shutil._ntuple_diskusage(free, 0, free))
+
+    def test_a_tool_that_writes_past_the_limit_is_stopped(self):
+        command = self.fake_tool(
+            "import sys, time\n"
+            "with open(sys.argv[1] + '/big.bin', 'wb') as out:\n"
+            "    out.write(b'x' * 4096)\n"
+            "    out.flush()\n"
+            "    time.sleep(30)\n"
+        )
+        started = time.monotonic()
+        with self.assertRaises(external.ExtractionRefused):
+            external.run(command, 30, cap=(self.folder, 1024))
+        self.assertLess(time.monotonic() - started, 10)
+
+    def test_a_capped_run_still_returns_the_tools_output(self):
+        command = self.fake_tool("print('listed')\n")
+        result = external.run(command, 10, cap=(self.folder, 1024))
+        self.assertEqual((result.returncode, result.stdout.strip()), (0, "listed"))
+
+    def test_a_capped_run_still_times_out(self):
+        command = self.fake_tool("import time\ntime.sleep(30)\n")
+        with self.assertRaises(subprocess.TimeoutExpired):
+            external.run(command, 0.2, cap=(self.folder, 1024))
+
+    def rar_tool(self, payload_bytes):
+        tool = self.root / "unrar"
+        tool.write_text(
+            f"#!{sys.executable}\n"
+            "import sys, time\n"
+            "folder = sys.argv[-1]\n"
+            f"open(folder + '/member.stl', 'wb').write(b'x' * {payload_bytes})\n"
+            "time.sleep(30)\n",
+            encoding="utf-8",
+        )
+        tool.chmod(0o755)
+        return str(tool)
+
+    def test_a_rar_member_that_lies_about_its_size_is_stopped_and_removed(self):
+        with patch.object(external, "MAX_EXTRACTED_BYTES", 1024), self.assertRaises(external.ExtractionRefused):
+            external.extract_member(self.archive, "a/member.stl", self.folder, self.rar_tool(4096), None)
+        self.assertEqual(list(self.folder.iterdir()), [])
+
+    def test_a_member_too_big_for_the_disk_is_refused_before_a_tool_runs(self):
+        with self.free_space(external.FREE_SPACE_RESERVE + 100), patch.object(external, "run") as run, \
+                self.assertRaises(external.ExtractionRefused) as caught:
+            external.extract_member(self.archive, "a/member.stl", self.folder, "unrar", None, expected_size=4096)
+        run.assert_not_called()
+        self.assertIn("free space", str(caught.exception))
+
+    def test_a_full_disk_refuses_with_no_size_known(self):
+        with self.free_space(100), patch.object(external, "run") as run, self.assertRaises(external.ExtractionRefused):
+            external.extract_member(self.archive, "a/member.stl", self.folder, "unrar", None)
+        run.assert_not_called()
+
+    def test_a_zip_member_stops_at_free_space_not_just_the_global_limit(self):
+        archive = self.root / "pack.zip"
+        with zipfile.ZipFile(archive, "w") as handle:
+            handle.writestr("a/member.stl", b"x" * 4096)
+        with self.free_space(external.FREE_SPACE_RESERVE + 1024), self.assertRaises(external.ExtractionRefused):
+            external.extract_member(archive, "a/member.stl", self.folder, None, None)
+        self.assertEqual(list(self.folder.iterdir()), [])
+
+    def test_a_whole_archive_unpack_is_capped_while_it_runs(self):
+        with patch.object(external, "MAX_EXTRACTED_BYTES", 1024), \
+                patch.object(external, "list_members", return_value=[]), \
+                self.assertRaises(external.ExtractionRefused):
+            external.extract_all(".rar", self.archive, self.folder, self.rar_tool(4096), None)
+        self.assertEqual(list(self.folder.iterdir()), [])
+
+
+class ExportSpaceS04Tests(TempCase):
+    def setUp(self):
+        super().setUp()
+        self.db = self.root / "library.db"
+        create_database(self.db)
+        self.export_root = self.root / "exports"
+        self.work = self.root / "work"
+        conn = sqlite3.connect(self.db)
+        with conn:
+            conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('stash_download_path', ?)", (str(self.export_root),))
+            conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('download_work_path', ?)", (str(self.work),))
+            model = conn.execute("INSERT INTO collections (name, source, vault_path, raw_backup_path) VALUES ('A', 'mmf', '/v/a', 'm.json')").lastrowid
+            conn.execute("INSERT INTO model_files (file_id, model_id, filename) VALUES (1, ?, 'a.zip')", (model,))
+            conn.execute(
+                "INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path,"
+                " actual_bytes, vault_path) VALUES (1, ?, 'a.zip', 'a.zip', 'a.zip', 1000, '/v/a/a.zip')", (model,),
+            )
+            conn.execute(
+                "INSERT INTO file_archive_members (file_id, internal_path, filename, size_bytes) VALUES (1, 'x.stl', 'x.stl', 5000)"
+            )
+            stash = conn.execute("INSERT INTO stashes (name) VALUES ('S')").lastrowid
+            conn.execute("INSERT INTO stash_items (stash_id, item_type, model_id, file_id) VALUES (?, 'file', ?, 1)", (stash, model))
+        conn.close()
+        self.stash = stash
+        self.exporter = StashExporter(self.db)
+
+    def test_a_stash_too_big_for_the_disk_is_refused_before_anything_is_made(self):
+        usage = shutil._ntuple_diskusage(external.FREE_SPACE_RESERVE + 100, 0, external.FREE_SPACE_RESERVE + 100)
+        with patch("desync_archival.services.stash_exporter.shutil.disk_usage", return_value=usage), \
+                self.assertRaises(ValueError) as caught:
+            self.exporter.export_stash(self.stash)
+        self.assertIn("free", str(caught.exception))
+        self.assertEqual(list(self.export_root.iterdir()) if self.export_root.exists() else [], [])
+
+    def test_the_estimate_counts_what_a_peeked_archive_unpacks_to(self):
+        conn = sqlite3.connect(self.db)
+        conn.row_factory = sqlite3.Row
+        items = conn.execute("SELECT * FROM stash_items").fetchall()
+        self.assertEqual(self.exporter._estimated_bytes(conn, items), 5000)
+        conn.close()
+
+    def test_every_item_type_can_be_estimated(self):
+        conn = sqlite3.connect(self.db)
+        conn.row_factory = sqlite3.Row
+        model = conn.execute("SELECT id FROM collections WHERE name = 'A'").fetchone()[0]
+        items = [
+            {"item_type": "model", "model_id": model, "file_id": None, "submodel_id": None, "archive_member_id": None},
+            {"item_type": "archive_member", "model_id": model, "file_id": None, "submodel_id": None, "archive_member_id": 1},
+            {"item_type": "submodel", "model_id": model, "file_id": None, "submodel_id": 404, "archive_member_id": None},
+        ]
+        self.assertEqual(self.exporter._estimated_bytes(conn, items), 5000 + 5000)
+        conn.close()

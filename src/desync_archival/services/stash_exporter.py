@@ -136,6 +136,7 @@ class StashExporter:
                 raise ValueError(f"Stash '{stash_name}' (ID #{stash_id}) has no items to export.")
 
             export_root, work_path, previews_root = self.resolve_paths(c)
+            self._check_free_space(self._estimated_bytes(c, items), export_root, work_path)
 
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             folder_name = f"{timestamp}_{sanitize_folder_name(stash_name)}"
@@ -235,6 +236,31 @@ class StashExporter:
         finally:
             if should_close:
                 c.close()
+
+    def _estimated_bytes(self, conn: sqlite3.Connection, items: List[Any]) -> int:
+        """Bytes a stash could unpack to. An unpeeked archive counts at its own size, the best known."""
+        total = 0
+        for item in items:
+            kind = item["item_type"]
+            if kind == "submodel":
+                row = conn.execute(queries.SELECT_SUBMODEL_BYTES, (item["submodel_id"],)).fetchone()
+            elif kind == "archive_member":
+                row = conn.execute(queries.SELECT_MEMBER_BYTES, (item["archive_member_id"],)).fetchone()
+            elif kind == "file":
+                row = conn.execute(queries.SELECT_FILE_UNPACKED_BYTES, (item["file_id"],)).fetchone()
+            else:
+                row = conn.execute(queries.SELECT_MODEL_UNPACKED_BYTES, (item["model_id"],)).fetchone()
+            total += (row[0] or 0) if row else 0
+        return total
+
+    def _check_free_space(self, needed: int, *folders: Path) -> None:
+        for folder in folders:
+            usable = shutil.disk_usage(folder).free - external.FREE_SPACE_RESERVE
+            if needed > usable:
+                raise ValueError(
+                    f"This stash needs about {needed / 1024**3:.1f} GB, and {folder} has "
+                    f"{max(usable, 0) / 1024**3:.1f} GB free after the safety margin."
+                )
 
     def _export_single_item(
         self,

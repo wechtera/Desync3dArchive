@@ -391,7 +391,7 @@ class ImageExtractionTests(unittest.TestCase):
         peeker._bin_unrar = peeker._bin_7z = "tool"
         commands = [[write] for write in tries]
 
-        def fake_run(cmd, _timeout):
+        def fake_run(cmd, _timeout, **_kwargs):
             cmd[0](next(self.dest.glob(".extract_*")))
             return MagicMock(stderr="", stdout="")
 

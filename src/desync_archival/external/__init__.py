@@ -5,11 +5,13 @@ stop switch parsing before member names, every call has a timeout, and bulk extr
 and sizes both before and after unpacking.
 """
 
+import contextlib
 import logging
 import os
 import re
 import shutil
 import subprocess
+import time
 import zipfile
 from collections import defaultdict
 from dataclasses import dataclass
@@ -26,6 +28,9 @@ MEMBER_TIMEOUT = 300
 BULK_TIMEOUT = 3600
 MAX_EXTRACTED_BYTES = 64 * 1024**3
 MAX_EXTRACTED_FILES = 200_000
+# Unpacking runs on the boot disk with the database, which needs room to keep working.
+FREE_SPACE_RESERVE = 2 * 1024**3
+CAP_POLL_SECONDS = 0.5
 
 TOOLS_DIR = app_config.REPO_ROOT / "tools"
 UNRAR_NAMES = ("unrar",)
@@ -92,8 +97,58 @@ def find_blender() -> str | None:
     return None
 
 
-def run(cmd: list[str], timeout: float, check: bool = False) -> subprocess.CompletedProcess:
-    """Runs a tool with a timeout. Output is decoded leniently, because names can be any bytes."""
+def _bytes_in(folder: Path) -> int:
+    total = 0
+    for path in folder.rglob("*"):
+        # A tool renames and removes its files as it works.
+        with contextlib.suppress(OSError):
+            if path.is_file() and not path.is_symlink():
+                total += path.stat().st_size
+    return total
+
+
+def _run_capped(cmd: list[str], timeout: float, folder: Path, limit: int) -> subprocess.CompletedProcess:
+    """Stops a tool once a folder holds more than `limit` bytes.
+
+    unrar and 7-Zip have no byte cap of their own, and an archive's declared sizes can lie, so
+    the only real limit is watching what lands.
+
+    Raises:
+        ExtractionRefused: The tool wrote past the limit. The caller removes what it left.
+    """
+    process = subprocess.Popen(
+        cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8", errors="replace",
+    )
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                stdout, stderr = process.communicate(timeout=min(CAP_POLL_SECONDS, timeout))
+                return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
+            except subprocess.TimeoutExpired:
+                if _bytes_in(folder) > limit:
+                    raise ExtractionRefused(f"{Path(cmd[0]).name} unpacked past the limit of {limit} bytes") from None
+                if time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired(cmd, timeout) from None
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate()
+
+
+def run(
+    cmd: list[str], timeout: float, check: bool = False, cap: tuple[Path, int] | None = None,
+) -> subprocess.CompletedProcess:
+    """Runs a tool with a timeout. Output is decoded leniently, because names can be any bytes.
+
+    `cap` is a folder and a byte limit, for tools that unpack into it.
+    """
+    if cap:
+        result = _run_capped(cmd, timeout, *cap)
+        if check:
+            result.check_returncode()
+        return result
     return subprocess.run(
         cmd, capture_output=True, stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace",
         timeout=timeout, check=check,
@@ -151,17 +206,23 @@ def _base_name(member_path: str) -> str:
     return PurePosixPath(member_path.replace("\\", "/")).name
 
 
-def copy_limited(source: IO[bytes], target: Path) -> int:
+def member_limit(folder: Path) -> int:
+    """How many bytes a member may unpack to here. Below zero means the disk is already too full."""
+    return min(MAX_EXTRACTED_BYTES, shutil.disk_usage(folder).free - FREE_SPACE_RESERVE)
+
+
+def copy_limited(source: IO[bytes], target: Path, limit: int | None = None) -> int:
     """Copies a zip member, counting bytes as they arrive because its declared size can lie.
 
     Raises:
         ExtractionRefused: The member ran past the size limit. The partial file is removed.
     """
+    limit = MAX_EXTRACTED_BYTES if limit is None else limit
     copied = 0
     with open(target, "wb") as output:
         while chunk := source.read(1024 * 1024):
             copied += len(chunk)
-            if copied > MAX_EXTRACTED_BYTES:
+            if copied > limit:
                 output.close()
                 target.unlink(missing_ok=True)
                 raise ExtractionRefused(f"{target.name} unpacked past the size limit")
@@ -194,7 +255,9 @@ def _name_is_unique(archive: Path, filename: str, unrar: str | None, seven_zip: 
     return sum(_base_name(member.path).lower() == filename.lower() for member in members) == 1
 
 
-def _extract_with_tools(archive: Path, internal_path: str, folder: Path, unrar: str | None, seven_zip: str | None) -> Path:
+def _extract_with_tools(
+    archive: Path, internal_path: str, folder: Path, unrar: str | None, seven_zip: str | None, limit: int,
+) -> Path:
     filename = _base_name(internal_path)
     extension = archive.suffix.lower()
     last_error = ""
@@ -203,8 +266,11 @@ def _extract_with_tools(archive: Path, internal_path: str, folder: Path, unrar: 
             break
         for cmd in member_commands(extension, unrar, seven_zip, archive, internal_path, filename, folder, fuzzy):
             try:
-                # FIXME(S-04): a single RAR member has a timeout but no size limit. Zip members are capped.
-                result = run(cmd, MEMBER_TIMEOUT)
+                result = run(cmd, MEMBER_TIMEOUT, cap=(folder, limit))
+            except ExtractionRefused:
+                for path in regular_files(folder):
+                    path.unlink(missing_ok=True)
+                raise
             except (OSError, subprocess.SubprocessError) as e:
                 last_error = str(e)
                 continue
@@ -234,14 +300,20 @@ def extract_member(
         ExtractionRefused: No tool produced the member, its name is ambiguous, or its size is wrong.
         FileNotFoundError: A zip has no entry with that path or name.
     """
+    limit = member_limit(folder)
+    if limit <= 0 or expected_size > limit:
+        raise ExtractionRefused(
+            f"Not enough free space to unpack {_base_name(internal_path)} from {archive.name}: "
+            f"it needs {expected_size} bytes, and {max(limit, 0)} are usable."
+        )
     if archive.suffix.lower() == ".zip":
         with zipfile.ZipFile(archive, "r") as handle:
             entry = _zip_entry(handle, internal_path, archive.name)
             found = folder / _base_name(entry)
             with handle.open(entry, "r") as source:
-                copy_limited(source, found)
+                copy_limited(source, found, limit)
     else:
-        found = _extract_with_tools(archive, internal_path, folder, unrar, seven_zip)
+        found = _extract_with_tools(archive, internal_path, folder, unrar, seven_zip, limit)
 
     size = found.stat().st_size
     if expected_size and size != expected_size:
@@ -377,7 +449,7 @@ def extract_all(extension: str, archive: Path, dest: Path, unrar: str | None, se
         raise ExtractionRefused(f"No tool available to unpack {archive.name}")
 
     try:
-        run(command, BULK_TIMEOUT, check=True)
+        run(command, BULK_TIMEOUT, check=True, cap=(dest, MAX_EXTRACTED_BYTES))
         _check_extracted(dest, archive.name)
     except (subprocess.SubprocessError, ExtractionRefused):
         shutil.rmtree(dest, ignore_errors=True)
