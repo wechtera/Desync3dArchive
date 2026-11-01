@@ -8,6 +8,14 @@ from desync_archival.api.routing import add_route, plain
 
 router = APIRouter()
 
+add_route(router, "GET", "/api/reconcile/duplicates/latest", plain(handlers.handle_get_reconcile_duplicates_latest))
+add_route(router, "POST", "/api/reconcile/duplicates/decision", plain(handlers.handle_post_reconcile_duplicate_decision),
+          schemas.DuplicateDecisionBody)
+add_route(router, "POST", "/api/reconcile/duplicates/delete", plain(handlers.handle_post_reconcile_duplicate_delete),
+          schemas.DuplicateDeleteBody)
+add_route(router, "GET", "/api/pending-deletion", plain(handlers.handle_get_pending_deletion))
+add_route(router, "POST", "/api/pending-deletion/purge", plain(handlers.handle_post_pending_deletion_purge),
+          schemas.PendingPurgeBody)
 add_route(router, "GET", "/api/reconcile/history", plain(handlers.handle_get_reconcile_history))
 add_route(router, "GET", "/api/reconcile/status", plain(handlers.handle_get_reconcile_status))
 add_route(router, "POST", "/api/reconcile/scan", plain(handlers.handle_post_reconcile_scan), schemas.ReconcileScanBody)

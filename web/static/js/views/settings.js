@@ -10,6 +10,8 @@ import {
   fetchAuditHistory,
   fetchHealth,
   fetchLocations,
+  fetchPendingDeletion,
+  purgePendingDeletion,
   postSchedules,
   fetchBackups,
   postBackups,
@@ -81,6 +83,7 @@ export async function loadSettingsView() {
     loadSettings(),
     loadDirectoryUsage(),
     loadLocations(),
+    loadPendingDeletion(),
     loadHealth(),
     loadLibraryUsage(),
     loadAuthStatus(),
@@ -209,6 +212,61 @@ export function switchSettingsTab(tab) {
     btn.classList.toggle('active', selected);
     btn.setAttribute('aria-selected', selected ? 'true' : 'false');
   });
+}
+
+export async function loadPendingDeletion() {
+  const line = document.getElementById('pending-deletion-status');
+  if (!line) return;
+  try {
+    const { count, size_bytes: size, wait_days: days } = await fetchPendingDeletion();
+    line.textContent = count
+      ? `Pending deletion: ${count} files, ${formatBytes(size)}. Each can be purged ${days} days after it was moved.`
+      : 'Pending deletion: empty.';
+  } catch (err) {
+    line.textContent = `Pending deletion unavailable: ${err.message}`;
+  }
+}
+
+async function runPendingPurge(items) {
+  if (!confirm(`Permanently delete these ${items.length} files? This can't be undone.`)) return;
+  try {
+    const res = await purgePendingDeletion({ confirm: true, ids: items.map((item) => item.id) });
+    showToast(`Purged ${res.purged} files.`);
+    window.closeModal('pending-purge-modal');
+    loadPendingDeletion();
+  } catch (err) {
+    alert(`Purge failed: ${err.message}`);
+  }
+}
+
+export async function openPendingPurge() {
+  const body = document.getElementById('pending-purge-body');
+  try {
+    const { items, waiting, reclaimable_bytes: bytes, wait_days: days } = await purgePendingDeletion({});
+    render(html`
+      <p class="font-sm">${items.length
+        ? `${items.length} files, ${formatBytes(bytes)}, were moved over ${days} days ago and can be purged.`
+        : `Nothing has been waiting over ${days} days yet.`}
+        ${waiting ? ` ${waiting} newer files stay in the folder.` : ''}</p>
+      ${items.length ? html`
+        <table class="help-table" id="pending-purge-list">
+          <thead><tr><th>File</th><th>Collection</th><th>Size</th><th>Days</th></tr></thead>
+          <tbody>
+            ${items.map((item) => html`<tr>
+              <td><strong>${item.filename}</strong><div class="font-mono font-xs text-dim location-path">${item.original_path}</div></td>
+              <td>${item.collection}</td><td>${formatBytes(item.size_bytes)}</td><td>${item.age_days}</td>
+            </tr>`)}
+          </tbody>
+        </table>
+        <div class="flex gap-2 mt-2">
+          <button type="button" class="btn-pill btn-action-cancel" id="btn-confirm-pending-purge" @click=${() => runPendingPurge(items)}>Delete ${items.length} Files</button>
+        </div>
+      ` : nothing}
+    `, body);
+    window.openModal('pending-purge-modal');
+  } catch (err) {
+    alert(`Could not read pending deletion: ${err.message}`);
+  }
 }
 
 async function saveSchedules(event) {
@@ -880,6 +938,7 @@ Object.assign(window, {
   loadSettings,
   refreshDirectoryUsage,
   loadDirectoryUsage,
+  openPendingPurge,
   loadLibraryUsage,
   loadBackups,
   loadAuditHistory,

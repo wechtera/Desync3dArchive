@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any, Optional
 
 from desync_archival.db.queries import reconcile as queries
-from desync_archival.services import audit, duplicates, jobs, run_history
+from desync_archival.services import (
+    audit,
+    duplicates,
+    jobs,
+    pending_deletion,
+    run_history,
+)
 from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
@@ -189,8 +195,68 @@ def handle_get_reconcile_duplicates(
     include_shared = params.get("include_shared", ["0"])[0] == "1"
     found = duplicates.find_duplicates(conn, include_shared=include_shared)
     _, task_mgr = _get_managers(conn)
-    task_mgr.record_finished("duplicate_scan", "Duplicate check finished", {"include_shared": include_shared})
+    task_mgr.record_finished("duplicate_scan", f"{found['summary']['pairs']} pairs to review", found)
     return found, 200
+
+
+def handle_get_reconcile_duplicates_latest(
+    conn: sqlite3.Connection,
+    download_manager: DownloadManager | None,
+    body: dict,
+    params: dict,
+) -> tuple[dict[str, Any], int]:
+    return duplicates.latest(conn), 200
+
+
+def handle_post_reconcile_duplicate_decision(
+    conn: sqlite3.Connection,
+    download_manager: DownloadManager | None,
+    body: dict,
+    params: dict,
+) -> tuple[dict[str, Any], int]:
+    try:
+        return duplicates.decide(conn, int(body["first_file_id"]), int(body["second_file_id"]), str(body["decision"])), 200
+    except duplicates.DecisionRefused as e:
+        return {"success": False, "error": str(e)}, 400
+
+
+def handle_post_reconcile_duplicate_delete(
+    conn: sqlite3.Connection,
+    download_manager: DownloadManager | None,
+    body: dict,
+    params: dict,
+) -> tuple[dict[str, Any], int]:
+    file_id = int(body["file_id"])
+    if not body.get("confirm"):
+        return {"success": True, "dry_run": True, "file_id": file_id}, 200
+    # A move while a download or job is working on the same file would leave both half done.
+    if reason := jobs.busy_reason(conn, download_manager):
+        return {"success": False, "error": reason}, 409
+    try:
+        return pending_deletion.delete_file(conn, file_id), 200
+    except pending_deletion.DeleteRefused as e:
+        return {"success": False, "error": str(e)}, e.code
+
+
+def handle_get_pending_deletion(
+    conn: sqlite3.Connection,
+    download_manager: DownloadManager | None,
+    body: dict,
+    params: dict,
+) -> tuple[dict[str, Any], int]:
+    return pending_deletion.summary(conn), 200
+
+
+def handle_post_pending_deletion_purge(
+    conn: sqlite3.Connection,
+    download_manager: DownloadManager | None,
+    body: dict,
+    params: dict,
+) -> tuple[dict[str, Any], int]:
+    try:
+        return pending_deletion.purge(conn, bool(body.get("confirm")), [int(i) for i in body.get("ids") or []]), 200
+    except pending_deletion.DeleteRefused as e:
+        return {"success": False, "error": str(e)}, e.code
 
 
 def handle_post_reconcile_path_realign(

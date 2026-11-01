@@ -102,6 +102,22 @@ class TagBody(RequestBody):
     new_name: str | None = None
 
 
+class DuplicateDecisionBody(RequestBody):
+    first_file_id: int
+    second_file_id: int
+    decision: str
+
+
+class DuplicateDeleteBody(RequestBody):
+    file_id: int
+    confirm: bool = False
+
+
+class PendingPurgeBody(RequestBody):
+    confirm: bool = False
+    ids: list[int] | None = None
+
+
 class DocumentStashBody(RequestBody):
     key: str
 

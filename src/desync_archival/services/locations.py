@@ -11,7 +11,7 @@ from typing import Any
 
 from desync_archival import settings as app_config
 from desync_archival.db.queries import locations as queries
-from desync_archival.services.paths import IMPORT_FOLDER
+from desync_archival.services.paths import IMPORT_FOLDER, PENDING_DELETION_FOLDER
 
 CONFIG = "Configuration"
 DATA = "App data"
@@ -73,6 +73,8 @@ def _storage(conn: sqlite3.Connection, stored: dict[str, str]) -> list[dict[str,
         _entry(STORAGE, "Vault", vault, "Permanent home of downloaded MMF collections, in creator folders.", IN_SETTINGS),
         _entry(STORAGE, "Ad-hoc imports", Path(vault) / IMPORT_FOLDER if vault else None,
                "Everything added with Import File. Always here, apart from the creator folders.", "Fixed, follows the vault"),
+        _entry(STORAGE, "Pending deletion", Path(vault) / PENDING_DELETION_FOLDER if vault else None,
+               "Hidden. Files deleted from duplicate results, held for 14 days before they can be purged.", "Fixed, follows the vault"),
         _entry(STORAGE, "Staging", app_config.resolve_data_path(stored["download_work_path"]) if stored.get("download_work_path") else app_config.staging_dir(),
                "Fast local holding area for downloads before they move to the vault.", IN_SETTINGS),
         _entry(STORAGE, "Print queue", stored.get("stash_download_path"), "Where stashes are exported for the slicer.", IN_SETTINGS),

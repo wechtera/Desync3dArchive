@@ -561,6 +561,26 @@ export async function updateDocuments() {
   return postJson('/api/documents/update', {});
 }
 
+export async function fetchLatestDuplicates() {
+  return request('/api/reconcile/duplicates/latest');
+}
+
+export async function postDuplicateDecision(firstFileId, secondFileId, decision) {
+  return postJson('/api/reconcile/duplicates/decision', { first_file_id: firstFileId, second_file_id: secondFileId, decision });
+}
+
+export async function deleteDuplicateFile(fileId) {
+  return postJson('/api/reconcile/duplicates/delete', { file_id: fileId, confirm: true });
+}
+
+export async function fetchPendingDeletion() {
+  return request('/api/pending-deletion');
+}
+
+export async function purgePendingDeletion(body) {
+  return postJson('/api/pending-deletion/purge', body);
+}
+
 export async function fetchReconcileHistory() {
   return request('/api/reconcile/history');
 }

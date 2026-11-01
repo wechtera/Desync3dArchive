@@ -87,6 +87,10 @@ scripts/production.sh python -m desync_archival.dbtool build-models --confirm-pr
 
 Import File, under Manage / Retrieve / Reconcile Assets > External Vault, takes any mix of archives, loose files and folders. Everything is copied to `ad-hoc/` at the vault root, a fixed location apart from the creator folders. A folder becomes one collection and a file its own, and repeats are skipped by hash. Archives are peeked and wait in Archive Review. The picker can only open folders listed in `DESYNC_ALLOWED_ROOTS`.
 
+### Duplicates
+
+Find Duplicates, under Vault Reconcile, compares whole files. Results stay on the card until each pair is acted on. Keep Both and Ignore are remembered, so that pair isn't raised again. Delete moves one file to `.Pending-Deletion` at the vault root, a hidden, fixed folder, and leaves a tombstone in the catalog. Linked library files are read-only and can't be deleted. Settings > Disk Usage can purge that folder, listing each file first and asking twice, and only for files moved over 14 days ago.
+
 ### PDFs
 
 View Library > PDFs lists every PDF the catalog knows about, from MMF, linked libraries, imports and inside peeked archives. The list reads SQLite only, so it works with the NAS offline. **Update PDFs**, under Manage / Retrieve / Reconcile Assets > Vault Reconcile, records PDFs in linked libraries and makes first page previews with Ghostscript, kept locally. A PDF inside an archive can only be named once that archive is downloaded and peeked, so until then it shows as an archive not read yet.

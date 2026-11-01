@@ -423,7 +423,7 @@
       </div>
 
       <div class="reconcile-cards" id="reconcile-cards">
-        <section class="reconcile-card" data-card="forward">
+        <section class="tool-card" data-card="forward">
           <div class="reconcile-card-action">
             <div class="segmented-control segmented-stacked">
               <button type="button" class="segmented-btn active" id="btn-mode-fast" data-click="setReconcileMode" data-args='["fast"]'>Fast</button>
@@ -439,7 +439,7 @@
             <div class="reconcile-last-run" data-run="forward">Not run yet</div>
           </div>
         </section>
-        <section class="reconcile-card" data-card="reverse">
+        <section class="tool-card" data-card="reverse">
           <div class="reconcile-card-action">
             <button type="button" class="btn-pill reconcile-run" id="btn-run-orphan-audit" data-click="triggerOrphanAudit">Run Reverse Orphan Audit</button>
           </div>
@@ -451,7 +451,7 @@
             <div class="reconcile-last-run" data-run="reverse">Not run yet</div>
           </div>
         </section>
-        <section class="reconcile-card" data-card="archive_peek_backfill">
+        <section class="tool-card" data-card="archive_peek_backfill">
           <div class="reconcile-card-action">
             <button type="button" class="btn-pill reconcile-run" id="btn-backfill-archives" data-click="triggerArchiveInspectionSweep">Backfill Archive Inspection</button>
           </div>
@@ -463,7 +463,7 @@
             <div class="reconcile-last-run" data-run="archive_peek_backfill">Not run yet</div>
           </div>
         </section>
-        <section class="reconcile-card" data-card="catalog_preview_backfill">
+        <section class="tool-card" data-card="catalog_preview_backfill">
           <div class="reconcile-card-action">
             <button type="button" class="btn-pill reconcile-run" id="btn-backfill-previews" data-click="triggerCatalogPreviewSweep">Backfill Model Previews</button>
           </div>
@@ -475,7 +475,7 @@
             <div class="reconcile-last-run" data-run="catalog_preview_backfill">Not run yet</div>
           </div>
         </section>
-        <section class="reconcile-card" data-card="document_update">
+        <section class="tool-card" data-card="document_update">
           <div class="reconcile-card-action">
             <button type="button" class="btn-pill reconcile-run" id="btn-document-update" data-click="updateDocuments">Update PDFs</button>
           </div>
@@ -487,7 +487,7 @@
             <div class="reconcile-last-run" data-run="document_update">Not run yet</div>
           </div>
         </section>
-        <section class="reconcile-card" data-card="staging_scan">
+        <section class="tool-card" data-card="staging_scan">
           <div class="reconcile-card-action">
             <button type="button" class="btn-pill reconcile-run" id="btn-scan-staging" data-click="triggerStagingSweep">Staging Scratch Purge</button>
           </div>
@@ -499,7 +499,7 @@
             <div class="reconcile-last-run" data-run="staging_scan">Not run yet</div>
           </div>
         </section>
-        <section class="reconcile-card" data-card="path_drift_scan">
+        <section class="tool-card" data-card="path_drift_scan">
           <div class="reconcile-card-action">
             <button type="button" class="btn-pill reconcile-run" id="btn-scan-drift" data-click="triggerPathDriftScan">Check Path Drift</button>
           </div>
@@ -511,7 +511,7 @@
             <div class="reconcile-last-run" data-run="path_drift_scan">Not run yet</div>
           </div>
         </section>
-        <section class="reconcile-card" data-card="duplicate_scan">
+        <section class="tool-card" data-card="duplicate_scan">
           <div class="reconcile-card-action">
             <button type="button" class="btn-pill reconcile-run" id="btn-scan-duplicates" data-click="triggerDuplicateScan">Find Duplicates</button>
           </div>
@@ -522,13 +522,14 @@
             <p><strong>To validate:</strong> Compare a listed pair by hand before acting. Files shared between models on purpose are expected.</p>
             <div class="reconcile-last-run" data-run="duplicate_scan">Not run yet</div>
           </div>
+          <details class="reconcile-card-results" id="duplicate-results-panel" hidden></details>
         </section>
       </div>
     </div>
 
     <!-- Sub-View E: MMF Sync -->
     <div id="sub-dl-libraries" style="display:none;">
-      <div class="settings-panel" id="external-libraries-panel"></div>
+      <div id="external-libraries-panel"></div>
     </div>
 
     <div id="sub-dl-archives" style="display:none;">
@@ -703,12 +704,16 @@
             <button type="button" class="btn-pill btn-action-cancel" data-click="purgeLogs" data-args='[14]'>
               Purge Logs (&gt;14 Days)
             </button>
+            <button type="button" class="btn-pill btn-action-cancel" id="btn-purge-pending" data-click="openPendingPurge">
+              Purge Pending Deletion
+            </button>
             <button type="button" class="btn-pill" data-click="refreshDirectoryUsage">
               Refresh Disk Stats
             </button>
           </div>
         </div>
         <div id="critical-directories-table-container"></div>
+        <p class="text-dim font-sm" id="pending-deletion-status"></p>
         <p class="text-dim font-sm" id="backup-status"></p>
       </div>
 
@@ -1220,7 +1225,7 @@
         </div>
       </article>
 
-      <article class="card help-card">
+      <article class="card help-card help-card-wide">
         <div class="help-card-header">
           <h3>Stash Management (&ldquo;A pile of gray&rdquo;)</h3>
         </div>
@@ -1307,6 +1312,16 @@
         <button class="tab-btn" data-click="closeModal" data-args='["model-view-modal"]'>Close</button>
       </div>
       <div class="modal-body" id="model-view-body"></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="pending-purge-modal">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h2 class="modal-title-accent">Purge Pending Deletion</h2>
+        <button class="tab-btn" data-click="closeModal" data-args='["pending-purge-modal"]'>Close</button>
+      </div>
+      <div class="modal-body" id="pending-purge-body"></div>
     </div>
   </div>
 

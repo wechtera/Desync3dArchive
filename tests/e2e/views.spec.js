@@ -275,23 +275,76 @@ test.describe('unlinked library items', () => {
 
 test.describe('duplicate report', () => {
   test('lists matches with hostile names as text', async ({ page }) => {
-    await mock(page, '/api/reconcile/duplicates', {
+    const side = (fileId, filename, source = 'mmf') => ({
+      file_id: fileId, filename, size_bytes: 1024, model_id: fileId, model_name: `Model ${fileId}`, source,
+      path: source === 'mmf' ? `/vault/${fileId}/x.stl` : '/loot/x.stl', can_delete: source === 'mmf',
+    });
+    const results = {
       success: true,
-      summary: { exact_groups: 1, candidate_groups: 1, duplicate_models: 1, overlapping_models: 0, ignored_names: ['base'] },
-      files: [
-        { kind: 'exact', filename: HOSTILE, size_bytes: 1024, models: [{ model_id: 1, model_name: 'One' }, { model_id: 2, model_name: 'Two' }] },
-        { kind: 'candidate', filename: 'b.stl', size_bytes: 10, models: [{ model_id: 3, model_name: 'Three' }, { model_id: 4, model_name: 'Four' }] },
+      summary: { exact_groups: 1, candidate_groups: 1, duplicate_models: 1, overlapping_models: 0, ignored_names: ['base'], pairs: 2 },
+      pairs: [
+        { kind: 'exact', first: side(1, HOSTILE), second: side(2, 'two.stl') },
+        { kind: 'candidate', first: side(3, 'three.stl'), second: side(4, 'loot.stl', 'external') },
       ],
       models: [{ kind: 'duplicate', shared_files: 2, models: [{ model_id: 1, model_name: 'One' }, { model_id: 2, model_name: 'Two' }] }],
+    };
+    let decided = null;
+    let deleted = null;
+    await mock(page, '/api/reconcile/duplicates', results);
+    await page.route('**/api/reconcile/duplicates/latest', (route) => route.fulfill({ json: { ...results, has_results: true } }));
+    await page.route('**/api/reconcile/duplicates/decision', (route) => {
+      decided = route.request().postDataJSON();
+      return route.fulfill({ json: { success: true } });
     });
-    await page.goto('/');
-    await page.evaluate(() => window.triggerDuplicateScan());
+    await page.route('**/api/reconcile/duplicates/delete', (route) => {
+      deleted = route.request().postDataJSON();
+      return route.fulfill({ json: { success: true } });
+    });
+    page.on('dialog', (dialog) => dialog.accept());
+    await page.goto('/#downloads');
+    await page.locator('#group-reconcile').click();
+    const card = page.locator('[data-card="duplicate_scan"]');
+    await expect(card.locator('#duplicate-results-panel summary')).toContainText('2 pairs to review');
     await expect(page.locator('.duplicate-row')).toHaveCount(3);
     await expect(page.locator('.duplicate-row').nth(0)).toContainText('DUPLICATE MODEL');
     await expect(page.locator('.duplicate-row').nth(1)).toContainText('EXACT');
+    await expect(page.locator('.duplicate-row').nth(1)).toContainText('/vault/1/x.stl');
     await expect(page.locator('.duplicate-row').nth(2)).toContainText('POSSIBLE');
+    await expect(page.locator('.duplicate-row').nth(2)).toContainText('Linked library, read-only');
+    await expect(page.locator('.duplicate-row').nth(2).locator('.duplicate-delete')).toHaveCount(1);
+    const whole = await card.boundingBox();
+    const panel = await card.locator('#duplicate-results-panel').boundingBox();
+    expect(panel.width).toBeGreaterThan(whole.width - 4);
+    await page.locator('.duplicate-keep').first().click();
+    await expect.poll(() => decided).toEqual({ first_file_id: 1, second_file_id: 2, decision: 'keep' });
+    await page.locator('.duplicate-delete').first().click();
+    await expect.poll(() => deleted).toEqual({ file_id: 1, confirm: true });
     expect(await page.evaluate(() => window.xss)).toBeUndefined();
     expect(page.pageErrors).toEqual([]);
+  });
+
+  test('purging pending deletion lists files and asks twice', async ({ page }) => {
+    const bodies = [];
+    await page.route('**/api/pending-deletion', (route) => route.fulfill({ json: { count: 2, size_bytes: 2048, wait_days: 14 } }));
+    await page.route('**/api/pending-deletion/purge', (route) => {
+      bodies.push(route.request().postDataJSON());
+      return route.fulfill({ json: {
+        success: true, purged: 1, waiting: 1, reclaimable_bytes: 1024, wait_days: 14,
+        items: [{ id: 5, filename: 'old.stl', collection: 'Pack', original_path: '/vault/old.stl', size_bytes: 1024, age_days: 20 }],
+      } });
+    });
+    const dialogs = [];
+    page.on('dialog', (dialog) => { dialogs.push(dialog.message()); dialog.accept(); });
+    await page.goto('/');
+    await page.evaluate(() => window.switchTab('settings'));
+    await expect(page.locator('#pending-deletion-status')).toContainText('2 files');
+    await page.locator('#btn-purge-pending').click();
+    await expect(page.locator('#pending-purge-list')).toContainText('old.stl');
+    expect(bodies).toEqual([{}]);
+    await page.locator('#btn-confirm-pending-purge').click();
+    await expect.poll(() => bodies.length).toBe(2);
+    expect(dialogs).toHaveLength(1);
+    expect(bodies[1]).toEqual({ confirm: true, ids: [5] });
   });
 });
 
@@ -902,7 +955,7 @@ test.describe('settings', () => {
     } } }));
     await page.goto('/#downloads');
     await page.locator('#group-reconcile').click();
-    const cards = page.locator('#reconcile-cards .reconcile-card');
+    const cards = page.locator('#reconcile-cards .tool-card');
     await expect(cards).toHaveCount(8);
     await expect(page.locator('#sub-dl-reconcile .reconcile-guide-grid')).toHaveCount(0);
     for (let index = 0; index < 8; index += 1) {
@@ -930,6 +983,62 @@ test.describe('settings', () => {
     const bodyBox = await forward.locator('.reconcile-card-body').boundingBox();
     const whole = await forward.boundingBox();
     expect(bodyBox.width / whole.width).toBeGreaterThan(0.6);
+  });
+
+  test('every library gets a preview, seven releases to a page', async ({ page }) => {
+    const release = (index) => ({ name: `Release ${index}`, new: [{ name: 'M', rel_path: `Release ${index}/M`, flags: ['Odd'] }], known: 0, added: 0, overlaps: [], empty: [], low_confidence: [], reviewed: false, edited: false });
+    const report = (count) => ({ releases: Array.from({ length: count }, (_, i) => release(i + 1)), totals: { new: count, known: 0, overlaps: 0, empty: 0, low_confidence: 0, ready: 0 } });
+    let approved = null;
+    await page.route('**/api/settings/libraries', (route) => route.fulfill({ json: { libraries: [
+      { id: 1, name: 'Loot', path: '/loot', exists: true }, { id: 2, name: 'Second', path: '/second', exists: true },
+    ] } }));
+    await page.route('**/api/settings/libraries/1/preview', (route) => route.fulfill({ json: { candidates: { proposed: 9 }, report: report(9) } }));
+    await page.route('**/api/settings/libraries/2/preview', (route) => route.fulfill({ json: { candidates: { proposed: 2 }, report: report(2) } }));
+    await page.route('**/api/settings/libraries/1/preview/approve', (route) => {
+      approved = route.request().postDataJSON();
+      return route.fulfill({ json: { success: true, approved: 8, waiting: 1 } });
+    });
+    await page.route('**/api/settings/libraries/1/scan', (route) => route.fulfill({ json: { success: true, task_id: 4 } }));
+    await page.goto('/#downloads');
+    await page.locator('#group-external').click();
+    await page.locator('#sub-btn-libraries').click();
+    const first = page.locator('#library-preview-1');
+    await expect(first).toContainText('Preview for Loot');
+    await expect(page.locator('#library-preview-2')).toContainText('Preview for Second');
+    await expect(first.locator('tbody tr')).toHaveCount(7);
+    await first.locator('.preview-release-check').first().uncheck();
+    const name = await first.locator('.preview-release-check').first().getAttribute('data-release');
+    await first.getByRole('button', { name: 'Next' }).click();
+    await expect(first.locator('tbody tr')).toHaveCount(2);
+    await expect(first).toContainText('Page 2 of 2');
+    await first.getByRole('button', { name: 'Previous' }).click();
+    await expect(first.locator('.preview-release-check').first()).not.toBeChecked();
+    await first.getByRole('button', { name: 'Next' }).click();
+    page.on('dialog', (dialog) => dialog.accept());
+    await first.locator('#btn-approve-preview').click();
+    await expect.poll(() => approved?.skip || approved?.skipped || approved?.held || approved).toBeTruthy();
+    expect(JSON.stringify(approved)).toContain(name);
+
+    const order = await page.locator('#external-libraries-panel').evaluate((panel) => ['external-libraries-table-container', 'new-lib-path', 'library-image-queue', 'library-preview-container']
+      .map((id) => panel.querySelector(`#${id}`).getBoundingClientRect().top));
+    expect([...order].sort((x, y) => x - y)).toEqual(order);
+  });
+
+  test('every dropdown leaves room for its arrow', async ({ page }) => {
+    await page.goto('/#downloads');
+    const padding = await page.locator('#history-sort').evaluate((el) => getComputedStyle(el).paddingRight);
+    expect(parseInt(padding, 10)).toBeGreaterThanOrEqual(30);
+    const arrow = await page.locator('#history-sort').evaluate((el) => getComputedStyle(el).appearance);
+    expect(arrow).toBe('none');
+  });
+
+  test('help cards and tables stay inside the page', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => window.switchTab('help'));
+    await page.setViewportSize({ width: 1300, height: 800 });
+    const overflow = await page.locator('.help-card').evaluateAll((cards) => cards.filter((card) => card.scrollWidth > card.clientWidth + 1).length);
+    expect(overflow).toBe(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
   });
 
   test('update pdfs runs from vault reconcile', async ({ page }) => {

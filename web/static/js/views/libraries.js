@@ -30,8 +30,8 @@ const PREVIEW_WATCH_MS = 30 * 60 * 1000;
 const PREVIEW_WATCH_INTERVAL_MS = 5000;
 
 let previewWatch = null;
-let currentLibrary = null;
-let currentReport = null;
+const previews = {};
+const PREVIEW_PAGE_SIZE = 7;
 let review = null;
 let archiveQueue = [];
 const importPicked = new Set();
@@ -52,56 +52,87 @@ function reviewQueue(report) {
     || a.name.localeCompare(b.name));
 }
 
+function libraryCard(lib) {
+  const lastScan = lib.last_scanned_at
+    ? parseServerTime(lib.last_scanned_at)?.toLocaleString() || 'Unknown'
+    : '';
+  return html`
+    <section class="tool-card" data-library=${lib.id}>
+      <div class="reconcile-card-action">
+        <button type="button" class="btn-pill btn-action-primary" title="Finds new folders and shows them for approval. Adds nothing."
+          @click=${() => startLibraryPass(lib, 'preview')}>Preview New Folders</button>
+        <button type="button" class="btn-pill" title="Checks known models against storage. Never adds new folders."
+          @click=${() => startLibraryPass(lib, 'full')}>Full Rescan</button>
+        <button type="button" class="btn-pill btn-action-cancel"
+          @click=${() => window.handleDeleteExternalLibrary(lib.id, lib.name)}>Remove</button>
+      </div>
+      <div class="reconcile-card-body">
+        <h3 class="reconcile-card-title">${lib.name}${lib.exists ? nothing : html` <span class="status-badge status-danger font-xs" title="Directory path not currently mounted">Unmounted</span>`}</h3>
+        <p>${lib.default_creator || lib.name}</p>
+        <p class="font-mono font-xs location-path">${lib.path}</p>
+        <div class="reconcile-last-run">
+          <span>${lib.disk_formatted || '0 B'}</span>
+          <span>${(lib.total_models || 0).toLocaleString()} models</span>
+          <span>${(lib.total_files || 0).toLocaleString()} files</span>
+          <span>${lastScan ? `Last scanned ${lastScan}` : 'Never scanned'}</span>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 export async function loadExternalLibraries() {
   const panel = document.getElementById('external-libraries-panel');
   if (!panel) return;
 
   render(html`
-    <div class="settings-panel-header">
-      <div>
-        <h2 class="settings-panel-title">In-Place External Libraries</h2>
-        <div class="settings-panel-subtitle">
-          Manage local &amp; network storage collections (e.g., Loot Studios) indexed zero-copy in strictly read-only mode.
+    <div class="reconcile-cards">
+      <div class="library-section-heading">
+        <div>
+          <h2 class="settings-panel-title">Existing In-Place Libraries</h2>
+          <div class="settings-panel-subtitle">Local and network collections indexed where they sit, strictly read-only.</div>
         </div>
-      </div>
-      <div class="flex gap-2">
         <button type="button" class="btn-pill" @click=${() => window.loadExternalLibraries()}>Refresh Libraries</button>
       </div>
-    </div>
-    <div id="external-libraries-table-container">
-      <div class="table-msg">Loading registered libraries...</div>
-    </div>
-    <div id="library-preview-container"></div>
-    <div id="library-image-queue" class="mt-3"></div>
-    <div class="mt-4 pt-3" style="border-top: 1px solid var(--border-dim);">
-      <h3 class="font-bold font-md mb-2 text-accent">Register New In-Place Library</h3>
-      <div class="settings-form-row two-col">
-        <div class="settings-field-group">
-          <label for="new-lib-path">Top-Level Storage Directory Path *</label>
-          <div class="settings-input-with-button">
-            <input type="text" id="new-lib-path" placeholder="/Volumes/STL/Loot Studios" spellcheck="false">
-            <button type="button" class="btn-pill" @click=${() => window.openDirectoryPicker('new-lib-path')}>Browse</button>
+      <div class="reconcile-cards-inner" id="external-libraries-table-container">
+        <div class="table-msg">Loading registered libraries...</div>
+      </div>
+
+      <h2 class="settings-panel-title library-section-title">Register New External Library</h2>
+      <section class="tool-card">
+        <div class="reconcile-card-action">
+          <button type="button" class="btn-pill btn-action-primary" @click=${() => window.handleAddExternalLibrary()}>Register In-Place Library</button>
+        </div>
+        <div class="reconcile-card-body">
+          <div class="settings-form-row two-col">
+            <div class="settings-field-group">
+              <label for="new-lib-path">Top-Level Storage Directory Path *</label>
+              <div class="settings-input-with-button">
+                <input type="text" id="new-lib-path" placeholder="/Volumes/STL/Loot Studios" spellcheck="false">
+                <button type="button" class="btn-pill" @click=${() => window.openDirectoryPicker('new-lib-path')}>Browse</button>
+              </div>
+              <span class="form-help-text">Library root on the NAS or a local drive. It stays read-only.</span>
+            </div>
+            <div class="settings-field-group">
+              <label for="new-lib-name">Display Name (Optional)</label>
+              <input type="text" id="new-lib-name" placeholder="Defaults to folder name" spellcheck="false">
+              <span class="form-help-text">Label shown in the catalog and monthly releases.</span>
+            </div>
           </div>
-          <span class="form-help-text">Direct path to library root on NAS or local drive (strictly read-only).</span>
+          <div class="settings-form-row two-col mt-2">
+            <div class="settings-field-group">
+              <label for="new-lib-creator">Default Creator / Studio (Optional)</label>
+              <input type="text" id="new-lib-creator" placeholder="e.g. Loot Studios" spellcheck="false">
+              <span class="form-help-text">Used for models when a release folder doesn't name one.</span>
+            </div>
+          </div>
         </div>
-        <div class="settings-field-group">
-          <label for="new-lib-name">Display Name (Optional)</label>
-          <input type="text" id="new-lib-name" placeholder="Defaults to folder name" spellcheck="false">
-          <span class="form-help-text">Label shown in catalog and monthly releases.</span>
-        </div>
-      </div>
-      <div class="settings-form-row two-col mt-2">
-        <div class="settings-field-group">
-          <label for="new-lib-creator">Default Creator / Studio (Optional)</label>
-          <input type="text" id="new-lib-creator" placeholder="e.g. Loot Studios" spellcheck="false">
-          <span class="form-help-text">Assigned to indexed models if not specified in release subfolders.</span>
-        </div>
-        <div class="settings-field-group flex items-end">
-          <button type="button" class="btn-pill btn-action-primary" @click=${() => window.handleAddExternalLibrary()}>
-            Register In-Place Library
-          </button>
-        </div>
-      </div>
+      </section>
+
+      <h2 class="settings-panel-title library-section-title">Background Images</h2>
+      <div id="library-image-queue"></div>
+
+      <div id="library-preview-container"></div>
     </div>
   `, panel);
 
@@ -113,69 +144,17 @@ export async function loadExternalLibraries() {
     if (!libs.length) {
       render(html`
         <div class="table-msg text-dim py-4">
-          No external libraries registered. Register a directory above to index external collections without moving files.
+          No external libraries registered. Register a directory below to index external collections without moving files.
         </div>
       `, tableContainer);
+      await loadImageQueue();
       return;
     }
 
-    render(html`
-      <table class="table-compact">
-        <thead>
-          <tr>
-            <th>Name / Studio</th>
-            <th>Storage Path</th>
-            <th>Disk Footprint</th>
-            <th>Models</th>
-            <th>Total Files</th>
-            <th>Last Scanned</th>
-            <th style="width: 300px;">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${libs.map(lib => {
-            const lastScan = lib.last_scanned_at
-              ? parseServerTime(lib.last_scanned_at)?.toLocaleString() || '-'
-              : html`<span class="text-dim">Never Scanned</span>`;
-            const existsBadge = lib.exists
-              ? ''
-              : html`<span class="status-badge status-danger font-xs ml-1" title="Directory path not currently mounted">Unmounted</span>`;
-
-            return html`
-              <tr>
-                <td>
-                  <strong>${lib.name}</strong>
-                  <div class="text-dim font-xs">${lib.default_creator || lib.name}</div>
-                </td>
-                <td class="font-mono font-xs text-dim">
-                  ${lib.path} ${existsBadge}
-                </td>
-                <td class="font-mono">${lib.disk_formatted || '0 B'}</td>
-                <td class="font-mono">${(lib.total_models || 0).toLocaleString()}</td>
-                <td class="font-mono">${(lib.total_files || 0).toLocaleString()}</td>
-                <td class="font-sm">${lastScan}</td>
-                <td>
-                  <div class="flex gap-1">
-                    <button type="button" class="btn-pill font-xs btn-action-primary" @click=${() => startLibraryPass(lib, 'preview')}
-                      title="Finds new folders and shows them for approval. Adds nothing.">
-                      Preview New Folders
-                    </button>
-                    <button type="button" class="btn-pill font-xs" @click=${() => startLibraryPass(lib, 'full')}
-                      title="Checks known models against storage. Never adds new folders.">
-                      Full Rescan
-                    </button>
-                    <button type="button" class="btn-pill font-xs btn-action-cancel" @click=${() => window.handleDeleteExternalLibrary(lib.id, lib.name)} title="Unlink library from database (preserves source NAS files)">
-                      Remove
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            `;
-          })}
-        </tbody>
-      </table>
-    `, tableContainer);
-    await Promise.all([loadLibraryPreview(libs[0]), loadImageQueue()]);
+    render(html`${libs.map(libraryCard)}`, tableContainer);
+    // One slot per library: each has its own preview, so a second library sits beside the first.
+    render(html`${libs.map(lib => html`<div id=${`library-preview-${lib.id}`}></div>`)}`, document.getElementById('library-preview-container'));
+    await Promise.all([...libs.map(loadLibraryPreview), loadImageQueue()]);
   } catch (err) {
     render(html`<div class="table-msg text-alert">Failed loading external libraries: ${err.message}</div>`, tableContainer);
   }
@@ -255,9 +234,7 @@ async function startLibraryPass(lib, mode) {
 
 // Waiting costs nothing here: flagged cards and unticked releases just stay proposed.
 async function approveReviewed(lib) {
-  const held = [...document.querySelectorAll('.preview-release-check')]
-    .filter(box => !box.checked)
-    .map(box => box.dataset.release);
+  const held = [...previews[lib.id].held];
   try {
     const res = await approveLibraryPreview(lib.id, held, true);
     showToast(`Approved ${res.approved} folders. ${res.waiting} stay for review.`);
@@ -269,10 +246,8 @@ async function approveReviewed(lib) {
 }
 
 async function approveAndAdd(lib) {
-  const skipped = [...document.querySelectorAll('.preview-release-check')]
-    .filter(box => !box.checked)
-    .map(box => box.dataset.release);
-  const unread = flaggedUnreviewed(currentReport);
+  const skipped = [...previews[lib.id].held];
+  const unread = flaggedUnreviewed(previews[lib.id].report);
   if (unread && !confirm(`${unread} flagged models are in releases you haven't reviewed. Add them anyway?`)) return;
   try {
     const res = await approveLibraryPreview(lib.id, skipped);
@@ -289,27 +264,33 @@ function previewFolderList(label, folders) {
   return html`<div class="text-dim font-xs mt-1">${label}: ${folders.join(', ')}</div>`;
 }
 
-async function loadLibraryPreview(lib) {
-  const container = document.getElementById('library-preview-container');
-  if (!container || !lib) return;
-  const data = await fetchLibraryPreview(lib.id);
-  const candidates = data.candidates || {};
-  const waiting = candidates.proposed || 0;
-  const approved = candidates.approved || 0;
-  const report = data.report;
+function toggleRelease(state, name, ticked) {
+  if (ticked) state.held.delete(name); else state.held.add(name);
+}
+
+function turnPreviewPage(lib, step) {
+  previews[lib.id].page += step;
+  drawLibraryPreview(lib);
+}
+
+function drawLibraryPreview(lib) {
+  const container = document.getElementById(`library-preview-${lib.id}`);
+  const state = previews[lib.id];
+  if (!container || !state) return;
+  const { report, waiting, approved } = state;
   if (!report && !approved) {
     render(nothing, container);
     return;
   }
-
-  currentLibrary = lib;
-  currentReport = report;
   const releases = reviewQueue(report);
+  const pages = Math.max(Math.ceil(releases.length / PREVIEW_PAGE_SIZE), 1);
+  state.page = Math.min(state.page, pages);
+  const shown = releases.slice((state.page - 1) * PREVIEW_PAGE_SIZE, state.page * PREVIEW_PAGE_SIZE);
   const flagged = (report?.releases || []).reduce((sum, r) => sum + flagsIn(r), 0);
   const unread = flaggedUnreviewed(report);
   render(html`
-    <div class="mt-4 pt-3" style="border-top: 1px solid var(--border-dim);">
-      <h3 class="font-bold font-md mb-2 text-accent">Preview for ${lib.name}</h3>
+    <section class="library-preview-card">
+      <h2 class="settings-panel-title">Preview for ${lib.name}</h2>
       ${report ? html`
         <p class="text-dim font-sm" id="library-preview-summary">
           ${report.totals.new} new, ${report.totals.known} already known, ${report.totals.overlaps} overlapping,
@@ -322,9 +303,10 @@ async function loadLibraryPreview(lib) {
         <table class="table-compact" id="library-preview-table">
           <thead><tr><th style="width: 60px;">Add</th><th>Release</th><th>New</th><th>Known</th><th>Flagged</th><th>Status</th><th>Needs a look</th></tr></thead>
           <tbody>
-            ${releases.map(r => html`
+            ${shown.map(r => html`
               <tr class=${flagsIn(r) ? 'preview-row-flagged' : ''}>
-                <td>${r.new.length ? html`<input type="checkbox" class="preview-release-check" data-release=${r.name} checked>` : nothing}</td>
+                <td>${r.new.length ? html`<input type="checkbox" class="preview-release-check" data-release=${r.name}
+                  .checked=${!state.held.has(r.name)} @change=${(event) => toggleRelease(state, r.name, event.target.checked)}>` : nothing}</td>
                 <td>
                   ${r.new.length ? html`<button type="button" class="link-btn preview-release-open" data-release=${r.name} @click=${() => openReview(lib, r.name)}>${r.name}</button>` : r.name}
                   ${r.added || r.known ? html`<button type="button" class="btn-pill font-xs preview-edit-added" @click=${() => openAddedReview(lib, r.name)}>Edit Added</button>` : nothing}
@@ -351,6 +333,13 @@ async function loadLibraryPreview(lib) {
             `)}
           </tbody>
         </table>
+        ${pages > 1 ? html`
+          <div class="results-pager">
+            <button type="button" class="btn-pill font-xs" ?disabled=${state.page <= 1} @click=${() => turnPreviewPage(lib, -1)}>Previous</button>
+            <span class="font-sm text-dim">Page ${state.page} of ${pages}</span>
+            <button type="button" class="btn-pill font-xs" ?disabled=${state.page >= pages} @click=${() => turnPreviewPage(lib, 1)}>Next</button>
+          </div>
+        ` : nothing}
       ` : nothing}
       ${unread ? html`<p class="text-dim font-sm mt-2" id="preview-unread">${unread} flagged models are in releases you haven't reviewed.</p>` : nothing}
       ${report && waiting ? html`
@@ -363,8 +352,21 @@ async function loadLibraryPreview(lib) {
         ${waiting ? html`<button type="button" class="btn-pill" id="btn-approve-preview" @click=${() => approveAndAdd(lib)}>Approve and Add All ${waiting} Folders</button>` : nothing}
         ${approved ? html`<button type="button" class="btn-pill" @click=${() => startLibraryPass(lib, 'add')}>Resume Adding ${approved} Folders</button>` : nothing}
       </div>
-    </div>
+    </section>
   `, container);
+}
+
+async function loadLibraryPreview(lib) {
+  if (!lib) return;
+  const data = await fetchLibraryPreview(lib.id);
+  const candidates = data.candidates || {};
+  const earlier = previews[lib.id];
+  // Ticks live here, because a release on another page has no checkbox to read.
+  previews[lib.id] = {
+    report: data.report, waiting: candidates.proposed || 0, approved: candidates.approved || 0,
+    page: earlier?.page || 1, held: earlier?.held || new Set(),
+  };
+  drawLibraryPreview(lib);
 }
 
 const IMAGE_STATES = {
@@ -392,17 +394,19 @@ export async function loadImageQueue() {
   const data = await fetchImageQueue();
   const counts = data.counts;
   render(html`
-    <div class="mt-4 pt-3" style="border-top: 1px solid var(--border-dim);">
-      <h3 class="font-bold font-md mb-2 text-accent">Background Images</h3>
-      <p class="text-dim font-sm" id="image-queue-summary">
-        ${IMAGE_STATES[data.state] || data.state}. ${counts.pending} waiting, ${counts.done} done,
-        ${counts.failed} failed, ${counts.no_source} with nothing to render.
-      </p>
-      <div class="flex gap-2 mt-2">
+    <section class="tool-card">
+      <div class="reconcile-card-action">
         <button type="button" class="btn-pill" id="btn-image-queue-toggle" @click=${() => changeImageQueue(data.paused ? 'resume' : 'pause')}>${data.paused ? 'Resume' : 'Pause'}</button>
         ${counts.failed + counts.no_source ? html`<button type="button" class="btn-pill" @click=${() => changeImageQueue('retry')}>Retry ${counts.failed + counts.no_source} Failed</button>` : nothing}
       </div>
-    </div>
+      <div class="reconcile-card-body">
+        <p>Renders and caches a cover for each linked library model in the background, so the library shows pictures without reaching the NAS. It pauses by itself during a scan or while storage is offline.</p>
+        <div class="reconcile-last-run" id="image-queue-summary">
+          <span>${IMAGE_STATES[data.state] || data.state}. ${counts.pending} waiting, ${counts.done} done,
+          ${counts.failed} failed, ${counts.no_source} with nothing to render.</span>
+        </div>
+      </div>
+    </section>
   `, container);
 }
 
@@ -745,7 +749,7 @@ function openReview(lib, release, focusPath = '') {
     reset: () => saveLibraryReview(lib.id, { release, reset: true }),
     refresh: () => loadLibraryPreview(lib),
     next: () => {
-      const queue = reviewQueue(currentReport).filter(r => r.new.length && r.name !== release && !r.reviewed);
+      const queue = reviewQueue(previews[lib.id]?.report).filter(r => r.new.length && r.name !== release && !r.reviewed);
       return queue[0] ? () => openReview(lib, queue[0].name) : null;
     },
     again: () => openReview(lib, release),

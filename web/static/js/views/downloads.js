@@ -10,6 +10,9 @@ import {
   runReconcileScan,
   fetchReconcileStatus,
   fetchReconcileHistory,
+  fetchLatestDuplicates,
+  postDuplicateDecision,
+  deleteDuplicateFile,
   cancelReconcileScan,
   resetReconcileModels,
   deleteOrphanDirectories,
@@ -79,8 +82,9 @@ export async function loadRunHistory() {
 }
 
 document.addEventListener('click', (event) => {
-  if (!event.target.closest?.('.reconcile-run')) return;
-  showAuditState();
+  const run = event.target.closest?.('.reconcile-run');
+  if (!run) return;
+  if (run.id !== 'btn-scan-duplicates') showAuditState();
   setTimeout(loadRunHistory, 1500);
 });
 
@@ -693,6 +697,7 @@ export function updateReconcileFromHealth(task) {
 
 export async function loadReconcileView() {
   loadRunHistory();
+  loadDuplicateResults();
   const progressBox = document.getElementById('reconcile-progress-container');
   const btnRun = document.getElementById('btn-run-reconcile');
   const lastScanEl = document.getElementById('reconcile-last-scan');
@@ -1145,51 +1150,114 @@ export async function purgeAllStagingGarbage() {
   }
 }
 
+function revealDuplicates() {
+  const panel = document.getElementById('duplicate-results-panel');
+  if (!panel) return;
+  panel.hidden = false;
+  panel.open = true;
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 export async function triggerDuplicateScan(includeShared = false) {
-  const container = document.getElementById('reconcile-results-container');
-  if (!container) return;
-  render(html`<div class="table-msg">Comparing catalog files...</div>`, container);
+  const panel = document.getElementById('duplicate-results-panel');
+  if (!panel) return;
+  render(html`<summary>Comparing catalog files...</summary>`, panel);
+  revealDuplicates();
   try {
-    renderDuplicateResults(await fetchDuplicates(includeShared), includeShared);
+    renderDuplicateResults(await fetchDuplicates(includeShared === true));
+    loadRunHistory();
   } catch (err) {
     alert(`Duplicate scan failed: ${err.message}`);
   }
 }
 
-function renderDuplicateResults(data, includeShared) {
-  const container = document.getElementById('reconcile-results-container');
-  const { summary } = data;
-  render(html`
-    <div class="card" id="duplicate-results">
-      <div class="status-summary-text">
-        ${summary.exact_groups} exact file groups, ${summary.candidate_groups} possible,
-        ${summary.duplicate_models} duplicate model pairs, ${summary.overlapping_models} model pairs sharing files.
-        This is a report only. Nothing is changed.
-      </div>
-      <button type="button" class="btn-pill font-xs" @click=${() => triggerDuplicateScan(!includeShared)}>
-        ${includeShared ? 'Hide shared bases and supports' : 'Include shared bases and supports'}
-      </button>
-      <table class="data-table">
-        <thead><tr><th>Match</th><th>File or models</th><th>Size</th></tr></thead>
-        <tbody>
-          ${data.models.filter((group) => group.kind === 'duplicate').map((group) => html`
-            <tr class="duplicate-row">
-              <td><span class="status-badge status-failed font-xs">DUPLICATE MODEL</span></td>
-              <td>${group.models.map((model) => model.model_name).join(' / ')}</td>
-              <td>${group.shared_files} files</td>
-            </tr>
-          `)}
-          ${data.files.map((group) => html`
-            <tr class="duplicate-row">
-              <td><span class="status-badge ${group.kind === 'exact' ? 'status-completed' : 'status-queued'} font-xs">${group.kind === 'exact' ? 'EXACT' : 'POSSIBLE'}</span></td>
-              <td>${group.filename} (${group.models.map((model) => model.model_name).join(', ')})</td>
-              <td>${formatBytes(group.size_bytes || 0)}</td>
-            </tr>
-          `)}
-        </tbody>
-      </table>
+// Results stay until each pair is acted on, so returning to the page finds them where they were.
+export async function loadDuplicateResults() {
+  try {
+    const data = await fetchLatestDuplicates();
+    if (data.has_results) renderDuplicateResults(data);
+  } catch (err) {
+    console.warn('Duplicate results unavailable:', err);
+  }
+}
+
+async function decidePair(pair, decision) {
+  try {
+    await postDuplicateDecision(pair.first.file_id, pair.second.file_id, decision);
+    await loadDuplicateResults();
+  } catch (err) {
+    alert(`Could not save that: ${err.message}`);
+  }
+}
+
+async function deleteSide(side) {
+  const ask = side.path
+    ? `Move ${side.filename} to .Pending-Deletion and take it out of the catalog? It can be purged after 14 days.`
+    : `Take ${side.filename} out of the catalog? It isn't downloaded, so no file moves.`;
+  if (!confirm(ask)) return;
+  try {
+    await deleteDuplicateFile(side.file_id);
+    await loadDuplicateResults();
+  } catch (err) {
+    alert(`Could not delete it: ${err.message}`);
+  }
+}
+
+function duplicateSide(side) {
+  return html`
+    <div class="duplicate-side" data-file=${side.file_id}>
+      <strong class="font-sm">${side.filename}</strong>
+      <span class="font-xs text-dim">${side.model_name}</span>
+      <span class="font-mono font-xs text-dim location-path">${side.path || 'Not downloaded'}</span>
+      <span class="font-xs text-dim">${formatBytes(side.size_bytes || 0)}</span>
+      ${side.can_delete
+        ? html`<button type="button" class="btn-pill btn-action-cancel font-xs duplicate-delete" @click=${() => deleteSide(side)}>Delete This One</button>`
+        : html`<span class="font-xs text-dim">Linked library, read-only</span>`}
     </div>
-  `, container);
+  `;
+}
+
+function renderDuplicateResults(data) {
+  const panel = document.getElementById('duplicate-results-panel');
+  if (!panel) return;
+  const pairs = data.pairs || [];
+  const includeShared = Boolean(data.include_shared);
+  const models = (data.models || []).filter((group) => group.kind === 'duplicate');
+  const hidden = (data.summary?.pairs || 0) - pairs.length;
+  panel.hidden = false;
+  // Open the first time only, so an action doesn't reopen a section someone collapsed.
+  if (!panel.dataset.shown) {
+    panel.dataset.shown = '1';
+    panel.open = pairs.length > 0;
+  }
+  render(html`
+    <summary>${pairs.length ? `${pairs.length} pairs to review` : 'No pairs left to review'}</summary>
+    <div class="reconcile-results-body" id="duplicate-results">
+      <div class="reconcile-results-bar">
+        <span class="font-sm text-dim">Keep and Ignore both stop a pair coming back. Delete moves one file to .Pending-Deletion.</span>
+        <button type="button" class="btn-pill font-xs" @click=${() => triggerDuplicateScan(!includeShared)}>
+          ${includeShared ? 'Hide shared bases and supports' : 'Include shared bases and supports'}
+        </button>
+      </div>
+      ${models.map((group) => html`
+        <div class="font-sm duplicate-row"><span class="status-badge status-failed font-xs">DUPLICATE MODEL</span>
+          ${group.models.map((model) => model.model_name).join(' / ')}, ${group.shared_files} files</div>
+      `)}
+      ${pairs.map((pair) => html`
+        <div class="duplicate-pair duplicate-row">
+          <div class="duplicate-pair-head">
+            <span class="status-badge ${pair.kind === 'exact' ? 'status-completed' : 'status-queued'} font-xs">${pair.kind === 'exact' ? 'EXACT' : 'POSSIBLE'}</span>
+            <div class="flex gap-2">
+              <button type="button" class="btn-pill font-xs duplicate-keep" @click=${() => decidePair(pair, 'keep')}>Keep Both</button>
+              <button type="button" class="btn-pill font-xs duplicate-ignore" @click=${() => decidePair(pair, 'ignore')}>Ignore</button>
+            </div>
+          </div>
+          <div class="duplicate-sides">${duplicateSide(pair.first)}${duplicateSide(pair.second)}</div>
+        </div>
+      `)}
+      ${hidden > 0 ? html`<p class="font-sm text-dim">${hidden} more after these. Run the check again once these are done.</p>` : nothing}
+    </div>
+  `, panel);
 }
 
 export async function triggerPathDriftScan() {
