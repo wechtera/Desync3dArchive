@@ -8,9 +8,9 @@
     "content_type": "application/json",
     "json": {
       "library_id": 1,
-      "message": "Background scan dispatched for in-place library 'Loot Studios' (Task #30).",
+      "message": "Background scan dispatched for in-place library 'Loot Studios' (Task #35).",
       "success": true,
-      "task_id": 30,
+      "task_id": 35,
       "task_type": "external_library_reconcile"
     },
     "location": null,

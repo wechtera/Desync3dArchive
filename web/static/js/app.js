@@ -367,6 +367,7 @@ export async function checkHealth() {
       isTaskRunning = currentlyRunning;
       if (!isTaskRunning) {
         loadMetrics();
+        window.loadRunHistory?.();
       }
     }
   } catch (err) {

@@ -8,6 +8,7 @@ from desync_archival.api.routing import add_route, plain
 
 router = APIRouter()
 
+add_route(router, "GET", "/api/reconcile/history", plain(handlers.handle_get_reconcile_history))
 add_route(router, "GET", "/api/reconcile/status", plain(handlers.handle_get_reconcile_status))
 add_route(router, "POST", "/api/reconcile/scan", plain(handlers.handle_post_reconcile_scan), schemas.ReconcileScanBody)
 add_route(router, "POST", "/api/reconcile/cancel", plain(handlers.handle_post_reconcile_cancel))

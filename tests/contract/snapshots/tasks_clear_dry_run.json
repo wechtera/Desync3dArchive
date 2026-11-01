@@ -9,7 +9,7 @@
     "json": {
       "dry_run": true,
       "success": true,
-      "would_delete": 13
+      "would_delete": 21
     },
     "location": null,
     "status": 200

@@ -8,7 +8,7 @@
     "content_type": "application/json",
     "json": {
       "success": true,
-      "task_id": 34,
+      "task_id": 42,
       "task_type": "library_scrape"
     },
     "location": null,

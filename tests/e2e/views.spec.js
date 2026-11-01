@@ -895,6 +895,43 @@ test.describe('settings', () => {
     await expect(page.locator('#browse-creator option')).toHaveCount(3);
   });
 
+  test('vault reconcile shows state first, then a card for each tool', async ({ page }) => {
+    await page.route('**/api/reconcile/history', (route) => route.fulfill({ json: { runs: {
+      forward: { task_id: 12, status: 'completed', progress_label: 'Scan finished', started_at: '2026-11-01 10:00:00', completed_at: '2026-11-01 10:05:00', scan_mode: 'deep' },
+      staging_scan: { task_id: 14, status: 'failed', progress_label: 'boom', started_at: '2026-11-01 11:00:00', completed_at: '2026-11-01 11:00:00', scan_mode: null },
+    } } }));
+    await page.goto('/#downloads');
+    await page.locator('#group-reconcile').click();
+    const cards = page.locator('#reconcile-cards .reconcile-card');
+    await expect(cards).toHaveCount(8);
+    await expect(page.locator('#sub-dl-reconcile .reconcile-guide-grid')).toHaveCount(0);
+    for (let index = 0; index < 8; index += 1) {
+      await expect(cards.nth(index).locator('.reconcile-card-action button').last()).toBeVisible();
+      await expect(cards.nth(index).locator('.reconcile-card-body')).toContainText('To validate:');
+    }
+    const forward = page.locator('[data-card="forward"]');
+    await expect(forward.locator('[data-run]')).toContainText('Job #12');
+    await expect(forward.locator('[data-run]')).toContainText('(deep)');
+    await expect(page.locator('[data-card="staging_scan"] [data-run]')).toContainText('failed');
+    await expect(page.locator('[data-card="duplicate_scan"] [data-run]')).toHaveText('Not run yet');
+
+    await expect(page.locator('#reconcile-results-container')).toHaveCSS('overflow-y', 'auto');
+    const stateBox = await page.locator('#reconcile-metrics-bar').boundingBox();
+    const toolsBox = await page.locator('#reconcile-cards').boundingBox();
+    expect(stateBox.y).toBeLessThan(toolsBox.y);
+
+    const switchBox = await forward.locator('.segmented-control').boundingBox();
+    const runBox = await page.locator('#btn-run-reconcile').boundingBox();
+    expect(switchBox.y + switchBox.height).toBeLessThanOrEqual(runBox.y);
+    await expect(page.locator('#btn-run-reconcile')).toHaveText('Run Fast Reconciliation');
+    await page.locator('#btn-mode-deep').click();
+    await expect(page.locator('#btn-run-reconcile')).toHaveText('Run Deep Reconciliation');
+
+    const bodyBox = await forward.locator('.reconcile-card-body').boundingBox();
+    const whole = await forward.boundingBox();
+    expect(bodyBox.width / whole.width).toBeGreaterThan(0.6);
+  });
+
   test('update pdfs runs from vault reconcile', async ({ page }) => {
     let started = false;
     await page.route('**/api/documents/update', (route) => {

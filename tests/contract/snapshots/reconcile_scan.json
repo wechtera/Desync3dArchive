@@ -12,7 +12,7 @@
       "message": "Vault reconciliation (FAST) dispatched to background pipeline worker.",
       "scan_mode": "fast",
       "success": true,
-      "task_id": 32,
+      "task_id": 37,
       "task_type": "vault_reconcile"
     },
     "location": null,

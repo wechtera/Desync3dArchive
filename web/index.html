@@ -368,44 +368,9 @@
 
     <!-- Sub-View D: Vault Reconciliation -->
     <div id="sub-dl-reconcile" style="display:none;">
-      <div class="controls controls-wrap">
-        <div class="control-actions-wrap">
-          <div class="segmented-control">
-            <button type="button" class="segmented-btn active" id="btn-mode-fast" data-click="setReconcileMode" data-args='["fast"]'>
-              Fast Scan (Stat &amp; Size)
-            </button>
-            <button type="button" class="segmented-btn" id="btn-mode-deep" data-click="setReconcileMode" data-args='["deep"]'>
-              Deep Scan (CRC, STL &amp; SHA-256)
-            </button>
-          </div>
-          <button type="button" class="btn-pill btn-action-primary" id="btn-run-reconcile" data-click="triggerReconcileScan">
-            Run Forward Reconciliation
-          </button>
-          <button type="button" class="btn-pill" id="btn-run-orphan-audit" data-click="triggerOrphanAudit">
-            Run Reverse Orphan Audit
-          </button>
-          <button type="button" class="btn-pill" id="btn-backfill-archives" data-click="triggerArchiveInspectionSweep">
-            Backfill Archive Inspection
-          </button>
-          <button type="button" class="btn-pill" id="btn-backfill-previews" data-click="triggerCatalogPreviewSweep">
-            Backfill Model Previews
-          </button>
-          <button type="button" class="btn-pill" id="btn-document-update" data-click="updateDocuments">
-            Update PDFs
-          </button>
-          <button type="button" class="btn-pill" id="btn-scan-staging" data-click="triggerStagingSweep">
-            Staging Scratch Purge
-          </button>
-          <button type="button" class="btn-pill" id="btn-scan-drift" data-click="triggerPathDriftScan">
-            Check Path Drift
-          </button>
-          <button type="button" class="btn-pill" id="btn-scan-duplicates" data-click="triggerDuplicateScan">
-            Find Duplicates
-          </button>
-        </div>
-        <div class="status-summary-text" id="reconcile-last-scan">
-          Audit not run yet. Select mode and click "Run Forward Reconciliation".
-        </div>
+      <div id="reconcile-audit-state">
+      <div class="status-summary-text" id="reconcile-last-scan">
+        Audit not run yet. Choose a tool below.
       </div>
 
       <div id="reconcile-progress-container" class="card progress-card" style="display:none;">
@@ -451,69 +416,113 @@
 
       <div id="reconcile-results-container">
         <div class="results-placeholder">
-          No active scan results. Select a scan mode and click "Run Forward Reconciliation" or "Run Reverse Orphan Audit".
+          No results yet. Run a tool below and they appear here.
         </div>
       </div>
 
-      <div class="audit-panel panel-spaced" >
-        <div class="audit-header">
-          <div>
-            <div class="audit-title audit-title-lg">Reconciliation Processes &amp; Diagnostics Manual</div>
-            <div class="audit-desc font-md">
-              Operational reference detailing each validation tool, scan depth, and storage repair procedure.
+      </div>
+
+      <div class="reconcile-cards" id="reconcile-cards">
+        <section class="reconcile-card" data-card="forward">
+          <div class="reconcile-card-action">
+            <div class="segmented-control segmented-stacked">
+              <button type="button" class="segmented-btn active" id="btn-mode-fast" data-click="setReconcileMode" data-args='["fast"]'>Fast</button>
+              <button type="button" class="segmented-btn" id="btn-mode-deep" data-click="setReconcileMode" data-args='["deep"]'>Deep</button>
             </div>
+            <button type="button" class="btn-pill btn-action-primary reconcile-run" id="btn-run-reconcile" data-click="triggerReconcileScan">Run Fast Reconciliation</button>
           </div>
-        </div>
-        <div class="reconcile-guide-grid mt-3">
-          <div class="reconcile-guide-item">
-            <h4 class="text-accent font-semibold font-md">Update PDFs</h4>
-            <p class="text-dim font-sm">
-              Records PDFs in linked libraries and makes first page previews for View Library &gt; PDFs. It reads the NAS, so run it after adding to a library. Scans and imports record their own PDFs.
-            </p>
+          <div class="reconcile-card-body">
+            <h3 class="reconcile-card-title">Reconciliation</h3>
+            <p><strong>What it does:</strong> Confirms every file in the catalog is really on storage and intact. Offline libraries are skipped, not marked missing.</p>
+            <p><strong>How:</strong> Fast checks each file exists at the right size, and only reads folder listings. Deep also tests ZIP checksums and STL headers and compares SHA-256 hashes, which reads every file on the NAS and can take a long time.</p>
+            <p><strong>To validate:</strong> Discrepancies above reads 0. If not, fix what is listed and run it again until the count falls to 0.</p>
+            <div class="reconcile-last-run" data-run="forward">Not run yet</div>
           </div>
-          <div class="reconcile-guide-item">
-            <h4 class="text-accent font-semibold font-md">Forward Reconciliation (Fast Scan)</h4>
-            <p class="text-dim font-sm">
-              Quickly verifies directory existence and non-zero file sizes across all catalog assets without reading archive bodies or computing cryptographic hashes.
-            </p>
+        </section>
+        <section class="reconcile-card" data-card="reverse">
+          <div class="reconcile-card-action">
+            <button type="button" class="btn-pill reconcile-run" id="btn-run-orphan-audit" data-click="triggerOrphanAudit">Run Reverse Orphan Audit</button>
           </div>
-          <div class="reconcile-guide-item">
-            <h4 class="text-accent font-semibold font-md">Forward Reconciliation (Deep Scan)</h4>
-            <p class="text-dim font-sm">
-              Performs exhaustive byte-level audits: CRC checksum tests on ZIP archives, binary STL header verification, and SHA-256 bit-rot auditing.
-            </p>
+          <div class="reconcile-card-body">
+            <h3 class="reconcile-card-title">Reverse Orphan Audit</h3>
+            <p><strong>What it does:</strong> Finds folders and files in the vault that the catalog does not know about. The ad-hoc folder is skipped.</p>
+            <p><strong>How:</strong> Walks the vault on the NAS and looks each folder up in the catalog. It only lists what it finds. Deleting or adding one to the catalog is a separate choice in the results.</p>
+            <p><strong>To validate:</strong> Open a listed folder in Finder and confirm it really is unknown. Anything you delete appears under Settings &gt; Audit.</p>
+            <div class="reconcile-last-run" data-run="reverse">Not run yet</div>
           </div>
-          <div class="reconcile-guide-item">
-            <h4 class="text-accent font-semibold font-md">Reverse Orphan Audit</h4>
-            <p class="text-dim font-sm">
-              Scans vault storage from the physical drive upward to catch files and directories missing from the database, offering one-click deletion or catalog ingestion.
-            </p>
+        </section>
+        <section class="reconcile-card" data-card="archive_peek_backfill">
+          <div class="reconcile-card-action">
+            <button type="button" class="btn-pill reconcile-run" id="btn-backfill-archives" data-click="triggerArchiveInspectionSweep">Backfill Archive Inspection</button>
           </div>
-          <div class="reconcile-guide-item">
-            <h4 class="text-accent font-semibold font-md">Backfill Archive Inspection</h4>
-            <p class="text-dim font-sm">
-              Runs the ArchivePeeker engine against stored archives to dissect internal hierarchies, index submodels, and extract thumbnail renders.
-            </p>
+          <div class="reconcile-card-body">
+            <h3 class="reconcile-card-title">Backfill Archive Inspection</h3>
+            <p><strong>What it does:</strong> Reads inside downloaded archives that have not been peeked, so their contents become models and artifacts.</p>
+            <p><strong>How:</strong> Lists each archive on the NAS without unpacking it, stores every entry in the catalog, and pulls out images. Only archives on disk can be read.</p>
+            <p><strong>To validate:</strong> The job finishes on the Tasks tab, and new collections wait under External Vault &gt; Archive Review.</p>
+            <div class="reconcile-last-run" data-run="archive_peek_backfill">Not run yet</div>
           </div>
-          <div class="reconcile-guide-item">
-            <h4 class="text-accent font-semibold font-md">Backfill Model Previews</h4>
-            <p class="text-dim font-sm">
-              Downloads and caches cover images to <code>previews/&lt;model_id&gt;/cover.jpg</code> for offline catalog browsing.
-            </p>
+        </section>
+        <section class="reconcile-card" data-card="catalog_preview_backfill">
+          <div class="reconcile-card-action">
+            <button type="button" class="btn-pill reconcile-run" id="btn-backfill-previews" data-click="triggerCatalogPreviewSweep">Backfill Model Previews</button>
           </div>
-          <div class="reconcile-guide-item">
-            <h4 class="text-accent font-semibold font-md">Staging Scratch Purge</h4>
-            <p class="text-dim font-sm">
-              Cleans abandoned <code>.part</code> streaming files and stranded <code>.work/staged</code> folders left behind by cancelled downloads.
-            </p>
+          <div class="reconcile-card-body">
+            <h3 class="reconcile-card-title">Backfill Model Previews</h3>
+            <p><strong>What it does:</strong> Saves collection cover images on this machine, so the library still shows pictures offline.</p>
+            <p><strong>How:</strong> Downloads each cover from its source link into the local previews folder. It does not read the NAS.</p>
+            <p><strong>To validate:</strong> The job finishes on the Tasks tab, and a collection that had no picture now shows one.</p>
+            <div class="reconcile-last-run" data-run="catalog_preview_backfill">Not run yet</div>
           </div>
-          <div class="reconcile-guide-item">
-            <h4 class="text-accent font-semibold font-md">Check Path Drift &amp; Realign</h4>
-            <p class="text-dim font-sm">
-              Identifies legacy folder paths (bracketed IDs, spaces) and renames them to match current sanitized storage rules.
-            </p>
+        </section>
+        <section class="reconcile-card" data-card="document_update">
+          <div class="reconcile-card-action">
+            <button type="button" class="btn-pill reconcile-run" id="btn-document-update" data-click="updateDocuments">Update PDFs</button>
           </div>
-        </div>
+          <div class="reconcile-card-body">
+            <h3 class="reconcile-card-title">Update PDFs</h3>
+            <p><strong>What it does:</strong> Records PDFs in linked libraries and makes first page previews for View Library &gt; PDFs.</p>
+            <p><strong>How:</strong> Walks each linked library on the NAS once, then draws previews with Ghostscript and keeps them locally. Scans and imports record their own PDFs, so run this after adding files by hand.</p>
+            <p><strong>To validate:</strong> The job reports how many it added, and new PDFs appear in the PDFs view with previews.</p>
+            <div class="reconcile-last-run" data-run="document_update">Not run yet</div>
+          </div>
+        </section>
+        <section class="reconcile-card" data-card="staging_scan">
+          <div class="reconcile-card-action">
+            <button type="button" class="btn-pill reconcile-run" id="btn-scan-staging" data-click="triggerStagingSweep">Staging Scratch Purge</button>
+          </div>
+          <div class="reconcile-card-body">
+            <h3 class="reconcile-card-title">Staging Scratch Purge</h3>
+            <p><strong>What it does:</strong> Finds partial files and folders left in staging by cancelled downloads.</p>
+            <p><strong>How:</strong> Lists what is left in the local staging folder. Nothing is removed until you confirm in the results, and a purge is refused while downloads are running.</p>
+            <p><strong>To validate:</strong> Run it again after a purge and confirm the list is empty. Staging also shrinks under Settings &gt; Disk Usage.</p>
+            <div class="reconcile-last-run" data-run="staging_scan">Not run yet</div>
+          </div>
+        </section>
+        <section class="reconcile-card" data-card="path_drift_scan">
+          <div class="reconcile-card-action">
+            <button type="button" class="btn-pill reconcile-run" id="btn-scan-drift" data-click="triggerPathDriftScan">Check Path Drift</button>
+          </div>
+          <div class="reconcile-card-body">
+            <h3 class="reconcile-card-title">Check Path Drift</h3>
+            <p><strong>What it does:</strong> Finds vault folders that no longer match the current naming rules, such as bracketed IDs or spaces.</p>
+            <p><strong>How:</strong> Compares each stored collection path with the name it should have. Realign is a separate choice in the results, and it renames folders on the NAS.</p>
+            <p><strong>To validate:</strong> Run it again after realigning and confirm nothing is listed, then open a realigned collection.</p>
+            <div class="reconcile-last-run" data-run="path_drift_scan">Not run yet</div>
+          </div>
+        </section>
+        <section class="reconcile-card" data-card="duplicate_scan">
+          <div class="reconcile-card-action">
+            <button type="button" class="btn-pill reconcile-run" id="btn-scan-duplicates" data-click="triggerDuplicateScan">Find Duplicates</button>
+          </div>
+          <div class="reconcile-card-body">
+            <h3 class="reconcile-card-title">Find Duplicates</h3>
+            <p><strong>What it does:</strong> Reports files and models that look like duplicates. It only reports, and never changes anything.</p>
+            <p><strong>How:</strong> Reads the catalog only, not the NAS. A SHA-256 match is exact. Linked library files have no hash, so those are candidates matched on name and size. Bases and supports are left out unless you include them.</p>
+            <p><strong>To validate:</strong> Compare a listed pair by hand before acting. Files shared between models on purpose are expected.</p>
+            <div class="reconcile-last-run" data-run="duplicate_scan">Not run yet</div>
+          </div>
+        </section>
       </div>
     </div>
 

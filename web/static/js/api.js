@@ -561,6 +561,10 @@ export async function updateDocuments() {
   return postJson('/api/documents/update', {});
 }
 
+export async function fetchReconcileHistory() {
+  return request('/api/reconcile/history');
+}
+
 export async function fetchHealth() {
   return request('/api/health');
 }

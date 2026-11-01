@@ -12,7 +12,8 @@
     "content_type": "application/json",
     "json": {
       "message": "Catalog preview cache sweep dispatched in background.",
-      "success": true
+      "success": true,
+      "task_id": 38
     },
     "location": null,
     "status": 200

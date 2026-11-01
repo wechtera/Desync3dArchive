@@ -4,6 +4,7 @@ import json
 import logging
 import sqlite3
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -13,13 +14,15 @@ from db_helper import create_database
 from fastapi.testclient import TestClient
 
 from desync_archival.api import server
+from desync_archival.api.routes import reconcile as routes_reconcile
 from desync_archival.api.routes import settings as routes
-from desync_archival.services import auth_service, health, jobs, scheduler
+from desync_archival.services import auth_service, health, jobs, run_history, scheduler
 from desync_archival.services.downloader import (
     StorageManager,
     StorageUnavailableError,
     queue_models,
 )
+from desync_archival.services.task_manager import TaskManager
 
 
 class ReliabilityCase(unittest.TestCase):
@@ -178,6 +181,87 @@ class CookieExpiryTests(ReliabilityCase):
         self.assertEqual(self.check()["state"], health.WARNING)
         self.cookies({"expires": time.time() + 30 * jobs.DAY})
         self.assertEqual(self.check()["state"], health.OK)
+
+
+class RunHistoryTests(ReliabilityCase):
+    def run_of(self, task_type, status, params=None):
+        with self.conn:
+            return self.conn.execute(
+                "INSERT INTO pipeline_tasks (task_type, status, params_json, progress_label, completed_at) "
+                "VALUES (?, ?, ?, 'Done', CURRENT_TIMESTAMP)", (task_type, status, json.dumps(params or {})),
+            ).lastrowid
+
+    def test_each_tool_shows_only_its_latest_run(self):
+        self.run_of("document_update", "failed")
+        newest = self.run_of("document_update", "completed")
+        run = run_history.latest(self.conn)["document_update"]
+        self.assertEqual((run["task_id"], run["status"], run["progress_label"]), (newest, "completed", "Done"))
+
+    def test_forward_and_reverse_are_told_apart(self):
+        forward = self.run_of("vault_reconcile", "completed", {"scan_mode": "deep"})
+        reverse = self.run_of("vault_reconcile", "failed", {"scan_mode": "reverse"})
+        runs = run_history.latest(self.conn)
+        self.assertEqual((runs["forward"]["task_id"], runs["forward"]["scan_mode"]), (forward, "deep"))
+        self.assertEqual(runs["reverse"]["task_id"], reverse)
+
+    def test_bad_params_dont_break_the_page(self):
+        with self.conn:
+            self.conn.execute("INSERT INTO pipeline_tasks (task_type, status, params_json) VALUES ('vault_reconcile', 'failed', 'nope')")
+        self.assertEqual(run_history.latest(self.conn)["forward"]["status"], "failed")
+
+    def test_other_jobs_are_left_out(self):
+        self.run_of("library_scrape", "completed")
+        self.assertEqual(run_history.latest(self.conn), {})
+
+    def manager(self):
+        manager = object.__new__(TaskManager)
+        manager.db_path = self.db
+        manager._lock = threading.Lock()
+        manager.active_task_id = None
+        manager.active_process = None
+        manager._cancel_requested = False
+        return manager
+
+    def test_an_instant_check_leaves_a_job_row(self):
+        self.manager().record_finished("staging_scan", "2 leftovers found", {})
+        run = run_history.latest(self.conn)["staging_scan"]
+        self.assertEqual((run["status"], run["progress_label"]), ("completed", "2 leftovers found"))
+        self.assertIsNotNone(run["completed_at"])
+
+    def test_checks_record_their_runs_and_failures(self):
+        for handler, card in ((routes_reconcile.handle_get_reconcile_staging_garbage, "staging_scan"),
+                              (routes_reconcile.handle_get_reconcile_path_drift, "path_drift_scan")):
+            reconciler = MagicMock()
+            reconciler.scan_staging_garbage.return_value = reconciler.scan_path_drift.return_value = {"success": False, "error": "boom"}
+            with patch.object(routes_reconcile, "_get_managers", return_value=(reconciler, self.manager())):
+                _, status = handler(self.conn, None, {}, {})
+            self.assertEqual(status, 500)
+            run = run_history.latest(self.conn)[card]
+            self.assertEqual((run["status"], run["progress_label"]), ("failed", "boom"))
+
+    def test_preview_backfill_is_a_real_job(self):
+        tasks = MagicMock()
+        tasks.start_task.return_value = {"success": True, "task_id": 8}
+        with patch.object(routes_reconcile, "_get_managers", return_value=(MagicMock(), tasks)):
+            body, status = routes_reconcile.handle_post_reconcile_catalog_previews(self.conn, None, {}, {})
+        self.assertEqual((status, body["task_id"]), (200, 8))
+        self.assertEqual(tasks.start_task.call_args.args[0], "catalog_preview_backfill")
+
+    def test_preview_backfill_waits_its_turn(self):
+        tasks = MagicMock()
+        tasks.start_task.return_value = {"success": False, "error": "busy"}
+        with patch.object(routes_reconcile, "_get_managers", return_value=(MagicMock(), tasks)):
+            _, status = routes_reconcile.handle_post_reconcile_catalog_previews(self.conn, None, {}, {})
+        self.assertEqual(status, 409)
+
+    def test_the_preview_worker_finishes_its_job(self):
+        task_id = self.task("running")
+        reconciler = MagicMock()
+        reconciler.backfill_catalog_previews.return_value = {"success": True, "downloaded": 4}
+        with patch("desync_archival.services.task_manager.VaultReconciler", return_value=reconciler):
+            self.manager()._run_catalog_preview_worker(task_id, {})
+        row = self.conn.execute("SELECT status, progress_label FROM pipeline_tasks WHERE id = ?", (task_id,)).fetchone()
+        self.assertEqual(tuple(row), ("completed", "4 cover images cached"))
 
 
 class IntegrityTests(ReliabilityCase):

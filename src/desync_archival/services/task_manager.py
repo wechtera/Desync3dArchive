@@ -390,6 +390,30 @@ class TaskManager:
         with self._lock:
             self.active_task_id = None
 
+    def record_finished(self, task_type: str, label: str, summary: dict[str, Any], status: str = jobs.COMPLETED) -> None:
+        """A check that answers at once still gets a job row, so its last run can be shown."""
+        with self._get_db() as conn:
+            with conn:
+                conn.execute(queries.INSERT_FINISHED_TASK, (task_type, status, label, json.dumps(summary)))
+
+    @job_logged(lambda self, task_id, *_: f"task-{task_id}")
+    def _run_catalog_preview_worker(self, task_id: int, params: dict[str, Any]):
+        try:
+            report = VaultReconciler(self.db_path).backfill_catalog_previews(
+                model_ids=params.get("model_ids"),
+                progress_cb=lambda pct, label: self._update_progress(task_id, pct, label),
+                log_cb=lambda message: self._append_log(task_id, message),
+                cancel_cb=lambda: self._cancel_requested,
+            )
+            status = jobs.CANCELLED if self._cancel_requested else jobs.COMPLETED
+            label = f"{report.get('downloaded', 0)} cover images cached"
+        except (OSError, sqlite3.Error) as e:
+            self._append_log(task_id, f"Preview backfill stopped: {e}")
+            report, status, label = {}, jobs.FAILED, "Preview backfill failed"
+        self._finalize_task(task_id, status, label, report)
+        with self._lock:
+            self.active_task_id = None
+
     def _inventory_library_pdfs(self, task_id: int, library_id: int) -> None:
         from desync_archival.services import documents
 
@@ -522,6 +546,7 @@ class TaskManager:
             "database_backup": (self._run_backup_worker, (task_id, task_params)),
             "file_import": (self._run_file_import_worker, (task_id, task_params)),
             "document_update": (self._run_document_worker, (task_id,)),
+            "catalog_preview_backfill": (self._run_catalog_preview_worker, (task_id, task_params)),
         }
         if task_type not in workers:
             self._finalize_task(task_id, "failed", f"Unsupported task type: {task_type}", {})

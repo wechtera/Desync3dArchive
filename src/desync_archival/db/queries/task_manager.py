@@ -130,3 +130,8 @@ INSERT_SCHEMA_ANOMALIES = """
                                     INSERT INTO schema_anomalies (model_id, anomaly_type, details)
                                     VALUES (?, ?, ?);
                                 """
+
+INSERT_FINISHED_TASK = """
+    INSERT INTO pipeline_tasks (task_type, status, progress_pct, progress_label, log_output, started_at, completed_at, result_summary_json)
+    VALUES (?, ?, 100.0, ?, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?);
+"""

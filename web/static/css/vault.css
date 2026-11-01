@@ -3370,3 +3370,27 @@ select, input[type="text"] { font-size: 0.9rem; }
 .results-pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin: 24px 0 12px; }
 #document-results { padding: 0 var(--gutter); }
 .document-origin { overflow-wrap: anywhere; }
+
+/* Vault Reconcile tools */
+.reconcile-cards { display: grid; gap: var(--gap); margin: var(--gap) var(--gutter); }
+.reconcile-card { display: grid; grid-template-columns: minmax(200px, 3fr) 7fr; border: 1px solid var(--border-dim); border-radius: var(--radius); background: var(--bg-card, transparent); }
+.reconcile-card-action { display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: 10px; padding: 20px; border-right: 1px solid var(--border-dim); }
+.reconcile-card-action .btn-pill { justify-content: center; text-align: center; white-space: normal; }
+.segmented-stacked { display: flex; }
+.segmented-stacked .segmented-btn { flex: 1; }
+.reconcile-card-body { padding: 18px 22px; font-size: 13.5px; line-height: 1.55; min-width: 0; }
+.reconcile-card-body p { margin: 0 0 6px; color: var(--text-muted); }
+.reconcile-card-body strong { color: var(--text-main); font-weight: 600; }
+.reconcile-card-title { font-size: 15px; margin: 0 0 8px; }
+.reconcile-last-run { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border-dim); font-size: 12.5px; color: var(--text-dim); }
+.reconcile-run-status { font-weight: 600; text-transform: capitalize; }
+.reconcile-run-completed { color: var(--accent); }
+.reconcile-run-failed, .reconcile-run-interrupted { color: #d9705b; }
+.reconcile-run-cancelled, .reconcile-run-running { color: #d9b45b; }
+#reconcile-audit-state { scroll-margin-top: 64px; }
+@media (max-width: 720px) {
+  .reconcile-card { grid-template-columns: 1fr; }
+  .reconcile-card-action { border-right: 0; border-bottom: 1px solid var(--border-dim); }
+}
+/* A long result list would otherwise push the tools thousands of pixels down. */
+#reconcile-results-container, #reconcile-orphan-section { max-height: 60vh; overflow-y: auto; }

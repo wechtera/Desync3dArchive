@@ -9,6 +9,7 @@ import {
   controlDownloads,
   runReconcileScan,
   fetchReconcileStatus,
+  fetchReconcileHistory,
   cancelReconcileScan,
   resetReconcileModels,
   deleteOrphanDirectories,
@@ -44,6 +45,45 @@ let selectedScanMode = 'fast';
 
 const formatDate = formatLocalDate;
 
+function runLabel() {
+  return `Run ${selectedScanMode === 'deep' ? 'Deep' : 'Fast'} Reconciliation`;
+}
+
+// Results sit above the tools, so a long list would otherwise appear out of sight.
+function showAuditState() {
+  document.getElementById('reconcile-audit-state')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+export async function loadRunHistory() {
+  const slots = document.querySelectorAll('[data-run]');
+  if (!slots.length) return;
+  try {
+    const { runs } = await fetchReconcileHistory();
+    slots.forEach((slot) => {
+      const run = runs[slot.dataset.run];
+      if (!run) {
+        render(html`Not run yet`, slot);
+        return;
+      }
+      const mode = slot.dataset.run === 'forward' && run.scan_mode ? ` (${run.scan_mode})` : '';
+      render(html`
+        <span>Last run ${formatLocalDateTime(run.completed_at || run.started_at)}${mode}</span>
+        <span>Job #${run.task_id}</span>
+        <span class="reconcile-run-status reconcile-run-${run.status}">${run.status}</span>
+        ${run.progress_label ? html`<span>${run.progress_label}</span>` : nothing}
+      `, slot);
+    });
+  } catch (err) {
+    console.warn('Run history unavailable:', err);
+  }
+}
+
+document.addEventListener('click', (event) => {
+  if (!event.target.closest?.('.reconcile-run')) return;
+  showAuditState();
+  setTimeout(loadRunHistory, 1500);
+});
+
 export function setReconcileMode(mode) {
   selectedScanMode = mode;
   const fastBtn = document.getElementById('btn-mode-fast');
@@ -54,7 +94,7 @@ export function setReconcileMode(mode) {
   }
   const btnRun = document.getElementById('btn-run-reconcile');
   if (btnRun) {
-    btnRun.textContent = `Run ${mode.toUpperCase()} Reconciliation`;
+    btnRun.textContent = runLabel();
   }
 }
 
@@ -645,13 +685,14 @@ export function updateReconcileFromHealth(task) {
   } else if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
     if (btnRun) {
       btnRun.disabled = false;
-      btnRun.textContent = `Run ${selectedScanMode.toUpperCase()} Reconciliation`;
+      btnRun.textContent = runLabel();
     }
     loadReconcileView();
   }
 }
 
 export async function loadReconcileView() {
+  loadRunHistory();
   const progressBox = document.getElementById('reconcile-progress-container');
   const btnRun = document.getElementById('btn-run-reconcile');
   const lastScanEl = document.getElementById('reconcile-last-scan');
@@ -676,7 +717,7 @@ export async function loadReconcileView() {
     if (progressBox) progressBox.style.display = 'none';
     if (btnRun) {
       btnRun.disabled = false;
-      btnRun.textContent = `Run ${selectedScanMode.toUpperCase()} Reconciliation`;
+      btnRun.textContent = runLabel();
     }
 
     const summary = data.summary || {};
@@ -709,7 +750,7 @@ export async function loadReconcileView() {
         }
         lastScanEl.textContent = msg;
       } else {
-        lastScanEl.textContent = 'Audit not run yet. Select mode and click "Run Forward Reconciliation".';
+        lastScanEl.textContent = 'Audit not run yet. Choose a tool below.';
       }
     }
 
@@ -752,7 +793,7 @@ export async function triggerReconcileScan() {
     if (progressBox) progressBox.style.display = 'none';
     if (btn) {
       btn.disabled = false;
-      btn.textContent = `Run ${selectedScanMode.toUpperCase()} Reconciliation`;
+      btn.textContent = runLabel();
     }
   }
 }
@@ -1322,3 +1363,5 @@ export async function triggerCatalogPreviewSweep() {
 }
 
 window.triggerCatalogPreviewSweep = triggerCatalogPreviewSweep;
+
+window.loadRunHistory = loadRunHistory;

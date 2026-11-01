@@ -3,12 +3,11 @@ ui/routes/reconcile.py - Endpoints for background vault storage auditing and sta
 """
 
 import sqlite3
-import threading
 from pathlib import Path
 from typing import Any, Optional
 
 from desync_archival.db.queries import reconcile as queries
-from desync_archival.services import audit, duplicates, jobs
+from desync_archival.services import audit, duplicates, jobs, run_history
 from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
@@ -17,6 +16,11 @@ from desync_archival.services.task_manager import TaskManager
 def _get_managers(conn: sqlite3.Connection) -> tuple[VaultReconciler, TaskManager]:
     db_path = Path(conn.execute(queries.PRAGMA_ROW).fetchone()[2])
     return VaultReconciler(db_path), TaskManager(db_path)
+
+
+def _record_check(task_mgr: TaskManager, task_type: str, res: dict[str, Any], label: str) -> None:
+    ok = res.get("success")
+    task_mgr.record_finished(task_type, label if ok else str(res.get("error") or "Failed"), {}, jobs.COMPLETED if ok else jobs.FAILED)
 
 
 def handle_post_reconcile_scan(
@@ -141,8 +145,9 @@ def handle_get_reconcile_staging_garbage(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
-    reconciler, _ = _get_managers(conn)
+    reconciler, task_mgr = _get_managers(conn)
     res = reconciler.scan_staging_garbage()
+    _record_check(task_mgr, "staging_scan", res, f"{len(res.get('items') or [])} leftovers found")
     return res, 200 if res.get("success") else 500
 
 
@@ -169,8 +174,9 @@ def handle_get_reconcile_path_drift(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
-    reconciler, _ = _get_managers(conn)
+    reconciler, task_mgr = _get_managers(conn)
     res = reconciler.scan_path_drift()
+    _record_check(task_mgr, "path_drift_scan", res, f"{len(res.get('items') or [])} folders drifted")
     return res, 200 if res.get("success") else 500
 
 
@@ -181,7 +187,10 @@ def handle_get_reconcile_duplicates(
     params: dict,
 ) -> tuple[dict[str, Any], int]:
     include_shared = params.get("include_shared", ["0"])[0] == "1"
-    return duplicates.find_duplicates(conn, include_shared=include_shared), 200
+    found = duplicates.find_duplicates(conn, include_shared=include_shared)
+    _, task_mgr = _get_managers(conn)
+    task_mgr.record_finished("duplicate_scan", "Duplicate check finished", {"include_shared": include_shared})
+    return found, 200
 
 
 def handle_post_reconcile_path_realign(
@@ -201,14 +210,22 @@ def handle_post_reconcile_catalog_previews(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
-    reconciler, _ = _get_managers(conn)
-    model_ids = body.get("model_ids")
-
-    def _worker():
-        reconciler.backfill_catalog_previews(model_ids=model_ids)
-
-    threading.Thread(target=_worker, daemon=True).start()
+    # This used to be a bare thread, which never showed as a job and could overlap one.
+    _, task_mgr = _get_managers(conn)
+    res = task_mgr.start_task("catalog_preview_backfill", {"model_ids": body.get("model_ids")})
+    if not res.get("success"):
+        return res, 409
     return {
         "success": True,
+        "task_id": res["task_id"],
         "message": "Catalog preview cache sweep dispatched in background.",
     }, 200
+
+
+def handle_get_reconcile_history(
+    conn: sqlite3.Connection,
+    download_manager: DownloadManager | None,
+    body: dict,
+    params: dict,
+) -> tuple[dict[str, Any], int]:
+    return {"runs": run_history.latest(conn)}, 200
