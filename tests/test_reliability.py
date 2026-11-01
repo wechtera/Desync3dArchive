@@ -146,6 +146,40 @@ class SyncTests(ReliabilityCase):
         self.assertEqual(self.get("sync_stage"), "")
 
 
+class CookieExpiryTests(ReliabilityCase):
+    def cookies(self, *dates):
+        self.set(cookies_json=json.dumps([{"name": f"c{i}", "value": "v", **d} for i, d in enumerate(dates)]))
+
+    def test_the_first_date_counts_in_either_format(self):
+        self.cookies({"expires": 500.0}, {"expirationDate": 200.0}, {"expires": -1}, {})
+        self.assertEqual(auth_service.cookie_expiry(self.conn), 200.0)
+
+    def test_session_cookies_alone_give_no_date(self):
+        self.cookies({"expires": -1}, {})
+        self.assertIsNone(auth_service.cookie_expiry(self.conn))
+
+    def test_expired_cookies_hold_the_sync_and_keep_it_due(self):
+        self.signed_in()
+        self.cookies({"expires": time.time() - 60})
+        self.set(sync_enabled=1)
+        self.tick()
+        self.tasks.start_task.assert_not_called()
+        self.assertIn("cookies", self.get("last_sync_result"))
+        self.assertEqual(self.get("last_sync_epoch"), "")
+
+    def check(self):
+        self.downloads.storage.get_disk_metrics.return_value = {"nas": {}}
+        return {c["key"]: c for c in health.report(self.conn, self.downloads)["checks"]}["cookies"]
+
+    def test_health_warns_when_expired_or_close(self):
+        self.cookies({"expires": time.time() - 60})
+        self.assertIn("Expired", self.check()["detail"])
+        self.cookies({"expires": time.time() + 3 * 3600})
+        self.assertEqual(self.check()["state"], health.WARNING)
+        self.cookies({"expires": time.time() + 30 * jobs.DAY})
+        self.assertEqual(self.check()["state"], health.OK)
+
+
 class IntegrityTests(ReliabilityCase):
     def test_a_due_check_uses_the_chosen_mode(self):
         self.set(integrity_enabled=1, integrity_mode="deep")

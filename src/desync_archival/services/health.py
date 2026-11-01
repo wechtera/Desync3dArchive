@@ -60,6 +60,11 @@ def _sign_in(conn: sqlite3.Connection) -> dict[str, str]:
 def _cookies(conn: sqlite3.Connection) -> dict[str, str]:
     if not auth_service.get_setting(conn, "cookies_json", "").strip("[] \n"):
         return _check("cookies", "Session cookies", WARNING, "None saved. Scrapes can't run.")
+    expiry = auth_service.cookie_expiry(conn)
+    if expiry is not None and expiry <= time.time():
+        return _check("cookies", "Session cookies", WARNING, "Expired. Paste fresh ones under Session & Cookies before a scrape.")
+    if expiry is not None and expiry - time.time() < jobs.DAY:
+        return _check("cookies", "Session cookies", WARNING, f"Expire in {max(int((expiry - time.time()) / 3600), 1)} hours.")
     saved = float(auth_service.get_setting(conn, "cookies_saved_at", "0") or 0)
     return _check("cookies", "Session cookies", OK, f"Saved, refreshed {_ago(saved)}." if saved else "Saved.")
 

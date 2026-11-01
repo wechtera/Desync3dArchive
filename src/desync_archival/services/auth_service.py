@@ -83,6 +83,26 @@ def get_auth_status(conn: sqlite3.Connection) -> dict[str, Any]:
     }
 
 
+def cookie_expiry(conn: sqlite3.Connection) -> float | None:
+    """When the first saved cookie runs out, or None if none of them say.
+
+    Browser exports use expirationDate and Playwright uses expires. Session cookies carry neither, or
+    -1, so they can stop working at any time and this can't warn about them.
+    """
+    try:
+        cookies = json.loads(get_setting(conn, "cookies_json", "") or "[]")
+    except ValueError:
+        return None
+    if not isinstance(cookies, list):
+        return None
+    dates = []
+    for cookie in cookies:
+        value = (cookie.get("expirationDate") or cookie.get("expires")) if isinstance(cookie, dict) else None
+        if isinstance(value, (int, float)) and value > 0:
+            dates.append(float(value))
+    return min(dates) if dates else None
+
+
 def keep_fresh_cookies(conn: sqlite3.Connection, refreshed: str) -> int:
     """Saves what a finished scrape renewed, and returns how many changed.
 

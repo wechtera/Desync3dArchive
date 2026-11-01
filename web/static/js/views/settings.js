@@ -261,7 +261,7 @@ export async function loadHealth() {
           <label><input type="checkbox" name="sync_enabled" .checked=${on('sync_enabled')}> Scrape MMF and add new purchases</label>
           <label>Every <input type="number" name="sync_interval_days" min="1" max="365" .value=${chosen.sync_interval_days}> days</label>
           <label><input type="checkbox" name="sync_auto_download" .checked=${on('sync_auto_download')}> Queue new collections for download</label>
-          <span class="form-help-text">Needs a current MMF sign-in and cookies. A Cloudflare check can stop it, and Health will say so.</span>
+          <span class="form-help-text">Needs a current MMF sign-in and cookies, which expire. It waits until they're renewed, and Health says when.</span>
         </fieldset>
         <fieldset>
           <legend>Integrity check</legend>

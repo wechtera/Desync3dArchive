@@ -111,6 +111,10 @@ def _start_sync(conn: sqlite3.Connection, tasks: Any) -> None:
     if not auth_service.get_setting(conn, "cookies_json", "").strip("[] \n"):
         _note_sync(conn, "Waiting: no MMF session cookies are saved")
         return
+    expiry = auth_service.cookie_expiry(conn)
+    if expiry is not None and expiry <= time.time():
+        _note_sync(conn, "Waiting: the saved MMF cookies have expired")
+        return
     started = tasks.start_task("library_scrape")
     if started.get("success"):
         with conn:
