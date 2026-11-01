@@ -237,7 +237,7 @@ export async function loadAuditHistory(action = '') {
             `)}
           </tbody>
         </table>
-      ` : html`<div class="table-msg text-dim">Nothing recorded yet.</div>`}
+      ` : html`<div class="table-msg text-dim">Nothing yet. This fills up when you delete orphans, purge files, clear tasks, unlink a library, edit added models, or rename or delete a tag.</div>`}
     `, panel);
   } catch (err) {
     render(html`<div class="table-msg text-alert">Failed loading the audit: ${err.message}</div>`, panel);

@@ -513,14 +513,14 @@
         <div class="settings-panel-header">
           <div>
             <h2 class="settings-panel-title">Import File</h2>
-            <div class="settings-panel-subtitle">Add one STL or archive from anywhere. It's copied into the vault, and a repeat of the same file is refused.</div>
+            <div class="settings-panel-subtitle">Files are copied to <span class="font-mono" id="import-destination">ad-hoc</span>, a fixed folder at the vault root. A folder becomes one collection, a single file its own, and repeats are skipped.</div>
           </div>
         </div>
+        <div class="import-picked" id="import-picked"></div>
         <div class="import-form">
-          <label>File path <input type="text" id="import-path" placeholder="/Users/you/Downloads/dragon.zip" spellcheck="false"></label>
-          <label>Name (optional) <input type="text" id="import-name" placeholder="Defaults to the file name" spellcheck="false"></label>
           <label>Creator (optional) <input type="text" id="import-creator" spellcheck="false"></label>
-          <button type="button" class="btn-pill btn-action-primary" id="btn-import-file" data-click="handleImportFile">Import</button>
+          <button type="button" class="btn-pill" id="btn-import-browse" data-click="openImportBrowser">Choose Files or Folders</button>
+          <button type="button" class="btn-pill btn-action-primary" id="btn-import-file" data-click="handleImportFile" disabled>Import</button>
         </div>
       </div>
     </div>
@@ -1214,6 +1214,16 @@
         <button class="tab-btn" data-click="closeModal" data-args='["model-view-modal"]'>Close</button>
       </div>
       <div class="modal-body" id="model-view-body"></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="import-browser-modal">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h2 class="modal-title-accent">Choose Files or Folders</h2>
+        <button class="tab-btn" data-click="closeModal" data-args='["import-browser-modal"]'>Close</button>
+      </div>
+      <div class="modal-body" id="import-browser-body"></div>
     </div>
   </div>
 

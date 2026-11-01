@@ -3310,3 +3310,16 @@ select, input[type="text"] { font-size: 0.9rem; }
 .tag-picker input { flex: 1; min-width: 0; height: 30px; padding: 4px 8px; }
 .preview-edit-added { margin-left: 8px; }
 #view-stashes { padding-top: 0; }
+
+/* Import */
+.import-form { grid-template-columns: minmax(220px, 1fr) auto auto; }
+.import-list, .import-browser-list { list-style: none; margin: 8px 0; }
+.import-list li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; overflow-wrap: anywhere; }
+.import-picked { margin-bottom: 12px; }
+.import-browser-list { max-height: 52vh; overflow-y: auto; }
+.import-row { display: flex; align-items: center; gap: 10px; padding: 4px 2px; border-top: 1px solid var(--border-dim); }
+.import-roots { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.tag-open { background: none; border: 0; color: inherit; cursor: pointer; font: inherit; padding: 0; }
+.tag-open:hover { color: var(--accent); text-decoration: underline; }
+.browse-summary-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.browse-summary-row #browse-summary { margin: 0; }

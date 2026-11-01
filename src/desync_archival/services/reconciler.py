@@ -24,7 +24,7 @@ from desync_archival import settings as app_config
 from desync_archival.db.queries import reconciler as queries
 from desync_archival.services.downloader import StorageManager, StorageUnavailableError
 from desync_archival.services.logger import log_layer
-from desync_archival.services.paths import sanitize_segment
+from desync_archival.services.paths import IMPORT_FOLDER, sanitize_segment
 
 try:
     from .archive_peeker import ArchivePeeker
@@ -161,6 +161,8 @@ class VaultReconciler:
 
             root_path = Path(root)
             if root_path == nas_root:
+                # Ad-hoc imports follow no creator layout, and a numbered folder there would read as an orphan.
+                dirs[:] = [d for d in dirs if d != IMPORT_FOLDER]
                 continue
             if root_path.name == "files":
                 dirs.clear()

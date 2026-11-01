@@ -18,6 +18,7 @@ import {
   fetchCatalogReview,
   saveCatalogReview,
   importFile,
+  browseImportFolder,
   fetchArchiveReview,
   saveArchiveReview,
   fetchImageQueue,
@@ -33,6 +34,7 @@ let currentLibrary = null;
 let currentReport = null;
 let review = null;
 let archiveQueue = [];
+const importPicked = new Set();
 
 const peekTime = (stamp) => parseServerTime(stamp)?.toLocaleString() || stamp;
 const flagsIn = (release) => release.new.filter(m => (m.flags || []).length).length;
@@ -773,13 +775,67 @@ function openArchiveReview(collectionId) {
   });
 }
 
-export async function handleImportFile() {
-  const value = (id) => document.getElementById(id)?.value.trim() || '';
+function drawImportPicked() {
+  const list = document.getElementById('import-picked');
+  if (!list) return;
+  render(importPicked.size ? html`
+    <p class="font-sm">${importPicked.size} selected</p>
+    <ul class="import-list">
+      ${[...importPicked].map(path => html`
+        <li class="font-mono font-xs">${path}
+          <button type="button" class="tag-remove" aria-label=${`Remove ${path}`} @click=${() => { importPicked.delete(path); drawImportPicked(); }}>×</button>
+        </li>
+      `)}
+    </ul>
+  ` : nothing, list);
+  document.getElementById('btn-import-file').disabled = !importPicked.size;
+}
+
+async function browseImport(folder = '') {
+  const body = document.getElementById('import-browser-body');
   try {
-    const res = await importFile({ path: value('import-path'), name: value('import-name'), creator: value('import-creator') });
-    showToast(`Imported ${res.name}.`);
-    document.getElementById('import-path').value = '';
-    document.getElementById('import-name').value = '';
+    const data = await browseImportFolder(folder);
+    const toggle = (path) => (event) => {
+      if (event.target.checked) importPicked.add(path); else importPicked.delete(path);
+      drawImportPicked();
+    };
+    const row = (path, name, isFolder) => html`
+      <li class="import-row">
+        <input type="checkbox" aria-label=${`Select ${name}`} .checked=${importPicked.has(path)} @change=${toggle(path)}>
+        ${isFolder ? html`<button type="button" class="link-btn" @click=${() => browseImport(path)}>${name}/</button>` : html`<span class="font-mono font-xs">${name}</span>`}
+      </li>
+    `;
+    render(html`
+      <div class="import-roots">
+        ${(data.roots || []).map(root => html`<button type="button" class="btn-pill font-xs" @click=${() => browseImport(root)}>${root.split('/').pop()}</button>`)}
+      </div>
+      <p class="font-mono font-xs text-dim">${data.current_path}</p>
+      ${data.parent_path ? html`<button type="button" class="link-btn font-sm" @click=${() => browseImport(data.parent_path)}>Up one folder</button>` : nothing}
+      <ul class="import-browser-list" id="import-browser-list">
+        ${data.directories.map(d => row(d.path, d.name, true))}
+        ${(data.files || []).map(f => row(f.path, f.name, false))}
+      </ul>
+      <div class="flex gap-2 mt-2">
+        <button type="button" class="btn-pill btn-action-primary" @click=${() => window.closeModal('import-browser-modal')}>Done</button>
+      </div>
+    `, body);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+export async function openImportBrowser() {
+  await browseImport();
+  window.openModal('import-browser-modal');
+}
+
+export async function handleImportFile() {
+  try {
+    const res = await importFile({ paths: [...importPicked], creator: document.getElementById('import-creator')?.value.trim() || '' });
+    showToast(`Import started (Task #${res.task_id}). Follow it on the Tasks tab.`);
+    importPicked.clear();
+    drawImportPicked();
+    window.checkHealth?.();
   } catch (err) {
     alert(err.message);
   }
@@ -858,5 +914,6 @@ Object.assign(window, {
   handleDeleteExternalLibrary,
   closeReview,
   handleImportFile,
+  openImportBrowser,
   loadArchiveQueue,
 });

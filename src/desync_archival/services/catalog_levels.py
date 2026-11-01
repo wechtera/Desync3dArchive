@@ -64,6 +64,35 @@ def sync_loose_artifacts(conn: sqlite3.Connection, model_id: int, name: str, roo
             conn.execute(queries.DELETE_MODEL_ARTIFACTS_BY_ID, (artifact_id,))
 
 
+def build_loose_models(
+    conn: sqlite3.Connection, collection_id: int, label: str, files: list[tuple[int, Path, str, int]],
+) -> None:
+    """Turns imported loose files into models. The caller holds the transaction.
+
+    A single file takes the name it was imported under. Anything more goes through the resolver.
+    """
+    by_path = {rel_path: (file_id, target, size) for file_id, target, rel_path, size in files}
+    paths = list(by_path)
+    variants = set(model_resolver.PRINT_WORDS)
+    models = model_resolver.resolve_files(paths, variants)
+    if len(models) == 1:
+        models[0].name, models[0].group = label, ""
+    spare: int | None = collection_id
+    for model in models:
+        if spare is not None:
+            model_id, spare = spare, None
+            conn.execute(queries.UPDATE_MODELS_NAME_BY_ID, (model.name, RESOLVED, model_id, PLACEHOLDER))
+        else:
+            model_id = int(conn.execute(queries.INSERT_MODELS, (model.name, RESOLVED)).lastrowid or 0)
+            conn.execute(queries.INSERT_MODEL_COLLECTIONS, (model_id, collection_id))
+        for rel_path in model.files:
+            file_id, target, size = by_path[rel_path]
+            scale, supported, hollow = _attributes(rel_path)
+            conn.execute(queries.INSERT_MODEL_ARTIFACTS, (model_id, file_id, rel_path, target.name, size, scale, supported, hollow))
+        if model.group:
+            conn.execute(queries.INSERT_MODEL_GROUP_MEMBERS, (_group_id(conn, collection_id, model.group), model_id))
+
+
 def file_under_release(
     conn: sqlite3.Connection, model_id: int, library_id: int, release: str, group: str, tags: list[str],
 ) -> None:

@@ -788,36 +788,44 @@ test.describe('settings', () => {
     await expect(page.locator('body img[src="x"]')).toHaveCount(0);
   });
 
-  test('a file can be imported from its path', async ({ page }) => {
+  test('files and folders are picked in a browser and imported together', async ({ page }) => {
     let sent = null;
+    await page.route('**/api/system/browse*', (route) => route.fulfill({ json: {
+      success: true, current_path: '/d', parent_path: null, roots: ['/d'],
+      directories: [{ name: 'Pack', path: '/d/Pack' }], files: [{ name: 'dragon.stl', path: '/d/dragon.stl', size_bytes: 5 }],
+    } }));
     await page.route('**/api/import-file', (route) => {
       sent = route.request().postDataJSON();
-      return route.fulfill({ json: { success: true, name: 'dragon', collection_id: 9 } });
+      return route.fulfill({ json: { success: true, task_id: 9 } });
     });
     await page.goto('/#downloads');
     await page.locator('#group-external').click();
     await page.locator('#sub-btn-import').click();
-    await page.locator('#import-path').fill('/tmp/dragon.stl');
+    await expect(page.locator('#btn-import-file')).toBeDisabled();
+    await page.locator('#btn-import-browse').click();
+    await page.locator('#import-browser-list input').nth(0).check();
+    await page.locator('#import-browser-list input').nth(1).check();
+    await page.getByRole('button', { name: 'Done' }).click();
+    await expect(page.locator('#import-picked')).toContainText('2 selected');
     await page.locator('#btn-import-file').click();
-    await expect.poll(() => sent?.path).toBe('/tmp/dragon.stl');
+    await expect.poll(() => sent?.paths).toEqual(['/d/Pack', '/d/dragon.stl']);
   });
 
-  test('tags are managed on their own page under stashes', async ({ page }) => {
-    const sent = [];
-    await page.route('**/api/tags*', (route) => {
-      if (route.request().method() === 'POST') {
-        sent.push(route.request().postDataJSON());
-        return route.fulfill({ json: { success: true } });
-      }
-      return route.fulfill({ json: { tags: [{ name: 'undead', uses: 3 }], total: 1 } });
+  test('clicking a tag shows the models that have it', async ({ page }) => {
+    const urls = [];
+    await page.route('**/api/tags*', (route) => route.fulfill({ json: { tags: [{ name: 'undead', uses: 3 }], total: 1 } }));
+    await page.route('**/api/catalog-models?*', (route) => {
+      urls.push(route.request().url());
+      return route.fulfill({ json: { models: [], total: 0, page: 1, page_size: 48 } });
     });
     await page.goto('/');
     await page.evaluate(() => window.switchTab('stashes'));
     await page.locator('#stash-tab-tags').click();
-    await expect(page.locator('#tags-table')).toContainText('undead');
-    await page.locator('#tag-new').fill('Big Boss');
-    await page.locator('#btn-tag-create').click();
-    await expect.poll(() => sent[0]?.action).toBe('create');
+    await page.locator('.tag-open-page').click();
+    await expect(page.locator('#browse-tag-filter')).toContainText('undead');
+    expect(urls.at(-1)).toContain('tag=undead');
+    await page.locator('#browse-tag-filter').click();
+    await expect(page.locator('#browse-tag-filter')).toHaveCount(0);
   });
 
   test('manage tabs group downloads and external sources', async ({ page }) => {

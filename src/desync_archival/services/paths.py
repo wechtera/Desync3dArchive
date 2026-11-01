@@ -2,6 +2,9 @@
 
 import re
 
+# Fixed on purpose: ad-hoc imports always sit here under the vault root, with no setting to move them.
+IMPORT_FOLDER = "ad-hoc"
+
 
 def sanitize_segment(name: str) -> str:
     """Replaces spaces and special characters with single underscores."""

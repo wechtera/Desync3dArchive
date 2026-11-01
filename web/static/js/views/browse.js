@@ -16,6 +16,7 @@ const SEARCH_DELAY_MS = 250;
 let page = 1;
 let searchTimer = null;
 let shownModel = null;
+let activeTag = '';
 
 function card(model, onClick) {
   return html`
@@ -147,7 +148,7 @@ export async function openBrowseModel(modelId) {
           ${model.url ? html`<p><a class="btn-pill font-xs model-source-link" href=${safeUrl(model.url)} target="_blank" rel="noopener noreferrer">View Source Page</a></p>` : nothing}
           <div class="model-view-tags" id="model-tags">
             ${model.tags.map(t => html`
-              <span class="badge font-xs tag-chip">${t}<button type="button" class="tag-remove" aria-label=${`Remove ${t}`} @click=${() => removeTag(model.id, t)}>×</button></span>
+              <span class="badge font-xs tag-chip"><button type="button" class="tag-open" @click=${() => showTag(t)}>${t}</button><button type="button" class="tag-remove" aria-label=${`Remove ${t}`} @click=${() => removeTag(model.id, t)}>×</button></span>
             `)}
           </div>
           ${tagPicker((name) => postModelTag(model.id, { name, action: 'add' }), () => openBrowseModel(model.id))}
@@ -189,16 +190,30 @@ export async function openBrowseGroup(groupId) {
   window.openModal('model-view-modal');
 }
 
+// Reached from the Tags page and from a model's tag chips.
+export function showTag(tag) {
+  activeTag = tag;
+  window.closeModal('model-view-modal');
+  if (tag) {
+    window.switchTab('browse');
+  } else {
+    loadBrowse(1);
+  }
+}
+
 export async function loadBrowse(nextPage = 1) {
   const container = document.getElementById('browse-results');
   const box = document.getElementById('browse-search');
   if (!container) return;
   page = nextPage;
   try {
-    const data = await fetchCatalogModels(box?.value.trim() || '', page);
+    const data = await fetchCatalogModels(box?.value.trim() || '', page, activeTag);
     const pages = Math.max(1, Math.ceil(data.total / data.page_size));
     render(html`
-      <p class="text-dim font-sm" id="browse-summary">${data.total.toLocaleString()} models</p>
+      <div class="browse-summary-row">
+        <p class="text-dim font-sm" id="browse-summary">${data.total.toLocaleString()} models</p>
+        ${activeTag ? html`<button type="button" class="btn-pill font-xs" id="browse-tag-filter" @click=${() => showTag('')}>Tag: ${activeTag} ×</button>` : nothing}
+      </div>
       <div class="browse-grid">${data.models.map(m => card(m, () => openBrowseModel(m.id)))}</div>
       <div class="flex gap-2 mt-2">
         <button type="button" class="btn-pill" ?disabled=${page <= 1} @click=${() => loadBrowse(page - 1)}>Previous</button>
@@ -217,4 +232,4 @@ document.addEventListener('input', (event) => {
   searchTimer = setTimeout(() => loadBrowse(1), SEARCH_DELAY_MS);
 });
 
-Object.assign(window, { loadBrowse, openBrowseModel, openBrowseGroup });
+Object.assign(window, { loadBrowse, openBrowseModel, openBrowseGroup, showTag });

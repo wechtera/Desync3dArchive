@@ -32,6 +32,7 @@ from desync_archival.services import (
     tags,
 )
 from desync_archival.services.external_indexer import (
+    SUPPORTED_FILE_EXTENSIONS,
     FULL,
     PREVIEW,
     SCAN_MODES,
@@ -406,6 +407,7 @@ def handle_delete_external_library(
     lib_path = row["path"]
 
     deactivate_library(conn, library_id)
+    audit.record(conn, "library_unlink", False, {"library_id": library_id, "name": lib_name, "path": lib_path})
 
     log_layer("storage", logging.INFO, f"Unlinked in-place library #{library_id} ('{lib_name}'). Physical files on NAS left untouched.")
 
@@ -555,7 +557,7 @@ def handle_get_models(
         page = int((query.get("page") or ["1"])[0])
     except ValueError:
         page = 1
-    return catalog_browse.list_models(conn, (query.get("q") or [""])[0].strip(), page), 200
+    return catalog_browse.list_models(conn, (query.get("q") or [""])[0].strip(), page, (query.get("tag") or [""])[0]), 200
 
 
 def handle_get_catalog_model(
@@ -614,6 +616,13 @@ def handle_get_tags(
     return tags.listing(conn, (query.get("q") or [""])[0], limit), 200
 
 
+def _audit_tag_change(conn: sqlite3.Connection, outcome: tuple[dict[str, Any], int], action: str, detail: dict) -> tuple[dict[str, Any], int]:
+    # A refused change altered nothing, so it doesn't belong in the history.
+    if outcome[0]["success"]:
+        audit.record(conn, action, False, detail)
+    return outcome
+
+
 def handle_post_tags(
     conn: sqlite3.Connection,
     download_manager: Any = None,
@@ -625,9 +634,10 @@ def handle_post_tags(
     if action == "create":
         return _tag_action(lambda: tags.create(conn, name))
     if action == "rename":
-        return _tag_action(lambda: tags.rename(conn, name, str(data.get("new_name") or "")))
+        new_name = str(data.get("new_name") or "")
+        return _audit_tag_change(conn, _tag_action(lambda: tags.rename(conn, name, new_name)), "tag_rename", {"tag": name, "new_name": new_name})
     if action == "delete":
-        return _tag_action(lambda: tags.delete(conn, name))
+        return _audit_tag_change(conn, _tag_action(lambda: tags.delete(conn, name)), "tag_delete", {"tag": name})
     return {"success": False, "error": f"Unknown action '{action}'"}, 400
 
 
@@ -682,6 +692,7 @@ def handle_post_catalog_review(
     except library_review.ReviewError as e:
         return {"success": False, "error": str(e)}, 409
     log_layer("storage", logging.INFO, f"Library #{library_id}: added models in {release} changed: {result}")
+    audit.record(conn, "added_models_edit", False, {"release": release, **result})
     return result, 200
 
 
@@ -690,15 +701,14 @@ def handle_post_import_file(
     download_manager: Any = None,
     body: dict | None = None,
     params: dict | None = None,
+    task_manager: Any = None,
 ) -> tuple[dict[str, Any], int]:
     data = body or {}
     try:
-        result = file_import.import_file(
-            conn, app_config.db_path(), Path(str(data.get("path") or "").strip()),
-            str(data.get("name") or ""), str(data.get("creator") or ""),
-        )
+        paths = file_import.check_paths([str(p) for p in data.get("paths") or []])
     except file_import.ImportRefused as e:
         return {"success": False, "error": str(e)}, 400
+    result = task_manager.start_task("file_import", {"paths": [str(p) for p in paths], "creator": str(data.get("creator") or "")})
     return result, 200 if result.get("success") else 409
 
 
@@ -984,7 +994,8 @@ def handle_get_system_browse(
     if not current.exists() or not current.is_dir():
         current = roots[0]
 
-    dirs = []
+    dirs, files = [], []
+    want_files = bool(params and params.get("files"))
     try:
         for entry in sorted(current.iterdir(), key=lambda e: e.name.lower()):
             if entry.is_dir() and not entry.name.startswith("."):
@@ -992,6 +1003,8 @@ def handle_get_system_browse(
                     "name": entry.name,
                     "path": str(entry.resolve()),
                 })
+            elif want_files and entry.is_file() and entry.suffix.lower() in SUPPORTED_FILE_EXTENSIONS and not entry.name.startswith("."):
+                files.append({"name": entry.name, "path": str(entry.resolve()), "size_bytes": entry.stat().st_size})
     except (PermissionError, OSError):
         pass
 
@@ -1003,6 +1016,7 @@ def handle_get_system_browse(
         "parent_path": parent,
         "directories": dirs,
         "dirs": [d["name"] for d in dirs],
+        **({"files": files, "roots": [str(r) for r in roots]} if want_files else {}),
     }, 200
 
 

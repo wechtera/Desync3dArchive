@@ -103,8 +103,7 @@ class TagBody(RequestBody):
 
 
 class ImportFileBody(RequestBody):
-    path: str
-    name: str | None = None
+    paths: list[str]
     creator: str | None = None
 
 

@@ -545,8 +545,12 @@ export async function saveArchiveReview(collectionId, payload) {
   });
 }
 
-export async function fetchCatalogModels(search, page) {
-  return request(`/api/catalog-models?q=${encodeURIComponent(search)}&page=${page}`);
+export async function fetchCatalogModels(search, page, tag = '') {
+  return request(`/api/catalog-models?q=${encodeURIComponent(search)}&page=${page}&tag=${encodeURIComponent(tag)}`);
+}
+
+export async function browseImportFolder(folder) {
+  return request(`/api/system/browse?files=1${folder ? `&path=${encodeURIComponent(folder)}` : ''}`);
 }
 
 export async function fetchCatalogModel(modelId) {

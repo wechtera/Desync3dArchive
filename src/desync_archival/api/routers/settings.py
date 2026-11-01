@@ -59,7 +59,7 @@ add_route(router, "GET", "/api/settings/libraries/{library_id:int}/catalog-revie
           with_path_id(handlers.handle_get_catalog_review, "library_id"))
 add_route(router, "POST", "/api/settings/libraries/{library_id:int}/catalog-review",
           with_path_id(handlers.handle_post_catalog_review, "library_id"), schemas.LibraryReviewBody)
-add_route(router, "POST", "/api/import-file", plain(handlers.handle_post_import_file), schemas.ImportFileBody)
+add_route(router, "POST", "/api/import-file", with_tasks(handlers.handle_post_import_file), schemas.ImportFileBody)
 add_route(router, "GET", "/api/audit-history", plain(handlers.handle_get_audit_history))
 add_route(router, "GET", "/api/backups", with_tasks(handlers.handle_get_backups))
 add_route(router, "POST", "/api/backups", with_tasks(handlers.handle_post_backups), schemas.BackupBody)

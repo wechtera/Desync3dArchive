@@ -26,6 +26,14 @@ _SEARCH = """
 """
 
 
+# A model shows its collections' tags too, so filtering has to count them the same way.
+_TAGGED = """
+    SELECT model_id FROM model_tags WHERE tag = ?
+    UNION SELECT l.model_id FROM model_collections l
+        JOIN collection_tags t ON t.model_id = l.collection_id WHERE t.tag = ?
+"""
+
+
 def _groups_of(conn: sqlite3.Connection, model_id: int) -> list[dict[str, Any]]:
     return [dict(r) for r in conn.execute(queries.SELECT_MODEL_GROUPS_BY_MODEL_ID, (model_id,)).fetchall()]
 
@@ -44,12 +52,15 @@ def _summary(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def list_models(conn: sqlite3.Connection, search: str = "", page: int = 1) -> dict[str, Any]:
+def list_models(conn: sqlite3.Connection, search: str = "", page: int = 1, tag: str = "") -> dict[str, Any]:
     conn.row_factory = sqlite3.Row
     where, args = _VISIBLE, []
     if search:
         where += f" AND m.id IN ({_SEARCH})"
         args = [f"%{search}%"]
+    if tag:
+        where += f" AND m.id IN ({_TAGGED})"
+        args += [tag, tag]
     total = conn.execute(f"SELECT COUNT(*) FROM models m WHERE {where};", args).fetchone()[0]
     offset = (max(1, page) - 1) * PAGE_SIZE
     rows = conn.execute(

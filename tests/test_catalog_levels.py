@@ -1,6 +1,7 @@
 import socket
 import sqlite3
 import tempfile
+import threading
 import unittest
 import zipfile
 from pathlib import Path
@@ -9,6 +10,7 @@ from unittest.mock import MagicMock, patch
 from db_helper import create_database
 
 from desync_archival import dbtool
+from desync_archival.api.routes import settings as routes
 from desync_archival.migrations import MigrationError
 from desync_archival.services import (
     archive_review,
@@ -20,6 +22,7 @@ from desync_archival.services import (
 )
 from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.library_review import ReviewError
+from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.stash_service import StashService
 from desync_archival.services.task_manager import TaskManager
 
@@ -597,6 +600,15 @@ class BrowseTests(BuildCase):
         model = catalog_browse.list_models(self.conn, "Unique")["models"][0]
         self.assertEqual(len(catalog_browse.model_detail(self.conn, model["id"])["artifacts"]), 1)
 
+    def test_a_tag_filters_models_including_inherited_tags(self):
+        with self.conn:
+            self.conn.execute("INSERT INTO collection_tags (model_id, tag) VALUES (?, 'undead')", (self.collection,))
+        other = self.add_collection("Other", "1/o")
+        shown = catalog_browse.list_models(self.conn, tag="undead")
+        self.assertGreater(shown["total"], 0)
+        self.assertNotIn(other, [m["id"] for m in shown["models"]])
+        self.assertEqual(catalog_browse.list_models(self.conn, "Bases", tag="undead")["total"], 2)
+
     def test_an_inactive_collection_hides_its_only_model(self):
         with self.conn:
             self.conn.execute("UPDATE collections SET is_active = 0 WHERE id = ?", (self.collection,))
@@ -673,42 +685,154 @@ class ImportTests(BuildCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def bring(self, name="dragon.stl", body=b"solid dragon", **extra):
-        path = self.incoming / name
+    def write(self, rel, body=b"solid"):
+        path = self.incoming / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(body)
-        return file_import.import_file(self.conn, self.db, path, **extra)
+        return path
+
+    def bring(self, *paths, **extra):
+        return file_import.import_paths(self.conn, self.db, file_import.check_paths([str(p) for p in paths]), **extra)
 
     def test_a_loose_stl_becomes_a_findable_model(self):
-        result = self.bring(name="dragon.stl", creator="Maker")
-        self.assertTrue(result["success"])
-        row = self.one("SELECT state, name FROM models WHERE id = ?", result["collection_id"])
+        self.bring(self.write("dragon.stl"), creator="Maker")
+        row = self.one("SELECT state, name FROM models WHERE name = 'dragon'")
         self.assertEqual(tuple(row), ("resolved", "dragon"))
+        self.assertEqual(self.one("SELECT designer_name FROM collections WHERE source = 'import'")[0], "Maker")
         self.assertEqual(self.one("SELECT COUNT(*) FROM catalog_search_artifacts WHERE name LIKE '%dragon.stl%'")[0], 1)
-        self.assertTrue(list(self.vault.glob("Imports/*/dragon.stl")))
 
-    def test_the_same_file_under_another_name_is_refused(self):
-        first = self.bring()
-        again = self.bring(name="renamed.stl")
-        self.assertTrue(again["duplicate"])
-        self.assertEqual(again["collection_id"], first["collection_id"])
+    def test_imports_stay_apart_from_creator_folders(self):
+        self.bring(self.write("dragon.stl"))
+        found = list(self.vault.glob("ad-hoc/*/dragon.stl"))
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].relative_to(self.vault).parts[0], "ad-hoc")
+
+    def test_several_files_become_separate_collections(self):
+        totals = self.bring(self.write("a.stl", b"one"), self.write("b.stl", b"two"))
+        self.assertEqual(totals["collections"], 2)
+
+    def test_a_folder_is_one_collection_and_keeps_its_structure(self):
+        self.write("Pack/Ghouls/Ghoul_A.stl", b"a")
+        self.write("Pack/Ghouls/Ghoul_B.stl", b"b")
+        self.write("Pack/.hidden.stl", b"h")
+        self.write("Pack/notes.txt", b"n")
+        totals = self.bring(self.incoming / "Pack")
+        self.assertEqual((totals["collections"], totals["imported"]), (1, 2))
+        self.assertTrue(list(self.vault.glob("ad-hoc/Pack-*/Ghouls/Ghoul_A.stl")))
+        self.assertEqual(self.one("SELECT COUNT(*) FROM models WHERE name LIKE 'Ghoul %'")[0], 2)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM model_groups WHERE name = 'Ghoul'")[0], 1)
+        self.assertEqual(catalog_browse.list_models(self.conn, "Ghoul")["total"], 2)
+
+    def test_a_repeat_is_skipped_and_new_files_beside_it_still_land(self):
+        self.bring(self.write("dragon.stl", b"same"))
+        totals = self.bring(self.write("Mixed/renamed.stl", b"same").parent)
+        self.assertEqual((totals["imported"], totals["repeats"]), (0, 1))
+        self.write("Mixed/new.stl", b"different")
+        totals = self.bring(self.incoming / "Mixed")
+        self.assertEqual((totals["imported"], totals["repeats"]), (1, 1))
 
     def test_the_hash_is_stored(self):
-        self.bring()
+        self.bring(self.write("dragon.stl"))
         self.assertEqual(len(self.one("SELECT sha256 FROM downloaded_files WHERE original_filename = 'dragon.stl'")[0]), 64)
 
-    def test_an_unknown_type_is_refused(self):
+    def test_an_unknown_type_is_refused_before_anything_runs(self):
         with self.assertRaisesRegex(file_import.ImportRefused, "printable"):
-            self.bring(name="notes.txt")
+            file_import.check_paths([str(self.write("notes.txt"))])
 
-    def test_a_missing_file_is_refused(self):
+    def test_a_missing_path_is_refused(self):
         with self.assertRaisesRegex(file_import.ImportRefused, "doesn't exist"):
-            file_import.import_file(self.conn, self.db, self.incoming / "gone.stl")
+            file_import.check_paths([str(self.incoming / "gone.stl")])
+
+    def test_an_empty_choice_is_refused(self):
+        with self.assertRaisesRegex(file_import.ImportRefused, "at least one"):
+            file_import.check_paths([])
 
     def test_an_offline_vault_refuses_and_copies_nothing(self):
         with self.conn:
             self.conn.execute("UPDATE app_settings SET value = '/nowhere/at/all' WHERE key = 'download_root_path'")
         with self.assertRaisesRegex(file_import.ImportRefused, "isn't available"):
-            self.bring()
+            self.bring(self.write("dragon.stl"))
+
+    def test_the_orphan_audit_never_looks_inside_imports(self):
+        self.bring(self.write("Pack/123_numbered/part.stl", b"p").parents[1])
+        # Skips the constructor: the class is a singleton, and a test database would stick to it.
+        reconciler = object.__new__(VaultReconciler)
+        with patch.object(VaultReconciler, "_get_db", side_effect=self._reader), \
+                patch.object(VaultReconciler, "_save_run_snapshot"):
+            result = reconciler._execute_reverse(self.vault, lambda *_: None, lambda *_: None, lambda: False)
+        self.assertEqual(result["orphan_directories"], [])
+
+    def test_the_job_imports_and_finishes(self):
+        self.conn.commit()
+        manager = object.__new__(TaskManager)
+        manager.db_path = self.db
+        manager._lock = threading.Lock()
+        manager.active_task_id = None
+        manager._cancel_requested = False
+        task_id = self.conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('file_import', 'running')").lastrowid
+        self.conn.commit()
+        manager._run_file_import_worker(task_id, {"paths": [str(self.write("dragon.stl")), str(self.write("wyrm.stl", b"w"))]})
+        self.assertEqual(self.one("SELECT status FROM pipeline_tasks WHERE id = ?", task_id)[0], "completed")
+        self.assertEqual(self.one("SELECT COUNT(*) FROM collections WHERE source = 'import'")[0], 2)
+
+    def test_the_job_fails_cleanly_when_the_vault_is_gone(self):
+        with self.conn:
+            self.conn.execute("UPDATE app_settings SET value = '/nowhere/at/all' WHERE key = 'download_root_path'")
+        manager = object.__new__(TaskManager)
+        manager.db_path = self.db
+        manager._lock = threading.Lock()
+        manager.active_task_id = 7
+        manager._cancel_requested = False
+        task_id = self.conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('file_import', 'running')").lastrowid
+        self.conn.commit()
+        manager._run_file_import_worker(task_id, {"paths": [str(self.write("dragon.stl"))]})
+        self.assertEqual(self.one("SELECT status FROM pipeline_tasks WHERE id = ?", task_id)[0], "failed")
+        self.assertIsNone(manager.active_task_id)
+
+    def test_the_route_refuses_a_bad_path_without_starting_a_job(self):
+        manager = MagicMock()
+        _, status = routes.handle_post_import_file(self.conn, body={"paths": ["/gone/x.stl"]}, task_manager=manager)
+        self.assertEqual(status, 400)
+        manager.start_task.assert_not_called()
+
+    def test_the_route_reports_a_busy_job_as_a_conflict(self):
+        manager = MagicMock()
+        manager.start_task.return_value = {"success": False, "error": "busy"}
+        _, status = routes.handle_post_import_file(self.conn, body={"paths": [str(self.write("a.stl"))]}, task_manager=manager)
+        self.assertEqual(status, 409)
+        self.assertEqual(manager.start_task.call_args.args[0], "file_import")
+
+    def test_browse_lists_printable_files_only_when_asked(self):
+        self.write("dragon.stl")
+        self.write("notes.txt")
+        folder = {"path": [str(self.incoming)]}
+        plain, _ = routes.handle_get_system_browse(self.conn, params=folder)
+        self.assertNotIn("files", plain)
+        picked, _ = routes.handle_get_system_browse(self.conn, params={**folder, "files": ["1"]})
+        self.assertEqual([f["name"] for f in picked["files"]], ["dragon.stl"])
+        self.assertTrue(picked["roots"])
+
+    def _reader(self):
+        conn = sqlite3.connect(self.db)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+class AuditCoverageTests(BuildCase):
+    def actions(self):
+        return [r[0] for r in self.conn.execute("SELECT action FROM audit_log ORDER BY id").fetchall()]
+
+    def test_tag_changes_are_recorded_and_refusals_are_not(self):
+        tags.create(self.conn, "undead")
+        routes.handle_post_tags(self.conn, body={"action": "rename", "name": "undead", "new_name": "ghoul"})
+        routes.handle_post_tags(self.conn, body={"action": "delete", "name": "ghoul"})
+        self.assertEqual(self.actions(), ["tag_rename", "tag_delete"])
+        routes.handle_post_tags(self.conn, body={"action": "rename", "name": "nope", "new_name": ""})
+        self.assertEqual(len(self.actions()), 2)
+
+    def test_unlinking_a_missing_library_records_nothing(self):
+        with patch("desync_archival.services.jobs.busy_reason", return_value=""):
+            _, status = routes.handle_delete_external_library(self.conn, 999)
+        self.assertEqual((status, self.actions()), (404, []))
 
 
 class TagTests(BuildCase):

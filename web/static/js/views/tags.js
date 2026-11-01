@@ -62,7 +62,7 @@ export async function loadTagsPage(query = document.getElementById('tag-search')
           <tbody>
             ${tags.map(t => html`
               <tr>
-                <td>${t.name}</td>
+                <td><button type="button" class="link-btn tag-open-page" @click=${() => window.showTag(t.name)}>${t.name}</button></td>
                 <td class="font-mono font-xs">${t.uses.toLocaleString()}</td>
                 <td class="tag-actions">
                   <button type="button" class="btn-pill font-xs" @click=${() => renameTag(t.name)}>Rename</button>

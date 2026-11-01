@@ -390,6 +390,26 @@ class TaskManager:
         with self._lock:
             self.active_task_id = None
 
+    @job_logged(lambda self, task_id, *_: f"task-{task_id}")
+    def _run_file_import_worker(self, task_id: int, params: dict[str, Any]):
+        from desync_archival.services import file_import
+
+        try:
+            with self._get_db() as conn:
+                totals = file_import.import_paths(
+                    conn, self.db_path, [Path(p) for p in params["paths"]], params.get("creator", ""),
+                    lambda message: self._append_log(task_id, message),
+                    lambda pct, label: self._update_progress(task_id, pct, label),
+                )
+            label = f"Imported {totals['imported']} files, {totals['repeats']} already in the catalog"
+            status = jobs.COMPLETED
+        except (file_import.ImportRefused, OSError, sqlite3.Error) as e:
+            self._append_log(task_id, f"Import stopped: {e}")
+            totals, status, label = {}, jobs.FAILED, "Import failed"
+        self._finalize_task(task_id, status, label, totals)
+        with self._lock:
+            self.active_task_id = None
+
     def _rebuild_releases(self, task_id: int) -> None:
         """Ingest changes the catalog, so releases are rebuilt. A failure here keeps the ingest result."""
         try:
@@ -462,6 +482,7 @@ class TaskManager:
             "stash_export": (self._run_stash_export_worker, (task_id, task_params)),
             "external_library_reconcile": (self._run_external_indexer_worker, (task_id, task_params)),
             "database_backup": (self._run_backup_worker, (task_id, task_params)),
+            "file_import": (self._run_file_import_worker, (task_id, task_params)),
         }
         if task_type not in workers:
             self._finalize_task(task_id, "failed", f"Unsupported task type: {task_type}", {})
