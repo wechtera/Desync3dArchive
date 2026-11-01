@@ -41,14 +41,17 @@ from desync_archival.services import (
 )
 from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.db import get_db_connection, scoped_connection
-from desync_archival.services.downloader import DownloadManager, queue_models
+from desync_archival.services.downloader import (
+    DownloadManager,
+    StagedFileMissing,
+    queue_models,
+)
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.stash_exporter import StashExporter
 from desync_archival.services.task_manager import TaskManager
 
-# Stored relative to the data folder or an archive, so a move can't change them.
+# Always relative to the data folder or an archive, so a move can't change them.
 NOT_MOVED_WITH_A_BUNDLE = {
-    ("collections", "raw_backup_path"),
     ("downloaded_files", "local_relative_path"),
     ("file_archive_members", "internal_path"),
     ("file_archive_submodels", "preview_image_path"),
@@ -560,9 +563,15 @@ class QueueR17Tests(unittest.TestCase):
         self.conn.execute("DELETE FROM download_jobs")
         self.conn.execute("DELETE FROM collections")
         self.conn.commit()
+        # The database is shared, and a live job left here would make other tests' routes busy.
+        self.addCleanup(self.clear_jobs)
         self.client = TestClient(server.create_app(manage_workers=False), base_url="http://localhost")
         self.client.__enter__()
         self.addCleanup(self.client.__exit__, None, None, None)
+
+    def clear_jobs(self):
+        with self.conn:
+            self.conn.execute("DELETE FROM download_jobs")
 
     def job(self, status):
         with self.conn:
@@ -1186,10 +1195,20 @@ class BackfillP03Tests(TempCase):
         self.assertEqual(build.call_count, 1)
         self.assertEqual(self.artifacts(), 1)
 
-    def test_a_backfill_that_peeked_nothing_doesnt_build(self):
+    def test_a_rerun_builds_what_a_crash_left_behind(self):
+        # A crash after the last peek leaves archives a rerun won't select, because they have submodels.
+        peeker = ArchivePeeker(self.db)
+        for file_id in (1, 2, 3):
+            peeker.inspect_and_record(self.collection, file_id, self.vault / f"pack{file_id}.zip", build_catalog=False)
+        self.assertEqual(self.artifacts(), 0)
+        report = self.reconciler().backfill_archive_peeks()
+        self.assertEqual(report["total_archives"], 0)
+        self.assertEqual(self.artifacts(), 3)
+
+    def test_a_backfill_that_stopped_at_once_still_builds_once(self):
         with self.counting() as build:
             self.reconciler().backfill_archive_peeks(cancel_cb=lambda: True)
-        build.assert_not_called()
+        self.assertEqual(build.call_count, 1)
 
     def test_a_failed_build_doesnt_fail_the_backfill(self):
         with patch(
@@ -1211,3 +1230,68 @@ class BackfillP03Tests(TempCase):
             summary = archive_peeker.repeek_files(self.db, {1, 2, 3})
         self.assertEqual(summary["repaired"], 3)
         self.assertEqual(build.call_count, 1)
+
+
+class SecondReviewR14Tests(BundleImportR14Tests):
+    def setting(self, key, value):
+        conn = sqlite3.connect(self.db)
+        with conn:
+            conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", (key, value))
+        conn.close()
+        shutil.rmtree(self.bundle)
+        data_bundle.export_bundle(self.db, self.bundle)
+
+    def test_an_underscore_in_a_map_isnt_a_wildcard(self):
+        self.setting("download_root_path", "/Volumes/NASx1/vault")
+        data_bundle.import_bundle(self.bundle, self.fresh, {"/Volumes/NAS_1": "/mnt/nas"})
+        rows = self.fresh_rows("SELECT value FROM app_settings WHERE key = 'download_root_path'")
+        self.assertEqual(rows, [("/Volumes/NASx1/vault",)])
+
+    def test_settings_match_case_exactly(self):
+        self.setting("download_root_path", "/OLD/VAULT/x")
+        data_bundle.import_bundle(self.bundle, self.fresh, {"/old/vault": "/new/vault"})
+        rows = self.fresh_rows("SELECT value FROM app_settings WHERE key = 'download_root_path'")
+        self.assertEqual(rows, [("/OLD/VAULT/x",)])
+
+    def test_a_matching_setting_still_moves(self):
+        self.setting("download_root_path", "/old/vault/x")
+        data_bundle.import_bundle(self.bundle, self.fresh, {"/old/vault": "/new/vault"})
+        rows = self.fresh_rows("SELECT value FROM app_settings WHERE key = 'download_root_path'")
+        self.assertEqual(rows, [("/new/vault/x",)])
+
+    def test_the_longest_map_wins_whatever_the_order(self):
+        data_bundle.import_bundle(self.bundle, self.fresh, {"/old": "/short", "/old/vault/loot": "/long"})
+        self.assertEqual(self.fresh_rows("SELECT path FROM external_libraries"), [("/long",)])
+
+    def test_a_damaged_metadata_archive_is_a_bundle_error(self):
+        path = self.bundle / data_bundle.METADATA
+        path.write_bytes(path.read_bytes()[:20])
+        with self.assertRaises(data_bundle.BundleError):
+            data_bundle.import_bundle(self.bundle, self.fresh, {})
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_bad_snapshot_is_a_bundle_error(self):
+        conn = sqlite3.connect(self.bundle / data_bundle.DATABASE)
+        with conn:
+            conn.execute("UPDATE deleted_files SET snapshot_json = '{not json'")
+        conn.close()
+        with self.assertRaises(data_bundle.BundleError):
+            data_bundle.import_bundle(self.bundle, self.fresh, {"/old/vault": "/new/vault"})
+
+    def test_a_killed_imports_temp_folder_is_cleared(self):
+        stale = self.fresh / ".import-old"
+        stale.mkdir(parents=True)
+        (stale / "library.db").write_bytes(b"old catalog copy")
+        data_bundle.import_bundle(self.bundle, self.fresh, {})
+        self.assertFalse(stale.exists())
+
+    def test_an_absolute_metadata_path_moves(self):
+        conn = sqlite3.connect(self.db)
+        with conn:
+            conn.execute("UPDATE collections SET raw_backup_path = '/old/vault/meta/1.json' WHERE name = 'A'")
+        conn.close()
+        shutil.rmtree(self.bundle)
+        data_bundle.export_bundle(self.db, self.bundle)
+        data_bundle.import_bundle(self.bundle, self.fresh, {"/old/vault": "/new/vault"})
+        rows = self.fresh_rows("SELECT raw_backup_path FROM collections WHERE name = 'A'")
+        self.assertEqual(rows, [("/new/vault/meta/1.json",)])

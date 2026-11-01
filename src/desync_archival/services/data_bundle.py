@@ -24,10 +24,12 @@ METADATA = "metadata.tar.gz"
 PREVIEWS = "previews.tar"  # Already JPEGs, so compressing 4 GB would take time and save nothing.
 SECRETS = "secrets.json"
 MANIFEST = "MANIFEST.json"
+IMPORT_PREFIX = ".import-"
 PATH_SETTINGS = ("download_root_path", "download_work_path", "stash_download_path", "metadata_backup_path")
-# Every column holding an absolute path outside the data folder. A test fails when a new path-like
-# column is on neither this list nor the test's list of relative ones.
+# Every column that can hold an absolute path outside the data folder. A test fails when a new
+# path-like column is on neither this list nor the test's list of relative ones.
 PATH_COLUMNS = (
+    ("collections", "raw_backup_path"),
     ("collections", "vault_path"),
     ("deleted_files", "original_path"),
     ("deleted_files", "pending_path"),
@@ -126,11 +128,8 @@ def _rewrite_snapshots(conn: sqlite3.Connection, old: str, new: str) -> int:
 def _rewrite_paths(conn: sqlite3.Connection, old: str, new: str) -> int:
     changed = sum(_rewrite_prefix(conn, table, column, old, new) for table, column in PATH_COLUMNS)
     changed += _rewrite_snapshots(conn, old, new)
-    return changed + conn.execute(
-        f"UPDATE app_settings SET value = ?2 || substr(value, length(?1) + 1)"
-        f" WHERE key IN ({','.join(repr(k) for k in PATH_SETTINGS)}) AND (value = ?1 OR value LIKE ?1 || '/%');",
-        (old, new),
-    ).rowcount
+    settings_only = f" AND key IN ({','.join(repr(key) for key in PATH_SETTINGS)})"
+    return changed + _rewrite_prefix(conn, "app_settings", "value", old, new, settings_only)
 
 
 def _unpack(bundle: Path, staging: Path, path_map: dict[str, str]) -> int:
@@ -141,8 +140,10 @@ def _unpack(bundle: Path, staging: Path, path_map: dict[str, str]) -> int:
                 archive.extractall(staging, filter="data")
     conn = sqlite3.connect(staging / DATABASE)
     try:
+        # Longest first, or /Volumes/STL would take the paths /Volumes/STL/Loot was meant to move.
+        ordered = sorted(path_map.items(), key=lambda pair: len(pair[0].rstrip("/")), reverse=True)
         with conn:
-            return sum(_rewrite_paths(conn, old.rstrip("/"), new.rstrip("/")) for old, new in path_map.items())
+            return sum(_rewrite_paths(conn, old.rstrip("/"), new.rstrip("/")) for old, new in ordered)
     finally:
         conn.close()
 
@@ -188,11 +189,14 @@ def import_bundle(bundle: Path, data_dir: Path, path_map: dict[str, str]) -> dic
     if target.exists():
         raise BundleError(f"{target} already exists. Import only goes into an empty data folder.")
     data_dir.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(dir=data_dir, prefix=".import-"))
+    # A killed import leaves one of these, with a full copy of the catalog inside.
+    for leftover in data_dir.glob(f"{IMPORT_PREFIX}*"):
+        shutil.rmtree(leftover, ignore_errors=True)
+    staging = Path(tempfile.mkdtemp(dir=data_dir, prefix=IMPORT_PREFIX))
     try:
         changed = _unpack(bundle, staging, path_map)
         _move_into_place(staging, data_dir)
-    except (OSError, sqlite3.Error, tarfile.TarError, backup.BackupError) as e:
+    except (OSError, EOFError, ValueError, sqlite3.Error, tarfile.TarError, backup.BackupError) as e:
         raise BundleError(f"Import failed, so no catalog was added: {e}") from e
     finally:
         shutil.rmtree(staging, ignore_errors=True)
