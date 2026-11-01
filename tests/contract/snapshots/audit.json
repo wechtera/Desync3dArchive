@@ -9,10 +9,10 @@
     "json": {
       "actual_months_count": 88,
       "avg_models": 52.4,
-      "coverage_pct": 100.0,
-      "current_month": "2026-10",
+      "coverage_pct": 98.9,
+      "current_month": "2026-11",
       "designer": "Entire Library",
-      "expected_months_count": 88,
+      "expected_months_count": 89,
       "has_data": true,
       "high_outliers": [
         {
@@ -104,8 +104,10 @@
           "month": "2020-07"
         }
       ],
-      "missing_count": 0,
-      "missing_months": [],
+      "missing_count": 1,
+      "missing_months": [
+        "2026-11"
+      ],
       "oldest_month": "2019-07",
       "std_dev": 22.0,
       "total_bonus_models": 38
