@@ -19,6 +19,7 @@ from desync_archival.services import (
 from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.library_review import ReviewError
 from desync_archival.services.stash_service import StashService
+from desync_archival.services.task_manager import TaskManager
 
 
 class LevelsCase(unittest.TestCase):
@@ -633,4 +634,21 @@ class RunningAppGuardTests(unittest.TestCase):
                     dbtool.refuse_if_app_running()
                 server.close()
                 dbtool.refuse_if_app_running()
+
+
+class TaskLogTests(unittest.TestCase):
+    def test_a_secret_never_reaches_the_task_log(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        path = Path(temp.name) / "library.db"
+        create_database(path)
+        manager = TaskManager(path)
+        conn = sqlite3.connect(path)
+        self.addCleanup(conn.close)
+        with conn:
+            task = conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('t', 'running')").lastrowid
+        manager._append_log(task, 'failed with Authorization: Bearer abcdefghijklmnop1234')
+        logged = conn.execute("SELECT log_output FROM pipeline_tasks WHERE id = ?", (task,)).fetchone()[0]
+        self.assertNotIn("abcdefghijklmnop1234", logged)
+        self.assertIn("failed with", logged)
 

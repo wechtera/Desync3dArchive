@@ -38,7 +38,7 @@ from desync_archival.services import (
     secret_store,
 )
 from desync_archival.services.analytics import run_startup_analytics
-from desync_archival.services.logger import job_logged, log_layer, logger
+from desync_archival.services.logger import job_logged, log_layer, logger, redact
 from desync_archival.services.paths import sanitize_segment
 
 from .reconciler import VaultReconciler
@@ -259,6 +259,8 @@ class TaskManager:
             return row["value"] if row and row["value"] is not None else default
 
     def _append_log(self, task_id: int, message: str):
+        # This text lands in the database and the UI, which the logger's own filter never sees.
+        message = redact(str(message))
         timestamp = datetime.now().strftime("%H:%M:%S")
         log_line = f"[{timestamp}] {message}"
         print(f"[Task #{task_id}] {log_line}")

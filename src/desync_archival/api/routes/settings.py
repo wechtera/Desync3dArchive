@@ -593,6 +593,22 @@ def handle_get_model_group(
     return (found, 200) if found else ({"success": False, "error": "Group not found."}, 404)
 
 
+def handle_get_audit_history(
+    conn: sqlite3.Connection,
+    download_manager: Any = None,
+    body: dict | None = None,
+    params: dict | None = None,
+) -> tuple[dict[str, Any], int]:
+    conn.row_factory = sqlite3.Row
+    action = ((params or {}).get("action") or [""])[0]
+    rows = conn.execute(
+        "SELECT id, action, dry_run, outcome, detail, created_at FROM audit_log"
+        " WHERE ?1 = '' OR action = ?1 ORDER BY id DESC LIMIT 200;", (action,),
+    ).fetchall()
+    actions = [r[0] for r in conn.execute("SELECT DISTINCT action FROM audit_log ORDER BY action;").fetchall()]
+    return {"entries": [dict(r) for r in rows], "actions": actions}, 200
+
+
 def handle_get_backups(
     conn: sqlite3.Connection,
     download_manager: Any = None,

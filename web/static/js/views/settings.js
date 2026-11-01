@@ -7,6 +7,7 @@
 import { formatBytes, parseServerTime } from '../utils.js';
 import { appendToBody, html, imageFallback, nothing, render, safeUrl, stopPropagation } from '../template.js';
 import {
+  fetchAuditHistory,
   fetchBackups,
   postBackups,
   fetchExternalLibraries,
@@ -193,6 +194,7 @@ export function switchSettingsTab(tab) {
   if (tab === 'inactive') loadInactive();
   if (tab === 'libraries') loadLibraryUsage().catch(() => {});
   if (tab === 'backups') loadBackups().catch(() => {});
+  if (tab === 'audit') loadAuditHistory();
   // Panels stay in the page while hidden, so a save still reads every field.
   document.querySelectorAll('[data-settings-tab]').forEach(panel => {
     panel.hidden = panel.dataset.settingsTab !== tab;
@@ -202,6 +204,44 @@ export function switchSettingsTab(tab) {
     btn.classList.toggle('active', selected);
     btn.setAttribute('aria-selected', selected ? 'true' : 'false');
   });
+}
+
+export async function loadAuditHistory(action = '') {
+  const panel = document.getElementById('audit-panel');
+  if (!panel) return;
+  try {
+    const { entries, actions } = await fetchAuditHistory(action);
+    render(html`
+      <div class="settings-panel-header">
+        <div>
+          <h2 class="settings-panel-title">Audit</h2>
+          <div class="settings-panel-subtitle">Every destructive action, including dry runs. Latest 200.</div>
+        </div>
+        <select id="audit-action" aria-label="Action" @change=${(e) => loadAuditHistory(e.target.value)}>
+          <option value="">All actions</option>
+          ${actions.map(a => html`<option value=${a} ?selected=${a === action}>${a}</option>`)}
+        </select>
+      </div>
+      ${entries.length ? html`
+        <table class="table-compact" id="audit-table">
+          <thead><tr><th>When</th><th>Action</th><th>Mode</th><th>Outcome</th><th>Detail</th></tr></thead>
+          <tbody>
+            ${entries.map(entry => html`
+              <tr>
+                <td class="font-sm">${parseServerTime(entry.created_at)?.toLocaleString() || entry.created_at}</td>
+                <td>${entry.action}</td>
+                <td>${entry.dry_run ? 'Dry run' : 'Executed'}</td>
+                <td>${entry.outcome}</td>
+                <td><details><summary class="font-xs">View</summary><pre class="audit-detail">${entry.detail}</pre></details></td>
+              </tr>
+            `)}
+          </tbody>
+        </table>
+      ` : html`<div class="table-msg text-dim">Nothing recorded yet.</div>`}
+    `, panel);
+  } catch (err) {
+    render(html`<div class="table-msg text-alert">Failed loading the audit: ${err.message}</div>`, panel);
+  }
 }
 
 async function backupAction(payload, done) {
@@ -719,6 +759,7 @@ Object.assign(window, {
   loadDirectoryUsage,
   loadLibraryUsage,
   loadBackups,
+  loadAuditHistory,
   loadInactive,
   loadAuthStatus,
   loadLoggingSettings,

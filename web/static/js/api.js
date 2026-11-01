@@ -492,6 +492,10 @@ export async function saveLibraryReview(libraryId, payload) {
   });
 }
 
+export async function fetchAuditHistory(action) {
+  return request(`/api/audit-history?action=${encodeURIComponent(action)}`);
+}
+
 export async function fetchBackups() {
   return request('/api/backups');
 }

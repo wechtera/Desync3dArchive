@@ -779,6 +779,14 @@ test.describe('settings', () => {
     await expect.poll(() => sent.map((s) => s.action)).toEqual(['run', 'verify']);
   });
 
+  test('the audit tab lists destructive actions as text', async ({ page }) => {
+    await page.route('**/api/audit-history?*', (route) => route.fulfill({ json: { actions: ['delete_orphans'], entries: [{ id: 1, action: 'delete_orphans', dry_run: 1, outcome: 'ok', detail: HOSTILE, created_at: '2026-10-31 12:00:00' }] } }));
+    await page.goto('/#settings');
+    await page.locator('[data-settings-tab-btn="audit"]').click();
+    await expect(page.locator('#audit-table')).toContainText('Dry run');
+    await expect(page.locator('body img[src="x"]')).toHaveCount(0);
+  });
+
   test('manage tabs group downloads and external sources', async ({ page }) => {
     await page.goto('/#downloads');
     await expect(page.locator('#view-downloads > .sub-tabs').first().locator('.sub-btn')).toHaveText(['MMF Sync', 'Download MMF', 'External Vault', 'Vault Reconcile']);
