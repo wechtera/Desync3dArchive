@@ -77,7 +77,6 @@ def handle_get_scrapes_download(
         return {"error": f"Artifact not found at {rel_path}"}, 404
 
     try:
-        # FIXME(S-12): a str response is sent as text/html, and this file holds third-party names.
         content = target.read_text(encoding="utf-8")
         return content, 200
     except UnicodeDecodeError:

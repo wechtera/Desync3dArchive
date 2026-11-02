@@ -4,6 +4,7 @@ import time
 import urllib.parse
 from typing import Any
 
+from desync_archival.api.schemas import HtmlPage
 from desync_archival.services import auth_service
 from desync_archival.services.downloader import DownloadManager
 
@@ -123,7 +124,7 @@ def handle_get_auth_callback(
   <script type="module" src="/static/js/auth_callback.js"></script>
 </body>
 </html>"""
-    return html_page, 200
+    return HtmlPage(html_page), 200
 
 
 def handle_post_auth_token_callback(

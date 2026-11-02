@@ -140,10 +140,11 @@ class ResponseTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"], "image/jpeg")
         self.assertEqual(response.headers["x-test"], "1")
 
-    def test_plain_string_is_html(self):
+    def test_plain_string_is_text(self):
         response = self.respond_with("<p>hi</p>").get("/api/test-route")
-        self.assertIn("text/html", response.headers["content-type"])
+        self.assertIn("text/plain", response.headers["content-type"])
         self.assertEqual(response.text, "<p>hi</p>")
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
 
     def test_plain_bytes_are_octet_stream(self):
         response = self.respond_with(b"raw").get("/api/test-route")

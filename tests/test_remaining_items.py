@@ -25,6 +25,7 @@ from test_fix_first import FILE_URL, DownloadCase
 from desync_archival import backup, external, migrations
 from desync_archival import settings as app_config
 from desync_archival.api import schemas, server
+from desync_archival.api.routes import auth as auth_routes
 from desync_archival.api.routes import reconcile as reconcile_routes
 from desync_archival.api.routes import settings as settings_routes
 from desync_archival.services import auth_service, paths, pending_deletion
@@ -903,3 +904,24 @@ class SingletonsA03Tests(TempDb):
         with manager._lock:
             self.assertFalse(manager._ask_to_stop(99, force=True, note="x"))
         process.kill.assert_not_called()
+
+
+class ResponseTypesS12Tests(unittest.TestCase):
+    def test_a_plain_string_is_never_html(self):
+        response = server.build_response("<script>alert(1)</script>")
+        self.assertEqual(response.headers["content-type"], "text/plain; charset=utf-8")
+
+    def test_only_a_marked_page_is_html(self):
+        response = server.build_response(schemas.HtmlPage("<html></html>"))
+        self.assertEqual(response.headers["content-type"], "text/html; charset=utf-8")
+
+    def test_a_handler_can_still_name_its_own_type(self):
+        response = server.build_response("{}", 200, {"Content-Type": "application/json"})
+        self.assertEqual(response.headers["content-type"], "application/json")
+
+    def test_the_callback_page_is_marked(self):
+        conn = sqlite3.connect(":memory:")
+        self.addCleanup(conn.close)
+        with patch("desync_archival.api.routes.auth.auth_service.get_setting", return_value=""):
+            body = auth_routes.handle_get_auth_callback(conn, None, {}, {})[0]
+        self.assertIsInstance(body, schemas.HtmlPage)

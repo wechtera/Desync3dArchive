@@ -26,6 +26,7 @@ from starlette.datastructures import MutableHeaders
 
 from desync_archival import migrations
 from desync_archival import settings as app_config
+from desync_archival.api import schemas
 from desync_archival.services import documents, image_worker, jobs, login, scheduler
 from desync_archival.services import task_manager as task_service
 from desync_archival.services.db import get_db_connection, seed_default_settings
@@ -164,7 +165,9 @@ class SecurityMiddleware:
             nonlocal started
             started = started or message["type"] == "http.response.start"
             if message["type"] == "http.response.start":
-                MutableHeaders(scope=message)["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+                headers = MutableHeaders(scope=message)
+                headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+                headers["X-Content-Type-Options"] = "nosniff"
             await send(message)
 
         try:
@@ -246,7 +249,7 @@ def redirect_location(data: Any) -> str | None:
 
 
 def build_response(data: Any, status: int = 200, extra_headers: dict | None = None) -> Response:
-    """Turns a handler's result into a Response. Bytes pass through, a str is sent as HTML, and anything else as JSON."""
+    """Turns a handler's result into a Response. Bytes pass through, a str is sent as text, and anything else as JSON."""
     headers = dict(extra_headers or {})
 
     if status in REDIRECT_STATUSES:
@@ -259,8 +262,9 @@ def build_response(data: Any, status: int = 200, extra_headers: dict | None = No
         headers.setdefault("Content-Type", "application/octet-stream")
     elif isinstance(data, str):
         payload = data.encode("utf-8")
-        # FIXME(S-12): every str result becomes HTML. Only the OAuth callback page needs that.
-        headers.setdefault("Content-Type", "text/html; charset=utf-8")
+        # HTML has to be asked for, because a scrape file holds third-party names.
+        kind = "text/html" if isinstance(data, schemas.HtmlPage) else "text/plain"
+        headers.setdefault("Content-Type", f"{kind}; charset=utf-8")
     else:
         payload = json.dumps(data).encode("utf-8")
         headers.setdefault("Content-Type", "application/json")

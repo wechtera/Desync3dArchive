@@ -5,6 +5,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class HtmlPage(str):
+    """A handler's marker for a real HTML page. Any other string is sent as text."""
+
+
 class RequestBody(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
