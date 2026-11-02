@@ -111,8 +111,6 @@ class MetadataTests(OfflineCase):
 
 class ReconcileTests(OfflineCase):
     def audit(self):
-        VaultReconciler._instance = None
-        self.addCleanup(setattr, VaultReconciler, "_instance", None)
         reconciler = VaultReconciler(server.DB_PATH)
         reconciler.storage.get_root_path = lambda: self.root
         return reconciler._execute_forward(self.root, "fast", lambda *_: None, lambda *_: None, lambda: False)

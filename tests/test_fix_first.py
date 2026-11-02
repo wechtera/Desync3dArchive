@@ -435,7 +435,7 @@ class R06Backups(BackupCase):
         tasks.db_path = self.db
         tasks._lock = threading.Lock()
         tasks.active_task_id = None
-        tasks._cancel_events = {}
+        tasks._tasks = {}
         tasks._finalize_task = MagicMock()
         tasks.start_task = MagicMock(return_value={"success": True})
         return tasks
@@ -614,6 +614,7 @@ class R10Logging(TempCase):
         self.addCleanup(conn.close)
         auth_service.set_settings(conn, {"log_level": "INFO", "log_layers": "storage,http"})
         self.addCleanup(auth_service.set_settings, conn, {"log_level": "INFO", "log_layers": ""})
+        self.addCleanup(setattr, server.task_service, "current", None)
         with patch.object(server, "TaskManager"), patch.object(server, "DownloadManager"), \
                 patch.object(server.image_worker, "ImageWorker"), patch.object(server.threading, "Thread"):
             server.start_managers()

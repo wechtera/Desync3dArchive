@@ -786,11 +786,11 @@ class ImportTests(BuildCase):
         manager = object.__new__(TaskManager)
         manager.db_path = self.db
         manager._lock = threading.Lock()
-        manager._cancel_events = {}
+        manager._tasks = {}
         task_id = self.conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('file_import', 'running')").lastrowid
         self.conn.commit()
         manager._begin(task_id)
-        manager._cancel_events[task_id].set()
+        manager._task(task_id).stop.set()
         manager._run_file_import_worker(task_id, {"paths": [str(self.write("dragon.stl"))]})
         self.assertEqual(self.one("SELECT status FROM pipeline_tasks WHERE id = ?", task_id)[0], "cancelled")
         self.assertIsNone(manager.active_task_id)
@@ -931,7 +931,7 @@ class ImportTests(BuildCase):
 
     def test_the_orphan_audit_never_looks_inside_imports(self):
         self.bring(self.write("Pack/123_numbered/part.stl", b"p").parents[1])
-        # Skips the constructor: the class is a singleton, and a test database would stick to it.
+        # Skips the constructor, because this test only needs the audit.
         reconciler = object.__new__(VaultReconciler)
         with patch.object(VaultReconciler, "_get_db", side_effect=self._reader), \
                 patch.object(VaultReconciler, "_save_run_snapshot"):
@@ -944,7 +944,7 @@ class ImportTests(BuildCase):
         manager.db_path = self.db
         manager._lock = threading.Lock()
         manager.active_task_id = None
-        manager._cancel_events = {}
+        manager._tasks = {}
         task_id = self.conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('file_import', 'running')").lastrowid
         self.conn.commit()
         manager._run_file_import_worker(task_id, {"paths": [str(self.write("dragon.stl")), str(self.write("wyrm.stl", b"w"))]})
@@ -957,7 +957,7 @@ class ImportTests(BuildCase):
         manager = object.__new__(TaskManager)
         manager.db_path = self.db
         manager._lock = threading.Lock()
-        manager._cancel_events = {}
+        manager._tasks = {}
         task_id = self.conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('file_import', 'running')").lastrowid
         self.conn.commit()
         manager._begin(task_id)

@@ -45,8 +45,7 @@ class TempDb(unittest.TestCase):
         manager.db_path = self.db
         manager._lock = threading.Lock()
         manager.active_task_id = None
-        manager.active_process = None
-        manager._cancel_events = {}
+        manager._tasks = {}
         manager._scrape_error = ""
         return manager
 

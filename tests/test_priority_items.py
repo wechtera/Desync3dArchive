@@ -681,8 +681,7 @@ class CancelR16Tests(TempCase):
         self.manager.root_dir = self.root
         self.manager._lock = threading.Lock()
         self.manager.active_task_id = None
-        self.manager.active_process = None
-        self.manager._cancel_events = {}
+        self.manager._tasks = {}
         self.gate = threading.Event()
         # Runs last to first: open the gate, wait for the threads, then the temp folder can go.
         self.addCleanup(join_task_threads)
@@ -740,7 +739,7 @@ class CancelR16Tests(TempCase):
         task = self.start()
         process = MagicMock()
         process.poll.return_value = None
-        self.manager.active_process = process
+        self.manager._task(task).process = process
         self.manager.kill_active_task()
         process.kill.assert_called_once()
         self.assertEqual(self.manager.active_task_id, task)
@@ -753,13 +752,13 @@ class CancelR16Tests(TempCase):
     def test_cancelling_one_task_leaves_the_next_alone(self):
         self.manager._begin(1)
         self.manager._begin(2)
-        self.manager._cancel_events[1].set()
+        self.manager._task(1).stop.set()
         self.assertTrue(self.manager._cancelled(1))
         self.assertFalse(self.manager._cancelled(2))
 
     def test_starting_a_task_cant_uncancel_an_older_one(self):
         self.manager._begin(1)
-        self.manager._cancel_events[1].set()
+        self.manager._task(1).stop.set()
         self.manager._begin(2)
         self.assertTrue(self.manager._cancelled(1))
 
@@ -1055,7 +1054,7 @@ class LogWritesP02Tests(TempCase):
         self.manager.db_path = self.db
         self.manager._lock = threading.Lock()
         self.manager.active_task_id = None
-        self.manager._cancel_events = {}
+        self.manager._tasks = {}
         conn = sqlite3.connect(self.db)
         with conn:
             self.task = conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('vault_reconcile', 'running')").lastrowid
@@ -1416,7 +1415,6 @@ class SecondReviewR16Tests(CancelR16Tests):
         result = self.manager.start_task("no_such_task")
         self.assertFalse(result["success"])
         self.assertIsNone(self.manager.active_task_id)
-        self.assertEqual(self.manager._cancel_events, {})
 
 
 class SecondReviewR14Tests(BundleImportR14Tests):

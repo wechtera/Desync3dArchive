@@ -19,7 +19,7 @@ from db_helper import create_database
 
 from desync_archival.services import jobs
 from desync_archival.services.db import get_db_connection
-from desync_archival.services.task_manager import TaskManager, parse_cookies
+from desync_archival.services.task_manager import Task, TaskManager, parse_cookies
 
 
 def seed(db_path):
@@ -134,8 +134,7 @@ class SpawnTests(TempDb):
         manager.db_path = self.db
         manager._lock = threading.Lock()
         manager.active_task_id = 1
-        manager.active_process = None
-        manager._cancel_events = {1: threading.Event()}
+        manager._tasks = {1: Task(1)}
         return manager
 
     def test_a_crashing_worker_fails_its_task_and_frees_the_slot(self):
@@ -164,7 +163,7 @@ class SpawnTests(TempDb):
         manager = self.manager()
         with patch.object(jobs, "time_limit", return_value=0.05):
             release = threading.Event()
-            cancel = manager._cancel_events[1]
+            cancel = manager._task(1).stop
             manager._spawn(1, "library_scrape", lambda: release.wait(2), ())
             cancel.wait(3)
             release.set()

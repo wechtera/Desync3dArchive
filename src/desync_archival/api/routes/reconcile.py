@@ -14,6 +14,7 @@ from desync_archival.services import (
     pending_deletion,
     run_history,
 )
+from desync_archival.services import task_manager as task_service
 from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
@@ -21,7 +22,7 @@ from desync_archival.services.task_manager import TaskManager
 
 def _get_managers(conn: sqlite3.Connection) -> tuple[VaultReconciler, TaskManager]:
     db_path = Path(conn.execute(queries.PRAGMA_ROW).fetchone()[2])
-    return VaultReconciler(db_path), TaskManager(db_path)
+    return VaultReconciler(db_path), task_service.current or TaskManager(db_path)
 
 
 def _record_check(task_mgr: TaskManager, task_type: str, res: dict[str, Any], label: str) -> None:

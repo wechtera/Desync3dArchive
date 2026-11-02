@@ -27,6 +27,7 @@ from starlette.datastructures import MutableHeaders
 from desync_archival import migrations
 from desync_archival import settings as app_config
 from desync_archival.services import documents, image_worker, jobs, login, scheduler
+from desync_archival.services import task_manager as task_service
 from desync_archival.services.db import get_db_connection, seed_default_settings
 from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
 from desync_archival.services.logger import init_logging_from_db, log_context, logger
@@ -324,7 +325,7 @@ def start_managers() -> None:
     init_logging_from_db(DB_PATH)
 
     logger.info("[Server] Initializing background TaskManager")
-    task_manager = TaskManager(DB_PATH, app_config.data_dir())
+    task_manager = task_service.current = TaskManager(DB_PATH, app_config.data_dir())
     task_manager.remove_scrape_cookies()
 
     logger.info("[Server] Initializing background DownloadManager")
@@ -372,6 +373,7 @@ def stop_managers() -> None:
         image_worker.current.stop()
     if download_manager:
         download_manager.stop()
+    task_service.current = None
     TASK_LOGS.flush()
 
 

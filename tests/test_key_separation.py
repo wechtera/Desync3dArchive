@@ -91,8 +91,6 @@ class IngestTests(KeyCase):
 class ReverseAuditTests(KeyCase):
     def audit(self, vault):
         self.conn.commit()
-        VaultReconciler._instance = None
-        self.addCleanup(setattr, VaultReconciler, "_instance", None)
         reconciler = VaultReconciler(self.path)
         return reconciler._execute_reverse(vault, lambda *_: None, lambda *_: None, lambda: False)
 
@@ -125,8 +123,6 @@ class DriftTests(KeyCase):
     def test_external_libraries_are_never_in_the_drift_scan(self):
         self.conn.execute("UPDATE collections SET vault_path = '/nas/Loot Studios/Golem'")
         self.conn.commit()
-        VaultReconciler._instance = None
-        self.addCleanup(setattr, VaultReconciler, "_instance", None)
         reconciler = VaultReconciler(self.path)
         reconciler.storage.get_root_path = lambda: Path(self.temp.name)
         self.assertEqual(reconciler.scan_path_drift()["items"], [])
@@ -135,8 +131,6 @@ class DriftTests(KeyCase):
         model_id = self.save()
         self.conn.execute("UPDATE collections SET vault_path = '/somewhere/else', release_month = '2024-01' WHERE id = ?", (model_id,))
         self.conn.commit()
-        VaultReconciler._instance = None
-        self.addCleanup(setattr, VaultReconciler, "_instance", None)
         reconciler = VaultReconciler(self.path)
         reconciler.storage.get_root_path = lambda: Path(self.temp.name)
         item = reconciler.scan_path_drift()["items"][0]

@@ -127,8 +127,7 @@ class RunHistoryTests(ReliabilityCase):
         manager.db_path = self.db
         manager._lock = threading.Lock()
         manager.active_task_id = None
-        manager.active_process = None
-        manager._cancel_events = {}
+        manager._tasks = {}
         return manager
 
     def test_an_instant_check_leaves_a_job_row(self):

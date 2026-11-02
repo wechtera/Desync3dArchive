@@ -138,7 +138,7 @@ def test_get_db_connection_stays_open_for_its_owner(db_path):
     ],
 )
 def test_every_service_connection_is_scoped(db_path, cls, method):
-    # object.__new__ because several of these are singletons, and a real one would pin the test's path.
+    # object.__new__ because this checks one method, and constructors here do unrelated setup.
     service = object.__new__(cls)
     service.db_path = db_path
     conn = getattr(service, method)()

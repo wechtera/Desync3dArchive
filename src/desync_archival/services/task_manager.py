@@ -21,6 +21,7 @@ import threading
 import time
 import traceback
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -248,34 +249,34 @@ CANCELLING_LABEL = "Cancelling. Waiting for the task to stop."
 KILLING_LABEL = "Force kill sent. If this stays here, the worker is stuck, so restart the server."
 
 
-class TaskManager:
-    """Runs one background pipeline task at a time. Process-wide singleton."""
-    _instance: Optional["TaskManager"] = None
-    _cls_lock = threading.Lock()
+@dataclass
+class Task:
+    """The task a worker is running. Its stop flag and tool die with it, so it can't touch the next one's."""
+    id: int
+    stop: threading.Event = field(default_factory=threading.Event)
+    process: Optional[subprocess.Popen] = None
 
-    def __new__(cls, db_path: Path, root_dir: Optional[Path] = None):
-        with cls._cls_lock:
-            if cls._instance is None:
-                cls._instance = super().__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
+
+# Set by start_managers. Routes that aren't handed the manager reach it through this.
+current: Optional["TaskManager"] = None
+
+
+class TaskManager:
+    """Runs one background pipeline task at a time."""
 
     def __init__(self, db_path: Path, root_dir: Optional[Path] = None):
-        if getattr(self, "_initialized", False):
-            if db_path:
-                self.db_path = Path(db_path).resolve()
-            return
-
         self.db_path = Path(db_path).resolve()
         self.root_dir = Path(root_dir).resolve() if root_dir else self.db_path.parent.resolve()
         self.scrapes_dir = self.root_dir / "scrapes"
         self.scrapes_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self.active_task_id: Optional[int] = None
-        self.active_process: Optional[subprocess.Popen] = None
-        self._cancel_events: dict[int, threading.Event] = {}
+        # Kept per ID, because a stopped worker can outlive its slot and must still read as stopped.
+        self._tasks: dict[int, Task] = {}
         self._scrape_error: str = ""
-        self._initialized = True
+
+    def _task(self, task_id: Optional[int]) -> Optional[Task]:
+        return self._tasks.get(task_id) if task_id is not None else None
 
     def _get_db(self) -> sqlite3.Connection:
         return scoped_connection(self.db_path)
@@ -659,18 +660,18 @@ class TaskManager:
         return {"success": True, "task_id": task_id, "task_type": task_type}
 
     def _begin(self, task_id: int) -> None:
-        """Called holding `_lock`. Each task has its own flag, so one can't clear or trip another's."""
+        """Called holding `_lock`."""
         self.active_task_id = task_id
-        self._cancel_events[task_id] = threading.Event()
+        self._tasks[task_id] = Task(task_id)
 
     def _cancelled(self, task_id: int) -> bool:
-        event = self._cancel_events.get(task_id)
-        return event is not None and event.is_set()
+        task = self._task(task_id)
+        return task is not None and task.stop.is_set()
 
     def _release(self, task_id: int) -> None:
         """Gives up the slot, only if this task still holds it."""
         with self._lock:
-            self._cancel_events.pop(task_id, None)
+            self._tasks.pop(task_id, None)
             if self.active_task_id == task_id:
                 self.active_task_id = None
 
@@ -681,16 +682,16 @@ class TaskManager:
         beside it. A Python thread can't be stopped from outside, so a stuck one keeps the slot
         until a restart, which is safer than running a second task next to it.
         """
-        event = self._cancel_events.get(task_id) if task_id is not None else None
-        if event is None:
+        task = self._task(task_id)
+        if task is None:
             return False
-        event.set()
-        if self.active_process and self.active_process.poll() is None:
+        task.stop.set()
+        if task.process and task.process.poll() is None:
             try:
                 if force:
-                    self.active_process.kill()
+                    task.process.kill()
                 else:
-                    self.active_process.terminate()
+                    task.process.terminate()
             except OSError:
                 pass
         with self._get_db() as conn:
@@ -878,7 +879,9 @@ class TaskManager:
                 bufsize=1,
             )
             with self._lock:
-                self.active_process = process
+                task = self._task(task_id)
+                if task:
+                    task.process = process
 
             for line in process.stdout:
                 line_str = line.strip()
@@ -930,8 +933,6 @@ class TaskManager:
         except Exception as e:
             self._finalize_task(task_id, "failed", f"Execution error: {e}", {})
         finally:
-            with self._lock:
-                self.active_process = None
             self._release(task_id)
 
     # -------------------------------------------------------------------------

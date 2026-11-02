@@ -12,7 +12,6 @@ import re
 import shutil
 import sqlite3
 import struct
-import threading
 import time
 import zipfile
 from pathlib import Path
@@ -118,18 +117,9 @@ def folder_model_id(folder: Path) -> int | None:
 
 
 class VaultReconciler:
-    """Audits the vault against the catalog and carries out the repairs. Process-wide singleton."""
-    _instance: Optional["VaultReconciler"] = None
-    _lock = threading.Lock()
+    """Audits the vault against the catalog and carries out the repairs."""
 
-    def __new__(cls, db_path: Path):
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = super().__new__(cls)
-                cls._instance._init_once(db_path)
-            return cls._instance
-
-    def _init_once(self, db_path: Path):
+    def __init__(self, db_path: Path):
         self.db_path = Path(db_path).resolve()
         self.storage = StorageManager(db_path)
         self.previews_root = app_config.previews_dir().resolve()

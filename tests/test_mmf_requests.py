@@ -163,7 +163,7 @@ class IngestTests(unittest.TestCase):
         self.manager.root_dir = self.root
         self.manager._lock = threading.Lock()
         self.manager.active_task_id = None
-        self.manager._cancel_events = {}
+        self.manager._tasks = {}
         conn = sqlite3.connect(self.db)
         with conn:
             self.task = conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('metadata_ingest', 'running')").lastrowid

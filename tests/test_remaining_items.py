@@ -28,6 +28,7 @@ from desync_archival.api import schemas, server
 from desync_archival.api.routes import reconcile as reconcile_routes
 from desync_archival.api.routes import settings as settings_routes
 from desync_archival.services import auth_service, paths, pending_deletion
+from desync_archival.services import task_manager as task_service
 from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
@@ -164,8 +165,7 @@ class ScrapeCookiesS07Tests(TempDb):
         self.manager.scrapes_dir.mkdir()
         self.manager._lock = threading.Lock()
         self.manager.active_task_id = None
-        self.manager.active_process = None
-        self.manager._cancel_events = {}
+        self.manager._tasks = {}
         self.manager._scrape_error = ""
         with self.conn:
             auth_service.set_settings(self.conn, {"cookies_json": '[{"name": "PHPSESSID", "value": "secret"}]'})
@@ -832,3 +832,74 @@ class OnePassExtractionP05Tests(unittest.TestCase):
         self.assertEqual(run.call_count, 1)
         self.assertEqual({p.name: p.read_bytes() for p in found.values()}, {"one.jpg": b"one", "two.jpg": b"two"})
         self.assertEqual([p.name for p in dest.iterdir() if p.name.startswith(".")], [])
+
+
+class SingletonsA03Tests(TempDb):
+    def other_db(self):
+        other = self.root / "other.db"
+        create_database(other)
+        return other
+
+    def test_each_reconciler_keeps_its_own_database(self):
+        first, second = VaultReconciler(self.db), VaultReconciler(self.other_db())
+        self.assertIsNot(first, second)
+        self.assertNotEqual(first.db_path, second.db_path)
+
+    def test_each_task_manager_keeps_its_own_database_and_slot(self):
+        first, second = TaskManager(self.db), TaskManager(self.other_db())
+        self.assertNotEqual(first.db_path, second.db_path)
+        first._begin(1)
+        self.assertEqual(first.active_task_id, 1)
+        self.assertIsNone(second.active_task_id)
+
+    def test_a_later_instance_does_not_repoint_an_earlier_one(self):
+        first = TaskManager(self.db)
+        path = first.db_path
+        TaskManager(self.other_db())
+        self.assertEqual(first.db_path, path)
+
+    def test_routes_use_the_manager_the_server_made(self):
+        made = TaskManager(self.db)
+        with patch.object(task_service, "current", made):
+            _, manager = reconcile_routes._get_managers(self.conn)
+        self.assertIs(manager, made)
+
+    def test_a_task_owns_its_stop_flag(self):
+        manager = TaskManager(self.db)
+        manager._begin(1)
+        first = manager._task(1)
+        first.stop.set()
+        manager._release(1)
+        manager._begin(2)
+        self.assertFalse(manager._cancelled(2))
+        self.assertFalse(manager._cancelled(1))
+        self.assertIsNot(manager._task(2), first)
+
+    def test_releasing_an_old_task_leaves_the_new_one_running(self):
+        manager = TaskManager(self.db)
+        manager._begin(2)
+        manager._release(1)
+        self.assertEqual(manager.active_task_id, 2)
+
+    def test_a_task_stops_only_its_own_tool(self):
+        manager = TaskManager(self.db)
+        manager._begin(1)
+        manager._begin(2)
+        first, second = MagicMock(), MagicMock()
+        first.poll.return_value = second.poll.return_value = None
+        manager._task(1).process = first
+        manager._task(2).process = second
+        with manager._lock:
+            manager._ask_to_stop(1, force=True, note="x")
+        first.kill.assert_called_once()
+        second.kill.assert_not_called()
+
+    def test_stopping_reaches_only_the_active_tasks_tool(self):
+        manager = TaskManager(self.db)
+        manager._begin(1)
+        process = MagicMock()
+        process.poll.return_value = None
+        manager._task(1).process = process
+        with manager._lock:
+            self.assertFalse(manager._ask_to_stop(99, force=True, note="x"))
+        process.kill.assert_not_called()
