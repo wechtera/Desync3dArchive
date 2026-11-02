@@ -1529,6 +1529,10 @@ class NameRulesA04Tests(unittest.TestCase):
             with self.subTest(rule=rule, text=text):
                 self.assertEqual(getattr(paths, rule)(text), expected)
 
+    def test_scans_record_obj_and_3mf(self):
+        self.assertLessEqual({".obj", ".3mf"}, paths.SCANNED_EXTENSIONS)
+        self.assertLessEqual({".obj", ".3mf"}, set(paths.GROUPED_EXTENSIONS))
+
     def test_extension_lists_live_in_one_place(self):
         self.assertIs(stash_exporter.MODEL_EXTENSIONS, paths.MODEL_EXTENSIONS)
         self.assertIs(archive_peeker.MODEL_EXTENSIONS, paths.MODEL_EXTENSIONS)

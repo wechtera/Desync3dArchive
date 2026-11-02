@@ -11,9 +11,9 @@ IMPORT_FOLDER = "ad-hoc"
 PENDING_DELETION_FOLDER = ".Pending-Deletion"
 # Whatever a slicer or a mesh tool opens. Exports and archive peeks go by this list.
 MODEL_EXTENSIONS = {".stl", ".obj", ".lys", ".ctb", ".ags", ".3mf", ".chitubox", ".prusa"}
-# Narrower on purpose until the owner decides (Q15). A library scan records these and archives, and
-# the resolver groups the second list. Widening either adds files to the catalog on the next scan.
-SCANNED_EXTENSIONS = {".stl", ".lys", ".ctb", ".chitubox", ".zip", ".rar", ".7z"}
+# What a library scan records, and what the resolver groups. Widening either adds files to the
+# catalog on the next scan.
+SCANNED_EXTENSIONS = {".stl", ".obj", ".3mf", ".lys", ".ctb", ".chitubox", ".zip", ".rar", ".7z"}
 GROUPED_EXTENSIONS = (".stl", ".lys", ".ctb", ".chitubox", ".obj", ".3mf")
 # Past this a work folder is a crash's leftover. No import or export runs this long.
 LEFTOVER_AGE_SECONDS = 86400
