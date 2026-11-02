@@ -221,6 +221,21 @@ class TestStashExporter(unittest.TestCase):
         active_jobs = list(scratch_root.glob("*")) if scratch_root.exists() else []
         self.assertEqual(len(active_jobs), 0, "Orphaned scratch directory remained after exception!")
 
+    def test_a_submodel_opens_its_zip_once(self):
+        with patch("desync_archival.external.zipfile.ZipFile", wraps=zipfile.ZipFile) as opened, \
+                patch("desync_archival.external.extract_member", side_effect=AssertionError("went one at a time")):
+            self.exporter.export_stash(stash_id=1, conn=self.conn)
+        self.assertEqual(opened.call_count, 1)
+
+    def test_a_member_listed_twice_still_refuses_to_overwrite(self):
+        self.conn.execute("""
+            INSERT INTO file_archive_members (id, submodel_id, file_id, internal_path, filename, size_bytes, is_supported)
+            SELECT 99, submodel_id, file_id, internal_path, filename, size_bytes, is_supported
+            FROM file_archive_members WHERE id = 2
+        """)
+        with self.assertRaises(FileExistsError):
+            self.exporter.export_stash(stash_id=1, conn=self.conn)
+
     def exports(self):
         return list(self.exporter.resolve_paths(self.conn)[0].iterdir())
 

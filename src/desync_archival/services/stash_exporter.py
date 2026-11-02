@@ -336,9 +336,6 @@ class StashExporter:
 
         self._copy_submodel_preview(previews_root, sm_row["model_id"], file_id, sm_row["preview_image_path"], submodel_dir)
 
-        extracted_files = []
-        bytes_count = 0
-
         targets = []
         for m in members:
             fn = m["filename"]
@@ -356,13 +353,8 @@ class StashExporter:
         # The peeker drops format folders from submodels, so Supported/Head.stl and Unsupported/Head.stl
         # can share one, and each needs its own place here.
         placed = external.export_paths([m["internal_path"] for m in targets])
-        for m in targets:
-            relative = placed[m["internal_path"]]
-            sz = self._surgical_extract_single_member(
-                archive_path, m["internal_path"], scratch_dir, submodel_dir / relative, m["size_bytes"] or 0,
-            )
-            bytes_count += sz
-            extracted_files.append(relative)
+        bytes_count = self._extract_members(archive_path, targets, placed, scratch_dir, submodel_dir)
+        extracted_files = [placed[m["internal_path"]] for m in targets]
 
         return {
             "files_count": len(extracted_files),
@@ -529,7 +521,38 @@ class StashExporter:
             raise FileNotFoundError(f"Vault archive file does not exist on storage: {target}")
         return target
 
-    # FIXME(P-05): reopens the archive per member, and each RAR member is a new process.
+    def _extract_members(
+        self,
+        archive_path: Path,
+        targets: List[sqlite3.Row],
+        placed: Dict[str, str],
+        scratch_dir: Path,
+        dest_dir: Path,
+    ) -> int:
+        """Unpacks a submodel in one pass, then takes whatever that missed one member at a time."""
+        pass_dir = scratch_dir / f"pass_{uuid.uuid4().hex[:8]}"
+        pass_dir.mkdir(parents=True, exist_ok=True)
+        total = 0
+        try:
+            listed = [external.ArchiveMember(m["internal_path"], m["size_bytes"] or 0) for m in targets]
+            found = external.extract_members(archive_path, listed, pass_dir, self._bin_unrar, self._bin_7z)
+            for m in targets:
+                dest_file = dest_dir / placed[m["internal_path"]]
+                unpacked = found.pop(m["internal_path"], None)
+                if unpacked is None:
+                    total += self._surgical_extract_single_member(
+                        archive_path, m["internal_path"], scratch_dir, dest_file, m["size_bytes"] or 0,
+                    )
+                    continue
+                if dest_file.exists():
+                    raise FileExistsError(f"Refusing to overwrite {dest_file.name} in the export folder")
+                dest_file.parent.mkdir(parents=True, exist_ok=True)
+                total += unpacked.stat().st_size
+                shutil.move(str(unpacked), str(dest_file))
+        finally:
+            shutil.rmtree(pass_dir, ignore_errors=True)
+        return total
+
     def _surgical_extract_single_member(
         self,
         archive_path: Path,

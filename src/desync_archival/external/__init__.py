@@ -33,6 +33,7 @@ MAX_EXTRACTED_FILES = 200_000
 # Unpacking runs on the boot disk with the database, which needs room to keep working.
 FREE_SPACE_RESERVE = 2 * 1024**3
 CAP_POLL_SECONDS = 0.5
+LIST_FILE_UNSAFE = re.compile(r"[*?\r\n]")
 
 TOOLS_DIR = app_config.REPO_ROOT / "tools"
 UNRAR_NAMES = ("unrar",)
@@ -255,13 +256,14 @@ def copy_limited(source: IO[bytes], target: Path, limit: int | None = None) -> i
     return copied
 
 
-def _zip_entry(archive: zipfile.ZipFile, internal_path: str, archive_name: str) -> str:
-    def normalized(name: str) -> str:
-        return name.replace("\\", "/").strip("/").lower()
+def _zip_name(name: str) -> str:
+    return name.replace("\\", "/").strip("/").lower()
 
+
+def _zip_entry(archive: zipfile.ZipFile, internal_path: str, archive_name: str) -> str:
     names = [name for name in archive.namelist() if not name.endswith("/")]
-    wanted = normalized(internal_path)
-    exact = [name for name in names if normalized(name) == wanted]
+    wanted = _zip_name(internal_path)
+    exact = [name for name in names if _zip_name(name) == wanted]
     if exact:
         return exact[0]
     same_name = [name for name in names if _base_name(name).lower() == _base_name(internal_path).lower()]
@@ -344,6 +346,89 @@ def extract_member(
     if expected_size and size != expected_size:
         raise ExtractionRefused(f"{found.name} from {archive.name} is {size} bytes, and the catalog says {expected_size}")
     return found
+
+
+def _pass_commands(
+    extension: str, unrar: str | None, seven_zip: str | None, archive: Path, list_file: Path, dest: Path,
+) -> list[list[str]]:
+    """One command per tool, each taking exact paths from a list file and keeping folders."""
+    commands = []
+    if extension == ".rar" and unrar and Path(unrar).exists():
+        # -scfl because a launchd server has no locale to read the list's names with.
+        commands.append([unrar, "x", "-y", "-scfl", "--", str(archive), f"@{list_file}", f"{dest}/"])
+    if seven_zip and Path(seven_zip).exists():
+        # -spd keeps a listed [ or * literal.
+        commands.append([seven_zip, "x", str(archive), f"-o{dest}", "-y", "-spd", "-scsUTF-8", f"-i@{list_file}"])
+    return commands
+
+
+def _unpacked(members: list[ArchiveMember], folder: Path) -> dict[str, Path]:
+    on_disk = {path.relative_to(folder).as_posix(): path for path in regular_files(folder)}
+    found = {}
+    for member in members:
+        path = on_disk.get(member.path.replace("\\", "/"))
+        # Only bytes count, as in _extract_with_tools. A wrong size is left for extract_member to refuse.
+        if path and path.stat().st_size > 0 and member.size in (0, path.stat().st_size):
+            found[member.path] = path
+    return found
+
+
+def _extract_zip_pass(archive: Path, members: list[ArchiveMember], folder: Path) -> None:
+    with zipfile.ZipFile(archive, "r") as handle:
+        entries: dict[str, str] = {}
+        for name in handle.namelist():
+            if not name.endswith("/"):
+                entries.setdefault(_zip_name(name), name)
+        for member in members:
+            entry = entries.get(_zip_name(member.path))
+            if entry is None:
+                continue
+            target = folder / member.path.replace("\\", "/")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with handle.open(entry, "r") as source:
+                copy_limited(source, target, member_limit(folder))
+
+
+def extract_members(
+    archive: Path, members: list[ArchiveMember], folder: Path, unrar: str | None, seven_zip: str | None,
+) -> dict[str, Path]:
+    """Unpacks many members in one pass into an empty folder the caller owns, keeping their folders.
+
+    A solid RAR otherwise decompresses from its start for every member, and a zip on the NAS is
+    reopened for each. This is only the fast path: a member missing from the result still goes
+    through extract_member, which has the full matching rules and the error to show.
+
+    Raises:
+        ExtractionRefused: The pass unpacked past the size limit.
+    """
+    # A list file holds exact paths, so a name a tool would read as a mask has to go one at a time.
+    wanted = [m for m in members if is_safe_member(m.path) and not LIST_FILE_UNSAFE.search(m.path)]
+    limit = member_limit(folder)
+    if len(wanted) < 2 or sum(m.size for m in wanted) > limit:
+        return {}
+    if archive.suffix.lower() == ".zip":
+        _extract_zip_pass(archive, wanted, folder)
+        return _unpacked(wanted, folder)
+
+    list_file = folder.with_name(f"{folder.name}.list")
+    list_file.write_text("".join(f"{m.path}\n" for m in wanted), encoding="utf-8")
+    try:
+        for cmd in _pass_commands(archive.suffix.lower(), unrar, seven_zip, archive, list_file, folder):
+            try:
+                run(cmd, min(MEMBER_TIMEOUT * len(wanted), BULK_TIMEOUT), cap=(folder, limit))
+            except ExtractionRefused:
+                for path in regular_files(folder):
+                    path.unlink(missing_ok=True)
+                raise
+            except (OSError, subprocess.SubprocessError):
+                continue
+            # Stops at the first tool with results, because 7zz on a RAR overwrites with 0 byte files.
+            found = _unpacked(wanted, folder)
+            if found:
+                return found
+        return {}
+    finally:
+        list_file.unlink(missing_ok=True)
 
 
 def export_paths(internal_paths: list[str]) -> dict[str, str]:

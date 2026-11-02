@@ -675,3 +675,160 @@ class SupportedRuleTests(unittest.TestCase):
         self.assertTrue(paths.says_unsupported("32mm NoSupports/a.stl"))
         self.assertTrue(paths.says_unsupported("32mm Unsupported/a.stl"))
         self.assertFalse(paths.says_unsupported("32mm Supported/a.stl"))
+
+
+class OnePassExtractionP05Tests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.folder = self.base / "out"
+        self.folder.mkdir()
+        self.seven_zip = external.find_7zip()
+        self.tree = {"a/Head.stl": b"head a", "b/Head.stl": b"head b!", "c[1].stl": b"bracket", "other.stl": b"unasked"}
+        self.source = self.base / "source"
+        for name, body in self.tree.items():
+            path = self.source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(body)
+
+    def packed(self, name="sample.7z"):
+        archive = self.base / name
+        external.run([self.seven_zip, "a", str(archive), *[str(p) for p in self.source.iterdir()]], 30, check=True)
+        return archive
+
+    def zipped(self):
+        archive = self.base / "sample.zip"
+        with zipfile.ZipFile(archive, "w") as handle:
+            for name, body in self.tree.items():
+                handle.writestr(name, body)
+        return archive
+
+    def members(self, *names):
+        return [external.ArchiveMember(name, len(self.tree[name])) for name in names]
+
+    def extract(self, archive, members):
+        return external.extract_members(archive, members, self.folder, None, self.seven_zip)
+
+    @unittest.skipUnless(external.find_7zip(), "needs 7-Zip")
+    def test_one_process_unpacks_every_member(self):
+        archive = self.packed()
+        with patch.object(external, "run", wraps=external.run) as run:
+            found = self.extract(archive, self.members("a/Head.stl", "b/Head.stl", "c[1].stl"))
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual({k: v.read_bytes() for k, v in found.items()}, {
+            "a/Head.stl": b"head a", "b/Head.stl": b"head b!", "c[1].stl": b"bracket",
+        })
+
+    @unittest.skipUnless(external.find_7zip(), "needs 7-Zip")
+    def test_only_the_listed_members_are_unpacked(self):
+        self.extract(self.packed(), self.members("a/Head.stl", "c[1].stl"))
+        self.assertEqual(
+            sorted(p.relative_to(self.folder).as_posix() for p in external.regular_files(self.folder)),
+            ["a/Head.stl", "c[1].stl"],
+        )
+
+    @unittest.skipUnless(external.find_7zip(), "needs 7-Zip")
+    def test_a_member_the_pass_missed_is_left_out_for_the_slow_path(self):
+        members = self.members("a/Head.stl", "b/Head.stl") + [external.ArchiveMember("elsewhere/Head.stl", 6)]
+        self.assertEqual(sorted(self.extract(self.packed(), members)), ["a/Head.stl", "b/Head.stl"])
+
+    @unittest.skipUnless(external.find_7zip(), "needs 7-Zip")
+    def test_a_wrong_size_is_left_for_extract_member_to_refuse(self):
+        members = [external.ArchiveMember("a/Head.stl", 999), *self.members("b/Head.stl")]
+        self.assertEqual(sorted(self.extract(self.packed(), members)), ["b/Head.stl"])
+
+    @unittest.skipUnless(external.find_7zip(), "needs 7-Zip")
+    def test_the_list_file_is_removed(self):
+        self.extract(self.packed(), self.members("a/Head.stl", "b/Head.stl"))
+        self.assertEqual(list(self.base.glob("*.list")), [])
+
+    def test_a_zip_opens_once_and_keeps_same_named_files_apart(self):
+        archive = self.zipped()
+        with patch.object(external.zipfile, "ZipFile", wraps=zipfile.ZipFile) as opened:
+            found = self.extract(archive, self.members("a/Head.stl", "b/Head.stl"))
+        self.assertEqual(opened.call_count, 1)
+        self.assertEqual(found["b/Head.stl"].read_bytes(), b"head b!")
+        self.assertEqual(found["a/Head.stl"].read_bytes(), b"head a")
+
+    def test_a_zip_member_written_with_backslashes_is_found(self):
+        members = [external.ArchiveMember("a\\Head.stl", 6), external.ArchiveMember("b\\Head.stl", 7)]
+        self.assertEqual(sorted(self.extract(self.zipped(), members)), ["a\\Head.stl", "b\\Head.stl"])
+
+    def test_a_masked_name_never_reaches_a_list_file(self):
+        members = [external.ArchiveMember("*.stl", 1), *self.members("a/Head.stl", "b/Head.stl")]
+        written = []
+        archive = self.base / "sample.7z"
+        archive.touch()
+
+        def fake_run(cmd, _timeout, **_kwargs):
+            written.append((self.folder.with_name("out.list")).read_text(encoding="utf-8"))
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch.object(external, "run", side_effect=fake_run):
+            self.extract(archive, members)
+        self.assertEqual(written, ["a/Head.stl\nb/Head.stl\n"])
+
+    def test_a_climbing_name_never_reaches_a_list_file(self):
+        members = [external.ArchiveMember("../evil.stl", 1), *self.members("a/Head.stl")]
+        self.assertEqual(self.extract(self.zipped(), members), {})
+
+    def test_one_member_takes_the_normal_path(self):
+        with patch.object(external, "run") as run:
+            self.assertEqual(self.extract(self.base / "a.7z", self.members("a/Head.stl")), {})
+        run.assert_not_called()
+
+    def test_a_pass_bigger_than_the_limit_takes_the_normal_path(self):
+        huge = [external.ArchiveMember("a/Head.stl", 10**15), external.ArchiveMember("b/Head.stl", 10**15)]
+        with patch.object(external, "run") as run:
+            self.assertEqual(self.extract(self.base / "a.7z", huge), {})
+        run.assert_not_called()
+
+    def test_running_past_the_limit_clears_the_folder_and_refuses(self):
+        archive = self.base / "a.7z"
+        archive.touch()
+        (self.folder / "half.stl").write_bytes(b"x")
+        with patch.object(external, "run", side_effect=external.ExtractionRefused("too big")), \
+                self.assertRaises(external.ExtractionRefused):
+            self.extract(archive, self.members("a/Head.stl", "b/Head.stl"))
+        self.assertEqual(external.regular_files(self.folder), [])
+
+    def test_a_rar_goes_to_unrar_by_list_file_and_stops_at_the_first_tool_with_results(self):
+        archive = self.base / "a.rar"
+        archive.touch()
+        unrar = self.base / "unrar"
+        seven = self.base / "7zz"
+        unrar.touch()
+        seven.touch()
+        calls = []
+
+        def fake_run(cmd, _timeout, **_kwargs):
+            calls.append(cmd)
+            for name, body in (("a/Head.stl", b"head a"), ("b/Head.stl", b"head b!")):
+                (self.folder / name).parent.mkdir(exist_ok=True)
+                (self.folder / name).write_bytes(body)
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch.object(external, "run", side_effect=fake_run):
+            found = external.extract_members(
+                archive, self.members("a/Head.stl", "b/Head.stl"), self.folder, str(unrar), str(seven),
+            )
+        self.assertEqual(sorted(found), ["a/Head.stl", "b/Head.stl"])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][:5], [str(unrar), "x", "-y", "-scfl", "--"])
+        self.assertTrue(calls[0][6].startswith("@"))
+
+    @unittest.skipUnless(external.find_7zip(), "needs 7-Zip")
+    def test_the_peeker_reads_a_folder_of_images_in_one_process(self):
+        (self.source / "a" / "one.jpg").write_bytes(b"one")
+        (self.source / "b" / "two.jpg").write_bytes(b"two")
+        archive = self.packed()
+        peeker = ArchivePeeker.__new__(ArchivePeeker)
+        peeker._bin_unrar = None
+        peeker._bin_7z = self.seven_zip
+        dest = self.base / "previews"
+        with patch.object(external, "run", wraps=external.run) as run:
+            found = peeker._extract_images(archive, ["a/one.jpg", "b/two.jpg"], dest, "7z")
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual({p.name: p.read_bytes() for p in found.values()}, {"one.jpg": b"one", "two.jpg": b"two"})
+        self.assertEqual([p.name for p in dest.iterdir() if p.name.startswith(".")], [])

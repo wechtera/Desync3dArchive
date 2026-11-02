@@ -239,11 +239,31 @@ class ArchivePeeker:
                     except Exception as ze:
                         log_layer("archive", logging.WARNING, f"Image extract error on {img_path}: {ze}")
         else:
+            extracted = self._extract_images_in_one_pass(archive_path, filtered_targets, dest_dir, names)
             for img_path in filtered_targets:
+                if img_path in extracted:
+                    continue
                 out_file = self._extract_one_image(archive_path, img_path, dest_dir, names[img_path])
                 if out_file:
                     extracted[img_path] = out_file
 
+        return extracted
+
+    def _extract_images_in_one_pass(
+        self, archive_path: Path, image_paths: List[str], dest_dir: Path, names: Dict[str, str],
+    ) -> Dict[str, Path]:
+        scratch = dest_dir / f".extract_{uuid.uuid4().hex[:8]}"
+        scratch.mkdir(parents=True, exist_ok=True)
+        extracted: Dict[str, Path] = {}
+        try:
+            members = [external.ArchiveMember(path, 0) for path in image_paths]
+            unpacked = external.extract_members(archive_path, members, scratch, self._bin_unrar, self._bin_7z)
+            for img_path, found in unpacked.items():
+                extracted[img_path] = found.replace(dest_dir / names[img_path])
+        except (external.ExtractionRefused, OSError) as e:
+            log_layer("archive", logging.WARNING, f"One pass over the images in {archive_path.name} failed: {e}")
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
         return extracted
 
     @staticmethod
