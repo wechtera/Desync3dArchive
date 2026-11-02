@@ -166,13 +166,19 @@ def check_backup(name: str) -> dict[str, int]:
     return {"tables": len(counts), "rows": sum(counts.values())}
 
 
+def copy_private(source: Path, target: Path) -> None:
+    """Copies secrets to a new file that's 0600 from the start. A chmod after can do nothing on a NAS share."""
+    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        os.write(descriptor, source.read_bytes())
+    finally:
+        os.close(descriptor)
+
+
 def _copy_secrets(target: Path) -> None:
     source = app_config.secrets_file()
-    if not source.is_file():
-        return
-    copy = secrets_copy(target)
-    os.close(os.open(copy, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
-    copy.write_bytes(source.read_bytes())
+    if source.is_file():
+        copy_private(source, secrets_copy(target))
 
 
 def create_backup(db_path: Path, keep: int = DEFAULT_RETENTION, full: bool = False) -> Path:

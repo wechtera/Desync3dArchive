@@ -797,8 +797,24 @@ class TaskManager:
             return {"error": res.get("error")}, 409
         return res, 200
 
+    def remove_scrape_cookies(self) -> int:
+        """Deletes every cookie file a scrape left. Each is a live session, so none may outlast its run."""
+        found = list(self.scrapes_dir.glob("*/cookies.json"))
+        for path in found:
+            path.unlink(missing_ok=True)
+        if found:
+            logger.warning(f"[TaskManager] Removed {len(found)} session cookie files left in scrape folders.")
+        return len(found)
+
     @job_logged(lambda self, task_id, *_: f"task-{task_id}")
     def _run_scrape_worker(self, task_id: int):
+        try:
+            self._scrape_library(task_id)
+        finally:
+            # One scrape runs at a time, so anything here belongs to this run.
+            self.remove_scrape_cookies()
+
+    def _scrape_library(self, task_id: int):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         target_dir = self.scrapes_dir / f"scrape_{timestamp}"
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -859,8 +875,6 @@ class TaskManager:
                 with self._get_db() as conn:
                     renewed = auth_service.keep_fresh_cookies(conn, cookies_dest.read_text(encoding="utf-8"))
                 self._append_log(task_id, f"Saved {renewed} renewed session cookies.")
-            # Safety: live session cookies. FIXME(S-07): move to finally, because earlier exits leave them on disk.
-            cookies_dest.unlink(missing_ok=True)
 
             if self._cancelled(task_id):
                 self._finalize_task(task_id, "cancelled", "Scrape cancelled by user.", {})

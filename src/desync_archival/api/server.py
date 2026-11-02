@@ -324,6 +324,7 @@ def start_managers() -> None:
 
     logger.info("[Server] Initializing background TaskManager")
     task_manager = TaskManager(DB_PATH, app_config.data_dir())
+    task_manager.remove_scrape_cookies()
 
     logger.info("[Server] Initializing background DownloadManager")
     download_manager = DownloadManager(DB_PATH)

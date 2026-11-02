@@ -82,9 +82,7 @@ def export_bundle(db_path: Path, destination: Path, with_secrets: bool = False) 
         if app_config.previews_dir().is_dir():
             archive.add(app_config.previews_dir(), arcname="previews")
     if with_secrets and app_config.secrets_file().is_file():
-        # FIXME(S-07): world-readable until chmod below, and chmod may do nothing on a NAS share.
-        shutil.copyfile(app_config.secrets_file(), destination / SECRETS)
-        (destination / SECRETS).chmod(0o600)
+        backup.copy_private(app_config.secrets_file(), destination / SECRETS)
 
     manifest = {
         "created_at": datetime.now(tz=UTC).isoformat(), "rows": sum(counts.values()),
