@@ -1558,3 +1558,91 @@ class PeekerWordsA06Tests(unittest.TestCase):
         self.assertEqual(archive_peeker.TROOPER_PATTERN.search("Ghul_A").group(1), "Ghul_A")
         self.assertEqual(archive_peeker.TROOPER_PATTERN.search("Squad_Webling3").group(1), "Webling3")
         self.assertIsNone(archive_peeker.TROOPER_PATTERN.search("Antique_A"))
+
+
+class StlPreviewE53Tests(unittest.TestCase):
+    BODY = b"\0" * 84
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        create_database(server.DB_PATH)
+        self.conn = sqlite3.connect(server.DB_PATH)
+        self.addCleanup(self.conn.close)
+        with self.conn:
+            for table in ("file_archive_members", "downloaded_files", "model_files", "collections"):
+                self.conn.execute(f"DELETE FROM {table}")
+            self.conn.execute("INSERT INTO collections (id, name, url, raw_backup_path) VALUES (1, 'm', '', '')")
+        self.stl = self.add_file(1, "hero.stl", self.BODY)
+        self.archive = self.root / "pack.zip"
+        with zipfile.ZipFile(self.archive, "w") as handle:
+            handle.writestr("sub/inner.stl", self.BODY + b"inner")
+            handle.writestr("sub/note.txt", b"text")
+        self.add_file(2, "pack.zip", self.archive.read_bytes())
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO file_archive_members (id, file_id, internal_path, filename, size_bytes) VALUES "
+                "(5, 2, 'sub/inner.stl', 'inner.stl', 89), (6, 2, 'sub/note.txt', 'note.txt', 4)"
+            )
+        self.client = TestClient(server.create_app(manage_workers=False), base_url="http://localhost")
+
+    def add_file(self, file_id, name, body):
+        path = self.root / name
+        path.write_bytes(body)
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO model_files (file_id, model_id, filename, size_bytes) VALUES (?, 1, ?, ?)", (file_id, name, len(body)),
+            )
+            self.conn.execute(
+                "INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path, "
+                "actual_bytes, vault_path) VALUES (?, 1, ?, ?, ?, ?, ?)", (file_id, name, name, name, len(body), str(path)),
+            )
+        return path
+
+    def ask(self, source_type, source_id):
+        return self.client.post("/api/preview/stl", json={"source_type": source_type, "id": source_id})
+
+    def test_a_loose_stl_comes_back_as_it_is(self):
+        response = self.ask("file", 1)
+        self.assertEqual((response.status_code, response.content), (200, self.BODY))
+        self.assertEqual(response.headers["content-type"], "model/stl")
+
+    def test_a_member_is_unpacked_and_its_scratch_removed(self):
+        before = set(Path(tempfile.gettempdir()).glob("desync-preview-*"))
+        response = self.ask("archive_member", 5)
+        self.assertEqual((response.status_code, response.content), (200, self.BODY + b"inner"))
+        self.assertEqual(set(Path(tempfile.gettempdir()).glob("desync-preview-*")), before)
+
+    def test_only_stl_files_are_served(self):
+        self.assertEqual(self.ask("file", 2).status_code, 415)
+        self.assertEqual(self.ask("archive_member", 6).status_code, 415)
+
+    def test_unknown_ids_are_not_found(self):
+        self.assertEqual(self.ask("file", 999).status_code, 404)
+        self.assertEqual(self.ask("archive_member", 999).status_code, 404)
+
+    def test_a_file_on_an_offline_mount_says_so(self):
+        self.stl.unlink()
+        response = self.ask("file", 1)
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("offline", response.json()["error"])
+
+    def test_a_bad_request_is_refused(self):
+        for body in ({"source_type": "model", "id": 1}, {"source_type": "file", "id": "x"}, {}):
+            with self.subTest(body):
+                self.assertEqual(self.client.post("/api/preview/stl", json=body).status_code, 400)
+
+    def test_it_waits_its_turn_with_the_renders(self):
+        with patch.object(catalog_routes, "RENDER_WAIT_SECONDS", 0.01):
+            for _ in range(2):
+                self.assertTrue(catalog_routes.RENDER_SLOTS.acquire(blocking=False))
+                self.addCleanup(catalog_routes.RENDER_SLOTS.release)
+            response = self.ask("archive_member", 5)
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.headers["retry-after"], catalog_routes.RENDER_RETRY_SECONDS)
+
+    def test_a_slot_comes_back_after_each_answer(self):
+        for _ in range(4):
+            self.ask("file", 999)
+        self.assertEqual(self.ask("file", 1).status_code, 200)

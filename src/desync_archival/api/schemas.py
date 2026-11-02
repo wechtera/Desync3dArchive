@@ -28,6 +28,11 @@ class RenderStlBody(RequestBody):
     force: bool | None = None
 
 
+class StlPreviewBody(RequestBody):
+    source_type: str = Field(pattern="^(file|archive_member)$")
+    id: int
+
+
 class ModelIdsBody(RequestBody):
     model_ids: list[int] | None = None
     confirm: bool = False

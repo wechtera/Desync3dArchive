@@ -4,6 +4,7 @@
  */
 
 import { registerActions } from '../actions.js';
+import { openStlPreview } from './stl_preview.js';
 import {
   fetchModels,
   fetchModelFiles,
@@ -355,6 +356,12 @@ export function renderSTLViewDropdown(sourceType, sourceId, title) {
         <span>Render</span> <span class="font-xs">&blacktriangledown;</span>
       </button>
       <div class="render-dropdown-menu">
+        ${/\.stl$/i.test(safeTitle) ? html`
+          <button type="button" class="render-dropdown-item render-dropdown-preview" @click=${(event) => {
+            event.target.closest('.render-dropdown-menu').classList.remove('show');
+            openStlPreview(sourceType, sourceId, safeTitle);
+          }}>Preview</button>
+        ` : nothing}
         <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'front_left', safeTitle)}>Front-Left (3/4)</button>
         <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'front_right', safeTitle)}>Front-Right</button>
         <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'back_right', safeTitle)}>Back-Right</button>

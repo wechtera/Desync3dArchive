@@ -3439,3 +3439,98 @@ select:not([multiple]) {
 .library-preview-card table { width: 100%; }
 .reconcile-results-body { max-height: 70vh; overflow-y: auto; }
 button.duplicate-delete:disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(1); }
+
+/* STL preview */
+.stl-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(10, 14, 11, 0.6);
+}
+
+.stl-preview-window {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, 100%);
+  height: min(720px, 100%);
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+}
+
+.stl-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.stl-preview-title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 1rem;
+  color: var(--text-main);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stl-preview-close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+}
+
+.stl-preview-close:hover {
+  color: var(--text-main);
+  background: var(--accent-hover);
+}
+
+.stl-preview-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.stl-preview-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.stl-preview-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--text-muted);
+  text-align: center;
+  pointer-events: none;
+}
+
+.stl-preview-status[hidden] {
+  display: none;
+}
+
+.stl-preview-failed {
+  color: var(--danger);
+}

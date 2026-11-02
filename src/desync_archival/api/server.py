@@ -8,13 +8,16 @@ import json
 import logging
 import mimetypes
 import re
+import shutil
 import sqlite3
+import tempfile
 import threading
 import time
 import urllib.parse
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, TextIO
 
 import uvicorn
@@ -22,16 +25,20 @@ from fastapi import FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
+from starlette.background import BackgroundTask
 from starlette.datastructures import MutableHeaders
 
-from desync_archival import migrations
+from desync_archival import external, migrations
 from desync_archival import settings as app_config
 from desync_archival.api import schemas
+from desync_archival.api.routes import catalog as catalog_routes
 from desync_archival.services import documents, image_worker, jobs, login, scheduler
 from desync_archival.services import task_manager as task_service
 from desync_archival.services.db import get_db_connection, seed_default_settings
 from desync_archival.services.downloader import DownloadManager, StorageUnavailableError
 from desync_archival.services.logger import init_logging_from_db, log_context, logger
+from desync_archival.services.mesh_renderer import MeshRenderer
 from desync_archival.services.task_manager import TASK_LOGS, TaskManager
 
 DB_PATH = app_config.db_path().resolve()
@@ -321,6 +328,36 @@ def serve_document(key: str) -> Response:
     return FileResponse(path, media_type="application/pdf", content_disposition_type="inline", filename=path.name)
 
 
+def serve_stl_preview(source_type: str, source_id: int) -> Response:
+    """Sends one STL for the browser to draw. An archive member is unpacked first, so it shares the render slots."""
+    if not catalog_routes.RENDER_SLOTS.acquire(timeout=catalog_routes.RENDER_WAIT_SECONDS):
+        return JSONResponse(
+            {"error": "Blender is busy with other renders. Try again shortly."}, 429,
+            {"Retry-After": catalog_routes.RENDER_RETRY_SECONDS},
+        )
+    scratch = Path(tempfile.mkdtemp(prefix="desync-preview-"))
+    conn = get_db_connection(DB_PATH)
+    try:
+        path = MeshRenderer().locate_stl(conn, source_type, source_id, scratch)
+    except FileNotFoundError as e:
+        shutil.rmtree(scratch, ignore_errors=True)
+        return JSONResponse({"error": str(e)}, 404)
+    except ValueError as e:
+        shutil.rmtree(scratch, ignore_errors=True)
+        return JSONResponse({"error": str(e)}, 415)
+    except (external.ExtractionRefused, OSError) as e:
+        shutil.rmtree(scratch, ignore_errors=True)
+        logger.warning(f"STL preview failed for {source_type} #{source_id}: {e}")
+        return JSONResponse({"error": "That file couldn't be read from its archive."}, 500)
+    finally:
+        conn.close()
+        catalog_routes.RENDER_SLOTS.release()
+    return FileResponse(
+        path, media_type="model/stl", headers={"Cache-Control": "no-store"},
+        background=BackgroundTask(shutil.rmtree, scratch, ignore_errors=True),
+    )
+
+
 def start_managers() -> None:
     global download_manager, task_manager
     logger.info("[Server] Initializing database schema")
@@ -411,6 +448,14 @@ def create_app(manage_workers: bool = True) -> FastAPI:
     @app.get("/api/documents/{key}/file")
     def open_document(key: str) -> Response:
         return serve_document(key)
+
+    @app.post("/api/preview/stl")
+    async def preview_stl(request: Request) -> Response:
+        try:
+            body = schemas.StlPreviewBody.model_validate_json(await request.body())
+        except ValidationError:
+            return JSONResponse({"error": "A source_type of file or archive_member and a numeric id are required."}, 400)
+        return await run_in_threadpool(serve_stl_preview, body.source_type, body.id)
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "DELETE"])
     def api_not_found(request: Request) -> Response:

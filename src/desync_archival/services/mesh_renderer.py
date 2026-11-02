@@ -371,6 +371,42 @@ class MeshRenderer:
 
         return None
 
+    @staticmethod
+    def _on_disk(row: sqlite3.Row, label: str) -> Path:
+        for stored in (row["vault_path"], row["staging_path"]):
+            if stored and Path(stored).is_file():
+                return Path(stored)
+        raise FileNotFoundError(f"{label} isn't reachable. The NAS may be offline.")
+
+    def locate_stl(self, conn: sqlite3.Connection, source_type: str, source_id: int, scratch_dir: Path) -> Path:
+        """Finds one STL from the catalog, unpacking it into scratch if it sits in an archive.
+
+        Raises:
+            FileNotFoundError: It isn't in the catalog, or isn't reachable.
+            ValueError: It isn't an STL.
+        """
+        if source_type == "archive_member":
+            member = conn.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS_BY_ID, (source_id,)).fetchone()
+            if not member:
+                raise FileNotFoundError(f"Archive member #{source_id} isn't in the catalog.")
+            if Path(member["filename"]).suffix.lower() != ".stl":
+                raise ValueError(f"{member['filename']} isn't an STL.")
+            parent = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_FILE_ID, (member["file_id"],)).fetchone()
+            if not parent:
+                raise FileNotFoundError(f"The archive holding {member['filename']} hasn't been downloaded.")
+            target = scratch_dir / Path(member["filename"]).name
+            self._surgical_extract_single_member(
+                self._on_disk(parent, "Its archive"), member["internal_path"], scratch_dir, target,
+            )
+            return target
+
+        row = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_FILE_ID_V2, (source_id,)).fetchone()
+        if not row:
+            raise FileNotFoundError(f"File #{source_id} hasn't been downloaded.")
+        if Path(row["cleaned_filename"] or "").suffix.lower() != ".stl":
+            raise ValueError(f"{row['cleaned_filename']} isn't an STL.")
+        return self._on_disk(row, "This file")
+
     def _surgical_extract_single_member(
         self,
         archive_path: Path,
