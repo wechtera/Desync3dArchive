@@ -172,7 +172,7 @@ def build_cases(db_path: Path, dest: Path) -> list[Case]:
         Case("reconcile_ingest_untracked_empty", "POST", "/api/reconcile/ingest-untracked", {"items": []}),
         Case("reconcile_ingest_untracked", "POST", "/api/reconcile/ingest-untracked", {
             "items": [{"model_id": stored, "file_path": str(vault / "contract_untracked" / "extra.stl")}],
-        }),
+        }, wait=True),
         # Network and node are blocked in the harness, so these record the failure paths.
         Case("scraper_start", "POST", "/api/scraper/start", {}, wait=True),
         Case("tasks_scrape", "POST", "/api/tasks/scrape", {}, wait=True),
