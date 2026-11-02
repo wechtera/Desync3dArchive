@@ -52,7 +52,7 @@ INSERT_DOWNLOAD_AUDIT_LOG = """
                         VALUES (?, 1, 'failed', 'Reconciliation reset: model marked for re-download');
                     """
 
-SELECT_COLLECTIONS_BY_ID_V2 = "SELECT id, name, designer_name, release_month, external_key, source FROM collections WHERE id = ?"
+SELECT_COLLECTIONS_BY_ID_V2 = "SELECT id, name, designer_name, release_month, external_key, source, vault_path FROM collections WHERE id = ?"
 
 INSERT_MODEL_FILES = """
                             INSERT INTO model_files (model_id, filename, size_bytes, download_url, created_at, source)

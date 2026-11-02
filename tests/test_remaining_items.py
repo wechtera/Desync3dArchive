@@ -18,8 +18,9 @@ from unittest.mock import MagicMock, patch
 
 from db_helper import create_database
 
-from desync_archival import backup
+from desync_archival import backup, migrations
 from desync_archival import settings as app_config
+from desync_archival.api.routes import reconcile as reconcile_routes
 from desync_archival.services import auth_service, pending_deletion
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
@@ -303,3 +304,101 @@ class PurgeWaitS08Tests(TempDb):
         self.assertEqual(pending_deletion.purge(self.conn, confirm=True, ids=[1])["purged"], 1)
         self.assertFalse(self.held.exists())
 
+
+
+class UntrackedIngestS06Tests(TempDb):
+    def setUp(self):
+        super().setUp()
+        self.vault = self.root / "vault"
+        self.model_dir = self.vault / "Maker" / "2024-01" / "5_Model"
+        (self.model_dir / "files").mkdir(parents=True)
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO collections (id, name, source, external_key, raw_backup_path, designer_name, release_month)"
+                " VALUES (5, 'Model', 'mmf', '5', 'm.json', 'Maker', '2024-01')"
+            )
+        self.reconciler = object.__new__(VaultReconciler)
+        self.reconciler.db_path = self.db
+        self.reconciler.storage = MagicMock()
+        self.reconciler.storage.get_root_path.return_value = self.vault
+
+    def ingest(self, path):
+        return self.reconciler.ingest_untracked_files([{"model_id": 5, "file_path": str(path)}])
+
+    def files(self):
+        return self.conn.execute("SELECT COUNT(*) FROM downloaded_files WHERE model_id = 5").fetchone()[0]
+
+    def vault_path(self):
+        return self.conn.execute("SELECT vault_path FROM collections WHERE id = 5").fetchone()[0]
+
+    def test_a_file_outside_the_vault_is_refused(self):
+        outside = self.root / "secrets.txt"
+        outside.write_text("x", encoding="utf-8")
+        result = self.ingest(outside)
+        self.assertEqual(result["ingested_count"], 0)
+        self.assertIn("outside the vault", result["errors"][0])
+        self.assertEqual(self.files(), 0)
+
+    def test_a_link_leading_out_of_the_vault_is_refused(self):
+        outside = self.root / "secrets.txt"
+        outside.write_text("x", encoding="utf-8")
+        link = self.model_dir / "files" / "link.stl"
+        link.symlink_to(outside)
+        self.assertEqual(self.ingest(link)["ingested_count"], 0)
+
+    def test_a_file_in_the_vault_is_added(self):
+        target = self.model_dir / "files" / "a.stl"
+        target.write_bytes(b"solid")
+        self.assertEqual(self.ingest(target)["ingested_count"], 1)
+        self.assertEqual(self.files(), 1)
+        self.assertEqual(self.vault_path(), str(self.model_dir))
+
+    def test_an_existing_vault_path_is_left_alone(self):
+        with self.conn:
+            self.conn.execute("UPDATE collections SET vault_path = '/already/here' WHERE id = 5")
+        target = self.model_dir / "files" / "a.stl"
+        target.write_bytes(b"solid")
+        self.ingest(target)
+        self.assertEqual(self.vault_path(), "/already/here")
+
+    def test_a_file_near_the_top_cant_make_the_vault_root_a_model_folder(self):
+        folder = self.vault / "loose"
+        folder.mkdir()
+        target = folder / "a.stl"
+        target.write_bytes(b"solid")
+        self.assertEqual(self.ingest(target)["ingested_count"], 1)
+        self.assertIsNone(self.vault_path())
+
+
+class UntrackedRouteS06Tests(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.addCleanup(self.conn.close)
+        migrations.apply_pending(self.conn)
+        self.tasks = MagicMock()
+        self.tasks.start_task.return_value = {"success": True, "task_id": 4}
+        self.manager = MagicMock(active_downloads={}, active_offloads={})
+        patcher = patch("desync_archival.api.routes.reconcile._get_managers", return_value=(MagicMock(), self.tasks))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def post(self):
+        return reconcile_routes.handle_post_reconcile_ingest_untracked(
+            self.conn, self.manager, {"items": [{"model_id": 5, "file_path": "/v/a.stl"}]}, {},
+        )
+
+    def test_it_runs_as_a_job_and_is_audited(self):
+        body, status = self.post()
+        self.assertEqual((status, body["task_id"]), (200, 4))
+        self.assertEqual(self.tasks.start_task.call_args.args[0], "untracked_ingest")
+        self.assertEqual(self.conn.execute("SELECT action FROM audit_log").fetchone()[0], "ingest_untracked")
+
+    def test_it_waits_for_running_work(self):
+        self.manager.active_downloads = {1: {}}
+        self.assertEqual(self.post()[1], 409)
+        self.tasks.start_task.assert_not_called()
+
+    def test_a_busy_job_slot_is_reported(self):
+        self.tasks.start_task.return_value = {"success": False, "error": "busy"}
+        self.assertEqual(self.post()[1], 409)

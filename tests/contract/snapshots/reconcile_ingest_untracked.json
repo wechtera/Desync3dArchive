@@ -14,9 +14,9 @@
   "response": {
     "content_type": "application/json",
     "json": {
-      "errors": [],
-      "ingested_count": 1,
-      "success": true
+      "message": "Adding the files in the background.",
+      "success": true,
+      "task_id": 41
     },
     "location": null,
     "status": 200

@@ -141,10 +141,15 @@ def handle_post_reconcile_ingest_untracked(
     items = body.get("items", [])
     if not items:
         return {"error": "Missing items list in request body"}, 400
-    reconciler, _ = _get_managers(conn)
-    # FIXME(S-06): writes catalog rows with no busy check or audit.
-    res = reconciler.ingest_untracked_files(items)
-    return res, 200 if res.get("success") else 400
+    if reason := jobs.busy_reason(conn, download_manager):
+        return {"success": False, "error": reason}, 409
+    _, task_mgr = _get_managers(conn)
+    # Hashing a large file can take minutes, so this can't run in the request.
+    started = task_mgr.start_task("untracked_ingest", {"items": items})
+    if not started.get("success"):
+        return started, 409
+    audit.record(conn, "ingest_untracked", False, {"task_id": started["task_id"], "items": len(items)})
+    return {"success": True, "task_id": started["task_id"], "message": "Adding the files in the background."}, 200
 
 
 def handle_get_reconcile_staging_garbage(

@@ -485,6 +485,22 @@ class TaskManager:
         self._finalize_task(task_id, status, label, report)
         self._release(task_id)
 
+    def _run_untracked_ingest_worker(self, task_id: int, params: dict[str, Any]):
+        try:
+            report = VaultReconciler(self.db_path).ingest_untracked_files(params.get("items") or [])
+            for problem in report.get("errors", []):
+                self._append_log(task_id, problem)
+            added = report.get("ingested_count", 0)
+            status = jobs.FAILED if report.get("errors") and not added else jobs.COMPLETED
+            label = f"{added} files added, {len(report.get('errors', []))} refused or failed"
+        except (OSError, sqlite3.Error, StorageUnavailableError) as e:
+            self._append_log(task_id, f"Adding untracked files stopped: {e}")
+            report, status, label = {}, jobs.FAILED, "Adding untracked files failed"
+        with self._get_db() as conn:
+            audit.record(conn, "ingest_untracked", False, {"task_id": task_id, **report})
+        self._finalize_task(task_id, status, label, report)
+        self._release(task_id)
+
     def _inventory_library_pdfs(self, task_id: int, library_id: int) -> None:
         from desync_archival.services import documents
 
@@ -630,6 +646,7 @@ class TaskManager:
             "document_update": (self._run_document_worker, (task_id,)),
             "catalog_preview_backfill": (self._run_catalog_preview_worker, (task_id, task_params)),
             "path_realign": (self._run_path_realign_worker, (task_id, task_params)),
+            "untracked_ingest": (self._run_untracked_ingest_worker, (task_id, task_params)),
         }
         if task_type not in workers:
             self._finalize_task(task_id, "failed", f"Unsupported task type: {task_type}", {})

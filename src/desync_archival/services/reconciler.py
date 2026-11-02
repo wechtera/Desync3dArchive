@@ -649,6 +649,7 @@ class VaultReconciler:
     def ingest_untracked_files(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not items:
             return {"success": False, "error": "No file entries provided."}
+        nas_root = self.storage.get_root_path().resolve()
         ingested, errors = [], []
         with self._get_db() as conn:
             for item in items:
@@ -657,8 +658,11 @@ class VaultReconciler:
                 if not model_id or not fpath_str:
                     continue
                 try:
-                    # FIXME(S-06): no vault check, so any file on this machine can be catalogued.
+                    # Resolved first, so a link inside the vault can't lead back out of it.
                     fpath = Path(fpath_str).resolve()
+                    if not fpath.is_relative_to(nas_root):
+                        errors.append(f"Refused {fpath_str}: it's outside the vault")
+                        continue
                     if not fpath.exists() or not fpath.is_file():
                         continue
                     model_row = conn.execute(queries.SELECT_COLLECTIONS_BY_ID_V2, (model_id,)).fetchone()
@@ -677,7 +681,11 @@ class VaultReconciler:
                         cur = conn.execute(queries.INSERT_MODEL_FILES, (model_id, filename, sz, model_row["source"]))
                         new_file_id = cur.lastrowid
                         conn.execute(queries.INSERT_DOWNLOADED_FILES, (new_file_id, model_id, filename, filename, rel_p, sz, sz, ext, str(fpath), sha))
-                        conn.execute(queries.UPDATE_COLLECTIONS_VAULT_PATH_BY_ID, (str(fpath.parent.parent), model_id))
+                        # Only ever fills a blank, and never with the vault root, which would make every
+                        # folder in the vault look like part of this collection.
+                        model_folder = fpath.parent.parent
+                        if not model_row["vault_path"] and model_folder.is_relative_to(nas_root) and model_folder != nas_root:
+                            conn.execute(queries.UPDATE_COLLECTIONS_VAULT_PATH_BY_ID, (str(fpath.parent.parent), model_id))
                     ingested.append(fpath_str)
                     log_layer("storage", logging.INFO, f"Ingested untracked file: {fpath.name} -> Model #{model_id}")
                 except Exception as e:
