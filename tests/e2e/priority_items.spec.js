@@ -114,3 +114,34 @@ test.describe('reconcile discrepancies, E49', () => {
     await expect(page.locator('.reconcile-card')).toHaveCount(1);
   });
 });
+
+test.describe('render slots, S-16', () => {
+  async function renderReplying(page, statuses) {
+    const seen = [];
+    await page.route('**/api/render/stl', (route) => {
+      seen.push(route.request().method());
+      const status = statuses.shift();
+      return status === 429
+        ? route.fulfill({ status, headers: { 'Retry-After': '0' }, json: { error: 'Blender is busy' } })
+        : route.fulfill({ status, contentType: 'image/jpeg', body: Buffer.from('jpeg') });
+    });
+    await page.goto('/#browse');
+    const status = await page.evaluate(async () => {
+      const { requestRender } = await import('/static/js/api.js');
+      return (await requestRender({ source_type: 'file', id: 1 })).status;
+    });
+    return { seen, status };
+  }
+
+  test('a busy answer waits and tries again', async ({ page }) => {
+    const { seen, status } = await renderReplying(page, [429, 429, 200]);
+    expect(status).toBe(200);
+    expect(seen).toEqual(['POST', 'POST', 'POST']);
+  });
+
+  test('it gives up with the busy answer after a few tries', async ({ page }) => {
+    const { seen, status } = await renderReplying(page, [429, 429, 429, 429, 429]);
+    expect(status).toBe(429);
+    expect(seen).toHaveLength(4);
+  });
+});

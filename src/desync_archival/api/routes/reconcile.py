@@ -159,7 +159,19 @@ def handle_get_reconcile_staging_garbage(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
-    """GET /api/reconcile/staging. Lists staging leftovers and records the check as a run."""
+    """GET /api/reconcile/staging. Lists staging leftovers and writes nothing."""
+    reconciler, _ = _get_managers(conn)
+    res = reconciler.scan_staging_garbage()
+    return res, 200 if res.get("success") else 500
+
+
+def handle_post_reconcile_staging_check(
+    conn: sqlite3.Connection,
+    download_manager: DownloadManager | None,
+    body: dict,
+    params: dict,
+) -> tuple[dict[str, Any], int]:
+    """POST /api/reconcile/staging. The same list, recorded as a run."""
     reconciler, task_mgr = _get_managers(conn)
     res = reconciler.scan_staging_garbage()
     _record_check(task_mgr, "staging_scan", res, f"{len(res.get('items') or [])} leftovers found")
@@ -189,6 +201,19 @@ def handle_get_reconcile_path_drift(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
+    """GET /api/reconcile/drift. Lists drifted folders and writes nothing."""
+    reconciler, _ = _get_managers(conn)
+    res = reconciler.scan_path_drift()
+    return res, 200 if res.get("success") else 500
+
+
+def handle_post_reconcile_path_drift(
+    conn: sqlite3.Connection,
+    download_manager: DownloadManager | None,
+    body: dict,
+    params: dict,
+) -> tuple[dict[str, Any], int]:
+    """POST /api/reconcile/drift. The same list, recorded as a run."""
     reconciler, task_mgr = _get_managers(conn)
     res = reconciler.scan_path_drift()
     _record_check(task_mgr, "path_drift_scan", res, f"{len(res.get('items') or [])} folders drifted")
@@ -201,9 +226,21 @@ def handle_get_reconcile_duplicates(
     body: dict,
     params: dict,
 ) -> tuple[dict[str, Any], int]:
-    """GET /api/reconcile/duplicates. Runs the duplicate check and saves it with its job row."""
+    """GET /api/reconcile/duplicates. Runs the duplicate check and writes nothing."""
     include_shared = params.get("include_shared", ["0"])[0] == "1"
     found = duplicates.find_duplicates(conn, include_shared=include_shared)
+    pending_deletion.mark_blocked(conn, found["pairs"], jobs.busy_reason(conn, download_manager))
+    return found, 200
+
+
+def handle_post_reconcile_duplicates(
+    conn: sqlite3.Connection,
+    download_manager: DownloadManager | None,
+    body: dict,
+    params: dict,
+) -> tuple[dict[str, Any], int]:
+    """POST /api/reconcile/duplicates. Runs the duplicate check and saves it with its job row."""
+    found = duplicates.find_duplicates(conn, include_shared=params.get("include_shared", ["0"])[0] == "1")
     _, task_mgr = _get_managers(conn)
     task_mgr.record_finished("duplicate_scan", f"{found['summary']['pairs']} pairs to review", found)
     pending_deletion.mark_blocked(conn, found["pairs"], jobs.busy_reason(conn, download_manager))

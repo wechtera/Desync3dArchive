@@ -13,7 +13,7 @@
     "json": {
       "message": "Catalog preview cache sweep dispatched in background.",
       "success": true,
-      "task_id": 38
+      "task_id": 33
     },
     "location": null,
     "status": 200

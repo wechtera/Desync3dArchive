@@ -13,7 +13,7 @@
     "json": {
       "message": "Archive peek backfill dispatched to background pipeline worker.",
       "success": true,
-      "task_id": 36,
+      "task_id": 31,
       "task_type": "archive_peek_backfill"
     },
     "location": null,

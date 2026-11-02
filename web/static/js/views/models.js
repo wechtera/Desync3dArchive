@@ -11,6 +11,7 @@ import {
   fetchArchiveSubmodels,
   fetchRawArchiveTree,
   getEphemeralRenderUrl,
+  requestRender,
   renderModelView
 } from '../api.js';
 import { formatBytes, getFileExtension, statusBadge } from '../utils.js';
@@ -1027,15 +1028,7 @@ export async function triggerSubmodelRender(smId, memberId, btn) {
   }
 
   try {
-    const res = await fetch('/api/render/stl', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source_type: 'archive_member',
-        id: memberId,
-        view: 'front_left'
-      })
-    });
+    const res = await requestRender({ source_type: 'archive_member', id: memberId, view: 'front_left' });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -1205,15 +1198,7 @@ export async function switchEphemeralView(viewName) {
   }
 
   try {
-    const res = await fetch('/api/render/stl', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source_type: activeEphemeralSourceType,
-        id: activeEphemeralId,
-        view: viewName
-      })
-    });
+    const res = await requestRender({ source_type: activeEphemeralSourceType, id: activeEphemeralId, view: viewName });
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

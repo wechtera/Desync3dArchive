@@ -809,7 +809,7 @@ export function saveAuthSlug() {
 
 export async function connectAccount() {
   try {
-    const res = await fetch('/api/auth/login?redirect=0');
+    const res = await fetch('/api/auth/login?redirect=0', { method: 'POST' });
     const data = await res.json();
     if (data.auth_url) {
       window.location.href = data.auth_url;

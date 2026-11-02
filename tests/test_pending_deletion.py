@@ -150,7 +150,7 @@ class PairTests(Case):
         manager = object.__new__(TaskManager)
         manager.db_path = self.db
         with patch.object(routes, "_get_managers", return_value=(MagicMock(), manager)):
-            routes.handle_get_reconcile_duplicates(self.conn, None, {}, {})
+            routes.handle_post_reconcile_duplicates(self.conn, None, {}, {})
         self.conn.commit()
         body, _ = routes.handle_get_reconcile_duplicates_latest(self.conn, MagicMock(active_downloads={1: {}}), {}, {})
         self.assertIn("Downloads", body["pairs"][0]["first"]["delete_blocked"])
@@ -197,7 +197,7 @@ class SavedResultTests(Case):
         manager.db_path = self.db
         reconciler = MagicMock()
         with patch.object(routes, "_get_managers", return_value=(reconciler, manager)):
-            routes.handle_get_reconcile_duplicates(self.conn, None, {}, {})
+            routes.handle_post_reconcile_duplicates(self.conn, None, {}, {})
         self.conn.commit()
 
     def test_results_stay_after_leaving_the_page(self):

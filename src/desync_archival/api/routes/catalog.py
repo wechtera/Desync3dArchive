@@ -8,6 +8,7 @@ import json
 import shutil
 import sqlite3
 import tempfile
+import threading
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -21,6 +22,12 @@ from desync_archival.services.logger import logger
 from desync_archival.services.mesh_renderer import VALID_VIEWS, MeshRenderer
 
 # Global SQL filters: Exclude tombstones and records with missing designer metadata
+# Each render is a Blender process that can hold a worker for minutes, and on a loopback install
+# with no login, one image tag on any web page can start one.
+RENDER_SLOTS = threading.BoundedSemaphore(2)
+RENDER_WAIT_SECONDS = 1.0
+RENDER_RETRY_SECONDS = "5"
+
 VALID_MODEL_KNOWN = """
     name NOT LIKE '[Unavailable Model %]'
     AND designer_name IS NOT NULL
@@ -565,7 +572,7 @@ def handle_post_render_stl(
     body: Optional[dict] = None,
     params: Optional[dict] = None,
     task_manager: Any = None,
-) -> Union[Tuple[bytes, int, Dict[str, str]], Tuple[Dict[str, Any], int]]:
+) -> Union[Tuple[bytes, int, Dict[str, str]], Tuple[Dict[str, Any], int], tuple[dict[str, Any], int, dict[str, str]]]:
     """
     POST/GET /api/render/stl
     Universal Ephemeral Render API:
@@ -592,6 +599,8 @@ def handle_post_render_stl(
     if not renderer.is_available():
         return {"error": "Blender is not installed or not found on host system PATH."}, 503
 
+    if not RENDER_SLOTS.acquire(timeout=RENDER_WAIT_SECONDS):
+        return {"error": "Blender is busy with other renders. Try again shortly."}, 429, {"Retry-After": RENDER_RETRY_SECONDS}
     try:
         jpeg_bytes = renderer.render_ephemeral(
             conn=conn,
@@ -607,3 +616,5 @@ def handle_post_render_stl(
     except Exception as e:
         logger.warning(f"Ephemeral rendering failed: {e}")
         return {"error": "Ephemeral rendering failed"}, 500
+    finally:
+        RENDER_SLOTS.release()

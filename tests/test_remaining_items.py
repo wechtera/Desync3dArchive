@@ -26,6 +26,7 @@ from desync_archival import backup, external, migrations
 from desync_archival import settings as app_config
 from desync_archival.api import schemas, server
 from desync_archival.api.routes import auth as auth_routes
+from desync_archival.api.routes import catalog as catalog_routes
 from desync_archival.api.routes import reconcile as reconcile_routes
 from desync_archival.api.routes import settings as settings_routes
 from desync_archival.services import auth_service, paths, pending_deletion
@@ -925,3 +926,67 @@ class ResponseTypesS12Tests(unittest.TestCase):
         with patch("desync_archival.api.routes.auth.auth_service.get_setting", return_value=""):
             body = auth_routes.handle_get_auth_callback(conn, None, {}, {})[0]
         self.assertIsInstance(body, schemas.HtmlPage)
+
+
+class ReadsWriteNothingS16Tests(TempDb):
+    def manager(self):
+        return MagicMock()
+
+    def call(self, handler, params=None):
+        reconciler = MagicMock()
+        reconciler.scan_staging_garbage.return_value = {"success": True, "items": []}
+        reconciler.scan_path_drift.return_value = {"success": True, "items": []}
+        manager = self.manager()
+        with patch.object(reconcile_routes, "_get_managers", return_value=(reconciler, manager)):
+            handler(self.conn, None, {}, params or {})
+        return manager
+
+    def test_checks_read_by_get_record_nothing(self):
+        for handler in (reconcile_routes.handle_get_reconcile_staging_garbage,
+                        reconcile_routes.handle_get_reconcile_path_drift,
+                        reconcile_routes.handle_get_reconcile_duplicates):
+            with self.subTest(handler.__name__):
+                self.call(handler).record_finished.assert_not_called()
+
+    def test_checks_posted_are_recorded(self):
+        for handler in (reconcile_routes.handle_post_reconcile_staging_check,
+                        reconcile_routes.handle_post_reconcile_path_drift,
+                        reconcile_routes.handle_post_reconcile_duplicates):
+            with self.subTest(handler.__name__):
+                self.call(handler).record_finished.assert_called_once()
+
+
+class RenderSlotsS16Tests(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.addCleanup(self.conn.close)
+        patcher = patch.object(catalog_routes, "RENDER_WAIT_SECONDS", 0.01)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        renderer = patch.object(catalog_routes, "MeshRenderer")
+        self.renderer = renderer.start()
+        self.addCleanup(renderer.stop)
+        self.renderer.return_value.is_available.return_value = True
+        self.renderer.return_value.render_ephemeral.return_value = b"jpeg"
+
+    def render(self):
+        return catalog_routes.handle_post_render_stl(self.conn, None, {"id": 1})
+
+    def test_a_third_render_is_turned_away_and_told_when_to_return(self):
+        for _ in range(2):
+            self.assertTrue(catalog_routes.RENDER_SLOTS.acquire(blocking=False))
+            self.addCleanup(catalog_routes.RENDER_SLOTS.release)
+        body, status, headers = self.render()
+        self.assertEqual(status, 429)
+        self.assertIn("busy", body["error"])
+        self.assertEqual(headers["Retry-After"], "5")
+        self.renderer.return_value.render_ephemeral.assert_not_called()
+
+    def test_a_finished_render_gives_its_slot_back(self):
+        for _ in range(3):
+            self.assertEqual(self.render()[1], 200)
+
+    def test_a_failed_render_gives_its_slot_back(self):
+        self.renderer.return_value.render_ephemeral.side_effect = RuntimeError("blender crashed")
+        for _ in range(3):
+            self.assertEqual(self.render()[1], 500)

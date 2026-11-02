@@ -4,6 +4,8 @@
  * in-place external libraries, stash manifests, and ephemeral rendering.
  */
 
+const RENDER_RETRIES = 3;
+
 async function request(url, options = {}) {
   const res = await fetch(url, options);
   if (!res.ok) {
@@ -216,6 +218,20 @@ export async function renderModelView(modelId, view = 'front_left', force = fals
   });
 }
 
+// The server runs two renders at a time and answers 429 past that, saying when to come back.
+export async function requestRender(payload) {
+  for (let attempt = 0; ; attempt += 1) {
+    const res = await fetch('/api/render/stl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.status !== 429 || attempt === RENDER_RETRIES) return res;
+    const seconds = Number(res.headers.get('Retry-After')) || 5;
+    await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+  }
+}
+
 /**
  * Builds a direct streaming URL for on-demand ephemeral JPEG rendering.
  * Does not write any persistent file to previews/.
@@ -247,7 +263,7 @@ export async function saveAuthConfig(payload) {
 }
 
 export async function getAuthLoginUrl() {
-  return request('/api/auth/login?redirect=0');
+  return request('/api/auth/login?redirect=0', { method: 'POST' });
 }
 
 export async function disconnectAuth() {
@@ -367,7 +383,7 @@ export async function ingestUntrackedFiles(items) {
 }
 
 export async function fetchStagingGarbage() {
-  return request('/api/reconcile/staging');
+  return request('/api/reconcile/staging', { method: 'POST' });
 }
 
 export async function purgeStagingGarbage(paths = null) {
@@ -379,11 +395,11 @@ export async function purgeStagingGarbage(paths = null) {
 }
 
 export async function fetchDuplicates(includeShared = false) {
-  return request(`/api/reconcile/duplicates?include_shared=${includeShared ? 1 : 0}`);
+  return request(`/api/reconcile/duplicates?include_shared=${includeShared ? 1 : 0}`, { method: 'POST' });
 }
 
 export async function fetchPathDrift() {
-  return request('/api/reconcile/drift');
+  return request('/api/reconcile/drift', { method: 'POST' });
 }
 
 export async function realignModelPaths(modelIds = null, confirm = false) {

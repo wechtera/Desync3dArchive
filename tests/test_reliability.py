@@ -137,8 +137,8 @@ class RunHistoryTests(ReliabilityCase):
         self.assertIsNotNone(run["completed_at"])
 
     def test_checks_record_their_runs_and_failures(self):
-        for handler, card in ((routes_reconcile.handle_get_reconcile_staging_garbage, "staging_scan"),
-                              (routes_reconcile.handle_get_reconcile_path_drift, "path_drift_scan")):
+        for handler, card in ((routes_reconcile.handle_post_reconcile_staging_check, "staging_scan"),
+                              (routes_reconcile.handle_post_reconcile_path_drift, "path_drift_scan")):
             reconciler = MagicMock()
             reconciler.scan_staging_garbage.return_value = reconciler.scan_path_drift.return_value = {"success": False, "error": "boom"}
             with patch.object(routes_reconcile, "_get_managers", return_value=(reconciler, self.manager())):
