@@ -513,6 +513,15 @@ class PurgeTests(Case):
         self.assertEqual((result["dry_run"], len(result["items"])), (True, 1))
         self.assertTrue(moved.exists())
 
+    def test_a_purge_drops_the_restore_snapshot_but_keeps_the_record(self):
+        self.held()
+        self.assertTrue(self.conn.execute("SELECT snapshot_json FROM deleted_files").fetchone()[0])
+        pending_deletion.purge(self.conn, confirm=True, ids=[1])
+        row = self.conn.execute("SELECT snapshot_json, purged_at, filename FROM deleted_files").fetchone()
+        self.assertEqual(row[0], "")
+        self.assertTrue(row[1])
+        self.assertTrue(row[2])
+
     def test_files_under_14_days_are_left_and_counted(self):
         moved = self.held(13)
         result = pending_deletion.purge(self.conn, confirm=True, ids=[1])

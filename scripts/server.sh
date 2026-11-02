@@ -74,6 +74,10 @@ start() {
         return 0
     fi
     mkdir -p "$(dirname "$LOG")"
+    # The app's own logs rotate, and this one only grows. One old copy stays for whatever a crash left.
+    if [ -s "$LOG" ]; then
+        mv "$LOG" "$LOG.1"
+    fi
     echo "Starting. Output goes to $LOG"
     # macOS starts processes at 256 open files. Reaching that stops the server taking requests (E48).
     ulimit -n "$OPEN_FILES" 2>/dev/null || echo "Could not raise the open file limit, staying at $(ulimit -n)"

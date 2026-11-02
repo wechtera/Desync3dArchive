@@ -65,6 +65,14 @@
           "size_bytes": "<VOLATILE>"
         },
         {
+          "file_count": 0,
+          "formatted_size": "0 B",
+          "key": "document_cache",
+          "name": "PDF Cache",
+          "path": "<DEV>/old_app/document_cache",
+          "size_bytes": 0
+        },
+        {
           "file_count": 86,
           "formatted_size": "0 B",
           "key": "db_audit",
@@ -129,6 +137,14 @@
           "name": "Application System Logs",
           "path": "<DEV>/old_app/logs",
           "size_bytes": "<VOLATILE>"
+        },
+        {
+          "file_count": 0,
+          "formatted_size": "0 B",
+          "key": "document_cache",
+          "name": "PDF Cache",
+          "path": "<DEV>/old_app/document_cache",
+          "size_bytes": 0
         },
         {
           "file_count": 86,

@@ -27,6 +27,7 @@ from desync_archival.services.stash_service import StashService
 PAGE_SIZE = 48
 PREVIEW_FOLDER = "documents"
 CACHE_FOLDER = "document_cache"
+CACHE_LIMIT_BYTES = 1024**3
 ON_DISK = "on_disk"
 IN_ARCHIVE = "in_archive"
 NOT_DOWNLOADED = "not_downloaded"
@@ -171,6 +172,19 @@ def _extract(row: dict[str, Any], archive: Path, target: Path) -> None:
         shutil.move(str(found), target)
 
 
+def _trim_cache(keep: Path) -> None:
+    """Drops the longest-unread PDFs once the cache is over its limit. Each can be extracted again."""
+    with os.scandir(keep.parent) as entries:
+        cached = sorted((e.stat().st_mtime, e.stat().st_size, e.path) for e in entries if e.is_file())
+    total = sum(size for _, size, _ in cached)
+    for _, size, path in cached:
+        if total <= CACHE_LIMIT_BYTES:
+            break
+        if path != str(keep):
+            Path(path).unlink(missing_ok=True)
+            total -= size
+
+
 def locate(conn: sqlite3.Connection, key: str) -> Path:
     """Where the PDF is, in the local cache if it came out of an archive before."""
     row = _find(conn, key)
@@ -178,6 +192,8 @@ def locate(conn: sqlite3.Connection, key: str) -> Path:
         raise DocumentUnavailable("This hasn't been downloaded yet. Queue it for download first.", 409)
     cached = app_config.data_dir() / CACHE_FOLDER / f"{key}.pdf"
     if row["member_id"] and cached.is_file():
+        # Stamped by hand, because macOS doesn't keep reliable access times.
+        os.utime(cached)
         return cached
     path = Path(row["disk_path"])
     if not path.is_file():
@@ -185,6 +201,7 @@ def locate(conn: sqlite3.Connection, key: str) -> Path:
     if not row["member_id"]:
         return path
     _extract(row, path, cached)
+    _trim_cache(cached)
     return cached
 
 

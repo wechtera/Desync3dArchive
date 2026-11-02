@@ -952,6 +952,7 @@ def handle_get_directory_usage(
         ("Raw JSON Metadata", "metadata", app_config.metadata_dir().resolve()),
         ("Scrape Data Artifacts", "scrapes", app_config.scrapes_dir().resolve()),
         ("Application System Logs", "logs", LOGS_DIR.resolve()),
+        ("PDF Cache", "document_cache", (app_config.data_dir() / documents.CACHE_FOLDER).resolve()),
     ]
 
     results: list[dict[str, Any]] = []

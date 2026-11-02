@@ -16,7 +16,8 @@ INSERT_TOMBSTONE = """
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 """
 UPDATE_PENDING_PATH = "UPDATE deleted_files SET pending_path = ? WHERE id = ?;"
-UPDATE_PURGED = "UPDATE deleted_files SET purged_at = CURRENT_TIMESTAMP WHERE id = ?;"
+# The snapshot only exists to restore the rows, and a purged file can't be restored.
+UPDATE_PURGED = "UPDATE deleted_files SET purged_at = CURRENT_TIMESTAMP, snapshot_json = '' WHERE id = ?;"
 DELETE_MODEL_FILE = "DELETE FROM model_files WHERE file_id = ?;"
 SELECT_PENDING = """
     SELECT id, filename, collection_name, original_path, pending_path, size_bytes, deleted_at

@@ -40,6 +40,11 @@ class ServerScriptTests(unittest.TestCase):
         self.assertIn('ulimit -n "$OPEN_FILES"', text)
         self.assertLess(text.index('ulimit -n "$OPEN_FILES"'), text.index('nohup "$ROOT/scripts/production.sh"'))
 
+    def test_start_moves_the_last_run_aside_before_writing(self):
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('mv "$LOG" "$LOG.1"', text)
+        self.assertLess(text.index('mv "$LOG" "$LOG.1"'), text.index('nohup "$ROOT/scripts/production.sh"'))
+
     def test_an_unknown_command_shows_usage(self):
         result = self.run_script("bounce")
         self.assertEqual(result.returncode, 2)

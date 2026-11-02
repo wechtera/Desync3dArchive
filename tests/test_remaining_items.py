@@ -1475,3 +1475,37 @@ class NasFreeViewsP07Tests(TempDb):
 
     def test_a_cancelled_measure_writes_nothing(self):
         self.assertEqual(external_indexer.folder_totals(self.root, lambda: True), (0, 0))
+
+
+class LocalGrowthP09Tests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.cache = Path(temp.name)
+        patcher = patch.object(documents, "CACHE_LIMIT_BYTES", 30)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def cached(self, name, age, size=10):
+        path = self.cache / name
+        path.write_bytes(b"x" * size)
+        moment = time.time() - age
+        os.utime(path, (moment, moment))
+        return path
+
+    def test_the_longest_unread_files_go_first(self):
+        oldest, middle = self.cached("old.pdf", 300), self.cached("mid.pdf", 200)
+        self.cached("new.pdf", 100)
+        documents._trim_cache(self.cached("just_made.pdf", 0))
+        self.assertFalse(oldest.exists())
+        self.assertTrue(middle.exists())
+
+    def test_nothing_goes_while_under_the_limit(self):
+        self.cached("a.pdf", 300)
+        documents._trim_cache(self.cached("b.pdf", 0))
+        self.assertEqual(len(list(self.cache.iterdir())), 2)
+
+    def test_the_file_just_asked_for_is_kept_even_alone_past_the_limit(self):
+        huge = self.cached("huge.pdf", 300, size=100)
+        documents._trim_cache(huge)
+        self.assertTrue(huge.exists())
