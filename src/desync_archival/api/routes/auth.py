@@ -64,7 +64,7 @@ def state_matches(conn: sqlite3.Connection, supplied: Any) -> bool:
     return bool(stored) and secrets.compare_digest(stored.encode(), str(supplied or "").encode())
 
 
-def handle_get_auth_login(
+def handle_post_auth_login(
     conn: sqlite3.Connection,
     download_manager: DownloadManager | None,
     body: dict,

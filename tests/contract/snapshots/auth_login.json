@@ -1,7 +1,7 @@
 {
   "request": {
     "body": null,
-    "method": "GET",
+    "method": "POST",
     "path": "/api/auth/login"
   },
   "response": {

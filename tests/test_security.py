@@ -279,7 +279,7 @@ class V4StaticServingTests(AppCase):
 
 class V5OAuthFlowTests(AppCase):
     def login(self):
-        data = self.client.get("/api/auth/login?redirect=0").json()
+        data = self.client.post("/api/auth/login?redirect=0").json()
         return data["state"], urllib.parse.parse_qs(urllib.parse.urlsplit(data["auth_url"]).query)
 
     def test_login_uses_the_implicit_grant(self):
@@ -387,9 +387,17 @@ class SignInFollowUpTests(AppCase):
 
 
 class V9RedirectTests(AppCase):
+    def test_a_get_can_not_reset_a_sign_in(self):
+        self.set(mmf_client_id="client", mmf_oauth_state="in-progress")
+        for path in ("/api/auth/login", "/api/auth/login-url"):
+            self.assertIn(self.client.get(path).status_code, (404, 405))
+        conn = get_db_connection(server.DB_PATH)
+        self.addCleanup(conn.close)
+        self.assertEqual(auth_service.get_setting(conn, "mmf_oauth_state"), "in-progress")
+
     def test_login_is_a_real_redirect_with_encoded_values(self):
         self.set(mmf_client_id="x'><script>alert(1)</script>")
-        response = self.client.get("/api/auth/login")
+        response = self.client.post("/api/auth/login")
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.text, "")
         self.assertNotIn("<script>", response.headers["location"])

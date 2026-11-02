@@ -308,7 +308,7 @@ class TestServerAPI(unittest.TestCase):
             "client_secret": "0d333bde-test-key",
         })
 
-        status, data, _, _ = self._request("GET", "/api/auth/login?redirect=0")
+        status, data, _, _ = self._request("POST", "/api/auth/login?redirect=0")
         self.assertEqual(status, 200)
         auth_url = data.get("auth_url", "")
         self.assertIn("response_type=token", auth_url)
@@ -321,7 +321,7 @@ class TestServerAPI(unittest.TestCase):
         self.assertEqual(len(saved_state), 32)
         self.assertIn(f"state={saved_state}", auth_url)
 
-        status, _, _, headers = self._request("GET", "/api/auth/login")
+        status, _, _, headers = self._request("POST", "/api/auth/login")
         self.assertEqual(status, 302)
         location = headers.get("location", "")
         self.assertTrue(location.startswith("https://auth.myminifactory.com/web/authorize"))
