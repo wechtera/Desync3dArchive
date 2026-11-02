@@ -524,8 +524,8 @@ class StashExporter:
     def _extract_members(
         self,
         archive_path: Path,
-        targets: List[sqlite3.Row],
-        placed: Dict[str, str],
+        targets: list[sqlite3.Row],
+        placed: dict[str, str],
         scratch_dir: Path,
         dest_dir: Path,
     ) -> int:

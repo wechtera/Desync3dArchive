@@ -250,11 +250,11 @@ class ArchivePeeker:
         return extracted
 
     def _extract_images_in_one_pass(
-        self, archive_path: Path, image_paths: List[str], dest_dir: Path, names: Dict[str, str],
-    ) -> Dict[str, Path]:
+        self, archive_path: Path, image_paths: list[str], dest_dir: Path, names: dict[str, str],
+    ) -> dict[str, Path]:
         scratch = dest_dir / f".extract_{uuid.uuid4().hex[:8]}"
         scratch.mkdir(parents=True, exist_ok=True)
-        extracted: Dict[str, Path] = {}
+        extracted: dict[str, Path] = {}
         try:
             members = [external.ArchiveMember(path, 0) for path in image_paths]
             unpacked = external.extract_members(archive_path, members, scratch, self._bin_unrar, self._bin_7z)

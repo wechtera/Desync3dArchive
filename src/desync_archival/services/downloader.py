@@ -28,7 +28,11 @@ from desync_archival.db.queries import downloader as queries
 from desync_archival.services import auth_service, identity, secret_store
 from desync_archival.services.db import scoped_connection
 from desync_archival.services.logger import job_logged, log_layer, logger
-from desync_archival.services.paths import distinct_filename, sanitize_segment, stored_filename
+from desync_archival.services.paths import (
+    distinct_filename,
+    sanitize_segment,
+    stored_filename,
+)
 
 try:
     from .archive_peeker import ArchivePeeker
