@@ -310,8 +310,8 @@ class NasAccessTests(ReliabilityCase):
                 "INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, local_relative_path, actual_bytes, vault_path) "
                 "VALUES (?, ?, 'a.stl', 'a.stl', 'a.stl', 42, ?)", (file_id, model, f"{vault}/a.stl"),
             )
-        real = routes._fast_dir_stats
-        with patch.object(routes, "_fast_dir_stats", side_effect=lambda p: (_ for _ in ()).throw(AssertionError(p)) if p == vault else real(p)):
+        real = routes.folder_totals
+        with patch.object(routes, "folder_totals", side_effect=lambda p: (_ for _ in ()).throw(AssertionError(p)) if p == vault else real(p)):
             body, _ = routes.handle_get_directory_usage(self.conn)
         nas = next(d for d in body["directories"] if d["key"] == "nas")
         self.assertEqual((nas["file_count"], nas["size_bytes"]), (1, 42))

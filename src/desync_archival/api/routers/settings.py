@@ -35,7 +35,7 @@ add_route(router, "DELETE", ("/api/settings/libraries/{library_id:int}", "/api/s
 add_route(router, "GET", ("/api/settings/libraries", "/api/settings/libraries/"),
           plain(handlers.handle_get_external_libraries))
 add_route(router, "POST", ("/api/settings/libraries", "/api/settings/libraries/"),
-          plain(handlers.handle_post_external_library), schemas.LibraryBody)
+          with_tasks(handlers.handle_post_external_library), schemas.LibraryBody)
 add_route(router, "GET", "/api/settings/libraries/{library_id:int}/preview",
           with_path_id(handlers.handle_get_library_preview, "library_id"))
 add_route(router, "POST", "/api/settings/libraries/{library_id:int}/preview/approve",

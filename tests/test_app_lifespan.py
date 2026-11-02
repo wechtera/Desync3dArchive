@@ -31,6 +31,8 @@ def app_with_route(call):
 class LifespanTests(unittest.TestCase):
     def setUp(self):
         create_database(server.DB_PATH)
+        self.addCleanup(setattr, server, "task_manager", server.task_manager)
+        self.addCleanup(setattr, server, "download_manager", server.download_manager)
 
     def test_app_refuses_to_start_on_an_old_schema(self):
         conn = sqlite3.connect(server.DB_PATH)

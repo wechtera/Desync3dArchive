@@ -120,6 +120,32 @@ def release_month_of(release_name: str) -> str:
     return "Unassigned"
 
 
+def folder_totals(path: Path, cancelled: Callable[[], bool] = lambda: False) -> tuple[int, int]:
+    """Counts files and bytes under a folder, skipping links and anything unreadable.
+
+    Returns (total_files, total_bytes).
+    """
+    total_files = 0
+    total_bytes = 0
+    stack = [str(path)]
+    while stack and not cancelled():
+        current = stack.pop()
+        try:
+            with os.scandir(current) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_file(follow_symlinks=False):
+                            total_files += 1
+                            total_bytes += entry.stat(follow_symlinks=False).st_size
+                        elif entry.is_dir(follow_symlinks=False):
+                            stack.append(entry.path)
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    return total_files, total_bytes
+
+
 # Library ID is in the key because two libraries can have the same folder name.
 def key_for(library_id: int, rel_path: str) -> str:
     return f"{library_id}/{rel_path}"

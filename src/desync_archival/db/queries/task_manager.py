@@ -2,6 +2,12 @@
 
 SELECT_APP_SETTINGS_VALUE_BY_KEY = "SELECT value FROM app_settings WHERE key = ?;"
 
+UPDATE_EXTERNAL_LIBRARIES_DISK_BYTES_BY_ID = """
+                UPDATE external_libraries
+                SET disk_bytes = ?, total_files = ?
+                WHERE id = ?;
+            """
+
 UPDATE_PIPELINE_TASKS_LOG_OUTPUT_BY_ID = """
                     UPDATE pipeline_tasks
                     SET log_output = COALESCE(log_output, '') || ? || '\n'

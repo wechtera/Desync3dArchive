@@ -245,16 +245,24 @@ class StorageManager:
             row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY, (key,)).fetchone()
             return row[0] if row and row[0] is not None else ""
 
+    def configured_root(self) -> Path:
+        """Returns the vault root as stored, without touching it.
+
+        Raises:
+            StorageUnavailableError: The vault is unconfigured.
+        """
+        val = self._get_setting("download_root_path")
+        if not val:
+            raise StorageUnavailableError("NAS target storage path is unconfigured.")
+        return Path(val).expanduser()
+
     def get_root_path(self) -> Path:
         """Returns the vault root, or raises if it can't be reached right now.
 
         Raises:
             StorageUnavailableError: The vault is unconfigured or unreachable.
         """
-        val = self._get_setting("download_root_path")
-        if not val:
-            raise StorageUnavailableError("NAS target storage path is unconfigured.")
-        p = Path(val).expanduser().resolve()
+        p = self.configured_root().resolve()
         if not p.exists() or not p.is_dir():
             raise StorageUnavailableError(f"NAS storage path is unmounted or unreachable: {p}")
         return p

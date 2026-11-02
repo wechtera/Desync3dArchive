@@ -131,7 +131,7 @@ def build_cases(db_path: Path, dest: Path) -> list[Case]:
         }),
         Case("library_add", "POST", "/api/settings/libraries", {
             "name": "Contract Library", "path": library_path, "default_creator": "Contract",
-        }),
+        }, wait=True),
         Case("library_add_slash", "POST", "/api/settings/libraries/", {}),
         Case("library_scan", "POST", f"/api/settings/libraries/{library}/scan", {}, wait=True),
         Case("library_scan_slash", "POST", f"/api/settings/libraries/{library}/scan/", {}, wait=True),

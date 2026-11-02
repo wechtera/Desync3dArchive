@@ -124,7 +124,7 @@ class DriftTests(KeyCase):
         self.conn.execute("UPDATE collections SET vault_path = '/nas/Loot Studios/Golem'")
         self.conn.commit()
         reconciler = VaultReconciler(self.path)
-        reconciler.storage.get_root_path = lambda: Path(self.temp.name)
+        reconciler.storage.configured_root = lambda: Path(self.temp.name)
         self.assertEqual(reconciler.scan_path_drift()["items"], [])
 
     def test_canonical_folders_use_the_mmf_id(self):
@@ -132,7 +132,7 @@ class DriftTests(KeyCase):
         self.conn.execute("UPDATE collections SET vault_path = '/somewhere/else', release_month = '2024-01' WHERE id = ?", (model_id,))
         self.conn.commit()
         reconciler = VaultReconciler(self.path)
-        reconciler.storage.get_root_path = lambda: Path(self.temp.name)
+        reconciler.storage.configured_root = lambda: Path(self.temp.name)
         item = reconciler.scan_path_drift()["items"][0]
         self.assertTrue(Path(item["canonical_path"]).name.startswith(f"{MMF_ID}_"))
 

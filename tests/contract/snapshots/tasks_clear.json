@@ -9,7 +9,7 @@
   "response": {
     "content_type": "application/json",
     "json": {
-      "deleted_count": 17,
+      "deleted_count": 18,
       "success": true
     },
     "location": null,

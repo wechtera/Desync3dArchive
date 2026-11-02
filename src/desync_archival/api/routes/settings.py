@@ -9,7 +9,6 @@ import logging
 import os
 import shutil
 import sqlite3
-import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -35,7 +34,6 @@ from desync_archival.services import (
     secret_store,
     tags,
 )
-from desync_archival.services.db import scoped_connection
 from desync_archival.services.external_indexer import (
     SUPPORTED_FILE_EXTENSIONS,
     FULL,
@@ -43,6 +41,7 @@ from desync_archival.services.external_indexer import (
     SCAN_MODES,
     ExternalLibraryIndexer,
     deactivate_library,
+    folder_totals,
 )
 
 try:
@@ -99,50 +98,6 @@ def format_bytes(num_bytes: int) -> str:
         return f"{num_bytes / (1024**3):.2f} GB"
     else:
         return f"{num_bytes / (1024**4):.2f} TB"
-
-
-def _fast_dir_stats(path: Path) -> tuple[int, int]:
-    """
-    Iterative depth-first traversal using os.scandir for high performance.
-    Avoids recursion depth limits and ignores broken symlinks.
-    Returns (total_files, total_bytes).
-    """
-    total_files = 0
-    total_bytes = 0
-    stack = [str(path)]
-    while stack:
-        curr_dir = stack.pop()
-        try:
-            with os.scandir(curr_dir) as it:
-                for entry in it:
-                    try:
-                        if entry.is_file(follow_symlinks=False):
-                            total_files += 1
-                            total_bytes += entry.stat(follow_symlinks=False).st_size
-                        elif entry.is_dir(follow_symlinks=False):
-                            stack.append(entry.path)
-                    except (PermissionError, OSError):
-                        continue
-        except (PermissionError, OSError):
-            continue
-    return total_files, total_bytes
-
-
-def _bg_calculate_library_telemetry(db_path: Path, library_id: int, lib_path: Path):
-    """
-    Background worker thread: Computes disk usage across large network mounts
-    asynchronously without blocking the HTTP event loop.
-    """
-    try:
-        log_layer("storage", logging.INFO, f"Background disk usage scan started for Library #{library_id}: {lib_path}")
-        total_files, total_bytes = _fast_dir_stats(lib_path)
-
-        with scoped_connection(db_path) as conn:
-            conn.execute(queries.UPDATE_EXTERNAL_LIBRARIES_DISK_BYTES_BY_ID, (total_bytes, total_files, library_id))
-
-        log_layer("storage", logging.INFO, f"Background disk usage scan completed for Library #{library_id}: {format_bytes(total_bytes)} across {total_files:,} files.")
-    except Exception as e:
-        log_layer("storage", logging.ERROR, f"Background disk usage scan failed for Library #{library_id}: {e}")
 
 
 def _extract_tokens_from_json(raw_json: str) -> tuple[str, str]:
@@ -331,12 +286,13 @@ def handle_post_external_library(
     download_manager: Any = None,
     body: dict | None = None,
     params: dict | None = None,
+    task_manager: Any = None,
 ) -> tuple[dict[str, Any], int]:
     """
     POST /api/settings/libraries
     Registers a new top-level in-place library folder.
     Strictly READ-ONLY: Never moves, renames, modifies, or creates files in the target directory.
-    Returns immediately and calculates recursive disk footprint in a background thread.
+    Returns immediately, and measures the folder as a background job.
     """
     data = body or {}
     raw_path = str(data.get("path", "")).strip()
@@ -369,19 +325,9 @@ def handle_post_external_library(
         row = conn.execute(queries.SELECT_EXTERNAL_LIBRARIES_ID_BY_PATH, (str(lib_path),)).fetchone()
         lib_id = row[0] if row else None
 
-    # Resolve database path for the background worker
-    db_path = None
-    try:
-        db_path = Path(conn.execute(queries.PRAGMA_ROW_V2).fetchone()[2]).resolve()
-    except Exception:
-        db_path = app_config.db_path()
-
-    thread = threading.Thread(
-        target=_bg_calculate_library_telemetry,
-        args=(db_path, lib_id, lib_path),
-        daemon=True,
-    )
-    thread.start()
+    # A scan records the same totals, so a busy slot only delays the number.
+    started = task_manager.start_task("library_measure", {"library_id": lib_id, "path": str(lib_path)}) if task_manager else {}
+    measuring = bool(started.get("success"))
 
     log_layer("storage", logging.INFO, f"Registered in-place library #{lib_id}: '{name}' at '{lib_path}'")
 
@@ -398,7 +344,11 @@ def handle_post_external_library(
             "total_models": 0,
             "last_scanned_at": None,
         },
-        "message": f"Successfully registered in-place library '{name}'. Disk usage calculation queued in background.",
+        "task_id": started.get("task_id"),
+        "message": f"Registered in-place library '{name}'. " + (
+            "Measuring its size as a background task, and a scan can start once that finishes."
+            if measuring else "Its size will appear after its first scan."
+        ),
     }, 201
 
 
@@ -1007,7 +957,7 @@ def handle_get_directory_usage(
     results: list[dict[str, Any]] = []
 
     for label, key, dir_p in directories:
-        cnt, sz = _fast_dir_stats(dir_p) if dir_p.exists() and dir_p.is_dir() else (0, 0)
+        cnt, sz = folder_totals(dir_p) if dir_p.exists() and dir_p.is_dir() else (0, 0)
         results.append({
             "name": label,
             "key": key,
@@ -1092,14 +1042,18 @@ def handle_get_system_browse(
     dirs, files = [], []
     want_files = bool(params and params.get("files"))
     try:
-        for entry in sorted(current.iterdir(), key=lambda e: e.name.lower()):
-            if entry.is_dir() and not entry.name.startswith("."):
-                dirs.append({
-                    "name": entry.name,
-                    "path": str(entry.resolve()),
-                })
-            elif want_files and entry.is_file() and entry.suffix.lower() in file_import.IMPORTABLE and not entry.name.startswith("."):
-                files.append({"name": entry.name, "path": str(entry.resolve()), "size_bytes": entry.stat().st_size})
+        # scandir carries each entry's type, so a listing doesn't stat every entry on a slow share.
+        with os.scandir(current) as found:
+            entries = sorted(found, key=lambda e: e.name.lower())
+        for entry in entries:
+            hidden = entry.name.startswith(".")
+            if entry.is_dir() and not hidden:
+                dirs.append({"name": entry.name, "path": entry.path})
+            elif (
+                want_files and not hidden and entry.is_file()
+                and Path(entry.name).suffix.lower() in file_import.IMPORTABLE
+            ):
+                files.append({"name": entry.name, "path": entry.path, "size_bytes": entry.stat().st_size})
     except (PermissionError, OSError):
         pass
 

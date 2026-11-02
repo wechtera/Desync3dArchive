@@ -804,17 +804,17 @@ class VaultReconciler:
         return {"success": True, "purged_count": purged, "reclaimed_bytes": reclaimed, "errors": errors}
 
     def scan_path_drift(self) -> Dict[str, Any]:
-        """Compares each MMF folder with its canonical path, using the catalog and path resolution."""
-        nas_root = self.storage.get_root_path().resolve()
+        """Compares each MMF folder with its canonical path, as text, so the NAS isn't touched."""
+        nas_root = self.storage.configured_root()
         with self._get_db() as conn:
             models = conn.execute(queries.SELECT_COLLECTIONS_BY_SOURCE_VAULT_PATH).fetchall()
         drift_items = []
         for m in models:
             mid = m["id"]
-            cur = Path(m["vault_path"]).resolve()
+            cur = Path(m["vault_path"])
             clean_c = sanitize_segment(m["designer_name"] or m["designer_username"] or "Unknown_Creator")
             clean_m = sanitize_segment(m["release_month"] or "Unassigned")
-            canonical = (nas_root / clean_c / clean_m / f"{m['external_key'] or mid}_{sanitize_segment(m['name'])}").resolve()
+            canonical = nas_root / clean_c / clean_m / f"{m['external_key'] or mid}_{sanitize_segment(m['name'])}"
             if cur != canonical:
                 reasons = []
                 if "[" in cur.name or "]" in cur.name: reasons.append("Bracketed ID prefix")

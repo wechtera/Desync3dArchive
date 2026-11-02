@@ -616,6 +616,8 @@ class R10Logging(TempCase):
         auth_service.set_settings(conn, {"log_level": "INFO", "log_layers": "storage,http"})
         self.addCleanup(auth_service.set_settings, conn, {"log_level": "INFO", "log_layers": ""})
         self.addCleanup(setattr, server.task_service, "current", None)
+        self.addCleanup(setattr, server, "task_manager", server.task_manager)
+        self.addCleanup(setattr, server, "download_manager", server.download_manager)
         with patch.object(server, "TaskManager"), patch.object(server, "DownloadManager"), \
                 patch.object(server.image_worker, "ImageWorker"), patch.object(server.threading, "Thread"):
             server.start_managers()

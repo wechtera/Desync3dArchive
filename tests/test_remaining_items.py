@@ -39,6 +39,7 @@ from desync_archival.services import (
     documents,
     downloader,
     duplicates,
+    external_indexer,
     paths,
     pending_deletion,
     reconciler,
@@ -1396,3 +1397,81 @@ class StalledMountP07Tests(unittest.TestCase):
             self.assertEqual(mounts.names_in(folder), {"a.db"})
             mounts.forget(folder)
         self.assertFalse(mounts.is_online(folder))
+
+
+class NasFreeViewsP07Tests(TempDb):
+    def drift(self, stored, root="/Volumes/STL/Vault"):
+        audit = object.__new__(VaultReconciler)
+        audit.db_path = self.db
+        audit.storage = MagicMock()
+        audit.storage.configured_root.return_value = Path(root)
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO collections (id, name, url, raw_backup_path, source, external_key, vault_path, designer_name, "
+                "release_month) VALUES (1, 'Hero', '', '', 'mmf', '77', ?, 'Maker', '2024-01')", (stored,),
+            )
+        return audit
+
+    def test_drift_reads_nothing_from_disk(self):
+        audit = self.drift("/Volumes/STL/Vault/Maker/2024-01/77_Hero")
+        with patch.object(Path, "resolve", side_effect=AssertionError("touched the NAS")), \
+                patch.object(Path, "exists", side_effect=AssertionError("touched the NAS")):
+            self.assertEqual(audit.scan_path_drift()["items"], [])
+        audit.storage.get_root_path.assert_not_called()
+
+    def test_a_drifted_folder_is_found_as_text(self):
+        item = self.drift("/Volumes/STL/Vault/Old Name/[77] Hero").scan_path_drift()["items"][0]
+        self.assertEqual(item["canonical_path"], "/Volumes/STL/Vault/Maker/2024-01/77_Hero")
+        self.assertIn("Bracketed ID prefix", item["reasons"])
+
+    def test_browse_lists_with_scandir_and_no_stat_per_folder(self):
+        for name in ("alpha", "beta", ".hidden"):
+            (self.root / name).mkdir()
+        (self.root / "a.stl").write_bytes(b"12345")
+        (self.root / ".b.stl").touch()
+        with patch.object(app_config, "allowed_roots", return_value=[self.root]), \
+                patch.object(app_config, "is_allowed", return_value=True):
+            body, status = settings_routes.handle_get_system_browse(
+                self.conn, params={"folder": [str(self.root)], "files": ["1"]},
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual([d["name"] for d in body["directories"]], ["alpha", "beta"])
+        self.assertEqual(body["directories"][0]["path"], str(self.root / "alpha"))
+        self.assertEqual([(f["name"], f["size_bytes"]) for f in body["files"]], [("a.stl", 5)])
+
+    def add_library(self, manager):
+        with patch.object(app_config, "check_settable_path"):
+            return settings_routes.handle_post_external_library(
+                self.conn, body={"path": str(self.root), "name": "Lib"}, task_manager=manager,
+            )
+
+    def test_adding_a_library_starts_a_job_and_no_thread(self):
+        manager = MagicMock()
+        manager.start_task.return_value = {"success": True, "task_id": 9}
+        with patch("threading.Thread", side_effect=AssertionError("untracked thread")):
+            body, status = self.add_library(manager)
+        self.assertEqual((status, body["task_id"]), (201, 9))
+        self.assertEqual(manager.start_task.call_args.args[0], "library_measure")
+
+    def test_a_busy_slot_still_adds_the_library(self):
+        manager = MagicMock()
+        manager.start_task.return_value = {"success": False, "error": "busy"}
+        body, status = self.add_library(manager)
+        self.assertEqual(status, 201)
+        self.assertIn("first scan", body["message"])
+
+    def test_the_job_records_the_size_and_gives_the_slot_back(self):
+        (self.root / "sub").mkdir()
+        (self.root / "sub" / "a.bin").write_bytes(b"x" * 10)
+        body, _ = self.add_library(None)
+        manager = TaskManager(self.db)
+        task = self.conn.execute("INSERT INTO pipeline_tasks (task_type, status) VALUES ('library_measure', 'running')").lastrowid
+        self.conn.commit()
+        manager._begin(task)
+        manager._run_library_measure_worker(task, {"library_id": body["library"]["id"], "path": str(self.root / "sub")})
+        row = self.conn.execute("SELECT disk_bytes, total_files FROM external_libraries").fetchone()
+        self.assertEqual(tuple(row), (10, 1))
+        self.assertIsNone(manager.active_task_id)
+
+    def test_a_cancelled_measure_writes_nothing(self):
+        self.assertEqual(external_indexer.folder_totals(self.root, lambda: True), (0, 0))

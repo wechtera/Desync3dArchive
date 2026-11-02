@@ -2,12 +2,6 @@
 
 PRAGMA_ROW = "PRAGMA busy_timeout = 45000;"
 
-UPDATE_EXTERNAL_LIBRARIES_DISK_BYTES_BY_ID = """
-                UPDATE external_libraries
-                SET disk_bytes = ?, total_files = ?
-                WHERE id = ?;
-            """
-
 SELECT_APP_SETTINGS = "SELECT key, value FROM app_settings;"
 
 INSERT_APP_SETTINGS = """

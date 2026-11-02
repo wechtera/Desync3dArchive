@@ -504,6 +504,22 @@ class TaskManager:
         self._finalize_task(task_id, status, label, report)
         self._release(task_id)
 
+    def _run_library_measure_worker(self, task_id: int, params: dict[str, Any]):
+        from desync_archival.services.external_indexer import folder_totals
+
+        try:
+            files, size = folder_totals(Path(params["path"]), lambda: self._cancelled(task_id))
+            if self._cancelled(task_id):
+                self._finalize_task(task_id, jobs.CANCELLED, "Library size check cancelled", {})
+            else:
+                with self._get_db() as conn:
+                    conn.execute(queries.UPDATE_EXTERNAL_LIBRARIES_DISK_BYTES_BY_ID, (size, files, params["library_id"]))
+                self._finalize_task(task_id, jobs.COMPLETED, f"{files} files measured", {"files": files, "bytes": size})
+        except (OSError, sqlite3.Error) as e:
+            self._append_log(task_id, f"Measuring the library stopped: {e}")
+            self._finalize_task(task_id, jobs.FAILED, "Library size check failed", {})
+        self._release(task_id)
+
     def _inventory_library_pdfs(self, task_id: int, library_id: int) -> None:
         from desync_archival.services import documents
 
@@ -650,6 +666,7 @@ class TaskManager:
             "catalog_preview_backfill": (self._run_catalog_preview_worker, (task_id, task_params)),
             "path_realign": (self._run_path_realign_worker, (task_id, task_params)),
             "untracked_ingest": (self._run_untracked_ingest_worker, (task_id, task_params)),
+            "library_measure": (self._run_library_measure_worker, (task_id, task_params)),
         }
         if task_type not in workers:
             self._finalize_task(task_id, "failed", f"Unsupported task type: {task_type}", {})

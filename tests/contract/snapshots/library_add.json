@@ -22,8 +22,9 @@
         "total_files": 0,
         "total_models": 0
       },
-      "message": "Successfully registered in-place library 'Contract Library'. Disk usage calculation queued in background.",
-      "success": true
+      "message": "Registered in-place library 'Contract Library'. Measuring its size as a background task, and a scan can start once that finishes.",
+      "success": true,
+      "task_id": 29
     },
     "location": null,
     "status": 201
