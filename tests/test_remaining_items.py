@@ -4,6 +4,7 @@ Each test fails on the code before its fix. Class names carry the item, so
 `pytest tests/test_remaining_items.py -k E49` proves one on its own.
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -14,6 +15,7 @@ import threading
 import time
 import unittest
 import zipfile
+import zlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -39,6 +41,7 @@ from desync_archival.services import (
     duplicates,
     paths,
     pending_deletion,
+    reconciler,
 )
 from desync_archival.services import task_manager as task_service
 from desync_archival.services.archive_peeker import ArchivePeeker
@@ -68,11 +71,11 @@ class LinkedAuditE49Tests(TempDb):
         self.library.mkdir()
 
     def reconciler(self):
-        reconciler = object.__new__(VaultReconciler)
-        reconciler.db_path = self.db
-        reconciler.previews_root = self.root / "previews"
-        reconciler.storage = MagicMock()
-        return reconciler
+        audit = object.__new__(VaultReconciler)
+        audit.db_path = self.db
+        audit.previews_root = self.root / "previews"
+        audit.storage = MagicMock()
+        return audit
 
     def collection(self, source, folder, name):
         folder.mkdir(parents=True, exist_ok=True)
@@ -129,6 +132,16 @@ class LinkedAuditE49Tests(TempDb):
         self.audit("deep")
         row = self.conn.execute("SELECT sha256 FROM downloaded_files WHERE model_id = ?", (model,)).fetchone()
         self.assertTrue(row[0])
+
+    def test_a_deep_audit_hashes_a_zip_without_reading_it_a_second_time(self):
+        model = self.collection("mmf", self.vault / "m", "mmf")
+        (self.vault / "m" / "metadata.json").write_text("{}", encoding="utf-8")
+        with patch.object(reconciler, "compute_file_sha256", side_effect=AssertionError("read twice")):
+            report = self.audit("deep")
+        self.assertEqual(self.defects(report, model), [])
+        row = self.conn.execute("SELECT sha256 FROM downloaded_files WHERE model_id = ?", (model,)).fetchone()
+        path = self.vault / "m" / "pack.zip"
+        self.assertEqual(row[0], hashlib.sha256(path.read_bytes()).hexdigest())
 
     def test_a_missing_linked_file_is_still_reported(self):
         model = self.collection("external", self.library / "gone", "gone")
@@ -1261,3 +1274,67 @@ class PdfLookupP04Tests(TempDb):
     def test_a_file_that_is_not_a_pdf_has_no_key(self):
         with self.assertRaises(documents.DocumentUnavailable):
             documents._find(self.conn, "file-12")
+
+
+class ZipAuditOnePassP08Tests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.archive = Path(temp.name) / "a.zip"
+        with zipfile.ZipFile(self.archive, "w", zipfile.ZIP_DEFLATED) as handle:
+            for number in range(5):
+                handle.writestr(f"part{number}.stl", os.urandom(200_000))
+            handle.writestr("stored.txt", b"x" * 1000, compress_type=zipfile.ZIP_STORED)
+        self.expected = hashlib.sha256(self.archive.read_bytes()).hexdigest()
+
+    def test_the_digest_matches_after_a_crc_check(self):
+        with reconciler.HashingReader(self.archive) as reader:
+            with zipfile.ZipFile(reader, "r") as handle:
+                self.assertIsNone(handle.testzip())
+            self.assertEqual(reader.finish(), self.expected)
+
+    def test_the_file_is_read_about_once(self):
+        size = self.archive.stat().st_size
+        read = []
+
+        with reconciler.HashingReader(self.archive) as reader:
+            real = reader._file
+
+            class Counting:
+                def __getattr__(self, name):
+                    return getattr(real, name)
+
+                def read(self, count=-1):
+                    data = real.read(count)
+                    read.append(len(data))
+                    return data
+
+            reader._file = Counting()
+            with zipfile.ZipFile(reader, "r") as handle:
+                handle.testzip()
+            reader.finish()
+        self.assertLess(sum(read), size * 1.1)
+
+    def test_a_skipped_stretch_is_still_hashed_in_order(self):
+        with reconciler.HashingReader(self.archive) as reader:
+            reader.read(100)
+            reader.seek(5000)
+            reader.read(100)
+            reader.seek(50)
+            reader.read(200)
+            self.assertEqual(reader.finish(), self.expected)
+
+    def test_reading_nothing_still_hashes_everything(self):
+        with reconciler.HashingReader(self.archive) as reader:
+            self.assertEqual(reader.finish(), self.expected)
+
+    def test_a_damaged_member_still_fails_the_check(self):
+        data = bytearray(self.archive.read_bytes())
+        data[1000] ^= 0xFF
+        self.archive.write_bytes(bytes(data))
+        with reconciler.HashingReader(self.archive) as reader, zipfile.ZipFile(reader, "r") as handle:
+            try:
+                damaged = handle.testzip()
+            except (zipfile.BadZipFile, zlib.error):
+                damaged = "raised"
+        self.assertIsNotNone(damaged)

@@ -87,6 +87,48 @@ def validate_stl_file(file_path: Path) -> Tuple[bool, Optional[str]]:
         return False, f"STL validation error: {e}"
 
 
+class HashingReader:
+    """A file for zipfile that hashes what it reads, so a deep audit reads each archive once.
+
+    Members usually sit in order, so the CRC check walks almost the whole file. finish reads
+    whatever that skipped, so the digest always covers every byte in order.
+    """
+
+    def __init__(self, path: Path):
+        self._file = open(path, "rb")
+        self._digest = hashlib.sha256()
+        self._hashed = 0
+
+    def __enter__(self) -> "HashingReader":
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self._file.close()
+
+    def seekable(self) -> bool:
+        return True
+
+    def seek(self, offset: int, whence: int = 0) -> int:
+        return self._file.seek(offset, whence)
+
+    def tell(self) -> int:
+        return self._file.tell()
+
+    def read(self, size: int = -1) -> bytes:
+        start = self._file.tell()
+        data = self._file.read(size)
+        if start <= self._hashed < start + len(data):
+            self._digest.update(data[self._hashed - start:])
+            self._hashed = start + len(data)
+        return data
+
+    def finish(self) -> str:
+        self._file.seek(self._hashed)
+        while chunk := self._file.read(1024 * 1024):
+            self._digest.update(chunk)
+        return self._digest.hexdigest()
+
+
 def compute_file_sha256(file_path: Path, chunk_size: int = 1024 * 1024) -> str:
     hasher = hashlib.sha256()
     with open(file_path, "rb") as f:
@@ -406,18 +448,21 @@ class VaultReconciler:
                     # Linked libraries stay unhashed by design, and this would read all of them.
                     if scan_mode == "deep" and not defect_found and m["source"] not in pending_deletion.LINKED_SOURCES:
                         ext = file_path.suffix.lower()
+                        zip_sha = None
                         if ext == ".zip":
                             try:
-                                with zipfile.ZipFile(file_path, "r") as zf:
-                                    bad = zf.testzip()
-                                    if bad:
-                                        model_issues.append({
-                                            "file_id": file_id, "filename": filename, "expected_path": str(file_path),
-                                            "defect": "CORRUPT_ARCHIVE", "detail": f"CRC check failed on: {bad}",
-                                        })
-                                        defect_found = True
-                                        log(f"[CRC FAILED] Model #{model_id} zip corruption: {filename}")
-                                        log_layer("archive", logging.ERROR, f"Model #{model_id} ZIP CRC failed: {filename} ({bad})")
+                                with HashingReader(file_path) as reader:
+                                    with zipfile.ZipFile(reader, "r") as zf:
+                                        bad = zf.testzip()
+                                        if bad:
+                                            model_issues.append({
+                                                "file_id": file_id, "filename": filename, "expected_path": str(file_path),
+                                                "defect": "CORRUPT_ARCHIVE", "detail": f"CRC check failed on: {bad}",
+                                            })
+                                            defect_found = True
+                                            log(f"[CRC FAILED] Model #{model_id} zip corruption: {filename}")
+                                            log_layer("archive", logging.ERROR, f"Model #{model_id} ZIP CRC failed: {filename} ({bad})")
+                                    zip_sha = reader.finish()
                             except Exception as ze:
                                 model_issues.append({
                                     "file_id": file_id, "filename": filename, "expected_path": str(file_path),
@@ -437,7 +482,7 @@ class VaultReconciler:
 
                         if not defect_found:
                             try:
-                                cur_sha = compute_file_sha256(file_path)
+                                cur_sha = zip_sha or compute_file_sha256(file_path)
                                 if stored_sha256:
                                     if cur_sha != stored_sha256:
                                         model_issues.append({
