@@ -10,6 +10,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from db_helper import create_database
 
@@ -186,6 +187,29 @@ class TestStashRoutes(unittest.TestCase):
         resp, status = handle_post_export_stash(self.conn, stash_id=999)
         self.assertEqual(status, 404)
         self.assertIn("not found", resp["error"].lower())
+
+    def test_a_sync_export_is_refused_in_production(self):
+        manager = MagicMock()
+        with patch("desync_archival.settings.is_production", return_value=True), \
+                patch("desync_archival.api.routes.stashes.StashExporter") as exporter:
+            resp, status = handle_post_export_stash(self.conn, stash_id=1, body={"sync": True}, task_manager=manager)
+        self.assertEqual(status, 403)
+        self.assertIn("production", resp["error"])
+        exporter.assert_not_called()
+        manager.start_task.assert_not_called()
+
+    def test_a_normal_export_in_production_still_starts_its_task(self):
+        manager = MagicMock()
+        manager.start_task.return_value = {"success": True, "task_id": 7}
+        with patch("desync_archival.settings.is_production", return_value=True):
+            _, status = handle_post_export_stash(self.conn, stash_id=1, body={}, task_manager=manager)
+        self.assertEqual(status, 202)
+
+    def test_a_sync_export_still_works_outside_production(self):
+        manager = MagicMock()
+        _, status = handle_post_export_stash(self.conn, stash_id=1, body={"sync": True}, task_manager=manager)
+        self.assertEqual(status, 200)
+        manager.start_task.assert_not_called()
 
     def test_export_stash_background_with_task_manager(self):
         """When task_manager is passed, POST /api/stashes/1/export returns 202 Accepted."""

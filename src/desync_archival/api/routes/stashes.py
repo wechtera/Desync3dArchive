@@ -7,6 +7,7 @@ download validation guardrails, batch model additions, and background slicer mat
 import sqlite3
 from typing import Any, Dict, Optional, Tuple
 
+from desync_archival import settings as app_config
 from desync_archival.db.queries import stashes as queries
 from desync_archival.services.logger import logger
 
@@ -277,9 +278,13 @@ def handle_post_export_stash(
     if filter_mode not in ("all", "presupported", "unsupported"):
         filter_mode = "all"
 
+    # sync skips the task lock and the job row, so only the contract harness and tests may ask for it.
+    sync = bool(payload.get("sync", False))
+    if sync and app_config.is_production():
+        return {"error": "A synchronous export isn't available in production."}, 403
+
     # Background pipeline execution via TaskManager when available (live web server)
-    # FIXME(S-13): sync is client-controlled, so a request can run an export outside the task lock.
-    if task_manager is not None and not bool(payload.get("sync", False)):
+    if task_manager is not None and not sync:
         task_res = task_manager.start_task("stash_export", {
             "stash_id": stash_id,
             "stash_name": stash_name,
