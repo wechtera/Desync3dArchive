@@ -1,6 +1,7 @@
 import sqlite3
 from typing import Any, Optional
 
+from desync_archival.api.routing import paging
 from desync_archival.db.queries import downloads as queries
 from desync_archival.db.queries.downloader import LIVE_JOB_STATUSES
 from desync_archival.services import audit
@@ -33,8 +34,7 @@ def handle_get_downloads_history(
 ) -> tuple[dict[str, Any], int]:
     status = params.get("status", [""])[0].strip()
     sort = params.get("sort", ["enqueued_desc"])[0].strip()
-    limit = max(1, min(100, int(params.get("limit", [50])[0])))
-    offset = max(0, int(params.get("offset", [0])[0]))
+    limit, offset = paging(params, 50, 100)
 
     where_clause = " WHERE 1=1"
     args = []

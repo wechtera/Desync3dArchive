@@ -25,7 +25,7 @@ from test_fix_first import FILE_URL, DownloadCase
 
 from desync_archival import backup, external, migrations
 from desync_archival import settings as app_config
-from desync_archival.api import schemas, server
+from desync_archival.api import routing, schemas, server
 from desync_archival.api.routes import auth as auth_routes
 from desync_archival.api.routes import catalog as catalog_routes
 from desync_archival.api.routes import reconcile as reconcile_routes
@@ -1010,3 +1010,20 @@ class MalformedBodyWS7Tests(unittest.TestCase):
 
     def test_an_empty_body_still_means_no_options(self):
         self.assertEqual(server.parse_body(b""), {})
+
+
+class BadPagingWS7Tests(unittest.TestCase):
+    def test_a_word_for_limit_answers_400_on_every_paged_route(self):
+        create_database(server.DB_PATH)
+        client = TestClient(server.create_app(manage_workers=False), base_url="http://localhost")
+        for path in ("/api/releases", "/api/models", "/api/downloads/history"):
+            for query in ("limit=abc", "offset=abc"):
+                with self.subTest(path=path, query=query):
+                    response = client.get(f"{path}?{query}")
+                    self.assertEqual(response.status_code, 400, response.text)
+                    self.assertIn("whole numbers", response.json()["error"])
+
+    def test_numbers_are_held_to_range(self):
+        self.assertEqual(routing.paging({"limit": ["9999"], "offset": ["-5"]}, 24, 100), (100, 0))
+        self.assertEqual(routing.paging({"limit": ["0"]}, 24, 100), (1, 0))
+        self.assertEqual(routing.paging({}, 24, 100), (24, 0))

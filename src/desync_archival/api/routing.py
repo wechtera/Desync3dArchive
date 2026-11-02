@@ -27,6 +27,24 @@ class RouteContext:
     path: dict
 
 
+class BadParameter(ValueError):
+    """A query value a route can't use. It answers 400, so a typo isn't logged as a server fault."""
+
+
+def paging(params: dict, default: int, maximum: int) -> tuple[int, int]:
+    """Reads limit and offset, held to the ranges a query can use.
+
+    Raises:
+        BadParameter: Either one isn't a whole number.
+    """
+    try:
+        limit = int(params.get("limit", [default])[0])
+        offset = int(params.get("offset", [0])[0])
+    except ValueError:
+        raise BadParameter("limit and offset must be whole numbers") from None
+    return max(1, min(maximum, limit)), max(0, offset)
+
+
 def plain(handler: Callable) -> Callable:
     return lambda ctx: handler(ctx.conn, ctx.download_manager, ctx.body, ctx.params)
 
@@ -96,6 +114,8 @@ def run_call(call: Callable, body: dict, params: dict, path: dict, request: Requ
     try:
         context = RouteContext(conn, server.download_manager, server.task_manager, body, params, path)
         result = call(context)
+    except BadParameter as e:
+        result = ({"error": str(e)}, 400)
     except Exception:  # noqa: BLE001
         logger.exception(f"Unhandled error in {request.method} {request.url.path}")
         result = ({"error": GENERIC_ERROR}, 500)

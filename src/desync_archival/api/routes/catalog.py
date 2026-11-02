@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
 from desync_archival import settings as app_config
+from desync_archival.api.routing import paging
 from desync_archival.db.queries import catalog as queries
 from desync_archival.services.analytics import compute_catalog_audit
 from desync_archival.services.downloader import DownloadManager
@@ -125,8 +126,7 @@ def handle_get_releases(
 ) -> tuple[dict[str, Any], int]:
     designer = params.get("designer", [None])[0]
     bundles_only = params.get("bundles_only", ["0"])[0] == "1"
-    limit = max(1, min(100, int(params.get("limit", [24])[0])))
-    offset = max(0, int(params.get("offset", [0])[0]))
+    limit, offset = paging(params, 24, 100)
 
     where_clause = f" WHERE {VALID_RELEASE_R}"
     args = []
@@ -186,8 +186,7 @@ def handle_get_models(
     only_bonus = params.get("bonus", ["0"])[0] == "1"
     hide_completed = params.get("hide_completed", ["0"])[0] in ("1", "true", "True")
     sort = params.get("sort", [""])[0].strip()
-    limit = max(1, min(150, int(params.get("limit", [24])[0])))
-    offset = max(0, int(params.get("offset", [0])[0]))
+    limit, offset = paging(params, 24, 150)
 
     query = queries.SELECT_MODEL_FILES_BY_MODEL_ID.format(VALID_MODEL_M=VALID_MODEL_M)
     count_query = queries.COUNT_COLLECTIONS_BY_MODEL_ID.format(VALID_MODEL_M=VALID_MODEL_M)
