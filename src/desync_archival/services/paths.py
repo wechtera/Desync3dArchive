@@ -9,6 +9,12 @@ from pathlib import Path
 IMPORT_FOLDER = "ad-hoc"
 # Hidden on purpose, and fixed for the same reason.
 PENDING_DELETION_FOLDER = ".Pending-Deletion"
+# Whatever a slicer or a mesh tool opens. Exports and archive peeks go by this list.
+MODEL_EXTENSIONS = {".stl", ".obj", ".lys", ".ctb", ".ags", ".3mf", ".chitubox", ".prusa"}
+# Narrower on purpose until the owner decides (Q15). A library scan records these and archives, and
+# the resolver groups the second list. Widening either adds files to the catalog on the next scan.
+SCANNED_EXTENSIONS = {".stl", ".lys", ".ctb", ".chitubox", ".zip", ".rar", ".7z"}
+GROUPED_EXTENSIONS = (".stl", ".lys", ".ctb", ".chitubox", ".obj", ".3mf")
 # Past this a work folder is a crash's leftover. No import or export runs this long.
 LEFTOVER_AGE_SECONDS = 86400
 # Slicer projects only exist once supports are placed.
@@ -18,8 +24,26 @@ _UNSUPPORTED_WORDS = re.compile(r"(?:un|non?|not)[_\- ]?sup+ort", re.IGNORECASE)
 _SUPPORTED_WORDS = re.compile(r"sup+orted|with[_\- ]supports|support stls|lychee|readytoslice", re.IGNORECASE)
 
 
+def sanitize_folder_name(name: str) -> str:
+    """Keeps a name readable for an export folder, removing only what a filesystem refuses."""
+    if not name:
+        return "Unknown"
+    clean = re.sub(r'[\\/*?:"<>|]', "_", str(name)).strip()
+    clean = re.sub(r"\s+", " ", clean).rstrip(". ")
+    return clean or "Unknown"
+
+
+def sanitize_title(name: str) -> str:
+    """Turns a file name into a display title."""
+    if not name:
+        return "Untitled Model"
+    clean = re.sub(r"^[0-9]+[_\-\s]+", "", name)
+    clean = clean.replace("_", " ").strip()
+    return clean or name
+
+
 def sanitize_segment(name: str) -> str:
-    """Replaces spaces and special characters with single underscores."""
+    """Replaces spaces and special characters with single underscores. Vault paths are built from this."""
     if not name:
         return "unknown"
     clean = re.sub(r"[^a-zA-Z0-9_\-]+", "_", str(name))

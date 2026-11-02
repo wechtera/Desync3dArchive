@@ -33,6 +33,7 @@ from desync_archival.api.routes import catalog as catalog_routes
 from desync_archival.api.routes import reconcile as reconcile_routes
 from desync_archival.api.routes import settings as settings_routes
 from desync_archival.services import (
+    archive_peeker,
     auth_service,
     catalog_browse,
     catalog_levels,
@@ -43,6 +44,7 @@ from desync_archival.services import (
     paths,
     pending_deletion,
     reconciler,
+    stash_exporter,
 )
 from desync_archival.services import task_manager as task_service
 from desync_archival.services.archive_peeker import ArchivePeeker
@@ -1509,3 +1511,25 @@ class LocalGrowthP09Tests(unittest.TestCase):
         huge = self.cached("huge.pdf", 300, size=100)
         documents._trim_cache(huge)
         self.assertTrue(huge.exists())
+
+
+class NameRulesA04Tests(unittest.TestCase):
+    TABLE = (
+        ("sanitize_segment", "12_Hero: The King!.stl", "12_Hero_The_King_stl"),
+        ("sanitize_folder_name", "12_Hero: The  King!.stl", "12_Hero_ The King!.stl"),
+        ("sanitize_title", "12_Hero_The_King", "Hero The King"),
+        ("sanitize_segment", "", "unknown"),
+        ("sanitize_folder_name", "", "Unknown"),
+        ("sanitize_title", "", "Untitled Model"),
+        ("sanitize_folder_name", "name. ", "name"),
+    )
+
+    def test_each_rule_on_one_table(self):
+        for rule, text, expected in self.TABLE:
+            with self.subTest(rule=rule, text=text):
+                self.assertEqual(getattr(paths, rule)(text), expected)
+
+    def test_extension_lists_live_in_one_place(self):
+        self.assertIs(stash_exporter.MODEL_EXTENSIONS, paths.MODEL_EXTENSIONS)
+        self.assertIs(archive_peeker.MODEL_EXTENSIONS, paths.MODEL_EXTENSIONS)
+        self.assertIs(external_indexer.SUPPORTED_FILE_EXTENSIONS, paths.SCANNED_EXTENSIONS)

@@ -12,9 +12,9 @@ from difflib import SequenceMatcher
 from itertools import combinations, pairwise
 from statistics import median
 
-from desync_archival.services.paths import says_unsupported
+from desync_archival.services.paths import GROUPED_EXTENSIONS, says_unsupported
 
-PRINTABLE = (".stl", ".lys", ".ctb", ".chitubox", ".obj", ".3mf")
+PRINTABLE = GROUPED_EXTENSIONS
 ARCHIVE = (".zip", ".rar", ".7z")
 
 # Printing words, not library words. Learning covers the rest, but a small pile has too few

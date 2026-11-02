@@ -24,9 +24,8 @@ from desync_archival.db.queries import archive_peeker as queries
 from desync_archival.services import catalog_levels, paths
 from desync_archival.services.db import get_db_connection, scoped_connection
 from desync_archival.services.logger import log_layer
+from desync_archival.services.paths import MODEL_EXTENSIONS
 
-# Formats recognized as 3D printable models or slicer projects
-MODEL_EXTENSIONS = {".stl", ".obj", ".lys", ".ctb", ".ags", ".3mf", ".chitubox", ".prusa"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 # Folders indicating packaging/format layers that should be peeled off for grouping

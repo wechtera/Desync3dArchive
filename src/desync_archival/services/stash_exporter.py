@@ -12,7 +12,6 @@ Enforces:
 
 import json
 import logging
-import re
 import shutil
 import sqlite3
 import uuid
@@ -25,7 +24,12 @@ from desync_archival import external
 from desync_archival import settings as app_config
 from desync_archival.db.queries import stash_exporter as queries
 from desync_archival.services.db import get_db_connection
-from desync_archival.services.paths import is_supported, sweep_leftovers
+from desync_archival.services.paths import (
+    MODEL_EXTENSIONS,
+    is_supported,
+    sanitize_folder_name,
+    sweep_leftovers,
+)
 
 try:
     from desync_archival.services.logger import log_layer, logger
@@ -35,16 +39,6 @@ except ImportError:
 
 DEFAULT_STASH_EXPORT_PATH = Path.home() / "Downloads" / "DESYNC_Print_Queue"
 PARTIAL_SUFFIX = ".partial"
-MODEL_EXTENSIONS = {".stl", ".obj", ".lys", ".ctb", ".ags", ".3mf", ".chitubox", ".prusa"}
-
-
-def sanitize_folder_name(name: str) -> str:
-    """Sanitizes directory names across macOS, Linux, and Windows."""
-    if not name:
-        return "Unknown"
-    clean = re.sub(r'[\\/*?:"<>|]', "_", str(name)).strip()
-    clean = re.sub(r"\s+", " ", clean).rstrip(". ")
-    return clean or "Unknown"
 
 
 def free_path(path: Path) -> Path:

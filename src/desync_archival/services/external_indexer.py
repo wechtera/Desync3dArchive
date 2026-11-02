@@ -40,7 +40,7 @@ except ImportError:
     def log_layer(layer, level, msg, **kwargs): pass
     logger = logging.getLogger("vault")
 
-SUPPORTED_FILE_EXTENSIONS = {".stl", ".lys", ".ctb", ".chitubox", ".zip", ".rar", ".7z"}
+SUPPORTED_FILE_EXTENSIONS = paths.SCANNED_EXTENSIONS
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
@@ -149,14 +149,6 @@ def folder_totals(path: Path, cancelled: Callable[[], bool] = lambda: False) -> 
 # Library ID is in the key because two libraries can have the same folder name.
 def key_for(library_id: int, rel_path: str) -> str:
     return f"{library_id}/{rel_path}"
-
-
-def sanitize_title(name: str) -> str:
-    if not name:
-        return "Untitled Model"
-    clean = re.sub(r"^[0-9]+[_\-\s]+", "", name)
-    clean = clean.replace("_", " ").strip()
-    return clean or name
 
 
 def deactivate_library(conn: sqlite3.Connection, library_id: int) -> list[int]:
@@ -418,7 +410,7 @@ class ExternalLibraryIndexer:
             catalog_levels.sync_loose_artifacts(conn, model_id, name, root, found)
 
             if changed or files_changed:
-                tags = {default_creator.lower(), sanitize_title(release_name).lower(), category.lower(), "external"}
+                tags = {default_creator.lower(), paths.sanitize_title(release_name).lower(), category.lower(), "external"}
                 tags.add("pre-supported" if has_presupported else "unsupported")
                 tags.update(scales)
                 if category == "Busts":
