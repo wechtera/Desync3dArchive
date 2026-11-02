@@ -69,7 +69,10 @@ def add_route(
     async def endpoint(request: Request) -> Response:
         from desync_archival.api import server
 
-        body = server.parse_body(await request.body()) if request.method != "GET" else {}
+        try:
+            body = server.parse_body(await request.body()) if request.method != "GET" else {}
+        except ValueError:
+            return JSONResponse({"error": "Request body isn't valid JSON"}, 400)
         if not isinstance(body, dict):
             return JSONResponse({"error": "Request body must be a JSON object"}, 400)
         if model is not None and request.method != "GET":

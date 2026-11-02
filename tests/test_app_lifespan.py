@@ -156,10 +156,11 @@ class ResponseTests(unittest.TestCase):
         client = self.respond_with(({"auth_url": "https://a.example/c"}, 302))
         self.assertEqual(client.get("/api/test-route").headers["location"], "https://a.example/c")
 
-    def test_invalid_json_body_becomes_empty_dict(self):
+    def test_invalid_json_body_is_refused(self):
         client = self.respond_with(({}, 200))
-        client.post("/api/test-route", content=b"{not json", headers={"Content-Type": "application/json"})
-        self.assertEqual(self.call.call_args.args[0].body, {})
+        response = client.post("/api/test-route", content=b"{not json", headers={"Content-Type": "application/json"})
+        self.assertEqual(response.status_code, 400)
+        self.call.assert_not_called()
 
     def test_route_exception_returns_generic_500(self):
         client = TestClient(app_with_route(MagicMock(side_effect=ValueError("boom"))), base_url="http://localhost")

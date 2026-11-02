@@ -273,13 +273,14 @@ def build_response(data: Any, status: int = 200, extra_headers: dict | None = No
 
 
 def parse_body(body_bytes: bytes) -> Any:
-    """Decodes a JSON body. Malformed input becomes an empty dict, so handlers treat it as no options."""
+    """Decodes a JSON body. An empty body means no options.
+
+    Raises:
+        ValueError: The body isn't JSON. A broken request must not run with the defaults.
+    """
     if not body_bytes:
         return {}
-    try:
-        return json.loads(body_bytes.decode("utf-8"))
-    except Exception:
-        return {}
+    return json.loads(body_bytes.decode("utf-8"))
 
 
 def serve_preview(rel_path: str) -> Response:

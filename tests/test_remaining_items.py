@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from db_helper import create_database
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from test_fix_first import FILE_URL, DownloadCase
 
@@ -990,3 +991,22 @@ class RenderSlotsS16Tests(unittest.TestCase):
         self.renderer.return_value.render_ephemeral.side_effect = RuntimeError("blender crashed")
         for _ in range(3):
             self.assertEqual(self.render()[1], 500)
+
+
+class MalformedBodyWS7Tests(unittest.TestCase):
+    def test_broken_json_is_refused_and_not_run_with_defaults(self):
+        client = TestClient(server.create_app(manage_workers=False), base_url="http://localhost")
+        with patch.object(reconcile_routes, "_get_managers") as managers:
+            response = client.post(
+                "/api/reconcile/scan", content=b'{"scan_mode": "deep"', headers={"Content-Type": "application/json"},
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("valid JSON", response.json()["error"])
+        managers.assert_not_called()
+
+    def test_bytes_that_are_not_text_are_refused(self):
+        with self.assertRaises(ValueError):
+            server.parse_body(b"\xff\xfe")
+
+    def test_an_empty_body_still_means_no_options(self):
+        self.assertEqual(server.parse_body(b""), {})
