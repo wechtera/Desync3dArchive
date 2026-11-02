@@ -1274,6 +1274,15 @@ class PdfLookupP04Tests(TempDb):
             with self.subTest(key), self.assertRaises(documents.DocumentUnavailable):
                 documents._find(self.conn, key)
 
+    def test_a_kind_is_only_worked_out_once(self):
+        documents._kind.cache_clear()
+        list(documents._rows(self.conn))
+        first = documents._kind.cache_info()
+        list(documents._rows(self.conn))
+        second = documents._kind.cache_info()
+        self.assertEqual(second.misses, first.misses)
+        self.assertGreater(second.hits, first.hits)
+
     def test_a_file_that_is_not_a_pdf_has_no_key(self):
         with self.assertRaises(documents.DocumentUnavailable):
             documents._find(self.conn, "file-12")

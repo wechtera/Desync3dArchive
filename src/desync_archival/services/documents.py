@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 from collections import Counter
 from collections.abc import Callable, Iterator
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ PAGE_SIZE = 48
 PREVIEW_FOLDER = "documents"
 CACHE_FOLDER = "document_cache"
 CACHE_LIMIT_BYTES = 1024**3
+KIND_CACHE_SIZE = 50_000
 ON_DISK = "on_disk"
 IN_ARCHIVE = "in_archive"
 NOT_DOWNLOADED = "not_downloaded"
@@ -63,6 +65,9 @@ def _preview_dir() -> Path:
     return app_config.previews_dir() / PREVIEW_FOLDER
 
 
+# Every page classifies every PDF, and the answer only depends on the text. Stored kinds would need
+# a migration for no visible gain, so this waits until E36 grows the list (Q17).
+@lru_cache(maxsize=KIND_CACHE_SIZE)
 def _kind(text: str) -> str:
     lowered = text.lower()
     return next((kind for kind, words in KINDS if re.search(words, lowered)), OTHER)
