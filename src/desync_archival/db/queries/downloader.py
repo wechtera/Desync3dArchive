@@ -81,7 +81,7 @@ UPDATE_MODEL_FILES_DOWNLOAD_URL_BY_SOURCE = """
 
 SELECT_MODEL_FILES_BY_MODEL_ID = """
                 SELECT mf.file_id, mf.filename, mf.download_url, mf.size_bytes
-                FROM model_files mf WHERE mf.model_id = ?;
+                FROM model_files mf WHERE mf.model_id = ? ORDER BY mf.file_id;
             """
 
 SELECT_COLLECTIONS_BY_ID = "SELECT name, archive_download_url FROM collections WHERE id = ?;"
@@ -95,7 +95,7 @@ INSERT_MODEL_FILES = """
 
 SELECT_MODEL_FILES_BY_MODEL_ID_V2 = """
                         SELECT mf.file_id, mf.filename, mf.download_url, mf.size_bytes
-                        FROM model_files mf WHERE mf.model_id = ?;
+                        FROM model_files mf WHERE mf.model_id = ? ORDER BY mf.file_id;
                     """
 
 INSERT_DOWNLOAD_AUDIT_LOG_V7 = """

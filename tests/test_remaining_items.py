@@ -19,13 +19,14 @@ from unittest.mock import MagicMock, patch
 
 from db_helper import create_database
 from pydantic import ValidationError
+from test_fix_first import FILE_URL, DownloadCase
 
 from desync_archival import backup, external, migrations
 from desync_archival import settings as app_config
 from desync_archival.api import schemas, server
 from desync_archival.api.routes import reconcile as reconcile_routes
 from desync_archival.api.routes import settings as settings_routes
-from desync_archival.services import auth_service, pending_deletion
+from desync_archival.services import auth_service, paths, pending_deletion
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
 
@@ -530,3 +531,55 @@ class BackupPathsS11Tests(unittest.TestCase):
             app_config.save_backup_paths("/new", "")
         self.assertEqual(json.loads(app_config.backup_paths_file().read_text(encoding="utf-8"))["backup_dir"], "/old")
         self.assertEqual([p.name for p in self.data.iterdir()], ["backup_paths.json"])
+
+
+class UnsafeFilenamesS05Tests(DownloadCase):
+    def name_it(self, filename):
+        with self.conn:
+            self.conn.execute("UPDATE model_files SET filename = ? WHERE file_id = 9", (filename,))
+
+    def staged_names(self):
+        return sorted(p.name for p in (self.work / "staged" / "5").iterdir())
+
+    def test_a_climbing_name_stays_in_its_folder(self):
+        self.name_it("../../../etc/evil.stl")
+        self.stage()
+        self.assertEqual(self.staged_names(), ["evil.stl"])
+
+    def test_an_absolute_name_stays_in_its_folder(self):
+        self.name_it("/etc/evil.stl")
+        self.stage()
+        self.assertEqual(self.staged_names(), ["evil.stl"])
+
+    def test_a_windows_path_is_reduced_too(self):
+        self.name_it("..\\..\\evil.stl")
+        self.stage()
+        self.assertEqual(self.staged_names(), ["evil.stl"])
+
+    def test_a_name_with_nothing_left_is_refused(self):
+        self.name_it("../..")
+        with self.assertRaises(ValueError):
+            self.stage()
+
+    def test_two_files_cleaning_to_one_name_both_survive(self):
+        self.name_it("12_a.stl")
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO model_files (file_id, model_id, filename, size_bytes, download_url, source, external_key)"
+                " VALUES (10, 5, '34_a.stl', 1000, ?, 'mmf', '10')", (FILE_URL,),
+            )
+        self.stage()
+        self.assertEqual(self.staged_names(), ["a.stl", "a_10.stl"])
+        rows = self.conn.execute("SELECT cleaned_filename FROM downloaded_files ORDER BY file_id").fetchall()
+        self.assertEqual([r[0] for r in rows], ["a.stl", "a_10.stl"])
+
+    def test_names_differing_only_in_case_count_as_the_same(self):
+        self.assertEqual(paths.distinct_filename("A.stl", 2, {"a.stl"}), "A_2.stl")
+
+    def test_a_suffixed_name_can_not_land_on_a_third_file(self):
+        self.assertEqual(paths.distinct_filename("a.stl", 2, {"a.stl", "a_2.stl"}), "a_2_2.stl")
+
+    def test_a_name_that_is_only_a_number_keeps_its_name(self):
+        self.name_it("12_.stl")
+        self.stage()
+        self.assertEqual(self.staged_names(), ["12_.stl"])

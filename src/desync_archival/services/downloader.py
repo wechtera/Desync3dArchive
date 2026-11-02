@@ -28,7 +28,7 @@ from desync_archival.db.queries import downloader as queries
 from desync_archival.services import auth_service, identity, secret_store
 from desync_archival.services.db import scoped_connection
 from desync_archival.services.logger import job_logged, log_layer, logger
-from desync_archival.services.paths import sanitize_segment
+from desync_archival.services.paths import distinct_filename, sanitize_segment, stored_filename
 
 try:
     from .archive_peeker import ArchivePeeker
@@ -779,6 +779,7 @@ class DownloadManager:
         total_bytes = sum(f["size_bytes"] or 0 for f in files)
         downloaded_bytes_acc = 0
         staged_files_info = []
+        taken_names: set[str] = set()
 
         # NOTE: the one disguised MMF request left, kept by the owner's decision on 2026-11-01. File bytes
         # sit on the website behind a Cloudflare challenge, which a plain client with a valid token
@@ -798,9 +799,8 @@ class DownloadManager:
                 if not dl_url:
                     raise RuntimeError(f"No valid download URL available for file #{file_id} ('{filename}')")
 
-                cleaned_name = re.sub(r"^[0-9]+[_\-\s]+", "", filename)
+                cleaned_name = distinct_filename(stored_filename(filename), file_id, taken_names)
                 part_path = in_flight_dir / f"{model_id}_{file_id}.part"
-                # FIXME(S-05): filename comes from MMF unsanitized, and two files can clean to the same name.
                 staged_path = staged_model_dir / cleaned_name
 
                 with self._lock:
