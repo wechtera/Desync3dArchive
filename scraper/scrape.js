@@ -45,6 +45,7 @@ async function isLoginPage(page) {
   }
   if (!fs.existsSync(cookiesPath)) {
     console.error('cookies.json not found.');
+    process.exitCode = 1;
     return;
   }
 
@@ -233,6 +234,12 @@ async function isLoginPage(page) {
         break;
       }
     }
+  }
+
+  // No library is empty, so this is a page that didn't load, and saving it would look like a clean scrape.
+  if (models.size === 0) {
+    await browser.close();
+    return stop('The scrape found no models, so nothing was saved. Check the session cookies and try again.');
   }
 
   // Save outputs

@@ -96,6 +96,7 @@ class ScraperArgumentTests(unittest.TestCase):
     def test_missing_cookies_file_stops_before_launching_a_browser(self):
         result, created = self._run("--cookies", "/nonexistent/cookies.json")
         self.assertIn("cookies.json not found", result.stderr)
+        self.assertEqual(result.returncode, 1)
         self.assertEqual(created, [])
 
 

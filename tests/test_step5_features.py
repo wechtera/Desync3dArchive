@@ -101,6 +101,11 @@ class ScrapeEventTests(TempDb):
         self.assertEqual(manager._scrape_error, "login needed")
         self.assertIn("login needed", self.task(task_id)[3])
 
+    def test_a_scrape_with_no_models_stops_before_saving(self):
+        source = (REPO_ROOT / "scraper" / "scrape.js").read_text(encoding="utf-8")
+        self.assertLess(source.index("models.size === 0"), source.index("writeFileSync('model_ids.txt'"))
+        self.assertIn("process.exitCode = 1", source[source.index("function stop"):source.index("function normalizeId")])
+
     def test_scraper_marks_cookies_secure_and_can_run_headless(self):
         source = (REPO_ROOT / "scraper" / "scrape.js").read_text(encoding="utf-8")
         self.assertIn("secure: true", source)
