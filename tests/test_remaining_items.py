@@ -4,6 +4,7 @@ Each test fails on the code before its fix. Class names carry the item, so
 `pytest tests/test_remaining_items.py -k E49` proves one on its own.
 """
 
+import json
 import logging
 import os
 import sqlite3
@@ -17,10 +18,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from db_helper import create_database
+from pydantic import ValidationError
 
-from desync_archival import backup, migrations
+from desync_archival import backup, external, migrations
 from desync_archival import settings as app_config
+from desync_archival.api import schemas, server
 from desync_archival.api.routes import reconcile as reconcile_routes
+from desync_archival.api.routes import settings as settings_routes
 from desync_archival.services import auth_service, pending_deletion
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
@@ -402,3 +406,90 @@ class UntrackedRouteS06Tests(unittest.TestCase):
     def test_a_busy_job_slot_is_reported(self):
         self.tasks.start_task.return_value = {"success": False, "error": "busy"}
         self.assertEqual(self.post()[1], 409)
+
+
+class SecondProcessR19Tests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        env = patch.dict(os.environ, {"DESYNC_DATA_DIR": temp.name})
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(server.release_instance_lock)
+
+    def test_a_second_copy_stops_before_it_touches_any_job(self):
+        server.take_instance_lock()
+        first = server._instance_lock
+        server._instance_lock = None
+        with self.assertRaises(app_config.SettingsError) as caught:
+            server.take_instance_lock()
+        server._instance_lock = first
+        self.assertIn("already running", str(caught.exception))
+
+    def test_the_lock_comes_back_when_the_first_copy_ends(self):
+        server.take_instance_lock()
+        server.release_instance_lock()
+        server.take_instance_lock()
+
+    def test_it_runs_before_anything_else_in_main(self):
+        with patch.object(server, "take_instance_lock", side_effect=app_config.SettingsError("stop")), \
+                patch.object(server, "check_network_ready") as ready, patch.object(server.uvicorn, "run") as run, \
+                self.assertRaises(app_config.SettingsError):
+            server.main()
+        ready.assert_not_called()
+        run.assert_not_called()
+
+
+class AppEnvS14Tests(unittest.TestCase):
+    def test_only_the_three_known_values_pass(self):
+        for value in ("production", "development", "test"):
+            with patch.dict(os.environ, {"APP_ENV": value}):
+                self.assertEqual(app_config.app_env(), value)
+
+    def test_a_near_miss_is_refused(self):
+        for value in ("dev", "prod", "Development", "staging"):
+            with patch.dict(os.environ, {"APP_ENV": value}), self.assertRaises(app_config.SettingsError) as caught:
+                app_config.app_env()
+            self.assertIn("development", str(caught.exception))
+
+
+class SettingsKeysWS3Tests(TempDb):
+    def test_keys_only_the_app_writes_are_refused(self):
+        for key in ("last_backup_epoch", "circuit_breaker_tripped", "sync_stage", "mmf_token_expires_at", "last_anything"):
+            with self.assertRaises(ValidationError):
+                schemas.SettingsBody.model_validate({key: "1"})
+
+    def test_ordinary_settings_still_pass(self):
+        body = schemas.SettingsBody.model_validate({"worker_concurrency": 2, "scraper_headless": "1", "custom": "x"})
+        self.assertEqual(body.model_dump(exclude_unset=True)["custom"], "x")
+
+    def test_a_new_secret_cant_leak_through_the_settings_route(self):
+        with self.conn:
+            self.conn.execute("INSERT INTO app_settings (key, value) VALUES ('brand_new_api_secret', 'hunter2')")
+        data, status = settings_routes.handle_get_settings(self.conn)
+        self.assertEqual(status, 200)
+        self.assertNotIn("brand_new_api_secret", data)
+        self.assertNotIn("hunter2", json.dumps(data))
+
+    def test_listed_settings_and_secret_flags_still_come_back(self):
+        with self.conn:
+            auth_service.set_settings(self.conn, {"worker_concurrency": "3", "mmf_client_id": "abc"})
+        data, _ = settings_routes.handle_get_settings(self.conn)
+        self.assertEqual((data["worker_concurrency"], data["mmf_client_id"]), ("3", "abc"))
+        self.assertIn("mmf_access_token", data["secrets_configured"])
+        self.assertNotIn("mmf_access_token", data)
+
+
+class ToolLookupWS3Tests(unittest.TestCase):
+    def test_an_explicit_setting_beats_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            chosen = Path(folder) / "my-unrar"
+            chosen.write_text("#!/bin/sh\n", encoding="utf-8")
+            chosen.chmod(0o755)
+            with patch.dict(os.environ, {"DESYNC_UNRAR_BIN": str(chosen)}), \
+                    patch("desync_archival.external.shutil.which", return_value="/usr/bin/true"):
+                self.assertEqual(external.find_unrar(), str(chosen))
+
+    def test_a_bad_setting_falls_back(self):
+        with patch.dict(os.environ, {"DESYNC_UNRAR_BIN": "/nowhere/unrar"}):
+            self.assertNotEqual(external.find_unrar(), "/nowhere/unrar")

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class RequestBody(BaseModel):
@@ -77,10 +77,26 @@ class StorageConfigBody(RequestBody):
     work_path: str | None = None
 
 
+# Settings the app keeps for itself. A client overwriting these could fake a recent backup or clear
+# the circuit breaker.
+APP_ONLY_SETTINGS = frozenset({
+    "circuit_breaker_reason", "circuit_breaker_tripped", "cookies_saved_at", "mmf_oauth_state",
+    "mmf_token_expires_at", "mmf_user_id", "mmf_username",
+})
+APP_ONLY_PREFIXES = ("last_", "sync_")
+
+
 class SettingsBody(BaseModel):
     """Settings are open key-value pairs, with the path fields typed."""
 
     model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="after")
+    def refuse_app_only_keys(self) -> "SettingsBody":
+        refused = [key for key in self.model_extra or {} if key in APP_ONLY_SETTINGS or key.startswith(APP_ONLY_PREFIXES)]
+        if refused:
+            raise ValueError(f"Only the app can change {', '.join(sorted(refused))}")
+        return self
 
     download_root_path: str | None = None
     download_work_path: str | None = None

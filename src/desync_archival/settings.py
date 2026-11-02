@@ -12,6 +12,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PRODUCTION = "production"
+KNOWN_ENVIRONMENTS = (PRODUCTION, "development", "test")
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
 DEFAULT_ALLOWED_HOSTS = ("localhost", "127.0.0.1", "::1")
@@ -58,6 +59,9 @@ def app_env() -> str:
     value = os.environ.get("APP_ENV", "").strip()
     if not value:
         raise SettingsError("APP_ENV is required. See .env.example.")
+    # A near miss like `dev` would otherwise skip the protected path guard without a word.
+    if value not in KNOWN_ENVIRONMENTS:
+        raise SettingsError(f"APP_ENV must be one of {', '.join(KNOWN_ENVIRONMENTS)}, not {value}.")
     return value
 
 
@@ -197,7 +201,6 @@ def data_dir() -> Path:
     """
     path = _raw_data_dir()
     check_path(path)
-    # FIXME(S-14): any other non-production value, such as dev or test, skips this requirement.
     if app_env() == "development" and not os.environ.get("DESYNC_PROTECTED_PATHS", "").strip():
         raise SettingsError("DESYNC_PROTECTED_PATHS is required in development. See .env.example.")
     return path

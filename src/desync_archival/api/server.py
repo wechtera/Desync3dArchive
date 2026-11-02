@@ -3,6 +3,7 @@ api/server.py - FastAPI app: one catch-all /api route, static assets and preview
 Supports both 2-tuple JSON responses and 3-tuple binary image streams.
 """
 
+import fcntl
 import json
 import logging
 import mimetypes
@@ -14,7 +15,7 @@ import urllib.parse
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, TextIO
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -51,6 +52,7 @@ SVG_PLACEHOLDER = (
 download_manager: DownloadManager | None = None
 task_manager: TaskManager | None = None
 schedule_stop = threading.Event()
+_instance_lock: TextIO | None = None
 
 
 def get_db() -> sqlite3.Connection:
@@ -308,7 +310,6 @@ def serve_document(key: str) -> Response:
     return FileResponse(path, media_type="application/pdf", content_disposition_type="inline", filename=path.name)
 
 
-# FIXME(R-19): this runs before uvicorn binds the port, so a second process resets live jobs and starts workers.
 def start_managers() -> None:
     global download_manager, task_manager
     logger.info("[Server] Initializing database schema")
@@ -444,7 +445,37 @@ def check_network_ready(host: str) -> None:
         raise app_config.SettingsError(f"Refusing to bind to {host} without DESYNC_TLS_CERT and DESYNC_TLS_KEY files.")
 
 
+def take_instance_lock() -> None:
+    """Refuses a second copy on one data folder.
+
+    Startup runs before uvicorn binds the port, so without this a second copy marks live jobs as
+    interrupted and starts its own workers, and only then fails on the port. It lives here and not
+    in startup because tests start the app many times in one process.
+
+    Raises:
+        SettingsError: Another copy holds the lock.
+    """
+    global _instance_lock
+    folder = app_config.data_dir()
+    folder.mkdir(parents=True, exist_ok=True)
+    handle = open(folder / "app.lock", "w", encoding="utf-8")  # noqa: SIM115 - held until the process ends
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        raise app_config.SettingsError(f"The app is already running on {folder}.") from None
+    _instance_lock = handle
+
+
+def release_instance_lock() -> None:
+    global _instance_lock
+    if _instance_lock:
+        _instance_lock.close()
+        _instance_lock = None
+
+
 def main() -> None:
+    take_instance_lock()
     host, port = app_config.host(), app_config.port()
     check_network_ready(host)
     tls = app_config.tls_files()

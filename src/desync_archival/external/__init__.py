@@ -71,11 +71,10 @@ class ArchiveMember:
 
 
 def _find(names: tuple[str, ...], setting: str) -> str | None:
-    """Looks in tools/ symlinks, then PATH, then a setting, then common install folders."""
-    candidates = [TOOLS_DIR / name for name in names]
+    """Looks at a setting first, because it's an explicit choice, then tools/ symlinks, PATH and common folders."""
+    candidates = [Path(os.environ[setting])] if os.environ.get(setting) else []
+    candidates += [TOOLS_DIR / name for name in names]
     candidates += [Path(found) for name in names if (found := shutil.which(name))]
-    if os.environ.get(setting):
-        candidates.append(Path(os.environ[setting]))
     candidates += [Path(folder) / name for folder in SYSTEM_DIRS for name in names]
     for candidate in candidates:
         if candidate.is_file() and os.access(candidate, os.X_OK):

@@ -202,6 +202,15 @@ def _merge_cookies(existing_json: str, updates: dict[str, str]) -> str:
     return json.dumps(cookies)
 
 
+PUBLIC_SETTINGS = frozenset({
+    "batch_cooldown_seconds", "batch_size", "circuit_breaker_reason", "circuit_breaker_tripped",
+    "download_root_path", "download_work_path", "last_backup_at", "last_backup_result", "log_layers", "log_level",
+    "metadata_backup_path", "mmf_client_id", "mmf_user_id", "mmf_username", "offload_chunk_size_mb",
+    "offloader_concurrency", "scraper_headless", "stash_download_path", "stream_chunk_size_mb",
+    "worker_concurrency",
+})
+
+
 def handle_get_settings(
     conn: sqlite3.Connection,
     download_manager: Any = None,
@@ -220,12 +229,13 @@ def handle_get_settings(
     if not settings.get("stash_download_path"):
         settings["stash_download_path"] = DEFAULT_STASH_EXPORT_PATH
 
-    # Secrets stay on the server. The UI only learns whether each one is set.
-    configured = {key: bool(settings.pop(key, "")) for key in auth_service.SECRET_SETTING_KEYS}
-    settings.pop("mmf_token_expires_at", None)
-    settings["secrets_configured"] = configured
+    # Only listed keys go out, so a secret added later stays on the server until someone chooses
+    # otherwise. The UI only learns whether each known secret is set.
+    configured = {key: bool(settings.get(key, "")) for key in auth_service.SECRET_SETTING_KEYS}
+    public = {key: value for key, value in settings.items() if key in PUBLIC_SETTINGS}
+    public["secrets_configured"] = configured
 
-    return settings, 200
+    return public, 200
 
 
 def handle_post_settings(
