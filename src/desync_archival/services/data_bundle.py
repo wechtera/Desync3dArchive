@@ -16,6 +16,7 @@ from typing import Any
 
 from desync_archival import backup
 from desync_archival import settings as app_config
+from desync_archival.db.connection import connect
 from desync_archival.db.queries import data_bundle as queries
 from desync_archival.services.logger import logger
 
@@ -46,7 +47,7 @@ class BundleError(RuntimeError):
 
 def stored_roots(db_path: Path) -> dict[str, list[str]]:
     """Lists stored path prefixes, so the operator knows what --map has to cover."""
-    conn = sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True)
+    conn = connect(db_path, readonly=True)
     try:
         marks = ",".join("?" * len(PATH_SETTINGS))
         return {
@@ -136,7 +137,7 @@ def _unpack(bundle: Path, staging: Path, path_map: dict[str, str]) -> int:
         if (bundle / name).is_file():
             with tarfile.open(bundle / name) as archive:
                 archive.extractall(staging, filter="data")
-    conn = sqlite3.connect(staging / DATABASE)
+    conn = connect(staging / DATABASE)
     try:
         # Longest first, or /Volumes/STL would take the paths /Volumes/STL/Loot was meant to move.
         ordered = sorted(path_map.items(), key=lambda pair: len(pair[0].rstrip("/")), reverse=True)

@@ -22,7 +22,7 @@ from desync_archival import external
 from desync_archival import settings as app_config
 from desync_archival.db.queries import archive_peeker as queries
 from desync_archival.services import catalog_levels, paths
-from desync_archival.services.db import scoped_connection
+from desync_archival.services.db import get_db_connection, scoped_connection
 from desync_archival.services.logger import log_layer
 
 # Formats recognized as 3D printable models or slicer projects
@@ -732,8 +732,7 @@ class ArchivePeeker:
 
 def repeek_files(db_path: Path, file_ids: set[int]) -> dict[str, int]:
     """Peeks chosen archives again. Rows update in place, so nothing is lost."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = get_db_connection(db_path)
     marks = ",".join("?" * len(file_ids))
     rows = conn.execute(
         f"SELECT file_id, model_id, vault_path FROM downloaded_files WHERE file_id IN ({marks});", sorted(file_ids)

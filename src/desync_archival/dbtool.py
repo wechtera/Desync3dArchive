@@ -3,11 +3,11 @@
 import argparse
 import getpass
 import socket
-import sqlite3
 import sys
 from pathlib import Path
 
 from desync_archival import backup, migrations, settings
+from desync_archival.db.connection import connect
 from desync_archival.services import (
     analytics,
     archive_peeker,
@@ -17,6 +17,7 @@ from desync_archival.services import (
     secret_store,
     tags,
 )
+from desync_archival.services.db import get_db_connection
 
 
 def set_password() -> int:
@@ -38,7 +39,7 @@ def set_password() -> int:
 
 def move_secrets(args: argparse.Namespace) -> int:
     """Runs export-secrets or blank-secrets. Blanking is a dry run without --confirm."""
-    conn = sqlite3.connect(settings.db_path())
+    conn = connect(settings.db_path())
     try:
         if args.command == "export-secrets":
             print(f"copied to {settings.secrets_file()}: {secret_store.export_from_database(conn)}")
@@ -111,7 +112,7 @@ def main() -> int:
     db_path = settings.db_path()
     try:
         if args.command == "status":
-            conn = sqlite3.connect(f"{db_path.as_uri()}?mode=ro", uri=True)
+            conn = connect(db_path, readonly=True)
             version = migrations.current_version(conn)
             conn.close()
             print(f"schema version {version}, latest {migrations.latest_version()}")
@@ -124,9 +125,8 @@ def main() -> int:
                 raise migrations.MigrationError("Refusing to build models in production without --confirm-production")
             refuse_if_app_running()
             print(f"backup written: {backup.create_backup(db_path)}")
-            conn = sqlite3.connect(db_path)
-            # Off by default in SQLite, and a rebuild deletes rows that others hang from.
-            conn.execute("PRAGMA foreign_keys = ON;")
+            # Foreign keys are on through this, and a rebuild deletes rows that others hang from.
+            conn = get_db_connection(db_path)
             try:
                 print(catalog_levels.rebuild_unreviewed(conn) if args.rebuild else catalog_levels.build_archive_models(conn))
                 print(f"orphan links cleared: {catalog_levels.clean_orphan_links(conn)}")
@@ -151,8 +151,7 @@ def main() -> int:
                 raise migrations.MigrationError("Refusing to rebuild releases in production without --confirm-production")
             refuse_if_app_running()
             print(f"backup written: {backup.create_backup(db_path)}")
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
+            conn = get_db_connection(db_path)
             try:
                 analytics.run_startup_analytics(conn)
                 print(dict(conn.execute("SELECT COUNT(*) AS releases, SUM(total_files) AS files FROM releases").fetchone()))
@@ -163,7 +162,7 @@ def main() -> int:
                 raise migrations.MigrationError("Refusing to clean tags in production without --confirm-production")
             refuse_if_app_running()
             print(f"backup written: {backup.create_backup(db_path)}")
-            conn = sqlite3.connect(db_path)
+            conn = get_db_connection(db_path)
             try:
                 print(tags.clean_up(conn))
             finally:

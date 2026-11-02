@@ -12,6 +12,7 @@ from pathlib import Path
 
 from desync_archival import backup
 from desync_archival import settings as app_config
+from desync_archival.db.connection import connect
 from desync_archival.services.logger import logger
 
 MIGRATIONS_DIR = app_config.REPO_ROOT / "migrations"
@@ -57,7 +58,7 @@ def _columns_by_table(conn: sqlite3.Connection) -> dict[str, set[str]]:
 
 
 def _baseline_columns() -> dict[str, set[str]]:
-    conn = sqlite3.connect(":memory:")
+    conn = connect(":memory:")
     try:
         conn.executescript(load_migrations()[0][1].read_text(encoding="utf-8"))
         return _columns_by_table(conn)
@@ -181,7 +182,7 @@ def migrate_database(db_path: Path, confirm_production: bool = False) -> dict[st
     db_path = Path(db_path).resolve()
     app_config.check_path(db_path)
 
-    conn = sqlite3.connect(db_path)
+    conn = connect(db_path)
     try:
         before_version = current_version(conn)
         journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
@@ -204,7 +205,7 @@ def migrate_database(db_path: Path, confirm_production: bool = False) -> dict[st
     _remove_copy(work)
     try:
         backup.copy_database(db_path, work, journal_mode)
-        conn = sqlite3.connect(work)
+        conn = connect(work)
         try:
             after_version = apply_pending(conn)
             broken = conn.execute("PRAGMA foreign_key_check").fetchall()

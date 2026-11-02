@@ -10,6 +10,7 @@ from pathlib import Path
 
 from desync_archival import mounts
 from desync_archival import settings as app_config
+from desync_archival.db.connection import connect
 from desync_archival.services.logger import logger
 
 BACKUP_PATTERN = re.compile(r"library-\d{8}-\d{6}-\d{6}\.db")
@@ -21,7 +22,7 @@ class BackupError(RuntimeError):
 
 
 def _open_read_only(path: Path) -> sqlite3.Connection:
-    return sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)
+    return connect(path, readonly=True)
 
 
 def row_counts(path: Path) -> dict[str, int]:
@@ -55,7 +56,7 @@ def verify(path: Path, expected: dict[str, int] | None = None) -> dict[str, int]
 def copy_database(source_path: Path, target_path: Path, journal_mode: str) -> None:
     """Copies with SQLite's backup API. Backups use DELETE mode so each one is a single file."""
     source = _open_read_only(source_path)
-    target = sqlite3.connect(target_path)
+    target = connect(target_path)
     try:
         source.backup(target)
         target.execute(f"PRAGMA journal_mode = {journal_mode}")

@@ -23,17 +23,8 @@ from desync_archival.services.task_manager import TaskManager
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "desync_archival"
 
-# Short-lived commands, or owners that close in a `finally`. Everything else goes through services/db.py.
-DIRECT_CONNECT_ALLOWED = {
-    "backup.py",
-    "dbtool.py",
-    "migrations.py",
-    "services/archive_peeker.py",
-    "services/data_bundle.py",
-    "services/db.py",
-    "services/logger.py",
-    "services/stash_exporter.py",
-}
+# The one factory, so timeouts and read-only handling can't drift apart.
+DIRECT_CONNECT_ALLOWED = {"db/connection.py"}
 OPENERS = {"connect", "get_db_connection", "scoped_connection", "_get_db", "_get_connection"}
 
 
@@ -179,7 +170,7 @@ def test_direct_connects_stay_on_the_allowed_list():
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and ast.unparse(node.func) == "sqlite3.connect":
                 found.add(rel)
-    assert found <= DIRECT_CONNECT_ALLOWED, found - DIRECT_CONNECT_ALLOWED
+    assert found == DIRECT_CONNECT_ALLOWED, found ^ DIRECT_CONNECT_ALLOWED
 
 
 def test_no_connection_is_used_after_its_block_closed_it():

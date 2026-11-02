@@ -24,6 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from desync_archival import external
 from desync_archival import settings as app_config
 from desync_archival.db.queries import stash_exporter as queries
+from desync_archival.services.db import get_db_connection
 from desync_archival.services.paths import is_supported, sweep_leftovers
 
 try:
@@ -77,10 +78,7 @@ class StashExporter:
         if conn is not None:
             conn.row_factory = sqlite3.Row
             return conn
-        c = sqlite3.connect(str(self.db_path), timeout=45.0)
-        c.row_factory = sqlite3.Row
-        c.execute("PRAGMA busy_timeout = 45000;")
-        return c
+        return get_db_connection(self.db_path)
 
     def _get_setting(self, conn: sqlite3.Connection, key: str, default: str = "") -> str:
         row = conn.execute(queries.SELECT_APP_SETTINGS_VALUE_BY_KEY, (key,)).fetchone()

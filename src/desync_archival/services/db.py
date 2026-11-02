@@ -4,8 +4,10 @@ services/db.py - Settings defaults and the SQLite connection factory.
 
 import sqlite3
 from pathlib import Path
+from typing import cast
 
 from desync_archival import settings as app_config
+from desync_archival.db.connection import connect
 from desync_archival.db.queries import db as queries
 from desync_archival.services import secret_store
 
@@ -41,7 +43,7 @@ class ScopedConnection(sqlite3.Connection):
 
 def get_db_connection(db_path: Path | str) -> sqlite3.Connection:
     """A connection its owner closes. For one block of work, use `scoped_connection`."""
-    conn = sqlite3.connect(str(db_path), timeout=45.0)
+    conn = connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.execute("PRAGMA busy_timeout = 45000;")
@@ -50,7 +52,7 @@ def get_db_connection(db_path: Path | str) -> sqlite3.Connection:
 
 
 def scoped_connection(db_path: Path | str, foreign_keys: bool = True) -> ScopedConnection:
-    conn = sqlite3.connect(str(db_path), timeout=45.0, factory=ScopedConnection)
+    conn = cast(ScopedConnection, connect(db_path, factory=ScopedConnection))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout = 45000;")
     conn.execute(SYNCHRONOUS)
