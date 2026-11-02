@@ -209,6 +209,71 @@ class IngestTests(unittest.TestCase):
             self.assertNotIn(name, request.headers)
         self.assertEqual(self.result()[1]["ingested"], 1)
 
+    def run_saved(self, *model_ids, cancelled=False):
+        self.metadata.mkdir(exist_ok=True)
+        for model_id in model_ids:
+            saved = {"id": model_id, "name": f"Hero {model_id}", "files": {"items": []}, "designer": {"name": "M", "username": "m"}}
+            (self.metadata / f"model_{model_id}.json").write_text(json.dumps(saved), encoding="utf-8")
+        with patch.object(self.manager, "_cancelled", return_value=cancelled):
+            asyncio.run(self.manager._async_ingest(self.task, list(model_ids), 0, "test", len(model_ids)))
+
+    def saved_count(self):
+        conn = sqlite3.connect(self.db)
+        try:
+            return conn.execute("SELECT COUNT(*) FROM collections").fetchone()[0]
+        finally:
+            conn.close()
+
+    def test_covers_wait_until_every_model_is_saved(self):
+        counts = []
+        with patch.object(self.manager, "_cache_cover", side_effect=lambda *_: counts.append(self.saved_count())):
+            self.run_saved(1, 2, 3)
+        self.assertEqual(counts, [3, 3, 3])
+
+    def test_saving_and_covers_stay_off_the_event_loop(self):
+        threads = []
+        real_save = self.manager._save_ingested
+
+        def save(*args):
+            threads.append(threading.current_thread())
+            return real_save(*args)
+
+        with patch.object(self.manager, "_save_ingested", side_effect=save), \
+                patch.object(self.manager, "_cache_cover", side_effect=lambda *_: threads.append(threading.current_thread())):
+            self.run_saved(1)
+        self.assertEqual(len(threads), 2)
+        self.assertNotIn(threading.main_thread(), threads)
+
+    def test_a_cancelled_ingest_fetches_no_covers(self):
+        with patch.object(self.manager, "_cache_cover") as cover:
+            self.run_saved(1, cancelled=True)
+        cover.assert_not_called()
+
+    def test_a_failed_write_costs_one_model_and_no_cover(self):
+        real_save = self.manager._save_ingested
+
+        def save(model_id, *args):
+            if model_id == 2:
+                raise sqlite3.OperationalError("database is locked")
+            return real_save(model_id, *args)
+
+        with patch.object(self.manager, "_save_ingested", side_effect=save), \
+                patch.object(self.manager, "_cache_cover") as cover:
+            self.run_saved(1, 2, 3)
+        summary = self.result()[1]
+        self.assertEqual((summary["ingested"], summary["failed"]), (2, 1))
+        self.assertEqual(cover.call_count, 2)
+
+    def test_an_unavailable_model_is_still_logged_as_inactive(self):
+        self.status = 404
+        self.run_ingest()
+        conn = sqlite3.connect(self.db)
+        try:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM inactive_log").fetchone()[0], 1)
+        finally:
+            conn.close()
+        self.assertEqual(self.result()[1]["tombstoned"], 1)
+
     def test_with_no_sign_in_it_asks_nothing_of_mmf(self):
         self.run_ingest(token="")
         self.assertEqual(self.seen, [])

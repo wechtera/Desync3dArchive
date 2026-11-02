@@ -257,6 +257,8 @@ class Task:
     process: Optional[subprocess.Popen] = None
 
 
+COVER_CONCURRENCY = 5
+
 # Set by start_managers. Routes that aren't handed the manager reach it through this.
 current: Optional["TaskManager"] = None
 
@@ -1027,6 +1029,52 @@ class TaskManager:
         finally:
             self._release(task_id)
 
+    def _save_ingested(
+        self, model_id: int, data: dict[str, Any], model_row: tuple, tag_rows: list, file_rows: list,
+        anomalies: list, is_tombstone: bool,
+    ) -> int:
+        """Writes one model's catalog rows off the event loop, and returns its local ID."""
+        with self._get_db() as conn:
+            local_id = identity.save_mmf_model(conn, model_id, model_row[1:])
+
+            archive_dl = data.get("archive_download_url")
+            if archive_dl:
+                conn.execute(queries.UPDATE_COLLECTIONS_ARCHIVE_DOWNLOAD_URL_BY_ID, (archive_dl, local_id))
+
+            conn.execute(queries.DELETE_COLLECTION_TAGS_BY_MODEL_ID, (local_id,))
+            if tag_rows:
+                conn.executemany(
+                    queries.INSERT_COLLECTION_TAGS,
+                    [(local_id, catalog_levels.clean_tag(tag)) for _, tag in tag_rows],
+                )
+
+            identity.save_mmf_files(
+                conn, local_id, [(row[0], row[2], row[3], row[4], row[5]) for row in file_rows]
+            )
+
+            if anomalies:
+                conn.executemany(queries.INSERT_SCHEMA_ANOMALIES, [(local_id, anom[0], anom[1]) for anom in anomalies])
+
+            if is_tombstone:
+                inactive_log.record(
+                    conn, inactive_log.MODEL, local_id, data.get("name"), inactive_log.METADATA_INGEST,
+                    inactive_log.UNAVAILABLE, data.get("description"),
+                )
+            else:
+                inactive_log.resolve(conn, inactive_log.MODEL, local_id, inactive_log.UNAVAILABLE)
+        return local_id
+
+    async def _cache_covers(self, task_id: int, covers: list[tuple[int, str | None]]) -> None:
+        limit = asyncio.Semaphore(COVER_CONCURRENCY)
+
+        async def fetch(model_id: int, url: str | None) -> None:
+            async with limit:
+                # Skipped covers aren't lost. The catalog previews job picks them up.
+                if not self._cancelled(task_id):
+                    await asyncio.to_thread(self._cache_cover, model_id, url)
+
+        await asyncio.gather(*(fetch(model_id, url) for model_id, url in covers))
+
     async def _async_ingest(
         self,
         task_id: int,
@@ -1057,6 +1105,7 @@ class TaskManager:
         semaphore = asyncio.Semaphore(5)
         db_lock = asyncio.Lock()
         creator_breakdown: Dict[str, Dict[str, int]] = {}
+        covers: list[tuple[int, str | None]] = []
 
         total_pending = len(pending_ids)
         processed_count = 0
@@ -1153,63 +1202,36 @@ class TaskManager:
                 designer_name = model_row[6]
                 pre_supported = bool(model_row[10])
 
-                async with db_lock:
-                    try:
-                        with self._get_db() as conn:
-                            local_id = identity.save_mmf_model(conn, model_id, model_row[1:])
+                try:
+                    async with db_lock:
+                        local_id = await asyncio.to_thread(
+                            self._save_ingested, model_id, data, model_row, tag_rows, file_rows, anomalies, is_tombstone,
+                        )
+                    covers.append((local_id, model_row[16]))
 
-                            archive_dl = data.get("archive_download_url")
-                            if archive_dl:
-                                conn.execute(queries.UPDATE_COLLECTIONS_ARCHIVE_DOWNLOAD_URL_BY_ID, (archive_dl, local_id))
+                    if is_tombstone:
+                        tombstone_count += 1
+                    else:
+                        ingested_count += 1
+                        if designer_name not in creator_breakdown:
+                            creator_breakdown[designer_name] = {"count": 0, "pre_supported": 0}
+                        creator_breakdown[designer_name]["count"] += 1
+                        if pre_supported:
+                            creator_breakdown[designer_name]["pre_supported"] += 1
 
-                            conn.execute(queries.DELETE_COLLECTION_TAGS_BY_MODEL_ID, (local_id,))
-                            if tag_rows:
-                                conn.executemany(
-                                    queries.INSERT_COLLECTION_TAGS,
-                                    [(local_id, catalog_levels.clean_tag(tag)) for _, tag in tag_rows],
-                                )
+                    log_layer("sql", logging.DEBUG, f"Model #{model_id}: Persisted metadata to library.db ({len(file_rows)} files)")
 
-                            identity.save_mmf_files(
-                                conn, local_id, [(row[0], row[2], row[3], row[4], row[5]) for row in file_rows]
-                            )
-
-                            if anomalies:
-                                conn.executemany(queries.INSERT_SCHEMA_ANOMALIES, [(local_id, anom[0], anom[1]) for anom in anomalies])
-
-                        # FIXME(P-06): a blocking HTTP call on the event loop, under db_lock, so ingest concurrency is one.
-                        self._cache_cover(local_id, model_row[16])
-
-                        with self._get_db() as conn:
-                            if is_tombstone:
-                                inactive_log.record(
-                                    conn, inactive_log.MODEL, local_id, data.get("name"), inactive_log.METADATA_INGEST,
-                                    inactive_log.UNAVAILABLE, data.get("description"),
-                                )
-                            else:
-                                inactive_log.resolve(conn, inactive_log.MODEL, local_id, inactive_log.UNAVAILABLE)
-
-                        if is_tombstone:
-                            tombstone_count += 1
-                        else:
-                            ingested_count += 1
-                            if designer_name not in creator_breakdown:
-                                creator_breakdown[designer_name] = {"count": 0, "pre_supported": 0}
-                            creator_breakdown[designer_name]["count"] += 1
-                            if pre_supported:
-                                creator_breakdown[designer_name]["pre_supported"] += 1
-
-                        log_layer("sql", logging.DEBUG, f"Model #{model_id}: Persisted metadata to library.db ({len(file_rows)} files)")
-
-                    except Exception as db_err:
-                        self._append_log(task_id, f"Database write error on model {model_id}: {db_err}")
-                        log_layer("sql", logging.ERROR, f"Database write error on Model #{model_id}: {db_err}")
-                        failed_count += 1
+                except Exception as db_err:
+                    self._append_log(task_id, f"Database write error on model {model_id}: {db_err}")
+                    log_layer("sql", logging.ERROR, f"Database write error on Model #{model_id}: {db_err}")
+                    failed_count += 1
 
                 processed_count += 1
                 pct = round((processed_count / total_pending) * 100.0, 1)
 
                 if processed_count % 10 == 0 or processed_count == total_pending:
-                    self._update_progress(
+                    await asyncio.to_thread(
+                        self._update_progress,
                         task_id,
                         pct,
                         f"Ingesting: {processed_count}/{total_pending} ({ingested_count} saved, {tombstone_count} unavailable, {failed_count} errors)",
@@ -1221,6 +1243,9 @@ class TaskManager:
                     break
                 batch = pending_ids[i:i + batch_size]
                 await asyncio.gather(*(process_single_model(mid) for mid in batch))
+
+        # A slow cover used to hold up every request in its batch, so covers wait for the metadata.
+        await self._cache_covers(task_id, covers)
 
         summary = {
             "status": "cancelled" if self._cancelled(task_id) else "completed",
