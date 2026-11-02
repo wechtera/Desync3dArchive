@@ -1495,7 +1495,7 @@ class TaskManager:
             self._release(task_id)
 
     # -------------------------------------------------------------------------
-    # 6. In-Place External Library Reconciler Worker (Phase 8)
+    # 6. In-Place External Library Reconciler Worker
     # -------------------------------------------------------------------------
 
     @job_logged(lambda self, task_id, *_: f"task-{task_id}")

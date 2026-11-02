@@ -1,5 +1,5 @@
 """
-ui/routes/reconcile.py - Endpoints for background vault storage auditing and state reconciliation.
+api/routes/reconcile.py - Endpoints for background vault storage auditing and state reconciliation.
 """
 
 import sqlite3

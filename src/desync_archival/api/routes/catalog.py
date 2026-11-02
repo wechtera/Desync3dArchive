@@ -1,5 +1,5 @@
 """
-ui/routes/catalog.py - Catalog, creators, models, releases, metrics, and Blender rendering endpoints.
+api/routes/catalog.py - Catalog, creators, models, releases, metrics, and Blender rendering endpoints.
 Filters out 404/tombstone records and models with missing metadata from UI presentation.
 Preserves 100% of pre-existing catalog exploration and metrics functionality.
 """

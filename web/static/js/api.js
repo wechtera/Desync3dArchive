@@ -1,5 +1,5 @@
 /**
- * ui/static/js/api.js - Client API transport layer for DESYNC 3D Vault.
+ * web/static/js/api.js - Client API transport layer for DESYNC 3D Vault.
  * Handles REST requests for catalog, tasks, downloads, settings,
  * in-place external libraries, stash manifests, and ephemeral rendering.
  */

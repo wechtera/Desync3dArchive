@@ -24,18 +24,13 @@ from desync_archival import external
 from desync_archival import settings as app_config
 from desync_archival.db.queries import stash_exporter as queries
 from desync_archival.services.db import get_db_connection
+from desync_archival.services.logger import log_layer
 from desync_archival.services.paths import (
     MODEL_EXTENSIONS,
     is_supported,
     sanitize_folder_name,
     sweep_leftovers,
 )
-
-try:
-    from desync_archival.services.logger import log_layer, logger
-except ImportError:
-    def log_layer(layer, level, msg, **kwargs): pass
-    logger = logging.getLogger("vault")
 
 DEFAULT_STASH_EXPORT_PATH = Path.home() / "Downloads" / "DESYNC_Print_Queue"
 PARTIAL_SUFFIX = ".partial"

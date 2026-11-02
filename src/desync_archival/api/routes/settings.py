@@ -1,5 +1,5 @@
 """
-ui/routes/settings.py - Endpoints for app settings, storage directory metrics,
+api/routes/settings.py - Endpoints for app settings, storage directory metrics,
 in-place external library management, system directory browsing, dynamic diagnostic logging,
 log pruning, and print queue management.
 """
@@ -19,23 +19,22 @@ from desync_archival.db.queries import settings as queries
 from desync_archival.services import (
     archive_review,
     audit,
-    documents,
-    health,
-    locations,
-    scheduler,
     auth_service,
     catalog_browse,
     catalog_review,
+    documents,
     file_import,
+    health,
     image_worker,
     inactive_log,
     jobs,
     library_review,
+    locations,
+    scheduler,
     secret_store,
     tags,
 )
 from desync_archival.services.external_indexer import (
-    SUPPORTED_FILE_EXTENSIONS,
     FULL,
     PREVIEW,
     SCAN_MODES,
@@ -43,23 +42,14 @@ from desync_archival.services.external_indexer import (
     deactivate_library,
     folder_totals,
 )
-
-try:
-    from desync_archival.services.logger import (
-        LOGS_DIR,
-        clear_ui_logs,
-        get_logging_config,
-        log_layer,
-        logger,
-        set_logging_config,
-    )
-except ImportError:
-    LOGS_DIR = app_config.logs_dir()
-    def clear_ui_logs(): pass
-    def get_logging_config(): return {"level": "INFO", "layers": []}
-    def set_logging_config(l, ls): pass
-    def log_layer(layer, level, msg, **kwargs): pass
-    logger = logging.getLogger("vault")
+from desync_archival.services.logger import (
+    LOGS_DIR,
+    clear_ui_logs,
+    get_logging_config,
+    log_layer,
+    logger,
+    set_logging_config,
+)
 
 __all__ = [
     "format_bytes",
@@ -245,7 +235,7 @@ def handle_post_settings(
 
 
 # -------------------------------------------------------------------------
-# In-Place External Libraries Endpoints (Phase 7 & 8)
+# In-Place External Libraries Endpoints
 # -------------------------------------------------------------------------
 
 def handle_get_external_libraries(

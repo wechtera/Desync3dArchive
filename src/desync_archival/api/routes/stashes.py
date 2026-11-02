@@ -1,5 +1,5 @@
 """
-ui/routes/stashes.py - REST API endpoints for the Stash system ("A pile of gray").
+api/routes/stashes.py - REST API endpoints for the Stash system ("A pile of gray").
 Handles staging manifests, polymorphic item curation, active pointer persistence,
 download validation guardrails, batch model additions, and background slicer materialization.
 """
@@ -10,19 +10,8 @@ from typing import Any, Dict, Optional, Tuple
 from desync_archival import settings as app_config
 from desync_archival.db.queries import stashes as queries
 from desync_archival.services.logger import logger
-
-try:
-    from desync_archival.services.stash_service import StashService
-except ImportError:
-    from desync_archival.services.stash_service import StashService
-
-try:
-    from desync_archival.services.stash_exporter import StashExporter
-except ImportError:
-    try:
-        from desync_archival.services.stash_exporter import StashExporter
-    except ImportError:
-        from desync_archival.services.stash_exporter import StashExporter
+from desync_archival.services.stash_exporter import StashExporter
+from desync_archival.services.stash_service import StashService
 
 _stash_service = StashService()
 

@@ -1,5 +1,5 @@
 /**
- * ui/static/js/utils.js - Shared UI formatting and sanitization utilities
+ * web/static/js/utils.js - Shared UI formatting and sanitization utilities
  */
 
 import { html } from './template.js';

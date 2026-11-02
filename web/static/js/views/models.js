@@ -1,5 +1,5 @@
 /**
- * ui/static/js/views/models.js - Model catalog explorer, detail inspection modal,
+ * web/static/js/views/models.js - Model catalog explorer, detail inspection modal,
  * archive submodels viewer, and ephemeral 3D mesh rendering interface.
  */
 

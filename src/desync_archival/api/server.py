@@ -62,16 +62,16 @@ def get_db() -> sqlite3.Connection:
 
 
 class RequestLoggingMiddleware:
-    """Outermost middleware, so refused requests are logged too. Query strings stay out of the log."""
+    """Gives every request a request_id and logs its outcome.
+
+    It's the outermost middleware, so refused requests are logged too. Query strings are left out
+    of the log line because they can carry credentials.
+    """
+
     POLLED_PATHS = frozenset({
         "/api/tasks/status", "/api/downloads/status", "/api/storage/status", "/api/stashes/active",
         "/api/auth/status", "/api/health", "/healthz",
     })
-
-    """Gives every request a request_id and logs its outcome.
-
-    Query strings are left out of the log line because they can carry credentials.
-    """
 
     def __init__(self, app: Any):
         self.app = app

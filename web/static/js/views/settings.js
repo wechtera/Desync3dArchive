@@ -1,5 +1,5 @@
 /**
- * ui/static/js/views/settings.js - Settings workspace controller.
+ * web/static/js/views/settings.js - Settings workspace controller.
  * Manages storage configuration, directory usage metrics, library disk usage,
  * worker tuning, diagnostic logging, log pruning, and MyMiniFactory authentication.
  */

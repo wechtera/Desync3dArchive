@@ -26,6 +26,7 @@ import httpx
 from desync_archival import settings as app_config
 from desync_archival.db.queries import downloader as queries
 from desync_archival.services import auth_service, identity, secret_store
+from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.db import scoped_connection
 from desync_archival.services.logger import job_logged, log_layer, logger
 from desync_archival.services.paths import (
@@ -33,14 +34,6 @@ from desync_archival.services.paths import (
     sanitize_segment,
     stored_filename,
 )
-
-try:
-    from .archive_peeker import ArchivePeeker
-except ImportError:
-    try:
-        from desync_archival.services.archive_peeker import ArchivePeeker
-    except ImportError:
-        ArchivePeeker = None
 
 STREAM_CHUNK_SIZE_DEFAULT = 1024 * 1024       # 1 MB download buffer
 OFFLOAD_CHUNK_SIZE_DEFAULT = 4 * 1024 * 1024  # 4 MB network transfer buffer
@@ -902,7 +895,7 @@ class DownloadManager:
                 shutil.move(str(part_path), str(staged_path))
 
                 # Non-blocking ArchivePeeker inspection hook
-                if ext in (".zip", ".rar", ".7z") and ArchivePeeker is not None:
+                if ext in (".zip", ".rar", ".7z"):
                     try:
                         peeker = ArchivePeeker(self.db_path)
                         peek_res = peeker.inspect_and_record(model_id, file_id, staged_path)

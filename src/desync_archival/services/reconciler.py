@@ -22,6 +22,7 @@ import httpx
 from desync_archival import settings as app_config
 from desync_archival.db.queries import reconciler as queries
 from desync_archival.services import pending_deletion
+from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.db import scoped_connection
 from desync_archival.services.downloader import StorageManager, StorageUnavailableError
 from desync_archival.services.logger import log_layer
@@ -30,17 +31,6 @@ from desync_archival.services.paths import (
     PENDING_DELETION_FOLDER,
     sanitize_segment,
 )
-
-try:
-    from .archive_peeker import ArchivePeeker
-except ImportError:
-    try:
-        from desync_archival.services.archive_peeker import ArchivePeeker
-    except ImportError:
-        try:
-            from desync_archival.services.archive_peeker import ArchivePeeker
-        except ImportError:
-            ArchivePeeker = None
 
 
 def validate_stl_file(file_path: Path) -> Tuple[bool, Optional[str]]:

@@ -1,5 +1,5 @@
 /**
- * ui/static/js/views/stash_modal.js - Universal Add-to-Stash Modal Controller.
+ * web/static/js/views/stash_modal.js - Universal Add-to-Stash Modal Controller.
  * Supports all 4 polymorphic tiers (model, file, submodel, archive_member) + bulk models.
  * Stacks cleanly at z-index: 1200 over any active modal.
  */

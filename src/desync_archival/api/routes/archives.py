@@ -1,5 +1,5 @@
 """
-ui/routes/archives.py - Archive inspection and submodel catalog API routes.
+api/routes/archives.py - Archive inspection and submodel catalog API routes.
 """
 
 import json

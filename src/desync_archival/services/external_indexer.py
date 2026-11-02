@@ -32,13 +32,8 @@ from desync_archival.services.library_review import (
     PROPOSED,
     SKIPPED,
 )
+from desync_archival.services.logger import log_layer
 from desync_archival.services.model_resolver import primary_folder_rank
-
-try:
-    from desync_archival.services.logger import log_layer, logger
-except ImportError:
-    def log_layer(layer, level, msg, **kwargs): pass
-    logger = logging.getLogger("vault")
 
 SUPPORTED_FILE_EXTENSIONS = paths.SCANNED_EXTENSIONS
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}

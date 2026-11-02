@@ -11,7 +11,6 @@ from desync_archival.db.connection import connect
 from desync_archival.db.queries import db as queries
 from desync_archival.services import secret_store
 
-
 # FULL fsyncs every commit. In WAL mode a power cut under NORMAL can lose the last commits but can't
 # corrupt the database, and the owner accepted that on 2026-11-01 (P-02).
 SYNCHRONOUS = "PRAGMA synchronous = NORMAL;"

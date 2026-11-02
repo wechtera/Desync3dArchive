@@ -1,5 +1,5 @@
 /**
- * ui/static/js/views/stashes.js - Stash System ("A pile of gray") view controller.
+ * web/static/js/views/stashes.js - Stash System ("A pile of gray") view controller.
  * Handles sidebar listing, active stash toggling, pre-flight capacity audits,
  * inline creation, item manifest management, and background slicer print queue exporting.
  */
