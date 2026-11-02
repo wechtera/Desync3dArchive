@@ -4,34 +4,22 @@ from fastapi import APIRouter
 
 from desync_archival.api import schemas
 from desync_archival.api.routes import catalog as handlers
-from desync_archival.api.routing import RouteContext, add_route, path_to_param, plain
+from desync_archival.api.routing import add_route
 
 router = APIRouter()
 
 
-def render_view(ctx: RouteContext):
-    return handlers.handle_post_model_render_view(
-        ctx.conn, ctx.path["model_id"], ctx.download_manager, ctx.body, ctx.params, task_manager=ctx.task_manager
-    )
-
-
-def render_stl(ctx: RouteContext):
-    return handlers.handle_post_render_stl(
-        ctx.conn, ctx.download_manager, ctx.body, ctx.params, task_manager=ctx.task_manager
-    )
-
-
-add_route(router, "GET", "/api/metrics", plain(handlers.handle_get_metrics))
-add_route(router, "GET", "/api/models", plain(handlers.handle_get_models))
+add_route(router, "GET", "/api/metrics", handlers.handle_get_metrics)
+add_route(router, "GET", "/api/models", handlers.handle_get_models)
 add_route(router, "POST", ("/api/models/{model_id:int}/render-view", "/api/models/{model_id:int}/render-view/"),
-          render_view, schemas.ModelViewBody)
-add_route(router, ("GET", "POST"), ("/api/render/stl", "/api/render/stl/"), render_stl, schemas.RenderStlBody)
-add_route(router, "GET", "/api/models/detail", plain(handlers.handle_get_model_detail))
-add_route(router, "GET", "/api/models/item", plain(handlers.handle_get_model_detail))
-add_route(router, "GET", "/api/models/files", plain(handlers.handle_get_model_files))
-add_route(router, "GET", "/api/models/{model_id:int}", path_to_param(handlers.handle_get_model_detail, "model_id", "id"))
+          handlers.handle_post_model_render_view, schemas.ModelViewBody)
+add_route(router, ("GET", "POST"), ("/api/render/stl", "/api/render/stl/"), handlers.handle_post_render_stl, schemas.RenderStlBody)
+add_route(router, "GET", "/api/models/detail", handlers.handle_get_model_detail)
+add_route(router, "GET", "/api/models/item", handlers.handle_get_model_detail)
+add_route(router, "GET", "/api/models/files", handlers.handle_get_model_files)
+add_route(router, "GET", "/api/models/{id:int}", handlers.handle_get_model_detail)
 add_route(router, "GET", "/api/models/{model_id:int}/files",
-          path_to_param(handlers.handle_get_model_files, "model_id", "model_id"))
-add_route(router, "GET", "/api/creators", plain(handlers.handle_get_creators))
-add_route(router, "GET", "/api/releases", plain(handlers.handle_get_releases))
-add_route(router, "GET", "/api/audit", plain(handlers.handle_get_audit))
+          handlers.handle_get_model_files)
+add_route(router, "GET", "/api/creators", handlers.handle_get_creators)
+add_route(router, "GET", "/api/releases", handlers.handle_get_releases)
+add_route(router, "GET", "/api/audit", handlers.handle_get_audit)

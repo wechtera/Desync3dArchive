@@ -1,12 +1,11 @@
 import sqlite3
-from typing import Any, Optional
+from typing import Any
 
-from desync_archival.api.routing import paging
+from desync_archival.api.routing import Body, Conn, Downloads, Params, paging
 from desync_archival.db.queries import downloads as queries
 from desync_archival.db.queries.downloader import LIVE_JOB_STATUSES
 from desync_archival.services import audit
 from desync_archival.services.downloader import (
-    DownloadManager,
     queue_models,
     remove_waiting_jobs,
 )
@@ -16,10 +15,7 @@ CLEARABLE_STATUSES = ("pending", "failed", "completed")
 
 
 def handle_get_downloads_status(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    download_manager: Downloads,
 ) -> tuple[dict[str, Any], int]:
     if not download_manager:
         return {"error": "DownloadManager uninitialized"}, 500
@@ -27,10 +23,8 @@ def handle_get_downloads_status(
 
 
 def handle_get_downloads_history(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     status = params.get("status", [""])[0].strip()
     sort = params.get("sort", ["enqueued_desc"])[0].strip()
@@ -77,10 +71,9 @@ def handle_get_downloads_history(
 
 
 def handle_post_downloads_queue(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     model_ids = body.get("model_ids", [])
     release_id = body.get("release_id")
@@ -104,10 +97,8 @@ def handle_post_downloads_queue(
 
 
 def handle_delete_downloads_queue(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     model_ids = body.get("model_ids", [])
     clear_status = body.get("clear_status")
@@ -157,10 +148,9 @@ def _clear_jobs(conn: sqlite3.Connection, clear_status: str | None, confirm: boo
 
 
 def handle_post_downloads_control(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     if not download_manager:
         return {"error": "DownloadManager uninitialized"}, 500

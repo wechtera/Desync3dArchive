@@ -1,30 +1,29 @@
-"""Shared plumbing for domain routers: request parsing, validation and response building."""
+"""How a handler becomes a route. A handler lists only what it needs, and these dependencies supply it."""
 
+import json
+import re
 import sqlite3
 import urllib.parse
-from collections.abc import Callable
-from dataclasses import dataclass
-from typing import Any
+from collections.abc import Awaitable, Callable, Iterator
+from contextvars import ContextVar
+from functools import wraps
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Request
-from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, Response
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, ValidationError
 
+from desync_archival.api import schemas
 from desync_archival.services.logger import logger
 
 GENERIC_ERROR = "Internal server error"
+# A worker thread inherits this, and a handler's error names the request that caused it.
+_current_route: ContextVar[str] = ContextVar("current_route", default="a route")
+REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 
 
-@dataclass
-class RouteContext:
-    """Everything one request hands its handler, so handlers keep the old four-argument shape."""
-    conn: sqlite3.Connection
-    download_manager: Any
-    task_manager: Any
-    body: dict
-    params: dict
-    path: dict
+class RefusedRequest(Exception):
+    """The request can't reach its handler. The message goes back with a 400."""
 
 
 class BadParameter(ValueError):
@@ -45,28 +44,84 @@ def paging(params: dict, default: int, maximum: int) -> tuple[int, int]:
     return max(1, min(maximum, limit)), max(0, offset)
 
 
-def plain(handler: Callable) -> Callable:
-    return lambda ctx: handler(ctx.conn, ctx.download_manager, ctx.body, ctx.params)
+def _connection(request: Request) -> Iterator[sqlite3.Connection]:
+    conn = request.app.state.open_database()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
-def with_tasks(handler: Callable) -> Callable:
-    return lambda ctx: handler(ctx.conn, ctx.download_manager, ctx.body, ctx.params, task_manager=ctx.task_manager)
+def _download_manager(request: Request) -> Any:
+    return request.app.state.download_manager()
 
 
-def with_path_id(handler: Callable, name: str, tasks: bool = False) -> Callable:
-    """Passes a path value as the handler's second argument."""
-    def call(ctx: RouteContext) -> Any:
-        kwargs = {"task_manager": ctx.task_manager} if tasks else {}
-        return handler(ctx.conn, ctx.path[name], ctx.download_manager, ctx.body, ctx.params, **kwargs)
-    return call
+def _task_manager(request: Request) -> Any:
+    return request.app.state.task_manager()
 
 
-def path_to_param(handler: Callable, name: str, param: str, tasks: bool = False) -> Callable:
-    """Presents a path value as the query parameter a shared handler reads."""
-    def call(ctx: RouteContext) -> Any:
-        ctx.params.setdefault(param, [str(ctx.path[name])])
-        return (with_tasks if tasks else plain)(handler)(ctx)
-    return call
+def _params(request: Request) -> dict[str, list[str]]:
+    params = urllib.parse.parse_qs(request.url.query)
+    # A value in the path answers as the query parameter a shared handler reads.
+    for name, value in request.path_params.items():
+        params.setdefault(name, [str(value)])
+    return params
+
+
+def _body(request: Request) -> dict:
+    return getattr(request.state, "body", {})
+
+
+Conn = Annotated[sqlite3.Connection, Depends(_connection)]
+Downloads = Annotated[Any, Depends(_download_manager)]
+Tasks = Annotated[Any, Depends(_task_manager)]
+Params = Annotated[dict, Depends(_params)]
+Body = Annotated[dict, Depends(_body)]
+
+
+def redirect_location(data: Any) -> str | None:
+    """Finds a redirect target in the old handlers' HTML, or dict results."""
+    if isinstance(data, str):
+        match = re.search(r"url=([^'>\s]+)", data) or re.search(r"href=['\"]([^'\"]+)['\"]", data)
+        return match.group(1) if match else None
+    if isinstance(data, dict):
+        return data.get("location") or data.get("auth_url") or data.get("url")
+    return None
+
+
+def build_response(data: Any, status: int = 200, extra_headers: dict | None = None) -> Response:
+    """Turns a handler's result into a Response. Bytes pass through, a str is sent as text, and anything else as JSON."""
+    headers = dict(extra_headers or {})
+
+    if status in REDIRECT_STATUSES:
+        location = redirect_location(data)
+        if location:
+            headers["Location"] = location
+
+    if isinstance(data, (bytes, bytearray)):
+        payload = bytes(data)
+        headers.setdefault("Content-Type", "application/octet-stream")
+    elif isinstance(data, str):
+        payload = data.encode("utf-8")
+        # HTML has to be asked for, because a scrape file holds third-party names.
+        kind = "text/html" if isinstance(data, schemas.HtmlPage) else "text/plain"
+        headers.setdefault("Content-Type", f"{kind}; charset=utf-8")
+    else:
+        payload = json.dumps(data).encode("utf-8")
+        headers.setdefault("Content-Type", "application/json")
+
+    return Response(content=payload, status_code=status, headers=headers)
+
+
+def parse_body(body_bytes: bytes) -> Any:
+    """Decodes a JSON body. An empty body means no options.
+
+    Raises:
+        ValueError: The body isn't JSON. A broken request must not run with the defaults.
+    """
+    if not body_bytes:
+        return {}
+    return json.loads(body_bytes.decode("utf-8"))
 
 
 def validation_message(error: ValidationError) -> str:
@@ -75,55 +130,57 @@ def validation_message(error: ValidationError) -> str:
     return f"Invalid value for {field}: {first['msg']}"
 
 
+def _checked_body(model: type[BaseModel] | None) -> Callable[[Request], Awaitable[None]]:
+    """Reads the body before anything else runs, so a bad one never opens a connection."""
+    async def check(request: Request) -> None:
+        _current_route.set(f"{request.method} {request.url.path}")
+        request.state.body = {}
+        if request.method == "GET":
+            return
+        try:
+            body = parse_body(await request.body())
+        except ValueError:
+            raise RefusedRequest("Request body isn't valid JSON") from None
+        if not isinstance(body, dict):
+            raise RefusedRequest("Request body must be a JSON object")
+        if model is not None:
+            try:
+                body = model.model_validate(body).model_dump(exclude_unset=True)
+            except ValidationError as e:
+                raise RefusedRequest(validation_message(e)) from None
+        request.state.body = body
+    return check
+
+
+def _respond(handler: Callable) -> Callable:
+    """Turns a handler's result into a response, and an unhandled error into a plain 500."""
+    @wraps(handler)
+    def route(*args: Any, **kwargs: Any) -> Response:
+        try:
+            result = handler(*args, **kwargs)
+        except BadParameter as e:
+            result = ({"error": str(e)}, 400)
+        except Exception:  # noqa: BLE001
+            logger.exception(f"Unhandled error in {_current_route.get()}")
+            result = ({"error": GENERIC_ERROR}, 500)
+        if isinstance(result, tuple) and len(result) == 3:
+            return build_response(result[0], result[1], extra_headers=result[2])
+        if isinstance(result, tuple) and len(result) == 2:
+            return build_response(result[0], result[1])
+        return build_response(result, 200)
+    return route
+
+
 def add_route(
     router: APIRouter,
     methods: str | tuple[str, ...],
     paths: str | tuple[str, ...],
-    call: Callable[[RouteContext], Any],
+    handler: Callable,
     model: type[BaseModel] | None = None,
 ) -> None:
     method_list = [methods] if isinstance(methods, str) else list(methods)
-
-    async def endpoint(request: Request) -> Response:
-        from desync_archival.api import server
-
-        try:
-            body = server.parse_body(await request.body()) if request.method != "GET" else {}
-        except ValueError:
-            return JSONResponse({"error": "Request body isn't valid JSON"}, 400)
-        if not isinstance(body, dict):
-            return JSONResponse({"error": "Request body must be a JSON object"}, 400)
-        if model is not None and request.method != "GET":
-            try:
-                body = model.model_validate(body).model_dump(exclude_unset=True)
-            except ValidationError as e:
-                return JSONResponse({"error": validation_message(e)}, 400)
-        params = urllib.parse.parse_qs(request.url.query)
-        path = dict(request.path_params)
-        return await run_in_threadpool(run_call, call, body, params, path, request)
-
+    endpoint = _respond(handler)
     for path in (paths,) if isinstance(paths, str) else paths:
-        router.add_api_route(path, endpoint, methods=method_list)
-
-
-def run_call(call: Callable, body: dict, params: dict, path: dict, request: Request) -> Response:
-    """Blocking route work, run in the threadpool."""
-    from desync_archival.api import server
-
-    conn = server.get_db()
-    try:
-        context = RouteContext(conn, server.download_manager, server.task_manager, body, params, path)
-        result = call(context)
-    except BadParameter as e:
-        result = ({"error": str(e)}, 400)
-    except Exception:  # noqa: BLE001
-        logger.exception(f"Unhandled error in {request.method} {request.url.path}")
-        result = ({"error": GENERIC_ERROR}, 500)
-    finally:
-        conn.close()
-
-    if isinstance(result, tuple) and len(result) == 3:
-        return server.build_response(result[0], result[1], extra_headers=result[2])
-    if isinstance(result, tuple) and len(result) == 2:
-        return server.build_response(result[0], result[1])
-    return server.build_response(result, 200)
+        router.add_api_route(
+            path, endpoint, methods=method_list, response_model=None, dependencies=[Depends(_checked_body(model))],
+        )

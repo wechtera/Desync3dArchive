@@ -1,19 +1,14 @@
 import re
-import sqlite3
-from typing import Any, Optional
+from typing import Any
 
 from desync_archival import settings as app_config
+from desync_archival.api.routing import Body, Conn, Params, Tasks
 from desync_archival.services import audit
 from desync_archival.services.logger import logger
-from desync_archival.services.task_manager import TaskManager
 
 
 def handle_get_tasks_status(
-    conn: sqlite3.Connection,
-    download_manager: Any,
-    body: dict,
-    params: dict,
-    task_manager: Optional[TaskManager] = None,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     if not task_manager:
         return {"error": "TaskManager not initialized"}, 500
@@ -21,12 +16,8 @@ def handle_get_tasks_status(
 
 
 def handle_get_task(
-    conn: sqlite3.Connection,
     task_id: int,
-    download_manager: Any,
-    body: dict,
-    params: dict,
-    task_manager: TaskManager | None = None,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     if not task_manager:
         return {"error": "TaskManager not initialized"}, 500
@@ -35,11 +26,7 @@ def handle_get_task(
 
 
 def handle_get_scrapes_list(
-    conn: sqlite3.Connection,
-    download_manager: Any,
-    body: dict,
-    params: dict,
-    task_manager: Optional[TaskManager] = None,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     if not task_manager:
         return {"error": "TaskManager not initialized"}, 500
@@ -51,11 +38,8 @@ SCRAPE_ARTIFACT_PATTERN = re.compile(r"scrapes/[^/]+/(model_ids\.txt|models\.jso
 
 
 def handle_get_scrapes_download(
-    conn: sqlite3.Connection,
-    download_manager: Any,
-    body: dict,
-    params: dict,
-    task_manager: Optional[TaskManager] = None,
+    params: Params,
+    task_manager: Tasks,
 ) -> tuple[Any, int]:
     """GET /api/scrapes/download. Serves only the two scrape output files, by exact pattern."""
     rel_path = params.get("path", [""])[0].strip()
@@ -86,11 +70,7 @@ def handle_get_scrapes_download(
         return {"error": "Failed reading artifact"}, 500
 
 def handle_post_scraper_start(
-    conn: sqlite3.Connection,
-    download_manager: Any,
-    body: dict,
-    params: dict,
-    task_manager: Optional[TaskManager] = None,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     if not task_manager:
         return {"error": "TaskManager not initialized"}, 500
@@ -98,11 +78,7 @@ def handle_post_scraper_start(
 
 
 def handle_post_task_cancel(
-    conn: sqlite3.Connection,
-    download_manager: Any,
-    body: dict,
-    params: dict,
-    task_manager: Optional[TaskManager] = None,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     if not task_manager:
         return {"error": "TaskManager not initialized"}, 500
@@ -110,11 +86,8 @@ def handle_post_task_cancel(
     return {"success": success}, 200
 
 def handle_post_ingest_start(
-    conn: sqlite3.Connection,
-    download_manager: Any,
-    body: dict,
-    params: dict,
-    task_manager: Optional[TaskManager] = None,
+    body: Body,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     if not task_manager:
         return {"error": "TaskManager not initialized"}, 500
@@ -166,11 +139,7 @@ def handle_post_ingest_start(
     return task_manager.start_metadata_ingest(model_ids, source_label)
 
 def handle_post_task_kill(
-    conn: sqlite3.Connection,
-    download_manager: Any,
-    body: dict,
-    params: dict,
-    task_manager: Optional[TaskManager] = None,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     if not task_manager:
         return {"error": "TaskManager not initialized"}, 500
@@ -179,11 +148,9 @@ def handle_post_task_kill(
 
 
 def handle_post_tasks_clear(
-    conn: sqlite3.Connection,
-    download_manager: Any,
-    body: dict,
-    params: dict,
-    task_manager: Optional[TaskManager] = None,
+    conn: Conn,
+    body: Body,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     """POST /api/tasks/clear. Deletes finished task history. Dry run without confirm."""
     if not task_manager:

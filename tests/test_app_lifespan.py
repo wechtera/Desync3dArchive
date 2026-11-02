@@ -72,7 +72,7 @@ class ThreadpoolTests(unittest.TestCase):
         release = threading.Event()
         started = threading.Event()
 
-        def slow(_ctx):
+        def slow():
             started.set()
             release.wait(timeout=10)
             return {"slow": True}, 200
@@ -126,7 +126,11 @@ class RequestLoggingTests(unittest.TestCase):
 class ResponseTests(unittest.TestCase):
     def respond_with(self, value):
         self.call = MagicMock(return_value=value)
-        return TestClient(app_with_route(self.call), follow_redirects=False, base_url="http://localhost")
+
+        def handler():
+            return self.call()
+
+        return TestClient(app_with_route(handler), follow_redirects=False, base_url="http://localhost")
 
     @property
     def client(self):
@@ -165,7 +169,10 @@ class ResponseTests(unittest.TestCase):
         self.call.assert_not_called()
 
     def test_route_exception_returns_generic_500(self):
-        client = TestClient(app_with_route(MagicMock(side_effect=ValueError("boom"))), base_url="http://localhost")
+        def broken():
+            raise ValueError("boom")
+
+        client = TestClient(app_with_route(broken), base_url="http://localhost")
         response = client.get("/api/test-route")
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response.json(), {"error": "Internal server error"})

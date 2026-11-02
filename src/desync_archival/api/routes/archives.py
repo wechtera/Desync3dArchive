@@ -3,21 +3,17 @@ api/routes/archives.py - Archive inspection and submodel catalog API routes.
 """
 
 import json
-import sqlite3
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
+from desync_archival.api.routing import Body, Conn, Params, Tasks
 from desync_archival.db.queries import archives as queries
-from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.reconciler import VaultReconciler
 
 
 def handle_get_archive_submodels(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
-    task_manager: Any = None,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     """
     GET /api/models/archives?file_id=<file_id>
@@ -83,11 +79,8 @@ def handle_get_archive_submodels(
 
 
 def handle_get_archive_raw(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
-    task_manager: Any = None,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     """
     GET /api/models/archives/raw?file_id=<file_id>
@@ -117,11 +110,9 @@ def handle_get_archive_raw(
 
 
 def handle_post_archive_peek_backfill(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
-    task_manager: Any = None,
+    conn: Conn,
+    body: Body,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     """
     POST /api/reconcile/archive-peek

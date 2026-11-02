@@ -161,7 +161,7 @@ class TestStashRoutes(unittest.TestCase):
 
     def test_export_stash_success(self):
         """POST /api/stashes/1/export without task_manager runs synchronously and returns 200."""
-        resp, status = handle_post_export_stash(self.conn, stash_id=1)
+        resp, status = handle_post_export_stash(self.conn, stash_id=1, body={}, task_manager=None)
         self.assertEqual(status, 200)
         self.assertTrue(resp["success"])
         self.assertEqual(resp["stash_id"], 1)
@@ -177,14 +177,14 @@ class TestStashRoutes(unittest.TestCase):
 
     def test_export_empty_stash_returns_400(self):
         """POST /api/stashes/2/export on empty stash returns 400 error."""
-        resp, status = handle_post_export_stash(self.conn, stash_id=2)
+        resp, status = handle_post_export_stash(self.conn, stash_id=2, body={}, task_manager=None)
         self.assertEqual(status, 400)
         self.assertFalse(resp.get("success", False))
         self.assertIn("empty", resp["error"].lower())
 
     def test_export_nonexistent_stash_returns_404(self):
         """POST /api/stashes/999/export on missing stash returns 404 error."""
-        resp, status = handle_post_export_stash(self.conn, stash_id=999)
+        resp, status = handle_post_export_stash(self.conn, stash_id=999, body={}, task_manager=None)
         self.assertEqual(status, 404)
         self.assertIn("not found", resp["error"].lower())
 
@@ -217,7 +217,7 @@ class TestStashRoutes(unittest.TestCase):
             def start_task(self, task_type, params):
                 return {"success": True, "task_id": 42}
 
-        resp, status = handle_post_export_stash(self.conn, stash_id=1, task_manager=MockTaskManager())
+        resp, status = handle_post_export_stash(self.conn, stash_id=1, body={}, task_manager=MockTaskManager())
         self.assertEqual(status, 202)
         self.assertTrue(resp["success"])
         self.assertEqual(resp["task_id"], 42)

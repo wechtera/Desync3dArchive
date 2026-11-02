@@ -4,10 +4,8 @@ Supports both 2-tuple JSON responses and 3-tuple binary image streams.
 """
 
 import fcntl
-import json
 import logging
 import mimetypes
-import re
 import shutil
 import sqlite3
 import tempfile
@@ -33,6 +31,7 @@ from desync_archival import external, migrations
 from desync_archival import settings as app_config
 from desync_archival.api import schemas
 from desync_archival.api.routes import catalog as catalog_routes
+from desync_archival.api.routing import RefusedRequest
 from desync_archival.services import documents, image_worker, jobs, login, scheduler
 from desync_archival.services import task_manager as task_service
 from desync_archival.services.db import get_db_connection, seed_default_settings
@@ -45,7 +44,6 @@ DB_PATH = app_config.db_path().resolve()
 PREVIEWS_DIR = app_config.previews_dir().resolve()
 PREVIEWS_DIR.mkdir(parents=True, exist_ok=True)
 
-REDIRECT_STATUSES = (301, 302, 303, 307, 308)
 # A re-peek rewrites these in place, so a browser has to ask before reusing one.
 PREVIEW_CACHE_CONTROL = "no-cache"
 PREVIEW_CONTENT_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
@@ -250,51 +248,6 @@ class LoginMiddleware:
         await response(scope, receive, send)
 
 
-def redirect_location(data: Any) -> str | None:
-    """Finds a redirect target in the old handlers' HTML, or dict results."""
-    if isinstance(data, str):
-        match = re.search(r"url=([^'>\s]+)", data) or re.search(r"href=['\"]([^'\"]+)['\"]", data)
-        return match.group(1) if match else None
-    if isinstance(data, dict):
-        return data.get("location") or data.get("auth_url") or data.get("url")
-    return None
-
-
-def build_response(data: Any, status: int = 200, extra_headers: dict | None = None) -> Response:
-    """Turns a handler's result into a Response. Bytes pass through, a str is sent as text, and anything else as JSON."""
-    headers = dict(extra_headers or {})
-
-    if status in REDIRECT_STATUSES:
-        location = redirect_location(data)
-        if location:
-            headers["Location"] = location
-
-    if isinstance(data, (bytes, bytearray)):
-        payload = bytes(data)
-        headers.setdefault("Content-Type", "application/octet-stream")
-    elif isinstance(data, str):
-        payload = data.encode("utf-8")
-        # HTML has to be asked for, because a scrape file holds third-party names.
-        kind = "text/html" if isinstance(data, schemas.HtmlPage) else "text/plain"
-        headers.setdefault("Content-Type", f"{kind}; charset=utf-8")
-    else:
-        payload = json.dumps(data).encode("utf-8")
-        headers.setdefault("Content-Type", "application/json")
-
-    return Response(content=payload, status_code=status, headers=headers)
-
-
-def parse_body(body_bytes: bytes) -> Any:
-    """Decodes a JSON body. An empty body means no options.
-
-    Raises:
-        ValueError: The body isn't JSON. A broken request must not run with the defaults.
-    """
-    if not body_bytes:
-        return {}
-    return json.loads(body_bytes.decode("utf-8"))
-
-
 def serve_preview(rel_path: str) -> Response:
     """Serves a cached preview, or a placeholder for anything missing or outside the previews folder."""
     file_path = (app_config.data_dir() / "previews" / rel_path).resolve()
@@ -436,6 +389,11 @@ def create_app(manage_workers: bool = True) -> FastAPI:
             await run_in_threadpool(stop_managers)
 
     app = FastAPI(title="DESYNC 3D Vault", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    # Read through this module, because start_managers fills these in after the app exists.
+    app.state.open_database = lambda: get_db_connection(DB_PATH, shared=True)
+    app.state.download_manager = lambda: download_manager
+    app.state.task_manager = lambda: task_manager
+    app.add_exception_handler(RefusedRequest, lambda _, error: JSONResponse({"error": str(error)}, 400))
     app.add_middleware(LoginMiddleware)
     app.add_middleware(SecurityMiddleware)
     app.add_middleware(RequestLoggingMiddleware)

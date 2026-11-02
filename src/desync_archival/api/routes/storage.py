@@ -1,18 +1,14 @@
-import sqlite3
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from desync_archival import settings as app_config
+from desync_archival.api.routing import Body, Conn, Downloads
 from desync_archival.db.queries import storage as queries
-from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.logger import logger
 
 
 def handle_get_storage_status(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    download_manager: Downloads,
 ) -> tuple[dict[str, Any], int]:
     """Capacity, health and mount state for both NAS and staging storage."""
     if not download_manager:
@@ -23,10 +19,9 @@ def handle_get_storage_status(
 
 
 def handle_post_storage_config(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     """Configures NAS root storage path and local high-speed staging path."""
     nas_path = str(body.get("download_root_path", body.get("path", ""))).strip()

@@ -150,9 +150,9 @@ class PairTests(Case):
         manager = object.__new__(TaskManager)
         manager.db_path = self.db
         with patch.object(routes, "_get_managers", return_value=(MagicMock(), manager)):
-            routes.handle_post_reconcile_duplicates(self.conn, None, {}, {})
+            routes.handle_post_reconcile_duplicates(self.conn, download_manager=None, params={})
         self.conn.commit()
-        body, _ = routes.handle_get_reconcile_duplicates_latest(self.conn, MagicMock(active_downloads={1: {}}), {}, {})
+        body, _ = routes.handle_get_reconcile_duplicates_latest(self.conn, download_manager=MagicMock(active_downloads={1: {}}))
         self.assertIn("Downloads", body["pairs"][0]["first"]["delete_blocked"])
 
 
@@ -197,7 +197,7 @@ class SavedResultTests(Case):
         manager.db_path = self.db
         reconciler = MagicMock()
         with patch.object(routes, "_get_managers", return_value=(reconciler, manager)):
-            routes.handle_post_reconcile_duplicates(self.conn, None, {}, {})
+            routes.handle_post_reconcile_duplicates(self.conn, download_manager=None, params={})
         self.conn.commit()
 
     def test_results_stay_after_leaving_the_page(self):
@@ -303,14 +303,14 @@ class DeleteTests(Case):
 
     def test_the_route_needs_confirm(self):
         self.twins()
-        body, _ = routes.handle_post_reconcile_duplicate_delete(self.conn, None, {"file_id": self.first}, {})
+        body, _ = routes.handle_post_reconcile_duplicate_delete(self.conn, download_manager=None, body={"file_id": self.first})
         self.assertTrue(body["dry_run"])
         self.assertTrue(self.first_path.exists())
 
     def test_the_route_waits_for_downloads(self):
         self.twins()
         downloads = MagicMock(active_downloads={1: {}})
-        _, status = routes.handle_post_reconcile_duplicate_delete(self.conn, downloads, {"file_id": self.first, "confirm": True}, {})
+        _, status = routes.handle_post_reconcile_duplicate_delete(self.conn, download_manager=downloads, body={"file_id": self.first, "confirm": True})
         self.assertEqual(status, 409)
         self.assertTrue(self.first_path.exists())
 
@@ -495,7 +495,7 @@ class RestoreTests(Case):
     def test_the_route_waits_for_downloads(self):
         tombstone = self.deleted()
         downloads = MagicMock(active_downloads={1: {}})
-        _, status = routes.handle_post_pending_deletion_restore(self.conn, downloads, {"id": tombstone}, {})
+        _, status = routes.handle_post_pending_deletion_restore(self.conn, download_manager=downloads, body={"id": tombstone})
         self.assertEqual(status, 409)
         self.assertFalse(self.first_path.exists())
 
@@ -557,7 +557,7 @@ class PurgeTests(Case):
         moved = self.held()
         with self.conn:
             self.conn.execute("UPDATE app_settings SET value = '/nowhere' WHERE key = 'download_root_path'")
-        _, status = routes.handle_post_pending_deletion_purge(self.conn, None, {"confirm": True, "ids": [1]}, {})
+        _, status = routes.handle_post_pending_deletion_purge(self.conn, body={"confirm": True, "ids": [1]})
         self.assertEqual(status, 503)
         self.assertTrue(moved.exists())
 

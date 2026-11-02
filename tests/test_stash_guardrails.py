@@ -249,14 +249,14 @@ class TestStashGuardrails(unittest.TestCase):
     def test_route_add_undownloaded_returns_400(self):
         """HTTP handler returns 400 when attempting to stash un-downloaded items."""
         body = {"item_type": "model", "model_id": 101}
-        resp, status = handle_add_stash_item(conn=self.conn, stash_id=1, body=body)
+        resp, status = handle_add_stash_item(self.conn, stash_id=1, body=body)
         self.assertEqual(status, 400)
         self.assertIn("must be archived in the vault", resp["error"])
 
     def test_route_bulk_add_all_undownloaded_returns_400(self):
         """HTTP bulk handler returns 400 when all requested models are un-downloaded."""
         body = {"model_ids": [101]}
-        resp, status = handle_bulk_add_models(conn=self.conn, stash_id=1, body=body)
+        resp, status = handle_bulk_add_models(self.conn, stash_id=1, body=body)
         self.assertEqual(status, 400)
         self.assertIn("must be downloaded to the vault", resp["error"])
 

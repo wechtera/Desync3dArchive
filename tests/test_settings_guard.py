@@ -155,19 +155,19 @@ class RouteGuardTests(GuardBase):
 
     def test_post_settings_refuses_production_path(self):
         body = {"stash_download_path": str(self.production / "stash")}
-        result, status = handle_post_settings(self.conn, None, body, {})
+        result, status = handle_post_settings(self.conn, download_manager=None, body=body)
         self.assertEqual(status, 400)
         self.assertIn("Refusing production path", result["error"])
 
     def test_storage_config_refuses_without_creating_the_directory(self):
         target = self.production / "new_vault"
-        result, status = handle_post_storage_config(self.conn, None, {"download_root_path": str(target)}, {})
+        result, status = handle_post_storage_config(self.conn, download_manager=None, body={"download_root_path": str(target)})
         self.assertEqual(status, 400)
         self.assertIn("Refusing production path", result["error"])
         self.assertFalse(target.exists())
 
     def test_library_add_refuses_production_path(self):
-        result, status = handle_post_external_library(self.conn, None, {"path": str(self.production)}, {})
+        result, status = handle_post_external_library(self.conn, body={"path": str(self.production)}, task_manager=None)
         self.assertEqual(status, 400)
         self.assertIn("Refusing production path", result["error"])
 

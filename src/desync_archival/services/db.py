@@ -40,9 +40,13 @@ class ScopedConnection(sqlite3.Connection):
                 self.close()
 
 
-def get_db_connection(db_path: Path | str) -> sqlite3.Connection:
-    """A connection its owner closes. For one block of work, use `scoped_connection`."""
-    conn = connect(db_path)
+def get_db_connection(db_path: Path | str, shared: bool = False) -> sqlite3.Connection:
+    """A connection its owner closes. For one block of work, use `scoped_connection`.
+
+    `shared` is for a request's connection, which a dependency opens in one worker thread and a
+    handler uses in another. They take turns, so nothing touches it at the same time.
+    """
+    conn = connect(db_path, shared=shared)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.execute("PRAGMA busy_timeout = 45000;")

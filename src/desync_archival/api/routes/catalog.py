@@ -15,10 +15,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
 from desync_archival import settings as app_config
-from desync_archival.api.routing import paging
+from desync_archival.api.routing import Body, Conn, Params, paging
 from desync_archival.db.queries import catalog as queries
 from desync_archival.services.analytics import compute_catalog_audit
-from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.logger import logger
 from desync_archival.services.mesh_renderer import VALID_VIEWS, MeshRenderer
 
@@ -71,10 +70,7 @@ VALID_RELEASE_R = """
 # -------------------------------------------------------------------------
 
 def handle_get_metrics(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     """GET /api/metrics. Header counts, computed from SQLite only."""
     counts = conn.execute(queries.SELECT_COLLECTIONS_COUNT_BY_X.format(VALID_MODEL_M=VALID_MODEL_M, VALID_MODEL_RAW=VALID_MODEL_RAW, VALID_RELEASE_COND=VALID_RELEASE_COND)).fetchone()
@@ -97,10 +93,8 @@ def handle_get_metrics(
 
 
 def handle_get_audit(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     designer = params.get("designer", [None])[0]
     data = compute_catalog_audit(conn, designer)
@@ -108,10 +102,7 @@ def handle_get_audit(
 
 
 def handle_get_creators(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
 ) -> tuple[list[dict[str, Any]], int]:
     """GET /api/creators. Creators with model counts, hiding tombstones and unknown designers."""
     creators = conn.execute(queries.SELECT_COLLECTIONS_BY_X.format(VALID_MODEL_M=VALID_MODEL_M)).fetchall()
@@ -119,10 +110,8 @@ def handle_get_creators(
 
 
 def handle_get_releases(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     designer = params.get("designer", [None])[0]
     bundles_only = params.get("bundles_only", ["0"])[0] == "1"
@@ -173,10 +162,8 @@ def handle_get_releases(
 
 
 def handle_get_models(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     """GET /api/models. Pages collections, despite the name, with search and filters."""
     designer = params.get("designer", [None])[0]
@@ -278,10 +265,8 @@ def handle_get_models(
 
 
 def handle_get_model_detail(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     raw_id = None
     if "id" in params:
@@ -418,10 +403,8 @@ def handle_get_model_detail(
 
 
 def handle_get_model_files(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     raw_model_id = params.get("model_id", [None])[0]
     if not raw_model_id or not str(raw_model_id).isdigit():
@@ -456,12 +439,10 @@ def handle_get_model_files(
 # -------------------------------------------------------------------------
 
 def handle_post_model_render_view(
-    conn: sqlite3.Connection,
+    conn: Conn,
     model_id: int,
-    download_manager: Optional[DownloadManager] = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-    task_manager: Any = None,
+    body: Body,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     """
     POST /api/models/:id/render-view
@@ -566,11 +547,9 @@ def handle_post_model_render_view(
 
 
 def handle_post_render_stl(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager] = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-    task_manager: Any = None,
+    conn: Conn,
+    body: Body,
+    params: Params,
 ) -> Union[Tuple[bytes, int, Dict[str, str]], Tuple[Dict[str, Any], int], tuple[dict[str, Any], int, dict[str, str]]]:
     """
     POST/GET /api/render/stl

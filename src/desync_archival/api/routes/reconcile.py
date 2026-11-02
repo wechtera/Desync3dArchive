@@ -4,8 +4,9 @@ api/routes/reconcile.py - Endpoints for background vault storage auditing and st
 
 import sqlite3
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
+from desync_archival.api.routing import Body, Conn, Downloads, Params
 from desync_archival.db.queries import reconcile as queries
 from desync_archival.services import (
     audit,
@@ -15,7 +16,6 @@ from desync_archival.services import (
     run_history,
 )
 from desync_archival.services import task_manager as task_service
-from desync_archival.services.downloader import DownloadManager
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
 
@@ -31,10 +31,9 @@ def _record_check(task_mgr: TaskManager, task_type: str, res: dict[str, Any], la
 
 
 def handle_post_reconcile_scan(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     """Starts background vault reconciliation task via TaskManager and returns immediately."""
     scan_mode = body.get("scan_mode", "fast")
@@ -58,10 +57,7 @@ def handle_post_reconcile_scan(
 
 
 def handle_get_reconcile_status(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     """Live task progress if running, or the latest completed audit report."""
     reconciler, task_mgr = _get_managers(conn)
@@ -83,10 +79,7 @@ def handle_get_reconcile_status(
 
 
 def handle_post_reconcile_cancel(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     _, task_mgr = _get_managers(conn)
     active_task = task_mgr.get_active_task()
@@ -96,10 +89,9 @@ def handle_post_reconcile_cancel(
 
 
 def handle_post_reconcile_reset(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     model_ids = body.get("model_ids", [])
     if not model_ids:
@@ -114,10 +106,9 @@ def handle_post_reconcile_reset(
 
 
 def handle_post_reconcile_delete_orphans(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     """POST /api/reconcile/delete-orphans. Permanently removes folders. Dry run without confirm."""
     paths = body.get("paths", [])
@@ -134,10 +125,9 @@ def handle_post_reconcile_delete_orphans(
 
 
 def handle_post_reconcile_ingest_untracked(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     items = body.get("items", [])
     if not items:
@@ -154,10 +144,7 @@ def handle_post_reconcile_ingest_untracked(
 
 
 def handle_get_reconcile_staging_garbage(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     """GET /api/reconcile/staging. Lists staging leftovers and writes nothing."""
     reconciler, _ = _get_managers(conn)
@@ -166,10 +153,7 @@ def handle_get_reconcile_staging_garbage(
 
 
 def handle_post_reconcile_staging_check(
-    conn: sqlite3.Connection,
-    download_manager: DownloadManager | None,
-    body: dict,
-    params: dict,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     """POST /api/reconcile/staging. The same list, recorded as a run."""
     reconciler, task_mgr = _get_managers(conn)
@@ -179,10 +163,9 @@ def handle_post_reconcile_staging_check(
 
 
 def handle_post_reconcile_staging_purge(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     paths = body.get("paths")
     reconciler, _ = _get_managers(conn)
@@ -196,10 +179,7 @@ def handle_post_reconcile_staging_purge(
 
 
 def handle_get_reconcile_path_drift(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     """GET /api/reconcile/drift. Lists drifted folders and writes nothing."""
     reconciler, _ = _get_managers(conn)
@@ -208,10 +188,7 @@ def handle_get_reconcile_path_drift(
 
 
 def handle_post_reconcile_path_drift(
-    conn: sqlite3.Connection,
-    download_manager: DownloadManager | None,
-    body: dict,
-    params: dict,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     """POST /api/reconcile/drift. The same list, recorded as a run."""
     reconciler, task_mgr = _get_managers(conn)
@@ -221,10 +198,9 @@ def handle_post_reconcile_path_drift(
 
 
 def handle_get_reconcile_duplicates(
-    conn: sqlite3.Connection,
-    download_manager: DownloadManager | None,
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     """GET /api/reconcile/duplicates. Runs the duplicate check and writes nothing."""
     include_shared = params.get("include_shared", ["0"])[0] == "1"
@@ -234,10 +210,9 @@ def handle_get_reconcile_duplicates(
 
 
 def handle_post_reconcile_duplicates(
-    conn: sqlite3.Connection,
-    download_manager: DownloadManager | None,
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     """POST /api/reconcile/duplicates. Runs the duplicate check and saves it with its job row."""
     found = duplicates.find_duplicates(conn, include_shared=params.get("include_shared", ["0"])[0] == "1")
@@ -248,10 +223,8 @@ def handle_post_reconcile_duplicates(
 
 
 def handle_get_reconcile_duplicates_latest(
-    conn: sqlite3.Connection,
-    download_manager: DownloadManager | None,
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
 ) -> tuple[dict[str, Any], int]:
     """GET /api/reconcile/duplicates/latest. The saved results, minus pairs already acted on."""
     saved = duplicates.latest(conn)
@@ -260,10 +233,8 @@ def handle_get_reconcile_duplicates_latest(
 
 
 def handle_post_reconcile_duplicate_decision(
-    conn: sqlite3.Connection,
-    download_manager: DownloadManager | None,
-    body: dict,
-    params: dict,
+    conn: Conn,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     try:
         return duplicates.decide(conn, int(body["first_file_id"]), int(body["second_file_id"]), str(body["decision"])), 200
@@ -272,10 +243,9 @@ def handle_post_reconcile_duplicate_decision(
 
 
 def handle_post_reconcile_duplicate_delete(
-    conn: sqlite3.Connection,
-    download_manager: DownloadManager | None,
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     file_id = int(body["file_id"])
     if not body.get("confirm"):
@@ -290,28 +260,21 @@ def handle_post_reconcile_duplicate_delete(
 
 
 def handle_get_pending_deletion(
-    conn: sqlite3.Connection,
-    download_manager: DownloadManager | None,
-    body: dict,
-    params: dict,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     return pending_deletion.summary(conn), 200
 
 
 def handle_get_pending_deletion_items(
-    conn: sqlite3.Connection,
-    download_manager: DownloadManager | None,
-    body: dict,
-    params: dict,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     return pending_deletion.listing(conn), 200
 
 
 def handle_post_pending_deletion_restore(
-    conn: sqlite3.Connection,
-    download_manager: DownloadManager | None,
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     if reason := jobs.busy_reason(conn, download_manager):
         return {"success": False, "error": reason}, 409
@@ -322,10 +285,8 @@ def handle_post_pending_deletion_restore(
 
 
 def handle_post_pending_deletion_purge(
-    conn: sqlite3.Connection,
-    download_manager: DownloadManager | None,
-    body: dict,
-    params: dict,
+    conn: Conn,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     """POST /api/pending-deletion/purge. Lists, or with confirm erases, files past the wait."""
     try:
@@ -335,10 +296,9 @@ def handle_post_pending_deletion_purge(
 
 
 def handle_post_reconcile_path_realign(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    download_manager: Downloads,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     """POST /api/reconcile/drift/realign. Lists the moves. With confirm, runs them as a job."""
     model_ids = body.get("model_ids")
@@ -359,10 +319,8 @@ def handle_post_reconcile_path_realign(
     return {"success": True, "task_id": started["task_id"], "message": "Folder moves started."}, 200
 
 def handle_post_reconcile_catalog_previews(
-    conn: sqlite3.Connection,
-    download_manager: Optional[DownloadManager],
-    body: dict,
-    params: dict,
+    conn: Conn,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     # This used to be a bare thread, which never showed as a job and could overlap one.
     _, task_mgr = _get_managers(conn)
@@ -377,9 +335,6 @@ def handle_post_reconcile_catalog_previews(
 
 
 def handle_get_reconcile_history(
-    conn: sqlite3.Connection,
-    download_manager: DownloadManager | None,
-    body: dict,
-    params: dict,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     return {"runs": run_history.latest(conn)}, 200

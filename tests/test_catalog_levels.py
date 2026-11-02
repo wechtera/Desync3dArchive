@@ -967,14 +967,14 @@ class ImportTests(BuildCase):
 
     def test_the_route_refuses_a_bad_path_without_starting_a_job(self):
         manager = MagicMock()
-        _, status = routes.handle_post_import_file(self.conn, body={"paths": ["/gone/x.stl"]}, task_manager=manager)
+        _, status = routes.handle_post_import_file(body={"paths": ["/gone/x.stl"]}, task_manager=manager)
         self.assertEqual(status, 400)
         manager.start_task.assert_not_called()
 
     def test_the_route_reports_a_busy_job_as_a_conflict(self):
         manager = MagicMock()
         manager.start_task.return_value = {"success": False, "error": "busy"}
-        _, status = routes.handle_post_import_file(self.conn, body={"paths": [str(self.write("a.stl"))]}, task_manager=manager)
+        _, status = routes.handle_post_import_file(body={"paths": [str(self.write("a.stl"))]}, task_manager=manager)
         self.assertEqual(status, 409)
         self.assertEqual(manager.start_task.call_args.args[0], "file_import")
 
@@ -982,9 +982,9 @@ class ImportTests(BuildCase):
         self.write("dragon.stl")
         self.write("notes.txt")
         folder = {"path": [str(self.incoming)]}
-        plain, _ = routes.handle_get_system_browse(self.conn, params=folder)
+        plain, _ = routes.handle_get_system_browse(params=folder)
         self.assertNotIn("files", plain)
-        picked, _ = routes.handle_get_system_browse(self.conn, params={**folder, "files": ["1"]})
+        picked, _ = routes.handle_get_system_browse(params={**folder, "files": ["1"]})
         self.assertEqual([f["name"] for f in picked["files"]], ["dragon.stl"])
         self.assertTrue(picked["roots"])
 
@@ -1067,7 +1067,7 @@ class AuditCoverageTests(BuildCase):
 
     def test_unlinking_a_missing_library_records_nothing(self):
         with patch("desync_archival.services.jobs.busy_reason", return_value=""):
-            _, status = routes.handle_delete_external_library(self.conn, 999)
+            _, status = routes.handle_delete_external_library(self.conn, library_id=999, download_manager=None)
         self.assertEqual((status, self.actions()), (404, []))
 
 

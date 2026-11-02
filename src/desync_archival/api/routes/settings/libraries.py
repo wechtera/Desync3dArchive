@@ -10,6 +10,7 @@ from typing import Any
 from desync_archival import mounts
 from desync_archival import settings as app_config
 from desync_archival.api.routes.settings.core import format_bytes
+from desync_archival.api.routing import Body, Conn, Downloads, Params, Tasks
 from desync_archival.db.queries import settings as queries
 from desync_archival.services import (
     audit,
@@ -35,10 +36,7 @@ from desync_archival.services.logger import (
 # -------------------------------------------------------------------------
 
 def handle_get_external_libraries(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     """
     GET /api/settings/libraries
@@ -68,11 +66,9 @@ def handle_get_external_libraries(
 
 
 def handle_post_external_library(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
-    task_manager: Any = None,
+    conn: Conn,
+    body: Body,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     """
     POST /api/settings/libraries
@@ -139,11 +135,9 @@ def handle_post_external_library(
 
 
 def handle_delete_external_library(
-    conn: sqlite3.Connection,
+    conn: Conn,
     library_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    download_manager: Downloads,
 ) -> tuple[dict[str, Any], int]:
     """
     DELETE /api/settings/libraries/:id
@@ -175,12 +169,10 @@ def handle_delete_external_library(
 
 
 def handle_post_external_library_scan(
-    conn: sqlite3.Connection,
+    conn: Conn,
     library_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
-    task_manager: Any = None,
+    body: Body,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     """
     POST /api/settings/libraries/:id/scan
@@ -219,11 +211,8 @@ def handle_post_external_library_scan(
 
 
 def handle_get_library_preview(
-    conn: sqlite3.Connection,
+    conn: Conn,
     library_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
 ) -> tuple[dict[str, Any], int]:
     """GET /api/settings/libraries/:id/preview: the latest report, and what is waiting on a decision."""
     conn.row_factory = sqlite3.Row
@@ -243,11 +232,9 @@ def handle_get_library_preview(
 
 
 def handle_post_library_approve(
-    conn: sqlite3.Connection,
+    conn: Conn,
     library_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     """POST /api/settings/libraries/:id/preview/approve: only approved folders can become models."""
     skip = [str(name) for name in (body or {}).get("skip_releases") or []]
@@ -265,11 +252,9 @@ def handle_post_library_approve(
 
 
 def handle_get_library_release(
-    conn: sqlite3.Connection,
+    conn: Conn,
     library_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     """GET /api/settings/libraries/:id/preview/release?name=: the saved tree and its cards."""
     try:
@@ -279,11 +264,9 @@ def handle_get_library_release(
 
 
 def handle_post_library_review(
-    conn: sqlite3.Connection,
+    conn: Conn,
     library_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     """POST /api/settings/libraries/:id/preview/review: a human's cards beat the resolver's."""
     data = body or {}
@@ -301,11 +284,9 @@ def handle_post_library_review(
 
 
 def handle_get_catalog_review(
-    conn: sqlite3.Connection,
+    conn: Conn,
     library_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     try:
         return catalog_review.view(conn, library_id, ((params or {}).get("name") or [""])[0]), 200
@@ -314,11 +295,9 @@ def handle_get_catalog_review(
 
 
 def handle_post_catalog_review(
-    conn: sqlite3.Connection,
+    conn: Conn,
     library_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     data = body or {}
     release = str(data.get("release") or "")
@@ -332,11 +311,8 @@ def handle_post_catalog_review(
 
 
 def handle_post_import_file(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
-    task_manager: Any = None,
+    body: Body,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     """POST /api/import-file. Checks the picked paths now, then starts the import job."""
     data = body or {}

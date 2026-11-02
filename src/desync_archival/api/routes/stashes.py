@@ -4,10 +4,10 @@ Handles staging manifests, polymorphic item curation, active pointer persistence
 download validation guardrails, batch model additions, and background slicer materialization.
 """
 
-import sqlite3
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 from desync_archival import settings as app_config
+from desync_archival.api.routing import Body, Conn, Tasks
 from desync_archival.db.queries import stashes as queries
 from desync_archival.services.logger import logger
 from desync_archival.services.stash_exporter import StashExporter
@@ -17,10 +17,7 @@ _stash_service = StashService()
 
 
 def handle_get_stashes(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
+    conn: Conn,
 ) -> Tuple[Dict[str, Any], int]:
     """GET /api/stashes - Lists all stashes with aggregated item counts and volume metrics."""
     stashes = _stash_service.list_stashes(conn=conn)
@@ -28,10 +25,8 @@ def handle_get_stashes(
 
 
 def handle_create_stash(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
+    conn: Conn,
+    body: Body,
 ) -> Tuple[Dict[str, Any], int]:
     """POST /api/stashes - Creates a new named stash manifest ({name, description, make_active})."""
     payload = body or {}
@@ -58,10 +53,7 @@ def handle_create_stash(
 
 
 def handle_get_active_stash(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
+    conn: Conn,
 ) -> Tuple[Dict[str, Any], int]:
     """GET /api/stashes/active - Retrieves the currently active stash with summary counts."""
     active = _stash_service.get_active_stash(conn=conn)
@@ -69,11 +61,8 @@ def handle_get_active_stash(
 
 
 def handle_set_active_stash(
-    conn: sqlite3.Connection,
+    conn: Conn,
     stash_id: int,
-    download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
 ) -> Tuple[Dict[str, Any], int]:
     """POST /api/stashes/:id/active - Sets target stash as active."""
     try:
@@ -87,11 +76,8 @@ def handle_set_active_stash(
 
 
 def handle_get_stash_detail(
-    conn: sqlite3.Connection,
+    conn: Conn,
     stash_id: int,
-    download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
 ) -> Tuple[Dict[str, Any], int]:
     """GET /api/stashes/:id - Resolves full item metadata, titles, creators, thumbnails, and sizes."""
     detail = _stash_service.get_stash_detail(stash_id=stash_id, conn=conn)
@@ -101,11 +87,8 @@ def handle_get_stash_detail(
 
 
 def handle_delete_stash(
-    conn: sqlite3.Connection,
+    conn: Conn,
     stash_id: int,
-    download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
 ) -> Tuple[Dict[str, Any], int]:
     """DELETE /api/stashes/:id - Deletes stash manifest and items (original files untouched)."""
     deleted = _stash_service.delete_stash(stash_id=stash_id, conn=conn)
@@ -115,11 +98,9 @@ def handle_delete_stash(
 
 
 def handle_add_stash_item(
-    conn: sqlite3.Connection,
+    conn: Conn,
     stash_id: int,
-    download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
+    body: Body,
 ) -> Tuple[Dict[str, Any], int]:
     """POST /api/stashes/{id}/items. A repeat answers 409 so the UI can name the stash."""
     payload = body or {}
@@ -176,11 +157,8 @@ def handle_add_stash_item(
 
 
 def handle_remove_stash_item(
-    conn: sqlite3.Connection,
+    conn: Conn,
     stash_item_id: int,
-    download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
 ) -> Tuple[Dict[str, Any], int]:
     """DELETE /api/stashes/items/:item_id - Removes an individual line item from its stash."""
     removed = _stash_service.remove_from_stash(stash_item_id=stash_item_id, conn=conn)
@@ -190,11 +168,9 @@ def handle_remove_stash_item(
 
 
 def handle_bulk_add_models(
-    conn: sqlite3.Connection,
+    conn: Conn,
     stash_id: int,
-    download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
+    body: Body,
 ) -> Tuple[Dict[str, Any], int]:
     payload = body or {}
     model_ids = payload.get("model_ids")
@@ -218,12 +194,10 @@ def handle_bulk_add_models(
 
 
 def handle_post_export_stash(
-    conn: sqlite3.Connection,
+    conn: Conn,
     stash_id: int,
-    download_manager: Any = None,
-    body: Optional[dict] = None,
-    params: Optional[dict] = None,
-    task_manager: Any = None,
+    body: Body,
+    task_manager: Tasks,
 ) -> Tuple[Dict[str, Any], int]:
     """
     POST /api/stashes/:id/export - Dispatches stash materialization.

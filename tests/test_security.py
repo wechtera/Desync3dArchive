@@ -187,7 +187,7 @@ class V2ScrapeDownloadTests(unittest.TestCase):
         self.temp.cleanup()
 
     def fetch(self, path):
-        return handle_get_scrapes_download(None, None, {}, {"path": [path]}, task_manager=self.manager)
+        return handle_get_scrapes_download(params={"path": [path]}, task_manager=self.manager)
 
     def test_allowed_artifacts_are_served(self):
         self.assertEqual(self.fetch("scrapes/scrape_1/model_ids.txt"), ("content of model_ids.txt", 200))

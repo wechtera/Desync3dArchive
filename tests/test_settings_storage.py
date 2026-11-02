@@ -67,7 +67,7 @@ class TestSettingsStorage(unittest.TestCase):
     def test_post_and_get_custom_stash_download_path(self):
         """Verify custom stash_download_path persists and is returned on subsequent GET."""
         custom_path = str(self.test_dir / "custom_print_queue")
-        post_resp, post_status = handle_post_settings(self.conn, body={"stash_download_path": custom_path})
+        post_resp, post_status = handle_post_settings(self.conn, download_manager=None, body={"stash_download_path": custom_path})
         self.assertEqual(post_status, 200)
         self.assertTrue(post_resp["success"])
 
@@ -86,7 +86,7 @@ class TestSettingsStorage(unittest.TestCase):
         (batch_folder / "figure1.stl").write_bytes(b"x" * 1024)
         (batch_folder / "figure2.stl").write_bytes(b"x" * 2048)
 
-        handle_post_settings(self.conn, body={"stash_download_path": str(queue_dir)})
+        handle_post_settings(self.conn, download_manager=None, body={"stash_download_path": str(queue_dir)})
 
         resp, status = handle_get_directory_usage(self.conn)
         self.assertEqual(status, 200)
@@ -106,7 +106,7 @@ class TestSettingsStorage(unittest.TestCase):
         queue_dir = self.test_dir / "purge_queue"
         queue_dir.mkdir(parents=True, exist_ok=True)
 
-        handle_post_settings(self.conn, body={"stash_download_path": str(queue_dir)})
+        handle_post_settings(self.conn, download_manager=None, body={"stash_download_path": str(queue_dir)})
 
         # Old folder (> 14 days ago)
         old_folder = queue_dir / "2026-09-01_Old_Batch"

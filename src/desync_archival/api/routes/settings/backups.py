@@ -1,12 +1,12 @@
 """Backups and their folders."""
 
 import logging
-import sqlite3
 from pathlib import Path
 from typing import Any
 
 from desync_archival import backup
 from desync_archival import settings as app_config
+from desync_archival.api.routing import Body, Conn, Tasks
 from desync_archival.services import (
     auth_service,
 )
@@ -16,11 +16,7 @@ from desync_archival.services.logger import (
 
 
 def handle_get_backups(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
-    task_manager: Any = None,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     try:
         listing = backup.list_backups()
@@ -56,11 +52,8 @@ def _save_backup_paths(backup_path: str, mirror_path: str) -> tuple[dict[str, An
 
 
 def handle_post_backups(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
-    task_manager: Any = None,
+    body: Body,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     """Restoring is deliberately absent. It needs the app stopped, so it stays a command."""
     data = body or {}

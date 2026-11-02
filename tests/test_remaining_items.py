@@ -4,7 +4,9 @@ Each test fails on the code before its fix. Class names carry the item, so
 `pytest tests/test_remaining_items.py -k E49` proves one on its own.
 """
 
+import ast
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -48,6 +50,7 @@ from desync_archival.services import (
 )
 from desync_archival.services import task_manager as task_service
 from desync_archival.services.archive_peeker import ArchivePeeker
+from desync_archival.services.db import get_db_connection
 from desync_archival.services.image_worker import ImageWorker
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
@@ -420,9 +423,7 @@ class UntrackedRouteS06Tests(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def post(self):
-        return reconcile_routes.handle_post_reconcile_ingest_untracked(
-            self.conn, self.manager, {"items": [{"model_id": 5, "file_path": "/v/a.stl"}]}, {},
-        )
+        return reconcile_routes.handle_post_reconcile_ingest_untracked(self.conn, download_manager=self.manager, body={"items": [{"model_id": 5, "file_path": "/v/a.stl"}]})
 
     def test_it_runs_as_a_job_and_is_audited(self):
         body, status = self.post()
@@ -936,22 +937,22 @@ class SingletonsA03Tests(TempDb):
 
 class ResponseTypesS12Tests(unittest.TestCase):
     def test_a_plain_string_is_never_html(self):
-        response = server.build_response("<script>alert(1)</script>")
+        response = routing.build_response("<script>alert(1)</script>")
         self.assertEqual(response.headers["content-type"], "text/plain; charset=utf-8")
 
     def test_only_a_marked_page_is_html(self):
-        response = server.build_response(schemas.HtmlPage("<html></html>"))
+        response = routing.build_response(schemas.HtmlPage("<html></html>"))
         self.assertEqual(response.headers["content-type"], "text/html; charset=utf-8")
 
     def test_a_handler_can_still_name_its_own_type(self):
-        response = server.build_response("{}", 200, {"Content-Type": "application/json"})
+        response = routing.build_response("{}", 200, {"Content-Type": "application/json"})
         self.assertEqual(response.headers["content-type"], "application/json")
 
     def test_the_callback_page_is_marked(self):
         conn = sqlite3.connect(":memory:")
         self.addCleanup(conn.close)
         with patch("desync_archival.api.routes.auth.auth_service.get_setting", return_value=""):
-            body = auth_routes.handle_get_auth_callback(conn, None, {}, {})[0]
+            body = auth_routes.handle_get_auth_callback()[0]
         self.assertIsInstance(body, schemas.HtmlPage)
 
 
@@ -965,7 +966,8 @@ class ReadsWriteNothingS16Tests(TempDb):
         reconciler.scan_path_drift.return_value = {"success": True, "items": []}
         manager = self.manager()
         with patch.object(reconcile_routes, "_get_managers", return_value=(reconciler, manager)):
-            handler(self.conn, None, {}, params or {})
+            wanted = inspect.signature(handler).parameters
+            handler(self.conn, **{k: v for k, v in {"download_manager": None, "params": params or {}}.items() if k in wanted})
         return manager
 
     def test_checks_read_by_get_record_nothing(self):
@@ -997,7 +999,7 @@ class RenderSlotsS16Tests(unittest.TestCase):
         self.renderer.return_value.render_ephemeral.return_value = b"jpeg"
 
     def render(self):
-        return catalog_routes.handle_post_render_stl(self.conn, None, {"id": 1})
+        return catalog_routes.handle_post_render_stl(self.conn, body={"id": 1}, params={})
 
     def test_a_third_render_is_turned_away_and_told_when_to_return(self):
         for _ in range(2):
@@ -1032,10 +1034,10 @@ class MalformedBodyWS7Tests(unittest.TestCase):
 
     def test_bytes_that_are_not_text_are_refused(self):
         with self.assertRaises(ValueError):
-            server.parse_body(b"\xff\xfe")
+            routing.parse_body(b"\xff\xfe")
 
     def test_an_empty_body_still_means_no_options(self):
-        self.assertEqual(server.parse_body(b""), {})
+        self.assertEqual(routing.parse_body(b""), {})
 
 
 class BadPagingWS7Tests(unittest.TestCase):
@@ -1442,9 +1444,7 @@ class NasFreeViewsP07Tests(TempDb):
         (self.root / ".b.stl").touch()
         with patch.object(app_config, "allowed_roots", return_value=[self.root]), \
                 patch.object(app_config, "is_allowed", return_value=True):
-            body, status = settings_routes.handle_get_system_browse(
-                self.conn, params={"folder": [str(self.root)], "files": ["1"]},
-            )
+            body, status = settings_routes.handle_get_system_browse(params={"folder": [str(self.root)], "files": ["1"]})
         self.assertEqual(status, 200)
         self.assertEqual([d["name"] for d in body["directories"]], ["alpha", "beta"])
         self.assertEqual(body["directories"][0]["path"], str(self.root / "alpha"))
@@ -1452,9 +1452,7 @@ class NasFreeViewsP07Tests(TempDb):
 
     def add_library(self, manager):
         with patch.object(app_config, "check_settable_path"):
-            return settings_routes.handle_post_external_library(
-                self.conn, body={"path": str(self.root), "name": "Lib"}, task_manager=manager,
-            )
+            return settings_routes.handle_post_external_library(self.conn, body={"path": str(self.root), "name": "Lib"}, task_manager=manager)
 
     def test_adding_a_library_starts_a_job_and_no_thread(self):
         manager = MagicMock()
@@ -1659,3 +1657,62 @@ class StlPreviewE53Tests(unittest.TestCase):
         for _ in range(4):
             self.ask("file", 999)
         self.assertEqual(self.ask("file", 1).status_code, 200)
+
+
+class HandlerShapeA01Tests(unittest.TestCase):
+    INJECTED = {"conn", "download_manager", "task_manager", "body", "params"}
+
+    def handlers(self):
+        folder = Path(routing.__file__).parent / "routes"
+        for path in sorted(folder.rglob("*.py")):
+            for node in ast.parse(path.read_text(encoding="utf-8")).body:
+                if isinstance(node, ast.FunctionDef) and node.name.startswith("handle_"):
+                    yield path.name, node
+
+    def test_a_handler_asks_only_for_what_it_uses(self):
+        unused = []
+        for filename, node in self.handlers():
+            used = {n.id for statement in node.body for n in ast.walk(statement) if isinstance(n, ast.Name)}
+            unused += [f"{filename}:{node.name}:{a.arg}" for a in node.args.args if a.arg in self.INJECTED and a.arg not in used]
+        self.assertEqual(unused, [])
+
+    def test_no_handler_falls_back_to_a_default(self):
+        self.assertEqual([node.name for _, node in self.handlers() if node.args.defaults], [])
+
+    def test_routing_never_reaches_back_into_the_server_module(self):
+        self.assertNotIn("api import server", Path(routing.__file__).read_text(encoding="utf-8"))
+
+    def test_each_request_closes_its_connection(self):
+        create_database(server.DB_PATH)
+        opened = []
+        app = server.create_app(manage_workers=False)
+
+        def tracked():
+            opened.append(get_db_connection(server.DB_PATH, shared=True))
+            return opened[-1]
+
+        app.state.open_database = tracked
+        client = TestClient(app, base_url="http://localhost")
+        for _ in range(3):
+            self.assertEqual(client.get("/api/stashes").status_code, 200)
+        self.assertEqual(len(opened), 3)
+        for conn in opened:
+            with self.assertRaises(sqlite3.ProgrammingError):
+                conn.execute("SELECT 1")
+
+    def test_a_route_that_fails_still_closes_its_connection(self):
+        create_database(server.DB_PATH)
+        opened = []
+        app = server.create_app(manage_workers=False)
+
+        def tracked():
+            opened.append(get_db_connection(server.DB_PATH, shared=True))
+            return opened[-1]
+
+        app.state.open_database = tracked
+        with patch("desync_archival.api.routes.catalog.queries.SELECT_COLLECTIONS_COUNT_BY_X", new="SELECT nothing"):
+            response = TestClient(app, base_url="http://localhost").get("/api/metrics")
+        self.assertEqual(response.status_code, 500)
+        with self.assertRaises(sqlite3.ProgrammingError):
+            opened[0].execute("SELECT 1")
+

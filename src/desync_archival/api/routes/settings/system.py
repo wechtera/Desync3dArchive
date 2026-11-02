@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from desync_archival import settings as app_config
-from desync_archival.api.routes.settings.core import DEFAULT_STASH_EXPORT_PATH, format_bytes
+from desync_archival.api.routes.settings.core import (
+    DEFAULT_STASH_EXPORT_PATH,
+    format_bytes,
+)
+from desync_archival.api.routing import Body, Conn, Downloads, Params, Tasks
 from desync_archival.db.queries import settings as queries
 from desync_archival.services import (
     audit,
@@ -35,10 +39,8 @@ from desync_archival.services.logger import (
 # -------------------------------------------------------------------------
 
 def handle_get_documents(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     """GET /api/documents. Pages PDFs from the catalog, so it works offline."""
     query = params or {}
@@ -49,10 +51,8 @@ def handle_get_documents(
 
 
 def handle_post_document_stash(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     try:
         return {"success": True, **documents.add_to_stash(conn, str((body or {}).get("key") or ""))}, 200
@@ -61,30 +61,22 @@ def handle_post_document_stash(
 
 
 def handle_post_document_update(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
-    task_manager: Any = None,
+    task_manager: Tasks,
 ) -> tuple[dict[str, Any], int]:
     result = task_manager.start_task("document_update")
     return result, 200 if result.get("success") else 409
 
 
 def handle_get_health(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    download_manager: Downloads,
 ) -> tuple[dict[str, Any], int]:
     return health.report(conn, download_manager), 200
 
 
 def handle_post_schedules(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     try:
         return {"success": True, "schedules": scheduler.save(conn, body or {})}, 200
@@ -93,19 +85,13 @@ def handle_post_schedules(
 
 
 def handle_get_locations(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     return {"locations": locations.listing(conn)}, 200
 
 
 def handle_get_directory_usage(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     """Gathers storage usage metrics across scratch staging, vault NAS, slicer queue, previews, metadata, and logs."""
     settings = {}
@@ -200,10 +186,7 @@ def handle_get_directory_usage(
 
 
 def handle_get_system_browse(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     folder_val = ""
     if params:
@@ -250,20 +233,13 @@ def handle_get_system_browse(
     }, 200
 
 
-def handle_get_logging_config(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
-) -> tuple[dict[str, Any], int]:
+def handle_get_logging_config() -> tuple[dict[str, Any], int]:
     return {"success": True, "config": get_logging_config()}, 200
 
 
 def handle_post_logging_config(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     data = body or {}
     level = str(data.get("level", "INFO")).upper()
@@ -288,10 +264,8 @@ def handle_post_logging_config(
 
 
 def handle_post_logs_purge(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     data = body or {}
     try:
@@ -359,10 +333,8 @@ def _purge_refusal(conn: sqlite3.Connection, stash_path: Path) -> str | None:
 
 
 def handle_post_stashes_purge(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     """Purges export folders in stash_download_path older than X days."""
     data = body or {}

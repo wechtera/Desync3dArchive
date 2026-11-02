@@ -364,7 +364,7 @@ class TestExternalIndexer(unittest.TestCase):
 
         conn = self._get_db()
         from desync_archival.api.routes.settings import handle_delete_external_library
-        del_res, status = handle_delete_external_library(conn, library_id=1)
+        del_res, status = handle_delete_external_library(conn, library_id=1, download_manager=None)
         self.assertEqual(status, 200)
         self.assertTrue(del_res["success"])
 

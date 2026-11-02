@@ -1,9 +1,9 @@
 """Archive review, the image queue and the inactive list."""
 
 import logging
-import sqlite3
 from typing import Any
 
+from desync_archival.api.routing import Body, Conn, Params
 from desync_archival.services import (
     archive_review,
     image_worker,
@@ -16,20 +16,14 @@ from desync_archival.services.logger import (
 
 
 def handle_get_archive_queue(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     return {"collections": archive_review.queue(conn)}, 200
 
 
 def handle_get_archive_review(
-    conn: sqlite3.Connection,
+    conn: Conn,
     collection_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
 ) -> tuple[dict[str, Any], int]:
     try:
         return archive_review.view(conn, collection_id), 200
@@ -38,11 +32,9 @@ def handle_get_archive_review(
 
 
 def handle_post_archive_review(
-    conn: sqlite3.Connection,
+    conn: Conn,
     collection_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     data = body or {}
     try:
@@ -55,19 +47,14 @@ def handle_post_archive_review(
 
 
 def handle_get_image_queue(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     return image_worker.status(conn), 200
 
 
 def handle_post_image_queue(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     action = str((body or {}).get("action") or "")
     if action == "pause":
@@ -83,10 +70,8 @@ def handle_post_image_queue(
 
 
 def handle_get_inactive(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     """GET /api/inactive: what went inactive or failed, from every process."""
     def param(name: str) -> str:

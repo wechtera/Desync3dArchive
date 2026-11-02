@@ -4,6 +4,7 @@ import logging
 import sqlite3
 from typing import Any
 
+from desync_archival.api.routing import Body, Conn, Params
 from desync_archival.services import (
     audit,
     catalog_browse,
@@ -15,10 +16,8 @@ from desync_archival.services.logger import (
 
 
 def handle_get_models(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     """GET /api/catalog-models. Pages real models, with search, tag and creator filters."""
     query = params or {}
@@ -32,22 +31,17 @@ def handle_get_models(
 
 
 def handle_get_catalog_model(
-    conn: sqlite3.Connection,
+    conn: Conn,
     model_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
 ) -> tuple[dict[str, Any], int]:
     found = catalog_browse.model_detail(conn, model_id)
     return (found, 200) if found else ({"success": False, "error": "Model not found."}, 404)
 
 
 def handle_post_catalog_model_stash(
-    conn: sqlite3.Connection,
+    conn: Conn,
     model_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     data = body or {}
     try:
@@ -59,11 +53,8 @@ def handle_post_catalog_model_stash(
 
 
 def handle_get_model_group(
-    conn: sqlite3.Connection,
+    conn: Conn,
     group_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
 ) -> tuple[dict[str, Any], int]:
     found = catalog_browse.group_detail(conn, group_id)
     return (found, 200) if found else ({"success": False, "error": "Group not found."}, 404)
@@ -77,10 +68,8 @@ def _tag_action(action) -> tuple[dict[str, Any], int]:
 
 
 def handle_get_tags(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     query = params or {}
     limit = tags.SUGGESTION_LIMIT if (query.get("hints") or [""])[0] else tags.PAGE_LIMIT
@@ -95,10 +84,8 @@ def _audit_tag_change(conn: sqlite3.Connection, outcome: tuple[dict[str, Any], i
 
 
 def handle_post_tags(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     data = body or {}
     name, action = str(data.get("name") or ""), str(data.get("action") or "")
@@ -113,11 +100,9 @@ def handle_post_tags(
 
 
 def handle_post_model_tags(
-    conn: sqlite3.Connection,
+    conn: Conn,
     model_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     data = body or {}
     name = str(data.get("name") or "")
@@ -127,10 +112,8 @@ def handle_post_model_tags(
 
 
 def handle_post_group_tags(
-    conn: sqlite3.Connection,
+    conn: Conn,
     group_id: int,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     return _tag_action(lambda: tags.add_to_group(conn, group_id, str((body or {}).get("name") or "")))

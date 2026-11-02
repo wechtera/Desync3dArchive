@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from desync_archival import settings as app_config
+from desync_archival.api.routing import Body, Conn, Downloads, Params
 from desync_archival.db.queries import settings as queries
 from desync_archival.services import (
     auth_service,
@@ -100,10 +101,7 @@ PUBLIC_SETTINGS = frozenset({
 
 
 def handle_get_settings(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
 ) -> tuple[dict[str, Any], int]:
     """Retrieves all key-value configuration pairs from app_settings."""
     try:
@@ -127,10 +125,9 @@ def handle_get_settings(
 
 
 def handle_post_settings(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    download_manager: Downloads,
+    body: Body,
 ) -> tuple[dict[str, Any], int]:
     """Persists settings key-value pairs into app_settings and reloads the download manager."""
     data = dict(body or {})
@@ -178,10 +175,8 @@ def handle_post_settings(
 
 
 def handle_get_audit_history(
-    conn: sqlite3.Connection,
-    download_manager: Any = None,
-    body: dict | None = None,
-    params: dict | None = None,
+    conn: Conn,
+    params: Params,
 ) -> tuple[dict[str, Any], int]:
     conn.row_factory = sqlite3.Row
     action = ((params or {}).get("action") or [""])[0]

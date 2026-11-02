@@ -142,7 +142,7 @@ class RunHistoryTests(ReliabilityCase):
             reconciler = MagicMock()
             reconciler.scan_staging_garbage.return_value = reconciler.scan_path_drift.return_value = {"success": False, "error": "boom"}
             with patch.object(routes_reconcile, "_get_managers", return_value=(reconciler, self.manager())):
-                _, status = handler(self.conn, None, {}, {})
+                _, status = handler(self.conn)
             self.assertEqual(status, 500)
             run = run_history.latest(self.conn)[card]
             self.assertEqual((run["status"], run["progress_label"]), ("failed", "boom"))
@@ -151,7 +151,7 @@ class RunHistoryTests(ReliabilityCase):
         tasks = MagicMock()
         tasks.start_task.return_value = {"success": True, "task_id": 8}
         with patch.object(routes_reconcile, "_get_managers", return_value=(MagicMock(), tasks)):
-            body, status = routes_reconcile.handle_post_reconcile_catalog_previews(self.conn, None, {}, {})
+            body, status = routes_reconcile.handle_post_reconcile_catalog_previews(self.conn, body={})
         self.assertEqual((status, body["task_id"]), (200, 8))
         self.assertEqual(tasks.start_task.call_args.args[0], "catalog_preview_backfill")
 
@@ -159,7 +159,7 @@ class RunHistoryTests(ReliabilityCase):
         tasks = MagicMock()
         tasks.start_task.return_value = {"success": False, "error": "busy"}
         with patch.object(routes_reconcile, "_get_managers", return_value=(MagicMock(), tasks)):
-            _, status = routes_reconcile.handle_post_reconcile_catalog_previews(self.conn, None, {}, {})
+            _, status = routes_reconcile.handle_post_reconcile_catalog_previews(self.conn, body={})
         self.assertEqual(status, 409)
 
     def test_the_preview_worker_finishes_its_job(self):
