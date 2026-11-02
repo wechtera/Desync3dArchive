@@ -493,3 +493,40 @@ class ToolLookupWS3Tests(unittest.TestCase):
     def test_a_bad_setting_falls_back(self):
         with patch.dict(os.environ, {"DESYNC_UNRAR_BIN": "/nowhere/unrar"}):
             self.assertNotEqual(external.find_unrar(), "/nowhere/unrar")
+
+
+class BackupPathsS11Tests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        self.data = self.root / "data"
+        self.data.mkdir()
+        self.allowed = self.root / "allowed"
+        self.allowed.mkdir()
+        self.outside = self.root / "outside"
+        self.outside.mkdir()
+        env = patch.dict(os.environ, {"DESYNC_DATA_DIR": str(self.data), "DESYNC_ALLOWED_ROOTS": str(self.allowed)})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def test_a_folder_outside_the_allowed_roots_is_refused(self):
+        body, status = settings_routes._save_backup_paths(str(self.outside / "b"), "")
+        self.assertEqual(status, 403)
+        self.assertIn("allowed", body["error"])
+        self.assertFalse(app_config.backup_paths_file().exists())
+
+    def test_the_second_folder_is_checked_too(self):
+        _, status = settings_routes._save_backup_paths(str(self.allowed / "b"), str(self.outside / "m"))
+        self.assertEqual(status, 403)
+
+    def test_allowed_folders_save(self):
+        self.assertEqual(settings_routes._save_backup_paths(str(self.allowed / "b"), "")[1], 200)
+        self.assertEqual(json.loads(app_config.backup_paths_file().read_text(encoding="utf-8"))["backup_dir"], str(self.allowed / "b"))
+
+    def test_a_crash_while_saving_leaves_the_old_file(self):
+        app_config.save_backup_paths("/old", "")
+        with patch("os.replace", side_effect=OSError("disk full")), self.assertRaises(OSError):
+            app_config.save_backup_paths("/new", "")
+        self.assertEqual(json.loads(app_config.backup_paths_file().read_text(encoding="utf-8"))["backup_dir"], "/old")
+        self.assertEqual([p.name for p in self.data.iterdir()], ["backup_paths.json"])

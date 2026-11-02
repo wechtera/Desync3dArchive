@@ -243,7 +243,14 @@ def _backup_path_choice(key: str) -> str:
 
 
 def save_backup_paths(backup: str, mirror: str) -> None:
-    backup_paths_file().write_text(json.dumps({"backup_dir": backup, "mirror_dir": mirror}), encoding="utf-8")
+    target = backup_paths_file()
+    temp = target.with_suffix(".tmp")
+    temp.write_text(json.dumps({"backup_dir": backup, "mirror_dir": mirror}), encoding="utf-8")
+    try:
+        os.replace(temp, target)
+    except OSError:
+        temp.unlink(missing_ok=True)
+        raise
 
 
 def backup_mirror_dir() -> Path | None:

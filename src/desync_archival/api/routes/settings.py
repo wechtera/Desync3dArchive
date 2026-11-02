@@ -780,7 +780,11 @@ def _save_backup_paths(backup_path: str, mirror_path: str) -> tuple[dict[str, An
             return {"success": False, "error": f"{label} must be outside the data folder."}, 400
         if not path.parent.is_dir():
             return {"success": False, "error": f"{path.parent} isn't available. Is the drive mounted?"}, 400
-    # FIXME(S-11): skips check_settable_path, so backups holding secrets can go anywhere the app can write.
+        # A full backup holds the secrets file, so this can't be anywhere the app happens to reach.
+        try:
+            app_config.check_settable_path(path)
+        except app_config.SettingsError as e:
+            return {"success": False, "error": str(e)}, 403
     app_config.save_backup_paths(backup_path, mirror_path)
     log_layer("storage", logging.INFO, "Backup folders changed in Settings")
     return {"success": True}, 200
