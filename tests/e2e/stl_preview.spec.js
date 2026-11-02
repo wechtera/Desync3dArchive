@@ -111,6 +111,30 @@ test('the title bar moves the window', async ({ page }) => {
   await expect(page.locator('#stl-preview')).toHaveCount(1);
 });
 
+test('the up axis is read from the shape', async ({ page }) => {
+  const guesses = await page.evaluate(async () => {
+    const { guessUpAxis } = await import('/static/js/views/stl_preview.js');
+    return [
+      [76, 6, 76], [76, 76, 5], [5, 76, 76], // Plates lie on their thin side.
+      [109, 127, 111], [30, 20, 60], [42, 40, 20], // Sizes from real packs and slicer files.
+    ].map(([x, y, z]) => guessUpAxis({ x, y, z }));
+  });
+  expect(guesses).toEqual(['y', 'z', 'x', 'y', 'z', 'y']);
+});
+
+test('Reorient cycles the up axis and leaves the window open', async ({ page }) => {
+  await open(page);
+  const root = page.locator('#stl-preview');
+  await expect(root).toHaveAttribute('data-up', 'y');
+  const button = page.locator('.stl-preview-turn');
+  await button.click();
+  await expect(root).toHaveAttribute('data-up', 'z');
+  await button.click();
+  await expect(root).toHaveAttribute('data-up', 'x');
+  await button.click();
+  await expect(root).toHaveAttribute('data-up', 'y');
+});
+
 test('a refused file says why', async ({ page }) => {
   await page.unroute('**/api/preview/stl');
   await page.route('**/api/preview/stl', (route) => route.fulfill({

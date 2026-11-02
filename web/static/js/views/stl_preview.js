@@ -12,6 +12,9 @@ const SUN_AZIMUTH_DEGREES = 250;
 const SUN_ELEVATION_DEGREES = 30;
 const SUN_COLOR = 0xffd9ac;
 const SHADOW_MAP_SIZE = 2048;
+const UP_AXES = ['y', 'z', 'x'];
+// The turn that puts each file axis pointing up in the scene, whose own up is Y.
+const TURNS = { y: [0, 0, 0], z: [-Math.PI / 2, 0, 0], x: [0, 0, Math.PI / 2] };
 
 let active = null;
 
@@ -56,7 +59,10 @@ function buildWindow(title) {
     <div class="stl-preview-window" role="dialog" aria-label="STL preview">
       <div class="stl-preview-header">
         <h2 class="stl-preview-title">${title}</h2>
-        <button type="button" class="stl-preview-close" aria-label="Close preview" @click=${closeStlPreview}>&times;</button>
+        <div class="stl-preview-buttons">
+          <button type="button" class="btn-pill font-xs stl-preview-turn" hidden @click=${() => active?.reorient?.()}>Reorient</button>
+          <button type="button" class="stl-preview-close" aria-label="Close preview" @click=${closeStlPreview}>&times;</button>
+        </div>
       </div>
       <div class="stl-preview-stage">
         <canvas class="stl-preview-canvas"></canvas>
@@ -110,24 +116,37 @@ async function fetchMesh(preview, sourceType, sourceId) {
   return bytes.buffer;
 }
 
-function placeOnGround(geometry) {
-  // STL is Z-up and three.js is Y-up, so a model would otherwise lie on its back.
-  geometry.rotateX(-Math.PI / 2);
-  geometry.computeBoundingBox();
-  const { min, max } = geometry.boundingBox;
-  geometry.translate(-(min.x + max.x) / 2, -min.y, -(min.z + max.z) / 2);
-  geometry.computeBoundingSphere();
-  return { height: max.y - min.y, radius: geometry.boundingSphere.radius || 1 };
+/**
+ * STL has no up axis, and real packs use both Y and Z, so this reads it from the shape. A plate lies
+ * on its thin side, and anything else stands on the taller of Y and Z. Reorient covers a wrong guess.
+ */
+export function guessUpAxis({ x, y, z }) {
+  const [shortest, middle] = [x, y, z].sort((a, b) => a - b);
+  if (shortest * 3 < middle) {
+    if (x === shortest) return 'x';
+    return y === shortest ? 'y' : 'z';
+  }
+  return y >= z ? 'y' : 'z';
 }
 
-function addSun(THREE, scene, height, radius) {
+/** Stands the mesh on the ground with this axis up, and returns its new height. */
+function standUp(THREE, mesh, axis) {
+  mesh.rotation.set(...TURNS[axis]);
+  mesh.position.set(0, 0, 0);
+  mesh.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(mesh);
+  const center = box.getCenter(new THREE.Vector3());
+  mesh.position.set(-center.x, -box.min.y, -center.z);
+  return box.max.y - box.min.y;
+}
+
+function addSun(THREE, scene, radius) {
   const sun = new THREE.DirectionalLight(SUN_COLOR, 3);
   sun.position.setFromSphericalCoords(
     radius * 6,
     THREE.MathUtils.degToRad(90 - SUN_ELEVATION_DEGREES),
     THREE.MathUtils.degToRad(180 - SUN_AZIMUTH_DEGREES),
   );
-  sun.target.position.set(0, height / 2, 0);
   sun.castShadow = true;
   sun.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
   Object.assign(sun.shadow.camera, {
@@ -137,6 +156,7 @@ function addSun(THREE, scene, height, radius) {
   scene.add(sun, sun.target);
   // Sky light, so the side away from the sun reads as shade and not as black.
   scene.add(new THREE.HemisphereLight(0xc4d6e8, 0x4a4034, 1.5));
+  return sun;
 }
 
 async function showMesh(preview, buffer) {
@@ -148,7 +168,9 @@ async function showMesh(preview, buffer) {
   const canvas = preview.root.querySelector('.stl-preview-canvas');
   const stage = preview.root.querySelector('.stl-preview-stage');
   const geometry = new STLLoader().parse(buffer);
-  const { height, radius } = placeOnGround(geometry);
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  const radius = geometry.boundingSphere.radius || 1;
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -169,17 +191,28 @@ async function showMesh(preview, buffer) {
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(mesh, ground);
-  addSun(THREE, scene, height, radius);
+  const sun = addSun(THREE, scene, radius);
 
   const camera = new THREE.PerspectiveCamera(35, stage.clientWidth / stage.clientHeight, radius / 100, radius * 60);
   camera.position.set(-radius * 1.4, radius * 1.2, radius * 3);
   const controls = new OrbitControls(camera, canvas);
-  controls.target.set(0, height / 2, 0);
   // A scene only changes when it's moved, so this draws on demand and leaves the GPU idle.
   const draw = () => renderer.render(scene, camera);
   controls.addEventListener('change', draw);
-  controls.update();
-  draw();
+
+  const stand = (axis) => {
+    const height = standUp(THREE, mesh, axis);
+    sun.target.position.set(0, height / 2, 0);
+    controls.target.set(0, height / 2, 0);
+    controls.update();
+    preview.root.dataset.up = axis;
+    draw();
+  };
+  stand(guessUpAxis(geometry.boundingBox.getSize(new THREE.Vector3())));
+  preview.root.querySelector('.stl-preview-turn').hidden = false;
+  preview.reorient = () => {
+    stand(UP_AXES[(UP_AXES.indexOf(preview.root.dataset.up) + 1) % UP_AXES.length]);
+  };
 
   preview.release = () => {
     controls.dispose();

@@ -3485,6 +3485,13 @@ button.duplicate-delete:disabled { opacity: 0.45; cursor: not-allowed; filter: g
   white-space: nowrap;
 }
 
+.stl-preview-buttons {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+}
+
 .stl-preview-close {
   flex: none;
   width: 32px;
