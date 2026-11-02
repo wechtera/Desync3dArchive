@@ -361,7 +361,7 @@ class LogPurgeS10Tests(DestructiveCase):
         self.new.write_bytes(b"123")
         stale = time.time() - 30 * 86400
         os.utime(self.old, (stale, stale))
-        patcher = patch("desync_archival.api.routes.settings.LOGS_DIR", self.logs)
+        patcher = patch("desync_archival.api.routes.settings.system.LOGS_DIR", self.logs)
         patcher.start()
         self.addCleanup(patcher.stop)
 
