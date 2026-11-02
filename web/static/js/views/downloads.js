@@ -438,7 +438,7 @@ export async function dequeueSingleModel(modelId) {
 export async function clearQueueStatus(status = 'pending') {
   if (!confirm(`Are you sure you want to clear all ${status} jobs from the queue?`)) return;
   try {
-    await dequeueDownloads({ clear_status: status });
+    await dequeueDownloads({ clear_status: status, confirm: true });
     selectedPendingIds.clear();
     updateSelectedCount();
     window.refreshCurrentView();
@@ -447,11 +447,11 @@ export async function clearQueueStatus(status = 'pending') {
   }
 }
 
-/** Purges pending, downloading and failed jobs, after asking. */
+/** Purges waiting and failed jobs, after asking. Jobs in progress are left to finish. */
 export async function confirmPurgeIncomplete() {
-  if (!confirm('Purge all pending and downloading jobs? Completed files will remain intact.')) return;
+  if (!confirm('Purge all pending and failed jobs? Downloads in progress and completed files stay.')) return;
   try {
-    await dequeueDownloads({ purge_incomplete: true });
+    await dequeueDownloads({ purge_incomplete: true, confirm: true });
     renderActiveTransfers();
     window.refreshCurrentView();
   } catch (err) {

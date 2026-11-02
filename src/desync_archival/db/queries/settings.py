@@ -71,3 +71,8 @@ SELECT_PROTECTED_ROOTS = """
 """
 
 SUM_VAULT_FILES = "SELECT COUNT(*), COALESCE(SUM(actual_bytes), 0) FROM downloaded_files WHERE vault_path LIKE ?;"
+
+COUNT_OLD_AUDIT_ROWS = """
+    SELECT (SELECT COUNT(*) FROM download_audit_log WHERE logged_at < datetime('now', ?1))
+         + (SELECT COUNT(*) FROM pipeline_tasks WHERE status IN ('completed', 'failed', 'cancelled') AND created_at < datetime('now', ?1));
+"""

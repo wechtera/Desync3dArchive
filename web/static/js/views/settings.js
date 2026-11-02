@@ -702,7 +702,7 @@ export async function purgeLogs(days = 14) {
     const res = await fetch('/api/settings/logs/purge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ days })
+      body: JSON.stringify({ days, confirm: true })
     });
     const data = await res.json();
     if (data.success) {

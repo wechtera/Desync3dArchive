@@ -1148,52 +1148,54 @@ def handle_post_logs_purge(
     try:
         days = int(data.get("days", 14))
     except (ValueError, TypeError):
-        days = 14
+        return {"success": False, "error": "days must be a whole number."}, 400
+    if days < 1:
+        return {"success": False, "error": "days must be at least 1."}, 400
+
+    cutoff = time.time() - days * 86400
+    old_logs = [path for path in LOGS_DIR.glob("vault.log.*") if path.stat().st_mtime < cutoff] if LOGS_DIR.exists() else []
+    bytes_found = sum(path.stat().st_size for path in old_logs)
+    rows_found = conn.execute(queries.COUNT_OLD_AUDIT_ROWS, (f"-{days} days",)).fetchone()[0]
+    confirm = bool(data.get("confirm"))
+    # First, because this route deletes evidence, and the record of that has to survive a failure.
+    audit.record(conn, "logs_purge", not confirm, {"days": days, "files": len(old_logs), "rows": rows_found})
+    if not confirm:
+        return {
+            "success": True, "dry_run": True, "would_delete_files": len(old_logs), "reclaimable_bytes": bytes_found,
+            "would_prune_rows": rows_found,
+        }, 200
 
     purged_disk_files = 0
     reclaimed_bytes = 0
-
-    try:
-        if LOGS_DIR.exists():
-            for backup_log in LOGS_DIR.glob("vault.log.*"):
-                try:
-                    sz = backup_log.stat().st_size
-                    # FIXME(S-10): ignores days, has no confirm and writes no audit row.
-                    backup_log.unlink()
-                    purged_disk_files += 1
-                    reclaimed_bytes += sz
-                except OSError:
-                    pass
-        clear_ui_logs()
-    except Exception:
-        pass
+    problems = []
+    for path in old_logs:
+        try:
+            size = path.stat().st_size
+            path.unlink()
+            purged_disk_files += 1
+            reclaimed_bytes += size
+        except OSError as e:
+            problems.append(f"{path.name}: {e.strerror or e}")
+    clear_ui_logs()
 
     pruned_rows = 0
     try:
         with conn:
-            tables = {r[0] for r in conn.execute(queries.SELECT_SQLITE_MASTER_NAME_BY_TYPE_V2).fetchall()}
-            if "download_audit_log" in tables:
-                cur1 = conn.execute(
-                    queries.DELETE_DOWNLOAD_AUDIT_LOG_BY_LOGGED_AT,
-                    (f"-{days} days",)
-                )
-                pruned_rows += cur1.rowcount if cur1 else 0
-            if "pipeline_tasks" in tables:
-                cur2 = conn.execute(
-                    queries.DELETE_PIPELINE_TASKS_BY_STATUS,
-                    (f"-{days} days",)
-                )
-                pruned_rows += cur2.rowcount if cur2 else 0
-    except Exception:
-        pass
+            pruned_rows += conn.execute(queries.DELETE_DOWNLOAD_AUDIT_LOG_BY_LOGGED_AT, (f"-{days} days",)).rowcount
+            pruned_rows += conn.execute(queries.DELETE_PIPELINE_TASKS_BY_STATUS, (f"-{days} days",)).rowcount
+    except sqlite3.Error as e:
+        problems.append(f"audit rows: {e}")
 
-    log_layer("sql", logging.INFO, f"Purged {purged_disk_files} rotated log files and {pruned_rows} audit rows older than {days} days.")
-
-    return {
-        "success": True,
+    log_layer("sql", logging.INFO, f"Purged {purged_disk_files} rotated log files and {pruned_rows} audit rows")
+    result = {
         "purged_files_count": purged_disk_files,
         "reclaimed_disk_bytes": reclaimed_bytes,
         "pruned_db_rows": pruned_rows,
+    }
+    if problems:
+        return {"success": False, "dry_run": False, "error": "; ".join(problems), **result}, 500
+    return {
+        "success": True, "dry_run": False, **result,
         "message": f"Purged {purged_disk_files} rotated files and {pruned_rows} audit rows older than {days} days.",
     }, 200
 

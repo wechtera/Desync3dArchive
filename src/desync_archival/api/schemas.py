@@ -39,10 +39,12 @@ class DownloadDequeueBody(RequestBody):
     model_ids: list[int] = Field(default_factory=list)
     clear_status: str | None = None
     purge_incomplete: bool = False
+    confirm: bool = False
 
 
 class DownloadControlBody(RequestBody):
     action: str = ""
+    confirm: bool = False
 
 
 class StashCreateBody(RequestBody):
@@ -184,6 +186,7 @@ class LoggingBody(RequestBody):
 
 class LogsPurgeBody(RequestBody):
     days: int | str | None = None
+    confirm: bool = False
 
 
 class LoginBody(RequestBody):

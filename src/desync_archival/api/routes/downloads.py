@@ -3,11 +3,15 @@ from typing import Any, Optional
 
 from desync_archival.db.queries import downloads as queries
 from desync_archival.db.queries.downloader import LIVE_JOB_STATUSES
+from desync_archival.services import audit
 from desync_archival.services.downloader import (
     DownloadManager,
     queue_models,
     remove_waiting_jobs,
 )
+
+# Nothing in these can hold the only copy of a file.
+CLEARABLE_STATUSES = ("pending", "failed", "completed")
 
 
 def handle_get_downloads_status(
@@ -112,22 +116,44 @@ def handle_delete_downloads_queue(
 
     if clear_status in LIVE_JOB_STATUSES:
         return {"error": f"Jobs in {clear_status} are in progress, so they can't be cleared."}, 409
+    if clear_status and clear_status not in CLEARABLE_STATUSES:
+        return {"error": f"Only {', '.join(CLEARABLE_STATUSES)} jobs can be cleared."}, 400
+
+    # A bulk clear lists first, like every other destructive route. Taking a chosen model or a whole
+    # release off the queue is a single deliberate click, so those act at once and are audited.
+    if purge_incomplete or clear_status:
+        return _clear_jobs(conn, clear_status, bool(body.get("confirm")))
 
     removed = kept = 0
     with conn:
         if release_id:
             conn.execute(queries.DELETE_PENDING_RELEASE_JOBS, (release_id,))
-        elif purge_incomplete:
-            conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS)
-        elif clear_status:
-            # FIXME(S-09): clears with no dry run or audit row.
-            conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS_V2, (clear_status,))
         elif model_ids:
             clean_ids = [int(m) for m in model_ids if str(m).isdigit()]
             removed = remove_waiting_jobs(conn, clean_ids)
             kept = len(clean_ids) - removed
+    if release_id or model_ids:
+        audit.record(conn, "queue_remove", False, {"release_id": release_id, "model_ids": model_ids, "removed": removed, "kept": kept})
 
     return {"success": True, "removed": removed, "kept": kept}, 200
+
+
+def _clear_jobs(conn: sqlite3.Connection, clear_status: str | None, confirm: bool) -> tuple[dict[str, Any], int]:
+    """Clears a status, or every incomplete job when none is given. Lists them without confirm."""
+    if clear_status:
+        count, args = queries.COUNT_JOBS_BY_STATUS, (clear_status,)
+    else:
+        count, args = queries.COUNT_INCOMPLETE_JOBS, ()
+    found = conn.execute(count, args).fetchone()[0]
+    audit.record(conn, "queue_clear", not confirm, {"status": clear_status or "incomplete", "jobs": found})
+    if not confirm:
+        return {"success": True, "dry_run": True, "would_remove": found}, 200
+    with conn:
+        if clear_status:
+            conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS_V2, (clear_status,))
+        else:
+            conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS)
+    return {"success": True, "dry_run": False, "removed": found, "kept": 0}, 200
 
 
 def handle_post_downloads_control(
@@ -153,8 +179,8 @@ def handle_post_downloads_control(
             conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_STATUS)
         download_manager.resume()
     elif action == "purge_incomplete":
-        with conn:
-            conn.execute(queries.DELETE_DOWNLOAD_JOBS_BY_STATUS_V3)
+        result, status = _clear_jobs(conn, None, bool(body.get("confirm")))
+        return {**result, "action": action}, status
     else:
         return {"error": f"Unknown action: {action}"}, 400
 

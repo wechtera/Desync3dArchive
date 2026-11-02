@@ -7,11 +7,11 @@
   "response": {
     "content_type": "application/json",
     "json": {
-      "message": "Purged 0 rotated files and 0 audit rows older than 14 days.",
-      "pruned_db_rows": 0,
-      "purged_files_count": 0,
-      "reclaimed_disk_bytes": 0,
-      "success": true
+      "dry_run": true,
+      "reclaimable_bytes": 0,
+      "success": true,
+      "would_delete_files": 0,
+      "would_prune_rows": 0
     },
     "location": null,
     "status": 200

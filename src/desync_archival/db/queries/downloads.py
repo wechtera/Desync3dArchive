@@ -59,3 +59,7 @@ UPDATE_DOWNLOAD_JOBS_STATUS_BY_STATUS = """
             """
 
 DELETE_DOWNLOAD_JOBS_BY_STATUS_V3 = "DELETE FROM download_jobs WHERE status IN ('pending', 'failed');"
+
+COUNT_INCOMPLETE_JOBS = "SELECT COUNT(*) FROM download_jobs WHERE status IN ('pending', 'failed');"
+
+COUNT_JOBS_BY_STATUS = "SELECT COUNT(*) FROM download_jobs WHERE status = ?;"

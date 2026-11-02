@@ -627,7 +627,7 @@ class QueueR17Tests(unittest.TestCase):
     def test_purge_incomplete_spares_live_jobs(self):
         live = [self.job(status) for status in self.LIVE]
         gone = [self.job(status) for status in ("pending", "failed")]
-        self.assertEqual(self.delete({"purge_incomplete": True}).status_code, 200)
+        self.assertEqual(self.delete({"purge_incomplete": True, "confirm": True}).status_code, 200)
         self.assertEqual([self.status(m) for m in live], list(self.LIVE))
         self.assertEqual([self.status(m) for m in gone], [None, None])
 
@@ -635,7 +635,7 @@ class QueueR17Tests(unittest.TestCase):
         manager = MagicMock()
         live = [self.job(status) for status in self.LIVE]
         with patch.object(server, "download_manager", manager):
-            response = self.client.post("/api/downloads/control", json={"action": "purge_incomplete"})
+            response = self.client.post("/api/downloads/control", json={"action": "purge_incomplete", "confirm": True})
         self.assertEqual(response.status_code, 200)
         self.assertEqual([self.status(m) for m in live], list(self.LIVE))
 
@@ -647,7 +647,7 @@ class QueueR17Tests(unittest.TestCase):
 
     def test_clearing_a_waiting_status_still_works(self):
         model = self.job("failed")
-        self.assertEqual(self.delete({"clear_status": "failed"}).status_code, 200)
+        self.assertEqual(self.delete({"clear_status": "failed", "confirm": True}).status_code, 200)
         self.assertIsNone(self.status(model))
 
     def test_an_offload_counts_as_busy(self):
