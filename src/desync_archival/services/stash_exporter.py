@@ -24,7 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from desync_archival import external
 from desync_archival import settings as app_config
 from desync_archival.db.queries import stash_exporter as queries
-from desync_archival.services.paths import is_supported
+from desync_archival.services.paths import is_supported, sweep_leftovers
 
 try:
     from desync_archival.services.logger import log_layer, logger
@@ -33,6 +33,7 @@ except ImportError:
     logger = logging.getLogger("vault")
 
 DEFAULT_STASH_EXPORT_PATH = Path.home() / "Downloads" / "DESYNC_Print_Queue"
+PARTIAL_SUFFIX = ".partial"
 MODEL_EXTENSIONS = {".stl", ".obj", ".lys", ".ctb", ".ags", ".3mf", ".chitubox", ".prusa"}
 
 
@@ -130,17 +131,20 @@ class StashExporter:
             export_root, work_path, previews_root = self.resolve_paths(c)
             self._check_free_space(self._estimated_bytes(c, items), export_root, work_path)
 
+            sweep_leftovers(export_root, f"*{PARTIAL_SUFFIX}")
+
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             folder_name = f"{timestamp}_{sanitize_folder_name(stash_name)}"
-            # FIXME(R-18): a failed export stays here with no manifest and looks like a good one. Build in a .partial folder.
-            target_export_dir = export_root / folder_name
+            final_export_dir = export_root / folder_name
+            # Built under another name, so a folder in the print queue is always a whole export.
+            target_export_dir = export_root / f"{folder_name}{PARTIAL_SUFFIX}"
             target_export_dir.mkdir(parents=True, exist_ok=True)
 
             job_uuid = uuid.uuid4().hex[:8]
             scratch_dir = work_path / ".stash_scratch" / job_uuid
             scratch_dir.mkdir(parents=True, exist_ok=True)
 
-            init_msg = f"Starting Slicer Export for Stash #{stash_id} ('{stash_name}') -> {target_export_dir}"
+            init_msg = f"Starting Slicer Export for Stash #{stash_id} ('{stash_name}') -> {final_export_dir}"
             log_layer("storage", logging.INFO, init_msg)
             if log_cb:
                 log_cb(init_msg)
@@ -194,20 +198,21 @@ class StashExporter:
                     "description": stash["description"],
                     "exported_at": datetime.now().isoformat(),
                     "folder_name": folder_name,
-                    "export_path": str(target_export_dir),
+                    "export_path": str(final_export_dir),
                     "filter_mode": filter_mode,
                     "total_files": total_files_exported,
                     "total_bytes": total_bytes_exported,
                     "skipped_inactive_items": skipped_inactive,
                     "items": manifest_items,
                 }
-                manifest_file = target_export_dir / "manifest.json"
-                manifest_file.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+                (target_export_dir / "manifest.json").write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+                target_export_dir.rename(final_export_dir)
+                manifest_file = final_export_dir / "manifest.json"
 
                 if progress_cb:
                     progress_cb(100.0, f"Export complete: {total_files_exported} files staged.")
 
-                done_msg = f"Export complete: {total_files_exported} files ({total_bytes_exported} bytes) staged to {target_export_dir}"
+                done_msg = f"Export complete: {total_files_exported} files ({total_bytes_exported} bytes) staged to {final_export_dir}"
                 log_layer("storage", logging.INFO, done_msg)
                 if log_cb:
                     log_cb(done_msg)
@@ -216,7 +221,7 @@ class StashExporter:
                     "success": True,
                     "stash_id": stash_id,
                     "stash_name": stash_name,
-                    "export_path": str(target_export_dir),
+                    "export_path": str(final_export_dir),
                     "folder_name": folder_name,
                     "total_files": total_files_exported,
                     "total_bytes": total_bytes_exported,
@@ -224,6 +229,8 @@ class StashExporter:
                 }
 
             finally:
+                # Gone already after the rename above, so this only ever removes an unfinished build.
+                shutil.rmtree(target_export_dir, ignore_errors=True)
                 if scratch_dir.exists():
                     shutil.rmtree(scratch_dir, ignore_errors=True)
                     log_layer("storage", logging.DEBUG, f"Cleaned up local scratch directory: {scratch_dir}")

@@ -5,6 +5,7 @@ Verifies NAS immutability, scratch directory cleanup, surgical extraction, and f
 
 import hashlib
 import json
+import os
 import shutil
 import sqlite3
 import sys
@@ -219,6 +220,53 @@ class TestStashExporter(unittest.TestCase):
 
         active_jobs = list(scratch_root.glob("*")) if scratch_root.exists() else []
         self.assertEqual(len(active_jobs), 0, "Orphaned scratch directory remained after exception!")
+
+    def exports(self):
+        return list(self.exporter.resolve_paths(self.conn)[0].iterdir())
+
+    def test_a_finished_export_has_its_final_name_everywhere(self):
+        res = self.exporter.export_stash(stash_id=1, conn=self.conn)
+        folder = Path(res["export_path"])
+        self.assertEqual(self.exports(), [folder])
+        self.assertEqual(folder.name, res["folder_name"])
+        self.assertEqual(Path(res["manifest_path"]).parent, folder)
+        manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["export_path"], str(folder))
+
+    def test_an_export_is_built_under_a_partial_name(self):
+        seen = []
+        real = self.exporter._export_single_item
+
+        def spy(**kwargs):
+            seen.append(kwargs["target_export_dir"].name)
+            return real(**kwargs)
+
+        with patch.object(self.exporter, "_export_single_item", side_effect=spy):
+            self.exporter.export_stash(stash_id=1, conn=self.conn)
+        self.assertTrue(seen)
+        self.assertTrue(all(name.endswith(".partial") for name in seen))
+
+    def test_a_failed_export_leaves_nothing_in_the_print_queue(self):
+        with patch("desync_archival.external.copy_limited", side_effect=OSError("disk error")), \
+                self.assertRaises(OSError):
+            self.exporter.export_stash(stash_id=1, conn=self.conn)
+        self.assertEqual(self.exports(), [])
+
+    def test_a_cancelled_export_leaves_nothing_in_the_print_queue(self):
+        with self.assertRaises(InterruptedError):
+            self.exporter.export_stash(stash_id=1, conn=self.conn, cancel_cb=lambda: True)
+        self.assertEqual(self.exports(), [])
+
+    def test_a_crashed_export_is_swept_a_day_later(self):
+        root = self.exporter.resolve_paths(self.conn)[0]
+        old = root / "2026-01-01_00-00-00_Old.partial"
+        recent = root / "2026-01-02_00-00-00_Recent.partial"
+        keeper = root / "2026-01-01_00-00-00_Done"
+        for folder in (old, recent, keeper):
+            folder.mkdir()
+            os.utime(folder, (time.time() - (3600 if folder == recent else 90000),) * 2)
+        res = self.exporter.export_stash(stash_id=1, conn=self.conn)
+        self.assertEqual(sorted(p.name for p in self.exports()), sorted([res["folder_name"], recent.name, keeper.name]))
 
     def test_surgical_extraction_submodel(self):
         """Verify that ONLY the stashed submodel's files are extracted, omitting unselected models."""

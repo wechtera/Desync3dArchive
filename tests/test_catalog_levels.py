@@ -1,9 +1,11 @@
+import hashlib
 import os
 import re
 import socket
 import sqlite3
 import tempfile
 import threading
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -808,7 +810,7 @@ class ImportTests(BuildCase):
 
     def test_progress_moves_during_one_large_file(self):
         seen = []
-        path = self.write("big.stl", b"x" * (file_import.CHUNK * 3))
+        path = self.write("big.stl", b"x" * (file_import.CHUNK * 5))
         with patch("desync_archival.services.file_import.time.monotonic", side_effect=range(10, 1000, 5)):
             self.bring(path, progress=lambda pct, label: seen.append((pct, label)))
         self.assertGreaterEqual(len(seen), 4)
@@ -816,12 +818,87 @@ class ImportTests(BuildCase):
         self.assertTrue(any(label.startswith("Copying") for _, label in seen))
 
     def test_cancelling_leaves_no_half_file_and_no_row(self):
-        checks = iter([False, False, True])
+        checks = iter([False, True])
         path = self.write("big.stl", b"x" * (file_import.CHUNK * 2))
         with self.assertRaises(file_import.ImportCancelled):
             self.bring(path, cancelled=lambda: next(checks, True))
         self.assertEqual([p for p in self.vault.rglob("*") if p.is_file()], [])
         self.assertEqual(self.one("SELECT COUNT(*) FROM collections WHERE source = 'import'")[0], 0)
+
+    def adhoc_folders(self):
+        return [p.name for p in (self.vault / "ad-hoc").iterdir() if not p.name.startswith(".")]
+
+    def test_cancelling_midway_leaves_no_folder_to_find(self):
+        checks = iter([False, True])
+        self.write("pack/a.stl", b"a" * file_import.CHUNK)
+        self.write("pack/b.stl", b"b" * file_import.CHUNK)
+        with self.assertRaises(file_import.ImportCancelled):
+            self.bring(self.incoming / "pack", cancelled=lambda: next(checks, True))
+        self.assertEqual(self.adhoc_folders(), [])
+        self.assertEqual(list((self.vault / "ad-hoc" / ".incoming").iterdir()), [])
+
+    def test_files_appear_only_once_the_catalog_holds_them(self):
+        seen = []
+        real = catalog_levels.build_loose_models
+
+        def spy(*args):
+            seen.append(self.adhoc_folders())
+            return real(*args)
+
+        with patch.object(catalog_levels, "build_loose_models", side_effect=spy):
+            self.bring(self.write("dragon.stl"))
+        self.assertEqual(seen, [[]])
+        self.assertEqual(len(self.adhoc_folders()), 1)
+
+    def test_a_failed_rename_takes_the_catalog_rows_back(self):
+        with patch.object(Path, "rename", side_effect=OSError("share dropped")), self.assertRaises(OSError):
+            self.bring(self.write("dragon.stl"))
+        self.assertEqual(self.one("SELECT COUNT(*) FROM collections WHERE source = 'import'")[0], 0)
+        self.assertEqual(self.adhoc_folders(), [])
+        self.assertEqual(list((self.vault / "ad-hoc" / ".incoming").iterdir()), [])
+
+    def test_a_new_file_is_read_once(self):
+        with patch.object(file_import, "_hash", side_effect=AssertionError("hashed before copying")):
+            totals = self.bring(self.write("dragon.stl"))
+        self.assertEqual(totals["imported"], 1)
+        self.assertEqual(len(self.one("SELECT sha256 FROM downloaded_files WHERE original_filename = 'dragon.stl'")[0]), 64)
+
+    def test_a_repeat_is_never_written_to_the_vault(self):
+        path = self.write("dragon.stl")
+        self.bring(path)
+        with patch.object(file_import, "_copy", side_effect=AssertionError("copied a repeat")):
+            self.assertEqual(self.bring(path)["repeats"], 1)
+
+    def test_the_same_size_with_other_bytes_is_still_imported(self):
+        self.bring(self.write("first.stl", b"aaaa"))
+        self.assertEqual(self.bring(self.write("second.stl", b"bbbb"))["imported"], 1)
+
+    def test_twins_in_one_folder_keep_one_copy(self):
+        self.write("pack/a.stl", b"same")
+        self.write("pack/b.stl", b"same")
+        totals = self.bring(self.incoming / "pack")
+        self.assertEqual((totals["imported"], totals["repeats"]), (1, 1))
+        self.assertEqual(len(list(self.vault.glob("ad-hoc/pack-*/*.stl"))), 1)
+
+    def test_a_folder_left_by_an_older_import_is_not_merged_into(self):
+        path = self.write("dragon.stl")
+        digest = hashlib.sha256(b"solid").hexdigest()
+        marker = hashlib.sha256(digest.encode()).hexdigest()
+        stale = self.vault / "ad-hoc" / file_import._folder_name("dragon", marker)
+        stale.mkdir(parents=True)
+        (stale / "left.stl").write_bytes(b"old")
+        self.bring(path)
+        self.assertEqual([p.name for p in stale.iterdir()], ["left.stl"])
+        self.assertEqual(len(list(self.vault.glob("ad-hoc/dragon-*/dragon.stl"))), 1)
+
+    def test_a_crashed_import_is_swept_a_day_later(self):
+        root = self.vault / "ad-hoc" / ".incoming"
+        old, recent = root / "old", root / "recent"
+        old.mkdir(parents=True)
+        recent.mkdir()
+        os.utime(old, (time.time() - 90000, time.time() - 90000))
+        self.bring(self.write("dragon.stl"))
+        self.assertEqual([p.name for p in root.iterdir()], ["recent"])
 
     def test_too_little_space_refuses_before_copying(self):
         with patch("desync_archival.services.file_import.shutil.disk_usage") as usage:

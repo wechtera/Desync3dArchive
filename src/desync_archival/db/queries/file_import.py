@@ -2,6 +2,7 @@
 
 SELECT_VAULT_ROOT = "SELECT value FROM app_settings WHERE key = 'download_root_path';"
 SELECT_FILE_BY_HASH = "SELECT model_id FROM downloaded_files WHERE sha256 = ? LIMIT 1;"
+SELECT_FILE_BY_SIZE = "SELECT 1 FROM downloaded_files WHERE actual_bytes = ? LIMIT 1;"
 INSERT_COLLECTION = """
     INSERT INTO collections (name, designer_name, designer_username, primary_category, release_month, vault_path,
         source, external_key, raw_backup_path, updated_at)

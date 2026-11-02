@@ -1,12 +1,16 @@
 """Path name rules shared across the app."""
 
 import re
+import shutil
+import time
 from pathlib import Path
 
 # Fixed on purpose: ad-hoc imports always sit here under the vault root, with no setting to move them.
 IMPORT_FOLDER = "ad-hoc"
 # Hidden on purpose, and fixed for the same reason.
 PENDING_DELETION_FOLDER = ".Pending-Deletion"
+# Past this a work folder is a crash's leftover. No import or export runs this long.
+LEFTOVER_AGE_SECONDS = 86400
 # Slicer projects only exist once supports are placed.
 SUPPORTED_PROJECT_EXTENSIONS = (".lys", ".ctb", ".ags", ".chitubox", ".prusa")
 _UNSUPPORTED_WORDS = re.compile(r"(?:un|non?|not)[_\- ]?sup+ort", re.IGNORECASE)
@@ -21,6 +25,16 @@ def sanitize_segment(name: str) -> str:
     clean = re.sub(r"[^a-zA-Z0-9_\-]+", "_", str(name))
     clean = re.sub(r"_+", "_", clean)
     return clean.strip("_") or "unknown"
+
+
+def sweep_leftovers(parent: Path, pattern: str) -> None:
+    """Removes the work folders a crash left, which no cleanup path or audit would ever reach."""
+    if not parent.is_dir():
+        return
+    cutoff = time.time() - LEFTOVER_AGE_SECONDS
+    for folder in parent.glob(pattern):
+        if folder.is_dir() and not folder.is_symlink() and folder.stat().st_mtime < cutoff:
+            shutil.rmtree(folder, ignore_errors=True)
 
 
 def says_unsupported(path_text: str) -> bool:

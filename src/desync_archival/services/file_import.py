@@ -11,6 +11,7 @@ import re
 import shutil
 import sqlite3
 import time
+import uuid
 from collections.abc import Callable, Iterator
 from datetime import datetime
 from pathlib import Path
@@ -25,8 +26,9 @@ from desync_archival.services.external_indexer import (
     SUPPORTED_FILE_EXTENSIONS,
 )
 from desync_archival.services.logger import log_layer
-from desync_archival.services.paths import IMPORT_FOLDER
+from desync_archival.services.paths import IMPORT_FOLDER, sweep_leftovers
 
+INCOMING_FOLDER = ".incoming"
 PDF = ".pdf"
 IMPORTABLE = {*SUPPORTED_FILE_EXTENSIONS, PDF}
 CHUNK = 8 * 1024 * 1024
@@ -76,17 +78,16 @@ def _hash(path: Path, progress: _Progress) -> str:
     return digest.hexdigest()
 
 
-def _copy(source: Path, target: Path, progress: _Progress) -> None:
-    # The name only appears when the copy is whole, so a stopped import leaves no half file.
-    partial = target.with_name(f"{target.name}.partial")
-    try:
-        with source.open("rb") as reader, partial.open("wb") as writer:
-            while chunk := reader.read(CHUNK):
-                writer.write(chunk)
-                progress.advance(len(chunk), f"Copying {source.name[:50]}")
-        partial.rename(target)
-    finally:
-        partial.unlink(missing_ok=True)
+def _copy(source: Path, target: Path, progress: _Progress) -> str:
+    """Hashes while copying, so a new file is only read once from what may be slow storage."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256()
+    with source.open("rb") as reader, target.open("wb") as writer:
+        while chunk := reader.read(CHUNK):
+            digest.update(chunk)
+            writer.write(chunk)
+            progress.advance(len(chunk), f"Copying {source.name[:50]}")
+    return digest.hexdigest()
 
 
 def _vault_root(conn: sqlite3.Connection) -> Path:
@@ -135,54 +136,75 @@ def _folder_name(label: str, marker: str) -> str:
     return f"{re.sub(r'[^A-Za-z0-9._-]+', '_', label).strip('_')[:60] or 'import'}-{marker[:8]}"
 
 
+def _is_repeat(conn: sqlite3.Connection, digest: str) -> bool:
+    return conn.execute(queries.SELECT_FILE_BY_HASH, (digest,)).fetchone() is not None
+
+
+def _copy_new_files(
+    conn: sqlite3.Connection, incoming: Path, files: list[tuple[Path, str]], progress: _Progress,
+) -> tuple[list[tuple[str, str]], list[str]]:
+    fresh, repeats, digests = [], [], set()
+    for source, rel_path in files:
+        # Only a size the catalog already holds is hashed up front, so a repeat costs the vault no write.
+        if conn.execute(queries.SELECT_FILE_BY_SIZE, (source.stat().st_size,)).fetchone() \
+                and _is_repeat(conn, _hash(source, progress)):
+            repeats.append(source.name)
+            continue
+        digest = _copy(source, incoming / rel_path, progress)
+        if digest in digests or _is_repeat(conn, digest):
+            (incoming / rel_path).unlink()
+            repeats.append(source.name)
+            continue
+        digests.add(digest)
+        fresh.append((rel_path, digest))
+    return fresh, repeats
+
+
 def _import_group(
     conn: sqlite3.Connection, db_path: Path, root: Path, label: str, creator: str, files: list[tuple[Path, str]],
     log: Callable[[str], None], progress: _Progress,
 ) -> dict[str, Any]:
-    fresh, repeats = [], []
-    for source, rel_path in files:
-        digest = _hash(source, progress)
-        twin = conn.execute(queries.SELECT_FILE_BY_HASH, (digest,)).fetchone()
-        if twin or any(digest == d for _, _, d in fresh):
-            repeats.append(source.name)
-            progress.advance(source.stat().st_size, f"Skipping {source.name[:50]}")
-            continue
-        fresh.append((source, rel_path, digest))
-    if not fresh:
-        return {"imported": 0, "repeats": len(repeats)}
+    # Hidden until the catalog holds it, because the orphan audit skips ad-hoc/ and a stopped import
+    # left there could never be found.
+    incoming = root / INCOMING_FOLDER / uuid.uuid4().hex
+    incoming.mkdir(parents=True)
+    try:
+        fresh, repeats = _copy_new_files(conn, incoming, files, progress)
+        if not fresh:
+            return {"imported": 0, "repeats": len(repeats)}
 
-    marker = hashlib.sha256("".join(d for _, _, d in fresh).encode()).hexdigest()
-    # FIXME(R-18): a cancel after this leaves files with no catalog rows, in a folder the orphan audit skips.
-    folder = root / _folder_name(label, marker)
-    copied = []
-    for source, rel_path, digest in fresh:
-        target = folder / rel_path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        _copy(source, target, progress)
-        copied.append((target, digest))
+        marker = hashlib.sha256("".join(digest for _, digest in fresh).encode()).hexdigest()
+        folder = root / _folder_name(label, marker)
+        if folder.exists():
+            # Only an import stopped by an older version leaves one, and those files aren't ours to overwrite.
+            folder = folder.with_name(f"{folder.name}-{uuid.uuid4().hex[:8]}")
 
-    creator = creator.strip() or "Imported"
-    with conn:
-        collection_id = int(conn.execute(queries.INSERT_COLLECTION, (
-            label, creator, creator, datetime.now().strftime("%Y-%m"), str(folder), f"import/{marker}",
-        )).lastrowid or 0)
-        archives, loose = [], []
-        for target, digest in copied:
-            size = target.stat().st_size
-            rel_path = str(target.relative_to(folder))
-            file_id = int(conn.execute(queries.INSERT_MODEL_FILE, (
-                collection_id, target.name, size, f"import/{folder.name}/{rel_path}",
+        creator = creator.strip() or "Imported"
+        with conn:
+            collection_id = int(conn.execute(queries.INSERT_COLLECTION, (
+                label, creator, creator, datetime.now().strftime("%Y-%m"), str(folder), f"import/{marker}",
             )).lastrowid or 0)
-            conn.execute(queries.INSERT_DOWNLOADED_FILE, (
-                file_id, collection_id, target.name, target.name, f"files/{target.name}", size, size,
-                target.suffix.lower(), str(target), digest,
-            ))
-            if target.suffix.lower() in ARCHIVE_EXTENSIONS:
-                archives.append((file_id, target))
-            elif target.suffix.lower() != PDF:
-                loose.append((file_id, target, rel_path, size))
-        if loose:
-            catalog_levels.build_loose_models(conn, collection_id, "" if archives else label, loose)
+            archives, loose = [], []
+            for rel_path, digest in fresh:
+                target = folder / rel_path
+                size = (incoming / rel_path).stat().st_size
+                file_id = int(conn.execute(queries.INSERT_MODEL_FILE, (
+                    collection_id, target.name, size, f"import/{folder.name}/{rel_path}",
+                )).lastrowid or 0)
+                conn.execute(queries.INSERT_DOWNLOADED_FILE, (
+                    file_id, collection_id, target.name, target.name, f"files/{target.name}", size, size,
+                    target.suffix.lower(), str(target), digest,
+                ))
+                if target.suffix.lower() in ARCHIVE_EXTENSIONS:
+                    archives.append((file_id, target))
+                elif target.suffix.lower() != PDF:
+                    loose.append((file_id, target, rel_path, size))
+            if loose:
+                catalog_levels.build_loose_models(conn, collection_id, "" if archives else label, loose)
+            # Inside the transaction, so a share dropping here takes the rows back with it.
+            incoming.rename(folder)
+    finally:
+        shutil.rmtree(incoming, ignore_errors=True)
 
     peeker = ArchivePeeker(db_path)
     read = 0
@@ -193,8 +215,8 @@ def _import_group(
             read += 1
         else:
             log(f"{target.name} was imported, but its contents couldn't be read: {result.get('error')}")
-    log_layer("storage", 20, f"Imported {label} as collection #{collection_id}: {len(copied)} files, {read} archives read")
-    return {"imported": len(copied), "repeats": len(repeats), "archives": read, "collection_id": collection_id, "name": label}
+    log_layer("storage", 20, f"Imported {label} as collection #{collection_id}: {len(fresh)} files, {read} archives read")
+    return {"imported": len(fresh), "repeats": len(repeats), "archives": read, "collection_id": collection_id, "name": label}
 
 
 def import_paths(
@@ -214,8 +236,8 @@ def import_paths(
     if size > shutil.disk_usage(root).free:
         raise ImportRefused(f"This needs {size:,} bytes and the vault doesn't have that much free.")
 
-    # Every byte is read twice, once to hash it and once to copy it.
-    meter = _Progress(size * 2, progress, cancelled)
+    sweep_leftovers(root / INCOMING_FOLDER, "*")
+    meter = _Progress(size, progress, cancelled)
     totals = {"collections": 0, "imported": 0, "repeats": 0, "archives": 0}
     for path, files in groups:
         if not files:
