@@ -30,7 +30,7 @@ from desync_archival.api.routes import auth as auth_routes
 from desync_archival.api.routes import catalog as catalog_routes
 from desync_archival.api.routes import reconcile as reconcile_routes
 from desync_archival.api.routes import settings as settings_routes
-from desync_archival.services import auth_service, paths, pending_deletion
+from desync_archival.services import auth_service, downloader, paths, pending_deletion
 from desync_archival.services import task_manager as task_service
 from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.image_worker import ImageWorker
@@ -1077,3 +1077,65 @@ class StrictTransportWS7Tests(unittest.TestCase):
 
     def test_a_plain_response_does_not(self):
         self.assertNotIn("strict-transport-security", self.headers("http://localhost"))
+
+
+class IdleWorkersP08Tests(DownloadCase):
+    def blank_names(self):
+        with self.conn:
+            self.conn.execute("UPDATE collections SET designer_name = '', designer_username = '', release_month = '' WHERE id = 5")
+
+    def test_a_claim_falls_back_to_the_placeholder_names(self):
+        self.blank_names()
+        job = self.dm._claim_next_download_job()
+        self.assertEqual((job["creator_name"], job["release_month"]), ("Unknown_Creator", "Unassigned"))
+
+    def test_a_claim_prefers_the_designers_username(self):
+        self.blank_names()
+        with self.conn:
+            self.conn.execute("UPDATE collections SET designer_username = 'maker' WHERE id = 5")
+        self.assertEqual(self.dm._claim_next_download_job()["creator_name"], "maker")
+
+    def wait_in_thread(self, ready):
+        started = threading.Event()
+
+        def wait():
+            started.set()
+            self.dm._wait_for_work(ready)
+
+        thread = threading.Thread(target=wait, daemon=True)
+        thread.start()
+        started.wait(2)
+        return thread
+
+    def test_a_wake_ends_the_wait_at_once(self):
+        with patch.object(downloader, "IDLE_WAIT_SECONDS", 30):
+            thread = self.wait_in_thread(self.dm._downloads_ready)
+            self.dm.wake()
+            thread.join(2)
+        self.assertFalse(thread.is_alive())
+
+    def test_stopping_ends_the_wait_at_once(self):
+        with patch.object(downloader, "IDLE_WAIT_SECONDS", 30):
+            thread = self.wait_in_thread(self.dm._offloads_ready)
+            self.dm.stop()
+            thread.join(2)
+        self.assertFalse(thread.is_alive())
+
+    def test_the_wait_ends_on_its_own_for_jobs_nothing_announced(self):
+        with patch.object(downloader, "IDLE_WAIT_SECONDS", 0.01):
+            self.wait_in_thread(self.dm._downloads_ready).join(2)
+
+    def test_a_wake_is_used_up_so_the_next_wait_really_waits(self):
+        self.dm.wake()
+        self.dm._wait_for_work(self.dm._downloads_ready)
+        self.assertFalse(self.dm._downloads_ready.is_set())
+
+    def test_queueing_a_model_wakes_the_workers(self):
+        manager = MagicMock(is_running=True, is_paused=False)
+        downloader.queue_models(self.conn, manager, [5])
+        manager.wake.assert_called_once()
+
+    def test_a_finished_download_wakes_the_offloaders(self):
+        self.dm._offloads_ready.clear()
+        self.stage()
+        self.assertTrue(self.dm._offloads_ready.is_set())

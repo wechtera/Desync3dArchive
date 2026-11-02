@@ -531,7 +531,8 @@ class R04Workers(DownloadCase):
             self.dm.is_running = False
 
         self.dm.is_running = True
-        with patch.object(self.dm, target, side_effect=fails_then_stops), patch("time.sleep"):
+        with patch.object(self.dm, target, side_effect=fails_then_stops), patch("time.sleep"), \
+                patch("desync_archival.services.downloader.IDLE_WAIT_SECONDS", 0):
             loop(1)
         return len(calls)
 

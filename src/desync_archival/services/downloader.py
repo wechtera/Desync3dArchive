@@ -48,6 +48,10 @@ OFFLOAD_CHUNK_SIZE_DEFAULT = 4 * 1024 * 1024  # 4 MB network transfer buffer
 
 TOKEN_EXPIRY_MARGIN_SECONDS = 600
 WORKER_ERROR_PAUSE_SECONDS = 5.0
+# Idle workers wait this long for a wake, because asking SQLite every second opened a connection per worker.
+IDLE_WAIT_SECONDS = 15.0
+CREATOR_COLUMN = "COALESCE(NULLIF(m.designer_name, ''), NULLIF(m.designer_username, ''), 'Unknown_Creator') AS creator_name"
+MONTH_COLUMN = "COALESCE(NULLIF(m.release_month, ''), 'Unassigned') AS release_month"
 OFFLOAD_RETRY_BASE_SECONDS = 30
 OFFLOAD_RETRY_MAX_SECONDS = 3600
 
@@ -215,6 +219,7 @@ def queue_models(conn: sqlite3.Connection, download_manager: Any, model_ids: lis
             download_manager.start()
         elif download_manager.is_paused:
             download_manager.resume()
+        download_manager.wake()
     return queued
 
 
@@ -327,6 +332,8 @@ class DownloadManager:
 
         self.workers: List[threading.Thread] = []
         self.offloader_workers: List[threading.Thread] = []
+        self._downloads_ready = threading.Event()
+        self._offloads_ready = threading.Event()
         self._offload_not_before: dict[int, float] = {}
 
         self.active_downloads: Dict[int, Dict[str, Any]] = {}
@@ -589,6 +596,18 @@ class DownloadManager:
 
     def stop(self):
         self.is_running = False
+        self.wake()
+
+    def wake(self) -> None:
+        """Tells idle workers there's a job, so they don't have to keep asking SQLite."""
+        self._downloads_ready.set()
+        self._offloads_ready.set()
+
+    @staticmethod
+    def _wait_for_work(ready: threading.Event) -> None:
+        # The timeout catches jobs made by code that can't reach this manager, such as a reconcile reset.
+        ready.wait(IDLE_WAIT_SECONDS)
+        ready.clear()
 
     def pause(self):
         """Stops workers claiming new jobs. Transfers in progress run on."""
@@ -599,39 +618,15 @@ class DownloadManager:
         """Reloads settings and lets workers claim jobs again."""
         self._load_settings()
         self.is_paused = False
+        self.wake()
         logger.info("[DownloadManager] Engine resumed by operator.")
-
-    def _get_model_meta_query_parts(self, conn: sqlite3.Connection) -> tuple[str, str, str]:
-        """Maps designer_name directly from models table."""
-        model_cols = {r[1] for r in conn.execute("PRAGMA table_info(collections)").fetchall()}
-
-        if "designer_name" in model_cols:
-            creator_expr = "COALESCE(NULLIF(m.designer_name, ''), NULLIF(m.designer_username, ''), 'Unknown_Creator') AS creator_name"
-        elif "creator_name" in model_cols:
-            creator_expr = "COALESCE(NULLIF(m.creator_name, ''), 'Unknown_Creator') AS creator_name"
-        elif "designer" in model_cols:
-            creator_expr = "COALESCE(NULLIF(m.designer, ''), 'Unknown_Creator') AS creator_name"
-        else:
-            creator_expr = "'Unknown_Creator' AS creator_name"
-
-        if "release_month" in model_cols:
-            month_expr = "COALESCE(NULLIF(m.release_month, ''), 'Unassigned') AS release_month"
-        elif "month" in model_cols:
-            month_expr = "COALESCE(NULLIF(m.month, ''), 'Unassigned') AS release_month"
-        else:
-            month_expr = "'Unassigned' AS release_month"
-
-        return creator_expr, month_expr, ""
 
     def _claim_next_download_job(self) -> Optional[sqlite3.Row]:
         with self._get_db() as conn:
-            creator_expr, month_expr, joins = self._get_model_meta_query_parts(conn)
-
             query = f"""
-                SELECT dj.*, m.name AS model_name, m.external_key, {creator_expr}, {month_expr}
+                SELECT dj.*, m.name AS model_name, m.external_key, {CREATOR_COLUMN}, {MONTH_COLUMN}
                 FROM download_jobs dj
                 JOIN collections m ON dj.model_id = m.id
-                {joins}
                 WHERE dj.status = 'pending'
                 ORDER BY dj.enqueued_at ASC LIMIT 1;
             """
@@ -664,7 +659,7 @@ class DownloadManager:
 
         job = self._claim_next_download_job()
         if not job:
-            time.sleep(1.5)
+            self._wait_for_work(self._downloads_ready)
             return
 
         model_id = job["model_id"]
@@ -957,6 +952,7 @@ class DownloadManager:
                 conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V2, (len(staged_files_info), downloaded_bytes_acc, total_bytes, job["id"]))
 
         log_layer("storage", logging.INFO, f"Worker #{worker_id}: Model #{model_id} staging complete ({len(staged_files_info)} files, {downloaded_bytes_acc} bytes). Queued for NAS offload.")
+        self._offloads_ready.set()
 
     def _handle_download_failure(self, job_id: int, model_id: int, error_msg: str):
         logger.error(f"[DownloadManager] Job #{job_id} (Model #{model_id}) failed: {error_msg}")
@@ -971,12 +967,10 @@ class DownloadManager:
             waiting = [job_id for job_id, due in self._offload_not_before.items() if due > now]
         marks = ",".join("?" * len(waiting))
         with self._get_db() as conn:
-            creator_expr, month_expr, joins = self._get_model_meta_query_parts(conn)
             row = conn.execute(f"""
-                SELECT dj.*, m.name as model_name, m.external_key, {creator_expr}, {month_expr}
+                SELECT dj.*, m.name as model_name, m.external_key, {CREATOR_COLUMN}, {MONTH_COLUMN}
                 FROM download_jobs dj
                 JOIN collections m ON dj.model_id = m.id
-                {joins}
                 WHERE dj.status = 'staging_complete' AND dj.id NOT IN ({marks})
                 ORDER BY dj.enqueued_at ASC LIMIT 1;
             """, waiting).fetchone()
@@ -1011,7 +1005,7 @@ class DownloadManager:
 
         job = self._claim_next_offload_job()
         if not job:
-            time.sleep(1.5)
+            self._wait_for_work(self._offloads_ready)
             return
 
         model_id = job["model_id"]
@@ -1191,14 +1185,11 @@ class DownloadManager:
             counts = conn.execute(queries.SELECT_DOWNLOAD_JOBS).fetchall()
             status_map = {r["status"]: r["c"] for r in counts}
 
-            creator_expr, _, joins = self._get_model_meta_query_parts(conn)
-
             queued_query = f"""
                 SELECT dj.id, dj.model_id, dj.status, dj.enqueued_at, dj.total_files, dj.total_bytes,
-                       m.name AS model_name, {creator_expr}
+                       m.name AS model_name, {CREATOR_COLUMN}
                 FROM download_jobs dj
                 JOIN collections m ON dj.model_id = m.id
-                {joins}
                 WHERE dj.status IN ('pending', 'downloading', 'staging_complete', 'offloading')
                 ORDER BY dj.enqueued_at ASC
                 LIMIT ?;
