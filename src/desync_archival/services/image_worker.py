@@ -195,9 +195,13 @@ class ImageWorker:
         if not cover.exists() or cover.stat().st_size == 0:
             artwork = self.indexer._find_model_artwork(model_dir.parent if model_dir.is_file() else model_dir, release_dir)
             if artwork:
+                # Renamed in last, because an existing cover.jpg is what marks this model done.
+                partial = cover.with_name(f"{cover.name}.partial")
                 try:
-                    shutil.copy2(str(artwork), str(cover))
+                    shutil.copy2(str(artwork), str(partial))
+                    partial.replace(cover)
                 except OSError as e:
+                    partial.unlink(missing_ok=True)
                     if not self._still_mounted(job):
                         return self._set_state(STORAGE_OFFLINE)
                     return self._fail(conn, job, "failed", inactive_log.RENDER_FAILED, f"Copying {artwork.name}: {e}")

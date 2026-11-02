@@ -33,6 +33,7 @@ from desync_archival.api.routes import settings as settings_routes
 from desync_archival.services import auth_service, paths, pending_deletion
 from desync_archival.services import task_manager as task_service
 from desync_archival.services.archive_peeker import ArchivePeeker
+from desync_archival.services.image_worker import ImageWorker
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
 
@@ -1027,3 +1028,40 @@ class BadPagingWS7Tests(unittest.TestCase):
         self.assertEqual(routing.paging({"limit": ["9999"], "offset": ["-5"]}, 24, 100), (100, 0))
         self.assertEqual(routing.paging({"limit": ["0"]}, 24, 100), (1, 0))
         self.assertEqual(routing.paging({}, 24, 100), (24, 0))
+
+
+class CoverCopyWS7Tests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.art = self.root / "art.jpg"
+        self.art.write_bytes(b"full picture")
+        self.previews = self.root / "previews"
+        patcher = patch.object(app_config, "previews_dir", return_value=self.previews)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.worker = object.__new__(ImageWorker)
+        self.worker.indexer = MagicMock()
+        self.worker.indexer._find_model_artwork.return_value = self.art
+        self.worker._still_mounted = MagicMock(return_value=True)
+        self.worker._fail = MagicMock(return_value="failed")
+        self.job = {
+            "id": 1, "model_id": 5, "vault_path": str(self.root / "model"), "library_path": str(self.root),
+            "external_key": "1/Pack/model",
+        }
+        self.cover = self.previews / "5" / "cover.jpg"
+
+    def test_a_copy_that_dies_midway_leaves_no_cover_to_mistake_for_done(self):
+        def half_copy(_source, target):
+            Path(target).write_bytes(b"half")
+            raise OSError("share dropped")
+
+        with patch("desync_archival.services.image_worker.shutil.copy2", side_effect=half_copy):
+            self.assertEqual(self.worker._cover(MagicMock(), self.job), "failed")
+        self.assertEqual(list(self.cover.parent.iterdir()), [])
+
+    def test_a_whole_copy_lands_under_the_real_name(self):
+        self.worker._cover(MagicMock(), self.job)
+        self.assertEqual(self.cover.read_bytes(), b"full picture")
+        self.assertEqual([p.name for p in self.cover.parent.iterdir()], ["cover.jpg"])
