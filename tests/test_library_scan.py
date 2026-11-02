@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from db_helper import create_database
 
-from desync_archival.services import external_indexer, image_worker, inactive_log
+from desync_archival.services import external_indexer, image_worker, inactive_log, paths
 from desync_archival.services.external_indexer import (
     ExternalLibraryIndexer,
     ScanReadError,
@@ -163,9 +163,9 @@ class CharacterLayoutTests(ScanCase):
         self.assertEqual(self.bull()["release_month"], "2024-04")
 
     def test_unsupported_is_not_presupported(self):
-        self.assertFalse(external_indexer.is_presupported("BrazenBull_32mm_UnSupported/a.stl"))
-        self.assertTrue(external_indexer.is_presupported("BrazenBull_32mm_LYCHEE/a.lys"))
-        self.assertTrue(external_indexer.is_presupported("X_Supported_Solid/a.stl"))
+        self.assertFalse(paths.is_supported("BrazenBull_32mm_UnSupported/a.stl"))
+        self.assertTrue(paths.is_supported("BrazenBull_32mm_LYCHEE/a.lys"))
+        self.assertTrue(paths.is_supported("X_Supported_Solid/a.stl"))
 
     def test_rescanning_a_character_changes_nothing(self):
         self.scan_everything()

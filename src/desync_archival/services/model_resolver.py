@@ -12,6 +12,8 @@ from difflib import SequenceMatcher
 from itertools import combinations, pairwise
 from statistics import median
 
+from desync_archival.services.paths import says_unsupported
+
 PRINTABLE = (".stl", ".lys", ".ctb", ".chitubox", ".obj", ".3mf")
 ARCHIVE = (".zip", ".rar", ".7z")
 
@@ -75,9 +77,7 @@ class ResolvedModel:
 
 def primary_folder_rank(rel_path: str) -> tuple[int, int, str]:
     """The folder a character is shown from. Unsupported 32mm renders cleanest."""
-    low = rel_path.lower()
-    unsupported = "unsupported" in low or "nosupports" in low.replace(" ", "")
-    return (0 if unsupported else 1, 0 if "32mm" in low else 1, rel_path)
+    return (0 if says_unsupported(rel_path) else 1, 0 if "32mm" in rel_path.lower() else 1, rel_path)
 
 
 def words_in(folder: str) -> list[str]:

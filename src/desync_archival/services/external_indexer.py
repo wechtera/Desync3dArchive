@@ -22,6 +22,7 @@ from desync_archival.services import (
     inactive_log,
     library_review,
     model_resolver,
+    paths,
 )
 from desync_archival.services.db import scoped_connection
 from desync_archival.services.library_review import (
@@ -117,12 +118,6 @@ def release_month_of(release_name: str) -> str:
     if named and named.group(1).lower() in MONTHS:
         return f"{named.group(2)}-{MONTHS.index(named.group(1).lower()) + 1:02d}"
     return "Unassigned"
-
-
-def is_presupported(path_text: str) -> bool:
-    # Lookbehind because "unsupported" contains "supported". Lychee and ready-to-slice ship supported.
-    # Lookbehind skips `unsupported`. Lychee and ready-to-slice exports always ship supported.
-    return bool(re.search(r"(?<!un)supported|lychee|readytoslice", path_text, re.IGNORECASE))
 
 
 # Library ID is in the key because two libraries can have the same folder name.
@@ -358,7 +353,7 @@ class ExternalLibraryIndexer:
         ]
 
         lowered = [str(path.relative_to(root)).lower() for path, _, _ in found]
-        has_presupported = int(any(is_presupported(low) for low in lowered))
+        has_presupported = int(any(paths.is_supported(low) for low in lowered))
         scales = {scale for scale in SCALE_TOKENS for low in lowered if scale in low}
 
         with conn:

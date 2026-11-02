@@ -21,7 +21,7 @@ import httpx
 from desync_archival import external
 from desync_archival import settings as app_config
 from desync_archival.db.queries import archive_peeker as queries
-from desync_archival.services import catalog_levels
+from desync_archival.services import catalog_levels, paths
 from desync_archival.services.db import scoped_connection
 from desync_archival.services.logger import log_layer
 
@@ -198,16 +198,9 @@ class ArchivePeeker:
             filename=p.name,
             size_bytes=size,
             file_extension=ext,
-            is_supported=self._detect_supported(member_path, ext),
+            is_supported=paths.is_supported(member_path),
             scale=self._detect_scale(member_path),
         )
-
-    @staticmethod
-    def _detect_supported(path_str: str, ext: str) -> bool:
-        if ext in (".lys", ".ctb", ".ags", ".chitubox", ".prusa"):
-            return True
-        lower = path_str.lower()
-        return any(tok in lower for tok in ["(supported)", "_supported", "presupported", "pre-supported", "support stls", "with_supports"])
 
     @staticmethod
     def _detect_scale(path_str: str) -> Optional[str]:

@@ -636,3 +636,42 @@ Details: RAR 5
         self.peeker._bin_unrar = None
         self.peeker._bin_7z = external.find_7zip()
         self.assertEqual([(m.internal_path, m.size_bytes) for m in self.peeker._inspect_rar(packed)], [("hero.stl", 100)])
+
+
+class SupportedRuleTests(unittest.TestCase):
+    # Each row is a spelling found in the library or one the three old rules read differently.
+    TABLE = (
+        ("28mm Supported/Ghuls.stl", True),
+        ("Hero (Supported).stl", True),
+        ("hero_supported.stl", True),
+        ("Presupported/hero.stl", True),
+        ("Pre-Supported/hero.stl", True),
+        ("presuported_stl/hero.stl", True),
+        ("Fatalis Soulified Support STLs/arm.stl", True),
+        ("hero_with_supports.stl", True),
+        ("BrazenBull_32mm_LYCHEE/a.stl", True),
+        ("ReadyToSlice/a.stl", True),
+        ("hero.lys", True),
+        ("HERO.CHITUBOX", True),
+        ("32mm Unsupported/Ghuls.stl", False),
+        ("BrazenBull_32mm_UnSupported/a.stl", False),
+        ("HeroUnsupported.stl", False),
+        ("Hero/NoSupports/a.stl", False),
+        ("Hero/No Supports/a.stl", False),
+        ("Hero/not_supported/a.stl", False),
+        ("Hero/hero.stl", False),
+        ("Support Pillar.stl", False),
+    )
+
+    def test_the_table(self):
+        for text, expected in self.TABLE:
+            with self.subTest(text):
+                self.assertEqual(paths.is_supported(text), expected)
+
+    def test_a_supported_file_inside_an_unsupported_folder_counts(self):
+        self.assertTrue(paths.is_supported("Unsupported/hero_supported.stl"))
+
+    def test_only_negated_words_read_as_unsupported(self):
+        self.assertTrue(paths.says_unsupported("32mm NoSupports/a.stl"))
+        self.assertTrue(paths.says_unsupported("32mm Unsupported/a.stl"))
+        self.assertFalse(paths.says_unsupported("32mm Supported/a.stl"))

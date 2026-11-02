@@ -7,6 +7,11 @@ from pathlib import Path
 IMPORT_FOLDER = "ad-hoc"
 # Hidden on purpose, and fixed for the same reason.
 PENDING_DELETION_FOLDER = ".Pending-Deletion"
+# Slicer projects only exist once supports are placed.
+SUPPORTED_PROJECT_EXTENSIONS = (".lys", ".ctb", ".ags", ".chitubox", ".prusa")
+_UNSUPPORTED_WORDS = re.compile(r"(?:un|non?|not)[_\- ]?sup+ort", re.IGNORECASE)
+# Doubled p allowed because Presuported ships in real packs. Lychee and ready-to-slice exports are always supported.
+_SUPPORTED_WORDS = re.compile(r"sup+orted|with[_\- ]supports|support stls|lychee|readytoslice", re.IGNORECASE)
 
 
 def sanitize_segment(name: str) -> str:
@@ -16,6 +21,18 @@ def sanitize_segment(name: str) -> str:
     clean = re.sub(r"[^a-zA-Z0-9_\-]+", "_", str(name))
     clean = re.sub(r"_+", "_", clean)
     return clean.strip("_") or "unknown"
+
+
+def says_unsupported(path_text: str) -> bool:
+    return bool(_UNSUPPORTED_WORDS.search(path_text))
+
+
+def is_supported(path_text: str) -> bool:
+    """One rule for pre-supported files, read from a bare name or a full path."""
+    if Path(path_text).suffix.lower() in SUPPORTED_PROJECT_EXTENSIONS:
+        return True
+    # Removed first because `unsupported` contains `supported`.
+    return bool(_SUPPORTED_WORDS.search(_UNSUPPORTED_WORDS.sub("", path_text)))
 
 
 def stored_filename(filename: str) -> str:

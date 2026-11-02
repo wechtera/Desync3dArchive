@@ -24,6 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from desync_archival import external
 from desync_archival import settings as app_config
 from desync_archival.db.queries import stash_exporter as queries
+from desync_archival.services.paths import is_supported
 
 try:
     from desync_archival.services.logger import log_layer, logger
@@ -52,15 +53,6 @@ def free_path(path: Path) -> Path:
         candidate = path.with_name(f"{path.stem}_{number}{path.suffix}")
         number += 1
     return candidate
-
-
-def is_supported_file(filename: str) -> bool:
-    """Identifies pre-supported slice projects and supported mesh filenames."""
-    ext = Path(filename).suffix.lower()
-    if ext in (".lys", ".ctb", ".ags", ".chitubox", ".prusa"):
-        return True
-    lower = filename.lower()
-    return any(tok in lower for tok in ["(supported)", "_supported", "presupported", "pre-supported", "support stls", "with_supports"])
 
 
 class StashExporter:
@@ -343,7 +335,7 @@ class StashExporter:
         targets = []
         for m in members:
             fn = m["filename"]
-            is_supp = bool(m["is_supported"]) or is_supported_file(fn)
+            is_supp = bool(m["is_supported"]) or is_supported(fn)
             if filter_mode == "presupported" and not is_supp:
                 continue
             if filter_mode == "unsupported" and is_supp:
@@ -580,7 +572,7 @@ class StashExporter:
                     if p_ext not in MODEL_EXTENSIONS:
                         continue
 
-                    is_supp = is_supported_file(name)
+                    is_supp = is_supported(name)
                     if filter_mode == "presupported" and not is_supp:
                         continue
                     if filter_mode == "unsupported" and is_supp:
@@ -607,7 +599,7 @@ class StashExporter:
 
             for item in external.regular_files(temp_extract_folder):
                 if item.suffix.lower() in MODEL_EXTENSIONS:
-                    is_supp = is_supported_file(str(item.relative_to(temp_extract_folder)))
+                    is_supp = is_supported(str(item.relative_to(temp_extract_folder)))
                     if filter_mode == "presupported" and not is_supp:
                         continue
                     if filter_mode == "unsupported" and is_supp:
