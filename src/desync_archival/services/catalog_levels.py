@@ -39,7 +39,10 @@ def sync_loose_artifacts(conn: sqlite3.Connection, model_id: int, name: str, roo
         queries.UPDATE_MODELS_NAME_BY_ID, (name, RESOLVED, model_id, PLACEHOLDER),
     )
     file_ids = dict(conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID, (model_id,)).fetchall())
-    by_key = dict(conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID_V2, (model_id,)).fetchall())
+    by_rel_path: dict[str, int] = {}
+    for key, file_id in conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID_V2, (model_id,)).fetchall():
+        if key and "/" in key:
+            by_rel_path.setdefault(key.split("/", 1)[1], file_id)
     # By file, not by model: a review can move an artifact to another model, and a rescan must not
     # put a second copy back on this one.
     existing = {r[1]: r[0] for r in conn.execute(queries.SELECT_LOOSE_ARTIFACTS_OF_COLLECTION, (model_id,)).fetchall()}
@@ -48,8 +51,7 @@ def sync_loose_artifacts(conn: sqlite3.Connection, model_id: int, name: str, roo
         if not path.name.lower().endswith(model_resolver.PRINTABLE):
             continue
         rel_path = str(path.relative_to(root))
-        key = next((k for k in by_key if k and k.split("/", 1)[1] == rel_path), None)
-        file_id = by_key[key] if key else file_ids.get(path.name)
+        file_id = by_rel_path.get(rel_path, file_ids.get(path.name))
         if file_id is None:
             continue
         seen.add(file_id)

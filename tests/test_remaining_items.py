@@ -33,6 +33,7 @@ from desync_archival.api.routes import settings as settings_routes
 from desync_archival.services import (
     auth_service,
     catalog_browse,
+    catalog_levels,
     downloader,
     paths,
     pending_deletion,
@@ -1163,3 +1164,22 @@ class CreatorListP08Tests(TempDb):
 
     def test_later_pages_skip_the_query(self):
         self.assertEqual(catalog_browse.list_models(self.conn, page=2)["creators"], [])
+
+
+class LooseArtifactLookupP08Tests(unittest.TestCase):
+    def sync(self, keyed, found):
+        conn = MagicMock()
+        conn.execute.return_value.fetchall.side_effect = [[("a.stl", 1)], keyed, []]
+        with patch.object(catalog_levels, "model_resolver") as resolver:
+            resolver.PRINTABLE = (".stl",)
+            catalog_levels.sync_loose_artifacts(conn, 5, "Name", Path("/root"), found)
+        return [call.args[1] for call in conn.execute.call_args_list if call.args[0] == catalog_levels.queries.INSERT_MODEL_ARTIFACTS]
+
+    def test_a_file_is_matched_by_its_full_relative_path(self):
+        found = [(Path("/root/sub/a.stl"), 10, 0)]
+        rows = self.sync([("1/other/a.stl", 8), ("1/sub/a.stl", 9)], found)
+        self.assertEqual(rows[0][1], 9)
+
+    def test_a_key_with_no_slash_is_skipped_and_the_name_is_used(self):
+        rows = self.sync([("plain", 8)], [(Path("/root/a.stl"), 10, 0)])
+        self.assertEqual(rows[0][1], 1)
