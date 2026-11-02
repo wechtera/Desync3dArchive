@@ -232,20 +232,6 @@ export async function requestRender(payload) {
   }
 }
 
-/**
- * Builds a direct streaming URL for on-demand ephemeral JPEG rendering.
- * Does not write any persistent file to previews/.
- */
-export function getEphemeralRenderUrl(sourceType, id, view = 'front_left') {
-  const params = new URLSearchParams({
-    source_type: sourceType,
-    id: String(id),
-    view: view,
-    _t: String(Date.now())
-  });
-  return `/api/render/stl?${params.toString()}`;
-}
-
 // -----------------------------------------------------------------------------
 // Native MMF Authentication
 // -----------------------------------------------------------------------------

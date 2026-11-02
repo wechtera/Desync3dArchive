@@ -26,8 +26,6 @@ POST_EXTERNAL_LIBRARY_1B = "INSERT INTO external_libraries (name, path, default_
 
 SELECT_EXTERNAL_LIBRARIES_ID_BY_PATH = "SELECT id FROM external_libraries WHERE path = ?;"
 
-PRAGMA_ROW_V2 = "PRAGMA database_list;"
-
 SELECT_EXTERNAL_LIBRARIES_BY_ID = "SELECT id, name, path FROM external_libraries WHERE id = ? AND is_active = 1;"
 
 SELECT_EXTERNAL_LIBRARIES_BY_ID_IS_ACTIVE = "SELECT id, name, path, default_creator FROM external_libraries WHERE id = ? AND is_active = 1;"

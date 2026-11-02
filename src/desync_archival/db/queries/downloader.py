@@ -1,7 +1,5 @@
 """Raw SQL for services/downloader.py. Names with braces take format() values."""
 
-DELETE_DOWNLOADED_FILES_BY_FILE_ID = "DELETE FROM downloaded_files WHERE file_id = ?;"
-
 INSERT_DOWNLOAD_AUDIT_LOG = """
                 INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, logged_at)
                 VALUES (?, ?, 1, 'adopted', 200, CURRENT_TIMESTAMP);
@@ -20,31 +18,6 @@ DELETE_DOWNLOAD_JOBS_BY_STATUS_V2 = f"DELETE FROM download_jobs WHERE status != 
 DELETE_WAITING_JOBS_BY_MODEL = f"DELETE FROM download_jobs WHERE model_id IN ({{marks}}) AND status != 'completed' AND status NOT IN {LIVE_STATUSES};"
 
 UPDATE_APP_SETTINGS_VALUE_BY_KEY = "UPDATE app_settings SET value = '1' WHERE key = 'circuit_breaker_tripped';"
-
-INSERT_DOWNLOAD_AUDIT_LOG_V2 = """
-                                        INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, error_detail, logged_at)
-                                        VALUES (?, ?, ?, 'circuit_breaker_engaged', ?, ?, CURRENT_TIMESTAMP);
-                                    """
-
-INSERT_DOWNLOAD_AUDIT_LOG_V3 = """
-                                        INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, error_detail, logged_at)
-                                        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP);
-                                    """
-
-INSERT_DOWNLOAD_AUDIT_LOG_V4 = """
-                                    INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, error_detail, logged_at)
-                                    VALUES (?, ?, ?, ?, 200, ?, CURRENT_TIMESTAMP);
-                                """
-
-INSERT_DOWNLOAD_AUDIT_LOG_V5 = """
-                            INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, logged_at)
-                            VALUES (?, ?, ?, 'completed', 200, CURRENT_TIMESTAMP);
-                        """
-
-INSERT_DOWNLOAD_AUDIT_LOG_V6 = """
-                            INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, error_detail, logged_at)
-                            VALUES (?, ?, ?, ?, 500, ?, CURRENT_TIMESTAMP);
-                        """
 
 SELECT_APP_SETTINGS = "SELECT key, value FROM app_settings"
 

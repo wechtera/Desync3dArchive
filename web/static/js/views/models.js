@@ -12,7 +12,6 @@ import {
   fetchCreators,
   fetchArchiveSubmodels,
   fetchRawArchiveTree,
-  getEphemeralRenderUrl,
   requestRender,
   renderModelView
 } from '../api.js';

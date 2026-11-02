@@ -38,11 +38,6 @@ SELECT_PIPELINE_TASKS_BY_STATUS = """
                 ORDER BY id DESC LIMIT 1;
             """
 
-SELECT_PIPELINE_TASKS = """
-                SELECT * FROM pipeline_tasks
-                ORDER BY id DESC LIMIT ?;
-            """
-
 SELECT_PIPELINE_TASKS_BY_STATUS_V2 = "SELECT id, task_type FROM pipeline_tasks WHERE status = 'running' ORDER BY id DESC LIMIT 1;"
 
 INSERT_PIPELINE_TASKS = """
@@ -58,14 +53,6 @@ UPDATE_PIPELINE_TASKS_STATUS_BY_ID_V2 = """
                             progress_label = 'Cancelled by operator',
                             completed_at = CURRENT_TIMESTAMP
                         WHERE id = ? AND status = 'running';
-                    """
-
-UPDATE_PIPELINE_TASKS_STATUS_BY_ID_V3 = """
-                        UPDATE pipeline_tasks
-                        SET status = 'cancelled',
-                            progress_label = 'Terminated by operator (force kill)',
-                            completed_at = CURRENT_TIMESTAMP
-                        WHERE id = ?;
                     """
 
 SELECT_PIPELINE_TASKS_BY_STATUS_V3 = """

@@ -69,19 +69,6 @@ def parse_scrape_event(line: str) -> dict[str, Any] | None:
     return event if isinstance(event, dict) and "event" in event else None
 
 
-def parse_cookies(text: str) -> dict[str, str]:
-    """Reads a Cookie-Editor list or a name-value object into a name-value dict."""
-    try:
-        parsed = json.loads(text) if text else {}
-    except ValueError:
-        return {}
-    if isinstance(parsed, list):
-        return {c["name"]: str(c["value"]) for c in parsed if isinstance(c, dict) and "name" in c and "value" in c}
-    if isinstance(parsed, dict):
-        return {str(k): str(v) for k, v in parsed.items()}
-    return {}
-
-
 def inspect_schema_drift(model_id: int, data: dict) -> list[tuple[str, str]]:
     """Flags fields MMF added or dropped, so API changes show up in the data."""
     anomalies = []
@@ -362,28 +349,6 @@ class TaskManager:
             except Exception:
                 data["artifacts"] = {}
             return data
-
-    def get_recent_tasks(self, limit: int = 15) -> List[Dict[str, Any]]:
-        with self._get_db() as conn:
-            rows = conn.execute(queries.SELECT_PIPELINE_TASKS, (limit,)).fetchall()
-
-        results = []
-        for r in rows:
-            item = dict(r)
-            try:
-                item["params"] = json.loads(r["params_json"] or "{}")
-            except Exception:
-                item["params"] = {}
-            try:
-                item["result_summary"] = json.loads(r["result_summary_json"] or "{}")
-            except Exception:
-                item["result_summary"] = {}
-            try:
-                item["artifacts"] = json.loads(r["artifacts_json"] or "{}")
-            except Exception:
-                item["artifacts"] = {}
-            results.append(item)
-        return results
 
     def _handle_scrape_line(self, task_id: int, line: str, expected_count: int) -> None:
         """Turns one line of scraper output into task log and progress."""
@@ -723,15 +688,6 @@ class TaskManager:
                 with self._get_db() as conn:
                     conn.execute(queries.UPDATE_PIPELINE_TASKS_STATUS_BY_ID_V2, (task_id,))
             logger.info(f"[TaskManager] Cancelled task #{task_id} by operator.")
-            return {"success": True, "task_id": task_id}
-
-    def kill_task(self, task_id: int) -> Dict[str, Any]:
-        """Kills any subprocess and asks the worker to stop. See `_ask_to_stop` on the slot."""
-        with self._lock:
-            if not self._ask_to_stop(task_id, force=True, note=KILLING_LABEL):
-                with self._get_db() as conn:
-                    conn.execute(queries.UPDATE_PIPELINE_TASKS_STATUS_BY_ID_V3, (task_id,))
-            logger.warning(f"[TaskManager] Force killed task #{task_id} by operator.")
             return {"success": True, "task_id": task_id}
 
     def get_status(self) -> Dict[str, Any]:

@@ -25,28 +25,8 @@ class StashService:
     def _get_connection(self) -> sqlite3.Connection:
         return scoped_connection(self.db_path)
 
-    # -------------------------------------------------------------------------
-    # Guardrail Verification Helpers
-    # -------------------------------------------------------------------------
-
-    def _has_vault_columns(self, conn: sqlite3.Connection) -> bool:
-        """Checks if the catalog database contains vault storage schema (models.vault_path and downloaded_files)."""
-        try:
-            m_cols = {r[1] for r in conn.execute("PRAGMA table_info(collections);").fetchall()}
-            if "vault_path" not in m_cols:
-                return False
-            tables = {r[0] for r in conn.execute(queries.SELECT_SQLITE_MASTER_NAME_BY_TYPE).fetchall()}
-            if "downloaded_files" not in tables:
-                return False
-            return True
-        except Exception:
-            return False
-
     # These checks read the catalog, never the disk. A mount can be offline, and only export needs the files.
     def _verify_model_downloaded(self, conn: sqlite3.Connection, model_id: int):
-        if not self._has_vault_columns(conn):
-            return
-
         row = conn.execute(
             queries.SELECT_COLLECTIONS_BY_ID, (model_id,)
         ).fetchone()
@@ -58,18 +38,12 @@ class StashService:
             raise ValueError(f"Model #{model_id} must be archived in the vault before adding to a stash.")
 
     def _verify_file_downloaded(self, conn: sqlite3.Connection, file_id: int):
-        if not self._has_vault_columns(conn):
-            return
-
         row = conn.execute(queries.SELECT_DOWNLOADED_FILES_BY_FILE_ID, (file_id,)).fetchone()
 
         if not row or row["storage_tier"] not in ("nas", "local"):
             raise ValueError(f"File #{file_id} must be downloaded before adding to a stash.")
 
     def _verify_submodel_downloaded(self, conn: sqlite3.Connection, submodel_id: int, file_id: Optional[int]):
-        if not self._has_vault_columns(conn):
-            return
-
         resolved_file_id = file_id
         if resolved_file_id is None:
             row = conn.execute(queries.SELECT_FILE_ARCHIVE_SUBMODELS_FILE_ID_BY_ID, (submodel_id,)).fetchone()
@@ -85,9 +59,6 @@ class StashService:
             raise ValueError(f"Parent archive for submodel #{submodel_id} must be downloaded before adding to a stash.")
 
     def _verify_archive_member_downloaded(self, conn: sqlite3.Connection, archive_member_id: int, file_id: Optional[int]):
-        if not self._has_vault_columns(conn):
-            return
-
         resolved_file_id = file_id
         if resolved_file_id is None:
             row = conn.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS_FILE_ID_BY_ID, (archive_member_id,)).fetchone()
@@ -104,9 +75,6 @@ class StashService:
 
     def verify_on_storage(self, conn: sqlite3.Connection, item: Any) -> None:
         """Export is the one stash action that needs the files, so it alone checks the disk."""
-        if not self._has_vault_columns(conn):
-            return
-
         file_id = item["file_id"]
         if item["item_type"] == "model":
             row = conn.execute(queries.SELECT_COLLECTIONS_VAULT_PATH_BY_ID, (item["model_id"],)).fetchone()
@@ -606,7 +574,6 @@ class StashService:
                     "message": "No model IDs submitted.",
                 }
 
-            has_vault = self._has_vault_columns(c)
             added = 0
             duplicates = 0
             added_models = []
@@ -616,36 +583,29 @@ class StashService:
             dupe_query = f"SELECT model_id FROM stash_items WHERE stash_id = ? AND item_type = 'model' AND model_id IN ({placeholders});"
             existing_dupes = {r["model_id"] for r in c.execute(dupe_query, [stash_id] + clean_ids).fetchall()}
 
-            if has_vault:
-                models_query = f"SELECT id, name, vault_path FROM collections WHERE is_active = 1 AND id IN ({placeholders});"
-                m_rows = {r["id"]: r for r in c.execute(models_query, clean_ids).fetchall()}
+            models_query = f"SELECT id, name, vault_path FROM collections WHERE is_active = 1 AND id IN ({placeholders});"
+            m_rows = {r["id"]: r for r in c.execute(models_query, clean_ids).fetchall()}
 
-                for mid in clean_ids:
-                    row = m_rows.get(mid)
-                    if not row or not row["vault_path"]:
-                        skipped_undownloaded.append({
-                            "model_id": mid,
-                            "name": row["name"] if row else f"Model #{mid}",
-                            "reason": "Not archived in vault",
-                        })
-                        continue
+            for mid in clean_ids:
+                row = m_rows.get(mid)
+                if not row or not row["vault_path"]:
+                    skipped_undownloaded.append({
+                        "model_id": mid,
+                        "name": row["name"] if row else f"Model #{mid}",
+                        "reason": "Not archived in vault",
+                    })
+                    continue
 
-                    if mid in existing_dupes:
-                        duplicates += 1
-                    else:
-                        added_models.append(mid)
+                if mid in existing_dupes:
+                    duplicates += 1
+                else:
+                    added_models.append(mid)
 
-                if len(added_models) == 0 and len(skipped_undownloaded) == len(clean_ids):
-                    raise ValueError(
-                        f"None of the {len(clean_ids)} selected models are archived in the vault. "
-                        "Models must be downloaded to the vault before adding to a stash."
-                    )
-            else:
-                for mid in clean_ids:
-                    if mid in existing_dupes:
-                        duplicates += 1
-                    else:
-                        added_models.append(mid)
+            if len(added_models) == 0 and len(skipped_undownloaded) == len(clean_ids):
+                raise ValueError(
+                    f"None of the {len(clean_ids)} selected models are archived in the vault. "
+                    "Models must be downloaded to the vault before adding to a stash."
+                )
 
             with c:
                 for mid in added_models:

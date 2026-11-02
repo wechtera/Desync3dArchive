@@ -18,19 +18,6 @@ MODEL_COLUMNS = (
 )
 
 
-def find_model(conn: sqlite3.Connection, source: str, external_key: object) -> int | None:
-    row = conn.execute(
-        queries.SELECT_COLLECTIONS_ID_BY_SOURCE, (source, str(external_key))
-    ).fetchone()
-    return row[0] if row else None
-
-
-def mmf_key(conn: sqlite3.Connection, model_id: int) -> str | None:
-    """The ID MMF knows a model by, or None for anything that did not come from MMF."""
-    row = conn.execute(queries.SELECT_COLLECTIONS_EXTERNAL_KEY_BY_ID, (model_id, MMF)).fetchone()
-    return row[0] if row else None
-
-
 def archive_file_key(mmf_id: object) -> str:
     """Key for a bundle with no file list of its own. MMF gives it no ID, so it derives from the model."""
     return str(int(str(mmf_id)) * 1000 + 1)

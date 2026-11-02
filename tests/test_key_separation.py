@@ -49,11 +49,16 @@ class KeyCase(unittest.TestCase):
 
 
 class IngestTests(KeyCase):
+    def found(self, source):
+        row = self.conn.execute(
+            "SELECT id FROM collections WHERE source = ? AND external_key = ?", (source, str(MMF_ID)),
+        ).fetchone()
+        return row[0] if row else None
+
     def test_a_new_model_gets_its_own_key(self):
         model_id = self.save()
         self.assertEqual(model_id, LOCAL_ID)
-        self.assertEqual(identity.mmf_key(self.conn, model_id), str(MMF_ID))
-        self.assertEqual(identity.find_model(self.conn, "mmf", MMF_ID), LOCAL_ID)
+        self.assertEqual(self.found("mmf"), LOCAL_ID)
 
     def test_re_ingest_updates_in_place(self):
         first = self.save()
@@ -81,11 +86,8 @@ class IngestTests(KeyCase):
         self.conn.execute(
             "INSERT INTO collections (name, source, external_key, raw_backup_path) VALUES ('Other', 'thingiverse', ?, '')", (str(MMF_ID),)
         )
-        self.assertEqual(identity.find_model(self.conn, "mmf", MMF_ID), model_id)
-        self.assertNotEqual(identity.find_model(self.conn, "thingiverse", MMF_ID), model_id)
-
-    def test_a_linked_library_model_has_no_mmf_key(self):
-        self.assertIsNone(identity.mmf_key(self.conn, LOCAL_ID - 1))
+        self.assertEqual(self.found("mmf"), model_id)
+        self.assertNotEqual(self.found("thingiverse"), model_id)
 
 
 class ReverseAuditTests(KeyCase):

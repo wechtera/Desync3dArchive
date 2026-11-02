@@ -19,7 +19,7 @@ from db_helper import create_database
 
 from desync_archival.services import jobs
 from desync_archival.services.db import get_db_connection
-from desync_archival.services.task_manager import Task, TaskManager, parse_cookies
+from desync_archival.services.task_manager import Task, TaskManager
 
 
 def seed(db_path):
@@ -200,16 +200,6 @@ class ReleaseRebuildTests(TempDb):
         manager.db_path = self.db
         with patch("desync_archival.services.task_manager.run_startup_analytics", side_effect=RuntimeError("x")):
             manager._rebuild_releases(1)
-
-
-class CookieParsingTests(unittest.TestCase):
-    def test_list_and_dict_forms(self):
-        self.assertEqual(parse_cookies('[{"name": "a", "value": 1}, {"bad": 2}]'), {"a": "1"})
-        self.assertEqual(parse_cookies('{"a": "1", "b": 2}'), {"a": "1", "b": "2"})
-
-    def test_bad_input_gives_nothing(self):
-        for text in ("", "not json", "5", '"text"'):
-            self.assertEqual(parse_cookies(text), {})
 
 
 if __name__ == "__main__":

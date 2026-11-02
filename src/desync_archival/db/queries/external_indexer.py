@@ -165,7 +165,5 @@ SELECT_COLLECTIONS_BY_LIBRARY_ID_SOURCE = """
 
 COUNT_COLLECTIONS_BY_LIBRARY_ID_V2 = "SELECT COUNT(*) FROM collections WHERE library_id = ?;"
 
-SELECT_EXTERNAL_LIBRARIES_BY_ID_V2 = "SELECT id, name, path FROM external_libraries WHERE id = ?;"
-
 SELECT_COLLECTION_BY_ID = "SELECT * FROM collections WHERE id = ?;"
 DELETE_MODEL_FOLDERS = "DELETE FROM library_model_folders WHERE model_id = ?;"

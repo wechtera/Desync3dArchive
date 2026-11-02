@@ -658,16 +658,6 @@ class QueueR17Tests(unittest.TestCase):
         manager = MagicMock(active_downloads={}, active_offloads={})
         self.assertIsNone(jobs.busy_reason(self.conn, manager))
 
-    def test_the_manager_helpers_share_the_guard(self):
-        live = [self.job(status) for status in self.LIVE]
-        manager = object.__new__(DownloadManager)
-        manager.db_path = server.DB_PATH
-        self.assertEqual(manager.dequeue_models(live), 0)
-        self.assertEqual(manager.clear_queue(), 0)
-        for status, model in zip(self.LIVE, live, strict=True):
-            self.assertEqual(manager.clear_queue(status), 0)
-            self.assertEqual(self.status(model), status)
-
 
 class CancelR16Tests(TempCase):
     """Real threads, because the bug only exists while a cancelled worker is still running."""

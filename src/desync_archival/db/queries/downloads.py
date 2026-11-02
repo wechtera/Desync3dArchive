@@ -34,8 +34,6 @@ DELETE_PENDING_RELEASE_JOBS = f"""
     );
 """
 
-COUNT_MODEL_FILES_BY_MODEL_ID = "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM model_files WHERE model_id = ?;"
-
 UPDATE_DOWNLOAD_JOBS_STATUS_BY_MODEL_ID = """
                 UPDATE download_jobs
                 SET status = 'pending', total_files = ?, total_bytes = ?,
@@ -57,8 +55,6 @@ UPDATE_DOWNLOAD_JOBS_STATUS_BY_STATUS = """
                 SET status = 'pending', error_message = NULL, enqueued_at = CURRENT_TIMESTAMP
                 WHERE status = 'failed';
             """
-
-DELETE_DOWNLOAD_JOBS_BY_STATUS_V3 = "DELETE FROM download_jobs WHERE status IN ('pending', 'failed');"
 
 COUNT_INCOMPLETE_JOBS = "SELECT COUNT(*) FROM download_jobs WHERE status IN ('pending', 'failed');"
 

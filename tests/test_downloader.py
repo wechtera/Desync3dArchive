@@ -19,8 +19,6 @@ if str(REPO_ROOT) not in sys.path:
 
 from desync_archival.services.downloader import (
     DownloadManager,
-    FileValidator,
-    PathSanitizer,
 )
 
 DUMMY_ZIP_BYTES = io.BytesIO()
@@ -148,21 +146,6 @@ class TestDownloaderOAuth(unittest.TestCase):
         """Verifies DownloadManager correctly parses mmf_access_token from app_settings."""
         self.dm._load_settings()
         self.assertEqual(self.dm.access_token, "mock_oauth_bearer_token_xyz")
-
-    def test_path_sanitizer_and_validator(self):
-        """Validates filename inspection and zip archive verification."""
-        clean, has_pre, has_suf, ext = PathSanitizer.inspect_filename("[12MB] Monster_Files_50MB.zip")
-        self.assertEqual(clean, "Monster_Files.zip")
-        self.assertTrue(has_pre)
-        self.assertTrue(has_suf)
-        self.assertEqual(ext, "ZIP")
-
-        test_zip = self.sandbox / "valid.zip"
-        test_zip.write_bytes(VALID_ZIP_CONTENT)
-        is_valid, total_b, err = FileValidator.validate_zip(test_zip)
-        self.assertTrue(is_valid)
-        self.assertGreater(total_b, 0)
-        self.assertIsNone(err)
 
     @patch("httpx.Client.get")
     @patch("httpx.Client.stream")

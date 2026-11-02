@@ -7,7 +7,6 @@ previews/ cache, and all database records are registered in library.db.
 """
 
 import json
-import logging
 import os
 import re
 import sqlite3
@@ -32,7 +31,6 @@ from desync_archival.services.library_review import (
     PROPOSED,
     SKIPPED,
 )
-from desync_archival.services.logger import log_layer
 from desync_archival.services.model_resolver import primary_folder_rank
 
 SUPPORTED_FILE_EXTENSIONS = paths.SCANNED_EXTENSIONS
@@ -881,28 +879,4 @@ class ExternalLibraryIndexer:
             return added
         checked = self.rescan_known(library_id, **callbacks)
         return {**added, **checked, "models_indexed": checked.get("models_checked", 0), "files_indexed": checked.get("files_checked", 0)}
-
-    def unlink_library(self, library_id: int) -> dict[str, Any]:
-        """
-        Unlinks an external library and cleans its associated SQLite metadata rows.
-        INVARIANT: MUST NOT delete or touch any physical files on storage.
-        """
-        with self._get_db() as conn:
-            lib_row = conn.execute(queries.SELECT_EXTERNAL_LIBRARIES_BY_ID_V2, (library_id,)).fetchone()
-            if not lib_row:
-                return {"success": False, "error": f"External library #{library_id} not found."}
-
-            lib_name = lib_row["name"]
-            lib_path = lib_row["path"]
-
-            model_ids = deactivate_library(conn, library_id)
-
-        log_layer("storage", logging.INFO, f"Unlinked library #{library_id} ('{lib_name}'): Flagged inactive {len(model_ids)} SQLite models. Source NAS files untouched.")
-        return {
-            "success": True,
-            "library_id": library_id,
-            "library_name": lib_name,
-            "unlinked_models": len(model_ids),
-            "message": f"Library '{lib_name}' unlinked. Flagged {len(model_ids)} catalog records inactive. Physical storage left untouched.",
-        }
 

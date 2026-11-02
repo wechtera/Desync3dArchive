@@ -73,10 +73,6 @@ def _open_pairs(members: list[dict[str, Any]], decided: set[tuple[int, int]]) ->
     ]
 
 
-def _spans_models(files: list[dict[str, Any]]) -> bool:
-    return len({f["model_id"] for f in files}) > 1
-
-
 def _group(files: list[dict[str, Any]], kind: str) -> dict[str, Any]:
     return {
         "kind": kind,

@@ -173,11 +173,6 @@ class IndexerTests(UnlinkCase):
         self.assertEqual(conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
         conn.close()
 
-    def test_the_old_method_only_flags_too(self):
-        result = ExternalLibraryIndexer(server.DB_PATH).unlink_library(1)
-        self.assertTrue(result["success"])
-        self.assertEqual(self.active(100), 0)
-
     def test_deactivate_reports_the_models_it_flagged(self):
         self.assertEqual(deactivate_library(self.conn, 1), [100])
 
