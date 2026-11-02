@@ -4,6 +4,7 @@
  * worker tuning, diagnostic logging, log pruning, and MyMiniFactory authentication.
  */
 
+import { registerActions } from '../actions.js';
 import { formatBytes, parseServerTime } from '../utils.js';
 import { appendToBody, html, imageFallback, nothing, render, safeUrl, stopPropagation } from '../template.js';
 import {
@@ -959,7 +960,7 @@ export async function purgeStashExports(days = 14) {
 // -----------------------------------------------------------------------------
 // Window Bindings for Global DOM Event Handlers
 // -----------------------------------------------------------------------------
-Object.assign(window, {
+registerActions({
   loadSettingsView,
   initSettingsView,
   loadSettings,

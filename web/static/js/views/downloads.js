@@ -1,3 +1,4 @@
+import { registerActions } from '../actions.js';
 import { loadArchiveQueue, loadExternalLibraries } from './libraries.js';
 import {
   fetchModels,
@@ -193,8 +194,8 @@ export function switchDownloadSubView(subview) {
   }
 }
 
-window.switchDownloadSubView = switchDownloadSubView;
-window.switchDownloadGroup = switchDownloadGroup;
+registerActions({ switchDownloadSubView });
+registerActions({ switchDownloadGroup });
 
 export async function populatePendingCreatorsFilter() {
   const select = document.getElementById('pending-creator-filter');
@@ -1433,7 +1434,7 @@ export async function addSelectedToStash() {
 }
 
 // Bind to window for HTML onclick handler
-window.addSelectedToStash = addSelectedToStash;
+registerActions({ addSelectedToStash });
 
 
 export async function triggerCatalogPreviewSweep() {
@@ -1460,7 +1461,7 @@ export async function triggerCatalogPreviewSweep() {
   }
 }
 
-window.triggerCatalogPreviewSweep = triggerCatalogPreviewSweep;
+registerActions({ triggerCatalogPreviewSweep });
 
-window.loadRunHistory = loadRunHistory;
-window.loadDuplicateResults = loadDuplicateResults;
+registerActions({ loadRunHistory });
+registerActions({ loadDuplicateResults });

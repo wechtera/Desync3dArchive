@@ -2,6 +2,7 @@
  * PDFs from every source. Filters run on the server against the catalog, so this works with the NAS offline.
  */
 
+import { registerActions } from '../actions.js';
 import { html, imageFallback, nothing, render, safeUrl } from '../template.js';
 import { formatBytes } from '../utils.js';
 import { fetchDocuments, stashDocument, updateDocuments as startUpdate, queueDownloads } from '../api.js';
@@ -123,5 +124,5 @@ export function bindDocumentFilters() {
   Object.values(FILTERS).forEach(id => document.getElementById(id)?.addEventListener('change', () => loadDocuments(1)));
 }
 
-Object.assign(window, { loadDocuments, updateDocuments });
+registerActions({ loadDocuments, updateDocuments });
 bindDocumentFilters();

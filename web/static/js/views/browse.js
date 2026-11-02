@@ -3,6 +3,7 @@
  * models, and clicking a variant there goes back to the model view for that variant.
  */
 
+import { registerActions } from '../actions.js';
 import { formatBytes } from '../utils.js';
 import { html, imageFallback, nothing, render, safeUrl } from '../template.js';
 import {
@@ -239,4 +240,4 @@ document.addEventListener('input', (event) => {
 
 document.getElementById('browse-creator')?.addEventListener('change', () => loadBrowse(1));
 
-Object.assign(window, { loadBrowse, openBrowseModel, openBrowseGroup, showTag });
+registerActions({ loadBrowse, openBrowseModel, openBrowseGroup, showTag });

@@ -1,7 +1,7 @@
 import './views/tags.js';
 import { loadDocuments } from './views/documents.js';
 import { loadBrowse } from './views/browse.js';
-import { bindActions } from './actions.js';
+import { bindActions, registerActions } from './actions.js';
 import {
   fetchMetrics,
   fetchStorageStatus,
@@ -479,7 +479,7 @@ export async function saveStorageConfig() {
 // Window Bindings for DOM Event Handlers
 // -----------------------------------------------------------------------------
 
-Object.assign(window, {
+registerActions({
 
   // === 1. Core Navigation & Health Lifecycle ===
   checkHealth,

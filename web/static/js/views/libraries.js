@@ -3,6 +3,7 @@
  * Disk figures stay in Settings. Everything that changes a library lives here.
  */
 
+import { registerActions } from '../actions.js';
 import { parseServerTime } from '../utils.js';
 import { html, nothing, render } from '../template.js';
 import {
@@ -913,7 +914,7 @@ export function closeReview() {
   window.closeModal('library-review-modal');
 }
 
-Object.assign(window, {
+registerActions({
   loadExternalLibraries,
   handleAddExternalLibrary,
   handleScanExternalLibrary,

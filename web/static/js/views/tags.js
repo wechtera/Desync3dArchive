@@ -2,6 +2,7 @@
  * views/tags.js - The one place tags are managed. Elsewhere you can only choose an existing tag.
  */
 
+import { registerActions } from '../actions.js';
 import { html, render } from '../template.js';
 import { fetchTags, postTag } from '../api.js';
 import { showToast } from './settings.js';
@@ -88,4 +89,4 @@ export function switchStashSection(section) {
   if (showTags) loadTagsPage();
 }
 
-Object.assign(window, { switchStashSection, loadTagsPage });
+registerActions({ switchStashSection, loadTagsPage });

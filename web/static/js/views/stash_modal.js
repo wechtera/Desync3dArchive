@@ -4,6 +4,7 @@
  * Stacks cleanly at z-index: 1200 over any active modal.
  */
 
+import { registerActions } from '../actions.js';
 import {
   fetchStashes,
   fetchActiveStash,
@@ -336,9 +337,9 @@ function ensureModalContainer() {
 }
 
 // Bind methods to window for inline onclick accessibility
-window.openAddToStashModal = openAddToStashModal;
-window.closeAddToStashModal = closeAddToStashModal;
-window.goToStashManager = goToStashManager;
-window.handleDropdownAddToStash = handleDropdownAddToStash;
-window.handleInlineCreateAndAdd = handleInlineCreateAndAdd;
-window.executeAddToStash = executeAddToStash;
+registerActions({ openAddToStashModal });
+registerActions({ closeAddToStashModal });
+registerActions({ goToStashManager });
+registerActions({ handleDropdownAddToStash });
+registerActions({ handleInlineCreateAndAdd });
+registerActions({ executeAddToStash });

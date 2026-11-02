@@ -1,3 +1,4 @@
+import { registerActions } from '../actions.js';
 import { fetchReleases, fetchAudit, fetchModels, fetchCreators, queueDownloads, dequeueDownloads } from '../api.js';
 import { formatBytes, statusBadge } from '../utils.js';
 import { html, imageFallback, nothing, render, stopPropagation } from '../template.js';
@@ -318,5 +319,5 @@ export async function cancelReleaseQueue(releaseId) {
   window.refreshCurrentView();
 }
 
-window.filterReleaseByCreator = filterReleaseByCreator;
-window.resetReleasePageAndLoad = resetReleasePageAndLoad;
+registerActions({ filterReleaseByCreator });
+registerActions({ resetReleasePageAndLoad });

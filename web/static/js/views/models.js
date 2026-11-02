@@ -3,6 +3,7 @@
  * archive submodels viewer, and ephemeral 3D mesh rendering interface.
  */
 
+import { registerActions } from '../actions.js';
 import {
   fetchModels,
   fetchModelFiles,
@@ -1232,7 +1233,7 @@ export async function switchEphemeralView(viewName) {
 // -----------------------------------------------------------------------------
 // Window Bindings for Global DOM Event Handlers
 // -----------------------------------------------------------------------------
-Object.assign(window, {
+registerActions({
   loadModels,
   resetModelPageAndLoad,
   changeModelPage,

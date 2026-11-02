@@ -4,6 +4,7 @@
  * inline creation, item manifest management, and background slicer print queue exporting.
  */
 
+import { registerActions } from '../actions.js';
 import {
   fetchStashes,
   fetchActiveStash,
@@ -588,7 +589,7 @@ export async function handleRemoveStashItem(itemId) {
   }
 }
 
-Object.assign(window, {
+registerActions({
   selectStash,
   handleSetActiveStash,
   handleDeleteStash,
