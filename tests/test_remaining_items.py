@@ -15,6 +15,7 @@ import time
 import unittest
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from db_helper import create_database
@@ -27,6 +28,7 @@ from desync_archival.api import schemas, server
 from desync_archival.api.routes import reconcile as reconcile_routes
 from desync_archival.api.routes import settings as settings_routes
 from desync_archival.services import auth_service, paths, pending_deletion
+from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
 
@@ -583,3 +585,54 @@ class UnsafeFilenamesS05Tests(DownloadCase):
         self.name_it("12_.stl")
         self.stage()
         self.assertEqual(self.staged_names(), ["12_.stl"])
+
+
+class RarListingFallbackTests(unittest.TestCase):
+    UNRAR_LISTING = """
+UNRAR 7.11 freeware
+
+Archive: /work/a.rar
+Details: RAR 5
+
+        Name: Hero/Supported/hero.stl
+        Type: File
+        Size: 2048
+
+        Name: Hero/Supported
+        Type: Directory
+        Size: 0
+"""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.tool = Path(self.temp.name) / "unrar"
+        self.tool.touch()
+        self.archive = Path(self.temp.name) / "a.rar"
+        self.archive.touch()
+        self.peeker = ArchivePeeker.__new__(ArchivePeeker)
+        self.peeker._bin_unrar = str(self.tool)
+        self.peeker._bin_7z = None
+
+    def test_unrar_alone_lists_files_and_skips_folders(self):
+        answer = SimpleNamespace(returncode=0, stdout=self.UNRAR_LISTING, stderr="")
+        with patch.object(external, "run", return_value=answer):
+            members = self.peeker._inspect_rar(self.archive)
+        self.assertEqual([(m.internal_path, m.size_bytes) for m in members], [("Hero/Supported/hero.stl", 2048)])
+        self.assertEqual(members[0].file_extension, ".stl")
+
+    def test_a_tool_that_fails_is_a_read_error_and_not_an_empty_archive(self):
+        answer = SimpleNamespace(returncode=3, stdout="", stderr="")
+        with patch.object(external, "run", return_value=answer), self.assertRaises(external.ExtractionRefused):
+            self.peeker._inspect_rar(self.archive)
+
+    @unittest.skipUnless(external.find_7zip(), "needs 7-Zip")
+    def test_real_seven_zip_lists_only_the_members(self):
+        folder = Path(self.temp.name) / "src"
+        folder.mkdir()
+        (folder / "hero.stl").write_bytes(b"x" * 100)
+        packed = Path(self.temp.name) / "sample.7z"
+        external.run([external.find_7zip(), "a", str(packed), str(folder / "hero.stl")], 30)
+        self.peeker._bin_unrar = None
+        self.peeker._bin_7z = external.find_7zip()
+        self.assertEqual([(m.internal_path, m.size_bytes) for m in self.peeker._inspect_rar(packed)], [("hero.stl", 100)])

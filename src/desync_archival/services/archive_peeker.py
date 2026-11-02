@@ -134,8 +134,6 @@ class ArchivePeeker:
             if not m.filename.startswith("._")
             and not m.filename.lower() in (".ds_store", "thumbs.db", "desktop.ini")
             and not "__macosx" in m.internal_path.lower()
-            # 7z's listing header can parse as an entry holding the archive's own disk path.
-            and not m.internal_path.startswith("/")
         ]
 
         # 2. Extract image previews
@@ -183,77 +181,26 @@ class ArchivePeeker:
         }
 
     def _inspect_zip(self, path: Path) -> List[ArchiveMemberInfo]:
-        members = []
         with zipfile.ZipFile(path, "r") as zf:
-            for info in zf.infolist():
-                if info.is_dir():
-                    continue
-                p = Path(info.filename)
-                ext = p.suffix.lower()
-                is_supported = self._detect_supported(info.filename, ext)
-                scale = self._detect_scale(info.filename)
-                members.append(ArchiveMemberInfo(
-                    internal_path=info.filename,
-                    filename=p.name,
-                    size_bytes=info.file_size,
-                    file_extension=ext,
-                    is_supported=is_supported,
-                    scale=scale
-                ))
-        return members
+            return [self._member_info(info.filename, info.file_size) for info in zf.infolist() if not info.is_dir()]
 
     def _inspect_rar(self, path: Path) -> List[ArchiveMemberInfo]:
-        members = []
-        if self._bin_7z and Path(self._bin_7z).exists():
-            res = external.run([str(self._bin_7z), "l", "-slt", "--", str(path)], external.LIST_TIMEOUT)
-            if res.returncode == 0:
-                for block in res.stdout.split("\n\n"):
-                    path_match = re.search(r"^Path = (.+)$", block, re.MULTILINE)
-                    folder_match = re.search(r"^Folder = \+$", block, re.MULTILINE)
-                    size_match = re.search(r"^Size = (\d+)$", block, re.MULTILINE)
-                    if path_match and not folder_match:
-                        raw_p = path_match.group(1).strip()
-                        sz = int(size_match.group(1)) if size_match else 0
-                        p = Path(raw_p)
-                        ext = p.suffix.lower()
-                        is_supported = self._detect_supported(raw_p, ext)
-                        scale = self._detect_scale(raw_p)
-                        members.append(ArchiveMemberInfo(
-                            internal_path=raw_p,
-                            filename=p.name,
-                            size_bytes=sz,
-                            file_extension=ext,
-                            is_supported=is_supported,
-                            scale=scale
-                        ))
-                if members:
-                    return members
+        return [
+            self._member_info(member.path, member.size)
+            for member in external.list_members(path, self._bin_unrar, self._bin_7z)
+        ]
 
-        if self._bin_unrar and Path(self._bin_unrar).exists():
-            res = external.run([str(self._bin_unrar), "v", "--", str(path)], external.LIST_TIMEOUT)
-            if res.returncode == 0:
-                lines = res.stdout.splitlines()
-                for line in lines:
-                    # Expects attributes, size, date, time, name. FIXME: `unrar v` prints packed size and ratio too, so this likely matches nothing.
-                    m = re.search(r"^\s*([.\-A-Za-z]+)\s+(\d+)\s+[\d\-]+\s+[\d:]+\s+(.+)$", line)
-                    if m:
-                        attr, sz_str, file_p = m.groups()
-                        if "D" in attr:
-                            continue
-                        file_p = file_p.strip()
-                        p = Path(file_p)
-                        ext = p.suffix.lower()
-                        is_supported = self._detect_supported(file_p, ext)
-                        scale = self._detect_scale(file_p)
-                        members.append(ArchiveMemberInfo(
-                            internal_path=file_p,
-                            filename=p.name,
-                            size_bytes=int(sz_str),
-                            file_extension=ext,
-                            is_supported=is_supported,
-                            scale=scale
-                        ))
-        return members
+    def _member_info(self, member_path: str, size: int) -> ArchiveMemberInfo:
+        p = Path(member_path)
+        ext = p.suffix.lower()
+        return ArchiveMemberInfo(
+            internal_path=member_path,
+            filename=p.name,
+            size_bytes=size,
+            file_extension=ext,
+            is_supported=self._detect_supported(member_path, ext),
+            scale=self._detect_scale(member_path),
+        )
 
     @staticmethod
     def _detect_supported(path_str: str, ext: str) -> bool:
