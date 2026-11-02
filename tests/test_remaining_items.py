@@ -1533,3 +1533,28 @@ class NameRulesA04Tests(unittest.TestCase):
         self.assertIs(stash_exporter.MODEL_EXTENSIONS, paths.MODEL_EXTENSIONS)
         self.assertIs(archive_peeker.MODEL_EXTENSIONS, paths.MODEL_EXTENSIONS)
         self.assertIs(external_indexer.SUPPORTED_FILE_EXTENSIONS, paths.SCANNED_EXTENSIONS)
+
+
+class PeekerWordsA06Tests(unittest.TestCase):
+    TABLE = (
+        ("Small_Ghul", ("all",), False),
+        ("elbow_guard", ("bow",), False),
+        ("Wall_Section", ("all",), False),
+        ("Ghul_All", ("all",), True),
+        ("all", ("all",), True),
+        ("Long Bow", ("bow",), True),
+        ("hero_group_shot", ("group",), True),
+        ("hero figure size", ("figure size",), True),
+        ("hero_figure_size", ("figure size",), True),
+        ("figure sizes", ("figure size",), False),
+    )
+
+    def test_the_table(self):
+        for text, words, expected in self.TABLE:
+            with self.subTest(text):
+                self.assertEqual(archive_peeker.has_word(text, words), expected)
+
+    def test_trooper_tokens_still_match(self):
+        self.assertEqual(archive_peeker.TROOPER_PATTERN.search("Ghul_A").group(1), "Ghul_A")
+        self.assertEqual(archive_peeker.TROOPER_PATTERN.search("Squad_Webling3").group(1), "Webling3")
+        self.assertIsNone(archive_peeker.TROOPER_PATTERN.search("Antique_A"))

@@ -12,6 +12,7 @@ import sqlite3
 import uuid
 import zipfile
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -38,6 +39,22 @@ FORMAT_ROOT_FOLDERS = {
 # Recognized tabletop scale patterns
 SCALE_PATTERN = re.compile(r"\b(28mm|32mm|54mm|75mm|100mm)\b", re.IGNORECASE)
 
+# Packaging words for creators the resolver can't learn yet. They're data so they can't spread, and
+# stage 5 of CATALOG_HIERARCHY_PLAN.md retires them along with this file's grouping.
+OVERVIEW_IMAGE_WORDS = (
+    "cu", "rear", "scale", "side", "figure size", "group", "cover", "storyshot", "concept art", "all", "weapons",
+)
+WEAPON_WORDS = ("khopesh", "poleaxe", "sickle", "spear", "sword", "bow", "axe")
+TROOPER_WORDS = (
+    "Ghul", "Banshee", "Ant", "Beetle", "Louse", "Mosquito", "Knight", "Flea", "Effigies", "Gourdsouls?", "Bitlings?",
+    "Smilers?", "Weblings?",
+)
+TROOPER_PATTERN = re.compile(rf"(?:^|_)((?:{'|'.join(TROOPER_WORDS)})_?[A-F0-9])\b", re.IGNORECASE)
+RENDER_PREFIX_PATTERN = re.compile(r"^CometLordMinis_IMG_")
+SHARED_BASE_NAME = "Mummy Base"
+ATTENDANT_MARK = "jurakin_attendant"
+ATTENDANT_CREATOR = "Jurakin"
+
 # Common studio aliases mapping renders to submodel concepts
 STUDIO_ALIASES = {
     "hero 1": ["archibald"],
@@ -48,6 +65,12 @@ STUDIO_ALIASES = {
     "cavalry": ["moray rider", "rider"],
     "unit": ["lunatic", "guard", "soldier", "infantry"],
 }
+
+
+def has_word(text: str, words: Iterable[str]) -> bool:
+    """Whole words only, because `all` sits inside `small` and `bow` inside `elbow`. `_` separates too."""
+    spaced = f" {' '.join(re.findall(r'[a-z0-9]+', text.lower()))} "
+    return any(f" {word} " in spaced for word in words)
 
 
 @dataclass
@@ -399,7 +422,7 @@ class ArchivePeeker:
     ) -> List[DiscoveredSubmodel]:
         discrete_renders = [
             (ip, dp) for ip, dp in extracted_images.items()
-            if not any(tag in dp.stem.lower() for tag in ["_cu", "_rear", "_scale", "_side", "_figure size", "_group", "_cover", "storyshot", "concept art", "all", "weapons"])
+            if not has_word(dp.stem, OVERVIEW_IMAGE_WORDS)
         ]
 
         if len(discrete_renders) >= 4 and self._is_comet_lord_style(printable_members, discrete_renders):
@@ -413,7 +436,7 @@ class ArchivePeeker:
     def _is_comet_lord_style(members: List[ArchiveMemberInfo], discrete_renders: List[Tuple[str, Path]]) -> bool:
         render_stems = [dp.stem.lower() for _, dp in discrete_renders]
         has_poses = any("p1" in s or "p2" in s for s in render_stems)
-        has_weapons = any(any(w in s for w in ["khopesh", "poleaxe", "sickle", "spear", "sword", "bow"]) for s in render_stems)
+        has_weapons = any(has_word(s, WEAPON_WORDS) for s in render_stems)
         return has_poses and has_weapons
 
     def _segment_image_driven(
@@ -428,7 +451,7 @@ class ArchivePeeker:
 
         for internal_path, disk_path in discrete_renders:
             raw_title = disk_path.stem
-            clean_title = re.sub(r"^CometLordMinis_IMG_", "", raw_title)
+            clean_title = RENDER_PREFIX_PATTERN.sub("", raw_title)
             clean_title = clean_title.replace("_", " ")
 
             sm = DiscoveredSubmodel(
@@ -453,7 +476,7 @@ class ArchivePeeker:
                 pose_match = re.search(r"p[1-4]", r_lower)
                 pose = pose_match.group(0) if pose_match else ""
 
-                weapon_tokens = [w for w in ["khopesh", "poleaxe", "sickle", "spear", "bow", "sword", "axe"] if w in r_lower]
+                weapon_tokens = [w for w in WEAPON_WORDS if has_word(r_lower, (w,))]
 
                 if pose and pose in fn_lower:
                     if "main" in fn_lower:
@@ -468,7 +491,7 @@ class ArchivePeeker:
 
         if unassigned_members:
             base_sm = DiscoveredSubmodel(
-                name="Mummy Base",
+                name=SHARED_BASE_NAME,
                 relative_dir="Files/",
                 preview_image_path=None
             )
@@ -522,13 +545,13 @@ class ArchivePeeker:
             parent = cleaned_parts[0] if cleaned_parts else "Mount"
             return f"{parent}_Saddleless", f"{parent} (Saddleless Beast)", rel_dir
 
-        if "jurakin_attendant" in filename.lower():
+        if ATTENDANT_MARK in filename.lower():
             attendant_id = re.search(r"attendant_[a-z0-9]+", filename, re.IGNORECASE)
-            att_name = attendant_id.group(0).replace("_", " ").title() if attendant_id else "Jurakin Attendant"
-            return f"Jurakin_{att_name}", att_name, rel_dir
+            att_name = attendant_id.group(0).replace("_", " ").title() if attendant_id else f"{ATTENDANT_CREATOR} Attendant"
+            return f"{ATTENDANT_CREATOR}_{att_name}", att_name, rel_dir
 
-        # Matches a unit name plus one hex-style letter or digit, such as Ghul_A. The word list is creator-specific.
-        unit_trooper_match = re.search(r"(?:^|_)((?:Ghul|Banshee|Ant|Beetle|Louse|Mosquito|Knight|Flea|Effigies|Gourdsouls?|Bitlings?|Smilers?|Weblings?)_?[A-F0-9])\b", fn_stem, re.IGNORECASE)
+        # A unit name plus one hex-style letter or digit, such as Ghul_A.
+        unit_trooper_match = TROOPER_PATTERN.search(fn_stem)
         if unit_trooper_match:
             trooper_token = unit_trooper_match.group(1).replace("_", " ").title()
             return f"Unit_{trooper_token}", trooper_token, rel_dir
@@ -648,14 +671,14 @@ class ArchivePeeker:
             # TIER 4: Group Banner / Master Overview Fallback
             if not best_match:
                 for img in indexed_images:
-                    if "all" in img["stem"] or "group" in img["stem"] or img["internal_path"] == "[CATALOG_PRIMARY]":
+                    if has_word(img["stem"], ("all", "group")) or img["internal_path"] == "[CATALOG_PRIMARY]":
                         best_match = img["disk_path"]
                         break
 
             if not best_match and extracted_images:
                 best_match = next(iter(extracted_images.values()))
 
-            if sm.name.lower() in ("mummy base", "bases & scenics") and not any("base" in img["stem"] for img in indexed_images):
+            if sm.name.lower() in (SHARED_BASE_NAME.lower(), "bases & scenics") and not any("base" in img["stem"] for img in indexed_images):
                 sm.preview_image_path = None
             elif best_match and best_match.exists():
                 sm.preview_image_path = f"{preview_folder_name}/{model_id}/{file_id}/{best_match.name}"
