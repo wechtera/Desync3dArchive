@@ -85,7 +85,8 @@ def list_models(conn: sqlite3.Connection, search: str = "", page: int = 1, tag: 
             FROM models m WHERE {where} ORDER BY m.name COLLATE NOCASE, m.id LIMIT {PAGE_SIZE} OFFSET {offset};""",
         args,
     ).fetchall()
-    creators = [r[0] for r in conn.execute(_CREATORS)]
+    # The page fills its filter once, and this query is nearly half the cost of a page.
+    creators = [r[0] for r in conn.execute(_CREATORS)] if page <= 1 else []
     return {"creators": creators, "models": [_summary(conn, r) for r in rows], "total": total, "page": max(1, page), "page_size": PAGE_SIZE}
 
 

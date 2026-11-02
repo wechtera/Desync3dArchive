@@ -30,7 +30,13 @@ from desync_archival.api.routes import auth as auth_routes
 from desync_archival.api.routes import catalog as catalog_routes
 from desync_archival.api.routes import reconcile as reconcile_routes
 from desync_archival.api.routes import settings as settings_routes
-from desync_archival.services import auth_service, downloader, paths, pending_deletion
+from desync_archival.services import (
+    auth_service,
+    catalog_browse,
+    downloader,
+    paths,
+    pending_deletion,
+)
 from desync_archival.services import task_manager as task_service
 from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.image_worker import ImageWorker
@@ -1139,3 +1145,21 @@ class IdleWorkersP08Tests(DownloadCase):
         self.dm._offloads_ready.clear()
         self.stage()
         self.assertTrue(self.dm._offloads_ready.is_set())
+
+
+class CreatorListP08Tests(TempDb):
+    def setUp(self):
+        super().setUp()
+        with self.conn:
+            for number in (1, 2):
+                self.conn.execute(
+                    "INSERT INTO collections (id, name, url, raw_backup_path, designer_name, is_active) "
+                    "VALUES (?, ?, '', '', 'Maker', 1)", (number, f"c{number}"),
+                )
+                self.conn.execute("INSERT OR IGNORE INTO model_collections (collection_id, model_id) VALUES (?, ?)", (number, number))
+
+    def test_the_first_page_carries_the_creators(self):
+        self.assertEqual(catalog_browse.list_models(self.conn, page=1)["creators"], ["Maker"])
+
+    def test_later_pages_skip_the_query(self):
+        self.assertEqual(catalog_browse.list_models(self.conn, page=2)["creators"], [])
