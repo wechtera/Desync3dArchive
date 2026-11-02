@@ -29,7 +29,7 @@ test.describe('queue removal, R-17', () => {
   test('a job that had already started says it stayed', async ({ page }) => {
     await answerDelete(page, { success: true, removed: 0, kept: 1 });
     await page.goto('/');
-    await page.evaluate(() => window.dequeueSingleModel(5));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.dequeueSingleModel(5));
     await expect.poll(() => page.dialogs.length).toBe(1);
     expect(page.dialogs[0]).toContain('stayed');
   });
@@ -37,7 +37,7 @@ test.describe('queue removal, R-17', () => {
   test('a job that was removed says nothing', async ({ page }) => {
     await answerDelete(page, { success: true, removed: 1, kept: 0 });
     await page.goto('/');
-    await page.evaluate(() => window.dequeueSingleModel(5));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.dequeueSingleModel(5));
     expect(page.dialogs).toEqual([]);
   });
 });
@@ -71,7 +71,7 @@ test.describe('polling, P-01', () => {
     await setHidden(true);
     await page.waitForTimeout(200);
     const before = polls;
-    await page.evaluate(() => window.checkHealth());
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.checkHealth());
     expect(polls).toBe(before);
     await setHidden(false);
     await expect.poll(() => polls).toBeGreaterThan(before);
@@ -109,7 +109,7 @@ test.describe('reconcile discrepancies, E49', () => {
     await page.goto('/#downloads');
     await page.locator('#group-reconcile').click();
     await expect(page.locator('.reconcile-card')).toHaveCount(2);
-    await page.evaluate(() => window.resetAllReconcileDiscrepancies());
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.resetAllReconcileDiscrepancies());
     await expect.poll(() => sent).toMatchObject({ model_ids: [1] });
     await expect(page.locator('.reconcile-card')).toHaveCount(1);
   });

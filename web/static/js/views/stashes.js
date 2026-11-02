@@ -4,8 +4,9 @@
  * inline creation, item manifest management, and background slicer print queue exporting.
  */
 
-import { registerActions } from '../actions.js';
+import { actions, registerActions } from '../actions.js';
 import {
+  apiFetch,
   fetchStashes,
   fetchActiveStash,
   fetchStashDetail,
@@ -286,7 +287,7 @@ async function pollExportTaskProgress(taskId) {
   if (!modal) return;
 
   try {
-    const res = await fetch('/api/tasks/status');
+    const res = await apiFetch('/api/tasks/status');
     const data = await res.json();
     const active = data.active_task;
     const recent = data.recent_tasks || [];
@@ -318,7 +319,7 @@ async function pollExportTaskProgress(taskId) {
 
     if (targetTask.status === 'completed') {
       // Before closing the progress dialog, so a failed fetch is retried below and not lost.
-      const reply = await fetch(`/api/tasks/${taskId}`);
+      const reply = await apiFetch(`/api/tasks/${taskId}`);
       if (!reply.ok) throw new Error(`Export report unavailable (${reply.status})`);
       const finished = await reply.json();
       closeExportProgressModal();
@@ -352,7 +353,7 @@ export function closeExportProgressModal() {
 
 export async function cancelExportTask(taskId) {
   try {
-    await fetch('/api/tasks/cancel', {
+    await apiFetch('/api/tasks/cancel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ task_id: taskId })
@@ -472,7 +473,7 @@ function renderStashItemCard(item) {
         <span class="badge ${typeBadgeClass} stash-type-pill">${typeLabel}</span>
       </div>
       <div class="card-body">
-        <div class="card-title cell-clickable-title" @click=${() => window.openModelDetailModal(item.model_id)}>
+        <div class="card-title cell-clickable-title" @click=${() => actions.openModelDetailModal(item.model_id)}>
           ${item.title}
         </div>
         <div class="creator-name">${item.creator_name}</div>
@@ -492,7 +493,7 @@ function renderStashItemCard(item) {
         <div class="footer mt-auto">
           <span class="font-mono text-main font-semibold">${formatBytes(item.size_bytes || 0)}</span>
           <div class="footer-actions">
-            <button type="button" class="btn-pill font-xs" @click=${() => window.openModelDetailModal(item.model_id)}>
+            <button type="button" class="btn-pill font-xs" @click=${() => actions.openModelDetailModal(item.model_id)}>
               Details
             </button>
             <button type="button" class="btn-pill btn-action-cancel font-xs" @click=${() => handleRemoveStashItem(item.id)}>

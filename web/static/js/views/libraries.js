@@ -3,7 +3,7 @@
  * Disk figures stay in Settings. Everything that changes a library lives here.
  */
 
-import { registerActions } from '../actions.js';
+import { actions, registerActions } from '../actions.js';
 import { parseServerTime } from '../utils.js';
 import { html, nothing, render } from '../template.js';
 import {
@@ -65,7 +65,7 @@ function libraryCard(lib) {
         <button type="button" class="btn-pill" title="Checks known models against storage. Never adds new folders."
           @click=${() => startLibraryPass(lib, 'full')}>Full Rescan</button>
         <button type="button" class="btn-pill btn-action-cancel"
-          @click=${() => window.handleDeleteExternalLibrary(lib.id, lib.name)}>Remove</button>
+          @click=${() => handleDeleteExternalLibrary(lib.id, lib.name)}>Remove</button>
       </div>
       <div class="reconcile-card-body">
         <h3 class="reconcile-card-title">${lib.name}${lib.exists ? nothing : html` <span class="status-badge status-danger font-xs" title="Directory path not currently mounted">Unmounted</span>`}</h3>
@@ -93,7 +93,7 @@ export async function loadExternalLibraries() {
           <h2 class="settings-panel-title">Existing In-Place Libraries</h2>
           <div class="settings-panel-subtitle">Local and network collections indexed where they sit, strictly read-only.</div>
         </div>
-        <button type="button" class="btn-pill" @click=${() => window.loadExternalLibraries()}>Refresh Libraries</button>
+        <button type="button" class="btn-pill" @click=${() => loadExternalLibraries()}>Refresh Libraries</button>
       </div>
       <div class="reconcile-cards-inner" id="external-libraries-table-container">
         <div class="table-msg">Loading registered libraries...</div>
@@ -102,7 +102,7 @@ export async function loadExternalLibraries() {
       <h2 class="settings-panel-title library-section-title">Register New External Library</h2>
       <section class="tool-card">
         <div class="reconcile-card-action">
-          <button type="button" class="btn-pill btn-action-primary" @click=${() => window.handleAddExternalLibrary()}>Register In-Place Library</button>
+          <button type="button" class="btn-pill btn-action-primary" @click=${() => handleAddExternalLibrary()}>Register In-Place Library</button>
         </div>
         <div class="reconcile-card-body">
           <div class="settings-form-row two-col">
@@ -110,7 +110,7 @@ export async function loadExternalLibraries() {
               <label for="new-lib-path">Top-Level Storage Directory Path *</label>
               <div class="settings-input-with-button">
                 <input type="text" id="new-lib-path" placeholder="/Volumes/STL/Loot Studios" spellcheck="false">
-                <button type="button" class="btn-pill" @click=${() => window.openDirectoryPicker('new-lib-path')}>Browse</button>
+                <button type="button" class="btn-pill" @click=${() => actions.openDirectoryPicker('new-lib-path')}>Browse</button>
               </div>
               <span class="form-help-text">Library root on the NAS or a local drive. It stays read-only.</span>
             </div>
@@ -197,8 +197,8 @@ export async function handleScanExternalLibrary(libraryId, libraryName) {
     const res = await scanExternalLibrary(libraryId);
     if (res.success) {
       showToast(`Scan started for '${libraryName}' (Task #${res.task_id}).`);
-      if (window.refreshTasksStatus) {
-        window.refreshTasksStatus();
+      if (actions.refreshTasksStatus) {
+        actions.refreshTasksStatus();
       }
     } else {
       alert(`Failed to start scan: ${res.error}`);
@@ -226,7 +226,7 @@ async function startLibraryPass(lib, mode) {
     const before = mode === 'preview' ? await fetchLibraryPreview(lib.id) : null;
     const res = await scanExternalLibrary(lib.id, mode);
     showToast(`Started for '${lib.name}' (Task #${res.task_id}). Follow it on the Tasks tab.`);
-    window.checkHealth?.();
+    actions.checkHealth?.();
     if (before) watchForFinishedPreview(lib, before.finished_at);
   } catch (err) {
     alert(`Could not start: ${err.message}`);
@@ -735,7 +735,7 @@ async function showReview(source, focusKey = '') {
     };
     for (const card of review.cards) if ((card.flags || []).length || card.key === review.focus) openPathsTo(card);
     drawReview();
-    window.openModal('library-review-modal');
+    actions.openModal('library-review-modal');
     // Land on the first concern, so the release opens on the thing that needs a decision.
     const first = review.cards.find(c => c.key === review.focus) || review.cards.find(c => concernsOf(c).length);
     if (first) focusCard(first);
@@ -823,7 +823,7 @@ async function browseImport(folder = '') {
         ${(data.files || []).map(f => row(f.path, f.name, false))}
       </ul>
       <div class="flex gap-2 mt-2">
-        <button type="button" class="btn-pill btn-action-primary" @click=${() => window.closeModal('import-browser-modal')}>Done</button>
+        <button type="button" class="btn-pill btn-action-primary" @click=${() => actions.closeModal('import-browser-modal')}>Done</button>
       </div>
     `, body);
   } catch (err) {
@@ -833,7 +833,7 @@ async function browseImport(folder = '') {
 
 export async function openImportBrowser() {
   await browseImport();
-  window.openModal('import-browser-modal');
+  actions.openModal('import-browser-modal');
 }
 
 export async function handleImportFile() {
@@ -842,7 +842,7 @@ export async function handleImportFile() {
     showToast(`Import started (Task #${res.task_id}). Follow it on the Tasks tab.`);
     importPicked.clear();
     drawImportPicked();
-    window.checkHealth?.();
+    actions.checkHealth?.();
   } catch (err) {
     alert(err.message);
   }
@@ -911,7 +911,7 @@ async function resetReview() {
 export function closeReview() {
   if (review?.dirty && !confirm('Discard your unsaved changes to this release?')) return;
   review = null;
-  window.closeModal('library-review-modal');
+  actions.closeModal('library-review-modal');
 }
 
 registerActions({

@@ -1,4 +1,4 @@
-import { registerActions } from '../actions.js';
+import { actions, registerActions } from '../actions.js';
 import { loadArchiveQueue, loadExternalLibraries } from './libraries.js';
 import {
   fetchModels,
@@ -272,9 +272,9 @@ export async function loadPendingModels(page = currentPendingPage) {
       if (isCompleted) {
         actionBtn = html`<button type="button" class="btn-pill" disabled>Archived</button>`;
       } else if (isQueued) {
-        actionBtn = html`<button type="button" class="btn-pill btn-action-cancel" @click=${() => window.dequeueSingleModel(m.id)}>Cancel</button>`;
+        actionBtn = html`<button type="button" class="btn-pill btn-action-cancel" @click=${() => dequeueSingleModel(m.id)}>Cancel</button>`;
       } else {
-        actionBtn = html`<button type="button" class="btn-pill btn-action-queue" @click=${() => window.queueSingleModel(m.id)}>Queue</button>`;
+        actionBtn = html`<button type="button" class="btn-pill btn-action-queue" @click=${() => queueSingleModel(m.id)}>Queue</button>`;
       }
 
       const creator = m.designer_name || m.creator_name || m.creator || 'Unknown';
@@ -284,10 +284,10 @@ export async function loadPendingModels(page = currentPendingPage) {
       return html`
         <tr>
           <td class="col-checkbox">
-            <input type="checkbox" class="pending-row-chk" value="${m.id}" ?checked=${isChecked} @change=${(event) => window.toggleSelectPending(m.id, event.target.checked)}>
+            <input type="checkbox" class="pending-row-chk" value="${m.id}" ?checked=${isChecked} @change=${(event) => toggleSelectPending(m.id, event.target.checked)}>
           </td>
           <td>
-            <div class="cell-clickable-title" @click=${() => window.openModelDetailModal(m.id)} title="View Metadata">
+            <div class="cell-clickable-title" @click=${() => actions.openModelDetailModal(m.id)} title="View Metadata">
               ${m.name}
             </div>
             <span class="font-mono text-dim font-xs">#${m.id}</span>
@@ -390,7 +390,7 @@ export async function queueSelectedModels() {
     await queueDownloads({ model_ids: ids });
     selectedPendingIds.clear();
     updateSelectedCount();
-    window.refreshCurrentView();
+    actions.refreshCurrentView();
   } catch (err) {
     alert(`Failed to queue models: ${err.message}`);
   }
@@ -406,7 +406,7 @@ export async function dequeueSelectedModels() {
     reportKeptJobs(await dequeueDownloads({ model_ids: ids }));
     selectedPendingIds.clear();
     updateSelectedCount();
-    window.refreshCurrentView();
+    actions.refreshCurrentView();
   } catch (err) {
     alert(`Failed to remove models: ${err.message}`);
   }
@@ -415,7 +415,7 @@ export async function dequeueSelectedModels() {
 export async function queueSingleModel(modelId) {
   try {
     await queueDownloads({ model_ids: [modelId] });
-    window.refreshCurrentView();
+    actions.refreshCurrentView();
   } catch (err) {
     alert(`Queue failed: ${err.message}`);
   }
@@ -430,7 +430,7 @@ function reportKeptJobs(result) {
 export async function dequeueSingleModel(modelId) {
   try {
     reportKeptJobs(await dequeueDownloads({ model_ids: [modelId] }));
-    window.refreshCurrentView();
+    actions.refreshCurrentView();
   } catch (err) {
     alert(`Cancel failed: ${err.message}`);
   }
@@ -442,7 +442,7 @@ export async function clearQueueStatus(status = 'pending') {
     await dequeueDownloads({ clear_status: status, confirm: true });
     selectedPendingIds.clear();
     updateSelectedCount();
-    window.refreshCurrentView();
+    actions.refreshCurrentView();
   } catch (err) {
     alert(`Clear queue failed: ${err.message}`);
   }
@@ -454,7 +454,7 @@ export async function confirmPurgeIncomplete() {
   try {
     await dequeueDownloads({ purge_incomplete: true, confirm: true });
     renderActiveTransfers();
-    window.refreshCurrentView();
+    actions.refreshCurrentView();
   } catch (err) {
     alert(`Purge failed: ${err.message}`);
   }
@@ -545,7 +545,7 @@ export async function renderActiveTransfers() {
             <td class="font-mono text-dim font-sm">${formatDate(j.enqueued_at)}</td>
             <td>${statusBadge(j.status)}</td>
             <td>
-              <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.dequeueSingleModel(j.model_id)}>Cancel</button>
+              <button type="button" class="btn-pill btn-action-cancel" @click=${() => dequeueSingleModel(j.model_id)}>Cancel</button>
             </td>
           </tr>
         `);
@@ -611,7 +611,7 @@ export async function loadDownloadHistory(page = currentHistoryPage) {
           <td class="font-mono text-dim font-sm">${formatDate(j.enqueued_at)}</td>
           <td class="font-mono text-dim font-sm">${formatDate(j.completed_at)}</td>
           <td>
-            <div class="cell-clickable-title" @click=${() => window.openModelDetailModal(j.model_id)}>
+            <div class="cell-clickable-title" @click=${() => actions.openModelDetailModal(j.model_id)}>
               ${j.model_name || `Model #${j.model_id}`}
             </div>
           </td>
@@ -623,7 +623,7 @@ export async function loadDownloadHistory(page = currentHistoryPage) {
           </td>
           <td>
             ${j.status === 'failed'
-              ? html`<button type="button" class="btn-pill btn-action-queue" @click=${() => window.queueSingleModel(j.model_id)}>Retry</button>`
+              ? html`<button type="button" class="btn-pill btn-action-queue" @click=${() => queueSingleModel(j.model_id)}>Retry</button>`
               : html`<span class="text-dim font-sm">None</span>`
             }
           </td>
@@ -868,7 +868,7 @@ function renderReverseOrphanSection(container, orphans, untracked) {
         <div class="orphan-header-title">
           Reverse Audit: Orphan Directories on Disk (${orphans.length})
         </div>
-        <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.deleteAllOrphans()}>
+        <button type="button" class="btn-pill btn-action-cancel" @click=${() => deleteAllOrphans()}>
           Delete All Orphan Folders (${orphans.length})
         </button>
       </div>
@@ -882,7 +882,7 @@ function renderReverseOrphanSection(container, orphans, untracked) {
           </div>
           <div class="footer-actions">
             <span class="font-mono text-dim font-sm">${formatBytes(o.size_bytes)}</span>
-            <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.deleteSingleOrphan(o.directory_path)}>
+            <button type="button" class="btn-pill btn-action-cancel" @click=${() => deleteSingleOrphan(o.directory_path)}>
               Delete Directory
             </button>
           </div>
@@ -898,7 +898,7 @@ function renderReverseOrphanSection(container, orphans, untracked) {
         <div class="untracked-header-title">
           Reverse Audit: Untracked Files Inside Valid Models (${untracked.length})
         </div>
-        <button type="button" class="btn-pill btn-action-primary" @click=${() => window.ingestAllUntracked()}>
+        <button type="button" class="btn-pill btn-action-primary" @click=${() => ingestAllUntracked()}>
           Auto-Ingest All Untracked Files (${untracked.length})
         </button>
       </div>
@@ -907,14 +907,14 @@ function renderReverseOrphanSection(container, orphans, untracked) {
       <div class="card reconcile-card card-untracked">
         <div class="reconcile-card-header">
           <div>
-            <div class="cell-clickable-title" @click=${() => window.openModelDetailModal(u.model_id)}>
+            <div class="cell-clickable-title" @click=${() => actions.openModelDetailModal(u.model_id)}>
               ${u.model_name} <span class="font-mono text-dim font-xs">(#${u.model_id})</span>
             </div>
             <div class="model-subtitle">
               File: <strong class="text-main">${u.filename}</strong> (${formatBytes(u.size_bytes)})
             </div>
           </div>
-          <button type="button" class="btn-pill btn-action-primary" @click=${() => window.ingestSingleUntracked(u.model_id, u.file_path)}>
+          <button type="button" class="btn-pill btn-action-primary" @click=${() => ingestSingleUntracked(u.model_id, u.file_path)}>
             Auto-Ingest to DB
           </button>
         </div>
@@ -959,7 +959,7 @@ function renderReconcileDiscrepancies(items) {
       <div class="card reconcile-card">
         <div class="reconcile-card-header">
           <div>
-            <div class="cell-clickable-title" @click=${() => window.openModelDetailModal(m.model_id)}>
+            <div class="cell-clickable-title" @click=${() => actions.openModelDetailModal(m.model_id)}>
               ${m.model_name} <span class="font-mono text-dim font-xs">(#${m.model_id})</span>
             </div>
             <div class="model-subtitle">
@@ -967,7 +967,7 @@ function renderReconcileDiscrepancies(items) {
             </div>
           </div>
           ${m.source === 'mmf'
-            ? html`<button type="button" class="btn-pill btn-action-cancel" @click=${() => window.resetSingleReconcileModel(m.model_id)}>
+            ? html`<button type="button" class="btn-pill btn-action-cancel" @click=${() => resetSingleReconcileModel(m.model_id)}>
                 Reset for Retry
               </button>`
             : html`<span class="font-xs text-dim">Can't be reset: only MMF downloads can be fetched again</span>`}
@@ -991,7 +991,7 @@ export async function resetSingleReconcileModel(modelId) {
       if (countSpan) countSpan.textContent = currentDiscrepancies.length;
       const fixAllBtn = document.getElementById('btn-fix-all-reconcile');
       if (fixAllBtn) fixAllBtn.style.display = resettableDiscrepancies().length > 0 ? 'inline-flex' : 'none';
-      window.refreshCurrentView();
+      actions.refreshCurrentView();
     }
   } catch (err) {
     alert(`Reset failed: ${err.message}`);
@@ -1019,7 +1019,7 @@ export async function resetAllReconcileDiscrepancies() {
       if (countSpan) countSpan.textContent = currentDiscrepancies.length;
       const fixAllBtn = document.getElementById('btn-fix-all-reconcile');
       if (fixAllBtn) fixAllBtn.style.display = 'none';
-      window.refreshCurrentView();
+      actions.refreshCurrentView();
     }
   } catch (err) {
     alert(`Reset all failed: ${err.message}`);
@@ -1066,7 +1066,7 @@ export async function ingestSingleUntracked(modelId, filePath) {
     if (res.success) {
       currentUntrackedFiles = currentUntrackedFiles.filter(u => u.file_path !== filePath);
       renderReverseOrphanSection(document.getElementById('reconcile-orphan-section'), currentOrphanDirectories, currentUntrackedFiles);
-      window.refreshCurrentView();
+      actions.refreshCurrentView();
     }
   } catch (err) {
     alert(`Failed ingesting file: ${err.message}`);
@@ -1084,7 +1084,7 @@ export async function ingestAllUntracked() {
     if (res.success) {
       currentUntrackedFiles = [];
       renderReverseOrphanSection(document.getElementById('reconcile-orphan-section'), currentOrphanDirectories, []);
-      window.refreshCurrentView();
+      actions.refreshCurrentView();
     }
   } catch (err) {
     alert(`Failed ingesting untracked files: ${err.message}`);
@@ -1125,7 +1125,7 @@ function renderStagingGarbageResults(totalBytes, items) {
         <span class="findings-title-alert">Staging Garbage Discovered (${items.length} items)</span>
         <span class="font-sm text-dim ml-2">Total Reclaimable: <strong>${formatBytes(totalBytes)}</strong></span>
       </div>
-      <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.purgeAllStagingGarbage()}>
+      <button type="button" class="btn-pill btn-action-cancel" @click=${() => purgeAllStagingGarbage()}>
         Purge All Staging Garbage (${formatBytes(totalBytes)})
       </button>
     </div>
@@ -1142,7 +1142,7 @@ function renderStagingGarbageResults(totalBytes, items) {
         </div>
         <div class="footer-actions">
           <span class="font-mono text-dim font-sm">${formatBytes(it.size_bytes)}</span>
-          <button type="button" class="btn-pill btn-action-cancel" @click=${() => window.purgeSingleStagingGarbage(it.path)}>Purge</button>
+          <button type="button" class="btn-pill btn-action-cancel" @click=${() => purgeSingleStagingGarbage(it.path)}>Purge</button>
         </div>
       </div>
       <div class="defect-detail text-alert">${it.reason}</div>
@@ -1326,7 +1326,7 @@ function renderPathDriftResults(items) {
         <span class="findings-title-drift">Legacy Path Drift Detected (${items.length} models)</span>
         <div class="font-sm text-dim">Folders with brackets, unescaped whitespace, or obsolete creator paths.</div>
       </div>
-      <button type="button" class="btn-pill btn-action-primary" @click=${() => window.realignAllPaths()}>
+      <button type="button" class="btn-pill btn-action-primary" @click=${() => realignAllPaths()}>
         Realign All Models (${items.length})
       </button>
     </div>
@@ -1336,12 +1336,12 @@ function renderPathDriftResults(items) {
     <div class="card reconcile-card card-drift">
       <div class="reconcile-card-header">
         <div>
-          <div class="cell-clickable-title" @click=${() => window.openModelDetailModal(it.model_id)}>
+          <div class="cell-clickable-title" @click=${() => actions.openModelDetailModal(it.model_id)}>
             ${it.model_name} <span class="font-mono text-dim font-xs">(#${it.model_id})</span>
           </div>
           <div class="model-subtitle font-mono">${it.reasons.join(' \u2022 ')}</div>
         </div>
-        <button type="button" class="btn-pill btn-action-primary" @click=${() => window.realignSinglePath(it.model_id)}>Realign Path</button>
+        <button type="button" class="btn-pill btn-action-primary" @click=${() => realignSinglePath(it.model_id)}>Realign Path</button>
       </div>
       <div>
         <div class="path-text-current font-mono"><strong>Current:</strong> ${it.current_path}</div>
@@ -1364,7 +1364,7 @@ async function realignPaths(ids) {
   if (!confirm(`Move ${moves.length} folders on the vault and update the catalog?\n\n${shown}${more}`)) return;
   await realignModelPaths(ids, true);
   alert('Folder moves started. Follow them in Pipeline Tasks, then run the scan again.');
-  if (typeof window.checkHealth === 'function') window.checkHealth();
+  if (typeof actions.checkHealth === 'function') actions.checkHealth();
 }
 
 export async function realignSinglePath(modelId) {
@@ -1395,8 +1395,8 @@ export async function triggerArchiveInspectionSweep() {
     const res = await triggerArchivePeekBackfill();
     if (!res.success) throw new Error(res.error || 'Failed to dispatch archive peek backfill');
     alert('Archive peek backfill dispatched to background pipeline worker. You can monitor progress in Pipeline Tasks.');
-    if (typeof window.checkHealth === 'function') {
-      window.checkHealth();
+    if (typeof actions.checkHealth === 'function') {
+      actions.checkHealth();
     }
   } catch (err) {
     alert(`Archive peek backfill failed: ${err.message}`);
@@ -1417,8 +1417,8 @@ export async function addSelectedToStash() {
   }
   const ids = Array.from(selectedPendingIds);
 
-  if (typeof window.openAddToStashModal === 'function') {
-    window.openAddToStashModal({
+  if (typeof actions.openAddToStashModal === 'function') {
+    actions.openAddToStashModal({
       item_type: 'bulk_models',
       model_ids: ids,
       title: `${ids.length} Selected Model${ids.length === 1 ? '' : 's'}`
@@ -1448,8 +1448,8 @@ export async function triggerCatalogPreviewSweep() {
     const res = await triggerCatalogPreviewBackfill();
     if (!res.success) throw new Error(res.error || 'Failed to dispatch catalog preview backfill');
     alert('Catalog preview cache sweep dispatched to background pipeline worker. Monitor progress in Pipeline Tasks.');
-    if (typeof window.checkHealth === 'function') {
-      window.checkHealth();
+    if (typeof actions.checkHealth === 'function') {
+      actions.checkHealth();
     }
   } catch (err) {
     alert(`Preview cache failed: ${err.message}`);

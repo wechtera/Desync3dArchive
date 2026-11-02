@@ -3,7 +3,7 @@
  * archive submodels viewer, and ephemeral 3D mesh rendering interface.
  */
 
-import { registerActions } from '../actions.js';
+import { actions, registerActions } from '../actions.js';
 import { openStlPreview } from './stl_preview.js';
 import {
   fetchModels,
@@ -276,17 +276,17 @@ export function renderModelCard(m) {
   if (m.download_status === 'completed') {
     actionBtn = html`<button type="button" class="btn-pill" disabled>Archived</button>`;
   } else if (m.download_status === 'queued') {
-    actionBtn = html`<button type="button" class="btn-pill btn-action-cancel" @click=${() => window.dequeueSingleModel(m.id)}>Cancel Queue</button>`;
+    actionBtn = html`<button type="button" class="btn-pill btn-action-cancel" @click=${() => actions.dequeueSingleModel(m.id)}>Cancel Queue</button>`;
   } else if (m.download_status === 'partial') {
-    actionBtn = html`<button type="button" class="btn-pill btn-action-queue" @click=${() => window.queueSingleModel(m.id)}>Download Remaining</button>`;
+    actionBtn = html`<button type="button" class="btn-pill btn-action-queue" @click=${() => actions.queueSingleModel(m.id)}>Download Remaining</button>`;
   } else {
-    actionBtn = html`<button type="button" class="btn-pill btn-action-queue" @click=${() => window.queueSingleModel(m.id)}>Queue Files</button>`;
+    actionBtn = html`<button type="button" class="btn-pill btn-action-queue" @click=${() => actions.queueSingleModel(m.id)}>Queue Files</button>`;
   }
 
   const tags = m.tags || [];
   const tagsHtml = tags.length > 0
     ? html`<div class="tag-list" @click=${stopPropagation}>
-        ${tags.slice(0, 5).map(t => html`<span class="tag-pill" @click=${(event) => window.filterByTag(t, event)}>#${t}</span>`)}
+        ${tags.slice(0, 5).map(t => html`<span class="tag-pill" @click=${(event) => filterByTag(t, event)}>#${t}</span>`)}
         ${tags.length > 5 ? html`<span class="tag-pill tag-more" title="${tags.slice(5).join(', ')}">+${tags.length - 5}</span>` : ''}
       </div>`
     : '';
@@ -313,7 +313,7 @@ export function renderModelCard(m) {
   const remoteCoverFallback = m.primary_image_url || '';
 
   return html`
-    <div class="card" @click=${() => window.openModelDetailModal(m.id)} title="Click to view all metadata">
+    <div class="card" @click=${() => openModelDetailModal(m.id)} title="Click to view all metadata">
       <div class="thumb-wrap">
         ${remoteCoverFallback
           ? html`<img src="${localCoverSrc}" @error=${imageFallback(remoteCoverFallback)} loading="lazy" alt="${m.name}">`
@@ -334,9 +334,9 @@ export function renderModelCard(m) {
           ${supportBadgeHtml}
         </div>
         <div class="model-card-actions" @click=${stopPropagation}>
-          <button type="button" class="btn-pill" @click=${() => window.openFilesModal(m.id)}>Files (${m.file_count})</button>
+          <button type="button" class="btn-pill" @click=${() => openFilesModal(m.id)}>Files (${m.file_count})</button>
           ${actionBtn}
-          <button type="button" class="btn-pill" @click=${() => window.openAddToStashModal({ item_type: 'model', model_id: m.id, title: m.name, creator: m.designer_name || 'Unknown' })} title="Add Model to Stash">+ Stash</button>
+          <button type="button" class="btn-pill" @click=${() => actions.openAddToStashModal({ item_type: 'model', model_id: m.id, title: m.name, creator: m.designer_name || 'Unknown' })} title="Add Model to Stash">+ Stash</button>
         </div>
         ${mmfButtonHtml}
       </div>
@@ -351,7 +351,7 @@ export function renderSTLViewDropdown(sourceType, sourceId, title) {
   const safeTitle = title || 'Component';
   return html`
     <div class="render-dropdown-wrap" @click=${stopPropagation}>
-      <button type="button" class="btn-pill font-xs btn-render-toggle" @click=${(event) => window.toggleRenderDropdown(event, event.currentTarget)}>
+      <button type="button" class="btn-pill font-xs btn-render-toggle" @click=${(event) => toggleRenderDropdown(event, event.currentTarget)}>
         <span>Render</span> <span class="font-xs">&blacktriangledown;</span>
       </button>
       <div class="render-dropdown-menu">
@@ -361,12 +361,12 @@ export function renderSTLViewDropdown(sourceType, sourceId, title) {
             openStlPreview(sourceType, sourceId, safeTitle);
           }}>Preview</button>
         ` : nothing}
-        <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'front_left', safeTitle)}>Front-Left (3/4)</button>
-        <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'front_right', safeTitle)}>Front-Right</button>
-        <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'back_right', safeTitle)}>Back-Right</button>
-        <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'back_left', safeTitle)}>Back-Left</button>
-        <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'top_down', safeTitle)}>Top-Down</button>
-        <button type="button" class="render-dropdown-item" @click=${() => window.openEphemeralRenderModal(sourceType, sourceId, 'bottom_up', safeTitle)}>Bottom-Up</button>
+        <button type="button" class="render-dropdown-item" @click=${() => openEphemeralRenderModal(sourceType, sourceId, 'front_left', safeTitle)}>Front-Left (3/4)</button>
+        <button type="button" class="render-dropdown-item" @click=${() => openEphemeralRenderModal(sourceType, sourceId, 'front_right', safeTitle)}>Front-Right</button>
+        <button type="button" class="render-dropdown-item" @click=${() => openEphemeralRenderModal(sourceType, sourceId, 'back_right', safeTitle)}>Back-Right</button>
+        <button type="button" class="render-dropdown-item" @click=${() => openEphemeralRenderModal(sourceType, sourceId, 'back_left', safeTitle)}>Back-Left</button>
+        <button type="button" class="render-dropdown-item" @click=${() => openEphemeralRenderModal(sourceType, sourceId, 'top_down', safeTitle)}>Top-Down</button>
+        <button type="button" class="render-dropdown-item" @click=${() => openEphemeralRenderModal(sourceType, sourceId, 'bottom_up', safeTitle)}>Bottom-Up</button>
       </div>
     </div>
   `;
@@ -415,11 +415,11 @@ export async function openModelDetailModal(modelId) {
     if (isCompleted) {
       actionBtn = html`<button type="button" class="btn-pill btn-full" disabled>Archived to Vault</button>`;
     } else if (isQueued) {
-      actionBtn = html`<button type="button" class="btn-pill btn-action-cancel btn-full" @click=${() => { window.dequeueSingleModel(data.id); window.closeModal('model-detail-modal'); }}>Cancel Queue</button>`;
+      actionBtn = html`<button type="button" class="btn-pill btn-action-cancel btn-full" @click=${() => { actions.dequeueSingleModel(data.id); actions.closeModal('model-detail-modal'); }}>Cancel Queue</button>`;
     } else if (isPartial) {
-      actionBtn = html`<button type="button" class="btn-pill btn-action-queue btn-full" @click=${() => { window.queueSingleModel(data.id); window.closeModal('model-detail-modal'); }}>Download Remaining</button>`;
+      actionBtn = html`<button type="button" class="btn-pill btn-action-queue btn-full" @click=${() => { actions.queueSingleModel(data.id); actions.closeModal('model-detail-modal'); }}>Download Remaining</button>`;
     } else {
-      actionBtn = html`<button type="button" class="btn-pill btn-action-queue btn-full" @click=${() => { window.queueSingleModel(data.id); window.closeModal('model-detail-modal'); }}>Queue Files for Download</button>`;
+      actionBtn = html`<button type="button" class="btn-pill btn-action-queue btn-full" @click=${() => { actions.queueSingleModel(data.id); actions.closeModal('model-detail-modal'); }}>Queue Files for Download</button>`;
     }
 
     const localCoverSrc = `/previews/${data.id}/cover.jpg`;
@@ -437,12 +437,12 @@ export async function openModelDetailModal(modelId) {
             ${isExternal ? html`
               <div class="model-view-pills-row">
                 <span class="text-dim font-xs mr-1">Views:</span>
-                <button type="button" class="btn-pill font-xs active" @click=${(event) => window.switchModelCoverView(data.id, 'front_left', event.currentTarget)}>Front-L</button>
-                <button type="button" class="btn-pill font-xs" @click=${(event) => window.switchModelCoverView(data.id, 'front_right', event.currentTarget)}>Front-R</button>
-                <button type="button" class="btn-pill font-xs" @click=${(event) => window.switchModelCoverView(data.id, 'back_right', event.currentTarget)}>Back-R</button>
-                <button type="button" class="btn-pill font-xs" @click=${(event) => window.switchModelCoverView(data.id, 'back_left', event.currentTarget)}>Back-L</button>
-                <button type="button" class="btn-pill font-xs" @click=${(event) => window.switchModelCoverView(data.id, 'top_down', event.currentTarget)}>Top</button>
-                <button type="button" class="btn-pill font-xs" @click=${(event) => window.switchModelCoverView(data.id, 'bottom_up', event.currentTarget)}>Bottom</button>
+                <button type="button" class="btn-pill font-xs active" @click=${(event) => switchModelCoverView(data.id, 'front_left', event.currentTarget)}>Front-L</button>
+                <button type="button" class="btn-pill font-xs" @click=${(event) => switchModelCoverView(data.id, 'front_right', event.currentTarget)}>Front-R</button>
+                <button type="button" class="btn-pill font-xs" @click=${(event) => switchModelCoverView(data.id, 'back_right', event.currentTarget)}>Back-R</button>
+                <button type="button" class="btn-pill font-xs" @click=${(event) => switchModelCoverView(data.id, 'back_left', event.currentTarget)}>Back-L</button>
+                <button type="button" class="btn-pill font-xs" @click=${(event) => switchModelCoverView(data.id, 'top_down', event.currentTarget)}>Top</button>
+                <button type="button" class="btn-pill font-xs" @click=${(event) => switchModelCoverView(data.id, 'bottom_up', event.currentTarget)}>Bottom</button>
               </div>
             ` : ''}
           </div>
@@ -454,7 +454,7 @@ export async function openModelDetailModal(modelId) {
               </div>
             ` : ''}
             ${data.is_active === 0 ? '' : actionBtn}
-            <button type="button" class="btn-pill btn-full" ?hidden=${data.is_active === 0} @click=${() => window.openAddToStashModal({ item_type: 'model', model_id: data.id, title: data.name, creator: data.designer_name || 'Unknown' })}>
+            <button type="button" class="btn-pill btn-full" ?hidden=${data.is_active === 0} @click=${() => actions.openAddToStashModal({ item_type: 'model', model_id: data.id, title: data.name, creator: data.designer_name || 'Unknown' })}>
               + Add Model to Stash
             </button>
             ${data.url ? html`
@@ -468,7 +468,7 @@ export async function openModelDetailModal(modelId) {
             <div class="detail-box-heading">Indexed Tags (${tags.length})</div>
             <div class="tag-list">
               ${tags.length > 0
-                ? tags.map(t => html`<span class="tag-pill" @click=${(event) => { window.closeModal('model-detail-modal'); window.filterByTag(t, event); }}>#${t}</span>`)
+                ? tags.map(t => html`<span class="tag-pill" @click=${(event) => { actions.closeModal('model-detail-modal'); filterByTag(t, event); }}>#${t}</span>`)
                 : html`<span class="text-dim font-xs">No tags assigned.</span>`
               }
             </div>
@@ -585,7 +585,7 @@ export async function openModelDetailModal(modelId) {
                       </td>
                       <td>
                         ${canInspect
-                          ? html`<button type="button" class="btn-pill font-xs btn-inspect-archive" @click=${() => window.openArchiveViewerModal(f.file_id)}>Inspect Contents</button>`
+                          ? html`<button type="button" class="btn-pill font-xs btn-inspect-archive" @click=${() => openArchiveViewerModal(f.file_id)}>Inspect Contents</button>`
                           : (isArchive ? html`<span class="text-dim font-xs">Download to Peak</span>` : html`<span class="text-dim font-xs">-</span>`)
                         }
                       </td>
@@ -596,7 +596,7 @@ export async function openModelDetailModal(modelId) {
                         }
                       </td>
                       <td>
-                        <button type="button" class="btn-pill font-xs" @click=${() => window.openAddToStashModal({ item_type: 'file', model_id: data.id, file_id: f.file_id, title: f.filename || 'unnamed_file' })}>+ Stash</button>
+                        <button type="button" class="btn-pill font-xs" @click=${() => actions.openAddToStashModal({ item_type: 'file', model_id: data.id, file_id: f.file_id, title: f.filename || 'unnamed_file' })}>+ Stash</button>
                       </td>
                     </tr>
                   `;
@@ -678,7 +678,7 @@ export async function openFilesModal(modelId) {
                   </td>
                   <td>
                     ${canInspect
-                      ? html`<button type="button" class="btn-pill font-xs btn-inspect-archive" @click=${() => window.openArchiveViewerModal(f.file_id)}>Inspect Contents</button>`
+                      ? html`<button type="button" class="btn-pill font-xs btn-inspect-archive" @click=${() => openArchiveViewerModal(f.file_id)}>Inspect Contents</button>`
                       : (isArchive ? html`<span class="text-dim font-xs">Download to Peak</span>` : html`<span class="text-dim font-xs">-</span>`)
                     }
                   </td>
@@ -689,7 +689,7 @@ export async function openFilesModal(modelId) {
                     }
                   </td>
                   <td>
-                    <button type="button" class="btn-pill font-xs" @click=${() => window.openAddToStashModal({ item_type: 'file', model_id: data.id, file_id: f.file_id, title: f.filename || 'unnamed_file' })}>+ Stash</button>
+                    <button type="button" class="btn-pill font-xs" @click=${() => actions.openAddToStashModal({ item_type: 'file', model_id: data.id, file_id: f.file_id, title: f.filename || 'unnamed_file' })}>+ Stash</button>
                   </td>
                 </tr>
               `;
@@ -850,7 +850,7 @@ function renderLogicalSubmodelsView(container, data) {
       : html`<div class="submodel-no-thumb font-xs text-dim flex flex-col items-center justify-center p-3" id="submodel-thumb-container-${sm.id}">
            <span>No Preview Render</span>
            ${candidateStlMember ? html`
-             <button type="button" class="btn-pill font-xs mt-2 btn-action-primary" @click=${(event) => window.triggerSubmodelRender(sm.id, candidateStlMember.id, event.currentTarget)}>
+             <button type="button" class="btn-pill font-xs mt-2 btn-action-primary" @click=${(event) => triggerSubmodelRender(sm.id, candidateStlMember.id, event.currentTarget)}>
                Render Preview
              </button>
            ` : ''}
@@ -881,7 +881,7 @@ function renderLogicalSubmodelsView(container, data) {
           </details>
 
           <div class="footer mt-auto" style="padding-top:8px;">
-            <button type="button" class="btn-pill font-xs btn-action-primary btn-full" @click=${() => window.openAddToStashModal({
+            <button type="button" class="btn-pill font-xs btn-action-primary btn-full" @click=${() => actions.openAddToStashModal({
               item_type: 'submodel',
               model_id: data.model_id,
               file_id: data.file_id,
@@ -967,7 +967,7 @@ function renderRawArchiveTreeView(container, rawData) {
           }
         </td>
         <td>
-          <button type="button" class="btn-pill font-xs" @click=${() => window.openAddToStashModal({
+          <button type="button" class="btn-pill font-xs" @click=${() => actions.openAddToStashModal({
             item_type: 'archive_member',
             model_id: modelId,
             file_id: fileId,
@@ -1114,16 +1114,16 @@ function ensureEphemeralModalExists() {
             <h2 class="modal-title-accent" id="ephemeral-render-title">Component 3D Render</h2>
             <div class="modal-subtitle font-md" id="ephemeral-render-subtitle">Angle: Front-Left (3/4 Profile)</div>
           </div>
-          <button type="button" class="tab-btn" @click=${() => window.closeEphemeralRenderModal()}>Close</button>
+          <button type="button" class="tab-btn" @click=${() => closeEphemeralRenderModal()}>Close</button>
         </div>
         <div class="modal-body">
           <div class="ephemeral-view-pills" id="ephemeral-pills-container">
-            <button type="button" class="btn-pill font-xs pill-view active" data-view="front_left" @click=${() => window.switchEphemeralView('front_left')}>Front-Left (3/4)</button>
-            <button type="button" class="btn-pill font-xs pill-view" data-view="front_right" @click=${() => window.switchEphemeralView('front_right')}>Front-Right</button>
-            <button type="button" class="btn-pill font-xs pill-view" data-view="back_right" @click=${() => window.switchEphemeralView('back_right')}>Back-Right</button>
-            <button type="button" class="btn-pill font-xs pill-view" data-view="back_left" @click=${() => window.switchEphemeralView('back_left')}>Back-Left</button>
-            <button type="button" class="btn-pill font-xs pill-view" data-view="top_down" @click=${() => window.switchEphemeralView('top_down')}>Top-Down</button>
-            <button type="button" class="btn-pill font-xs pill-view" data-view="bottom_up" @click=${() => window.switchEphemeralView('bottom_up')}>Bottom-Up</button>
+            <button type="button" class="btn-pill font-xs pill-view active" data-view="front_left" @click=${() => switchEphemeralView('front_left')}>Front-Left (3/4)</button>
+            <button type="button" class="btn-pill font-xs pill-view" data-view="front_right" @click=${() => switchEphemeralView('front_right')}>Front-Right</button>
+            <button type="button" class="btn-pill font-xs pill-view" data-view="back_right" @click=${() => switchEphemeralView('back_right')}>Back-Right</button>
+            <button type="button" class="btn-pill font-xs pill-view" data-view="back_left" @click=${() => switchEphemeralView('back_left')}>Back-Left</button>
+            <button type="button" class="btn-pill font-xs pill-view" data-view="top_down" @click=${() => switchEphemeralView('top_down')}>Top-Down</button>
+            <button type="button" class="btn-pill font-xs pill-view" data-view="bottom_up" @click=${() => switchEphemeralView('bottom_up')}>Bottom-Up</button>
           </div>
           <div class="ephemeral-image-stage" id="ephemeral-stage">
             <div class="loading-placeholder">Initializing Blender preview stream...</div>

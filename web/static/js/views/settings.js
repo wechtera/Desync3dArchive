@@ -4,10 +4,11 @@
  * worker tuning, diagnostic logging, log pruning, and MyMiniFactory authentication.
  */
 
-import { registerActions } from '../actions.js';
+import { actions, registerActions } from '../actions.js';
 import { formatBytes, parseServerTime } from '../utils.js';
 import { appendToBody, html, imageFallback, nothing, render, safeUrl, stopPropagation } from '../template.js';
 import {
+  apiFetch,
   fetchAuditHistory,
   fetchHealth,
   fetchLocations,
@@ -106,7 +107,7 @@ const EXTRA_COOKIE_FIELDS = [
 /** Fills the settings form. Secrets arrive only as configured flags. */
 export async function loadSettings() {
   try {
-    const res = await fetch('/api/settings');
+    const res = await apiFetch('/api/settings');
     const data = await res.json();
 
     const setVal = (id, val) => {
@@ -162,7 +163,7 @@ export async function loadDirectoryUsage() {
   render(html`<div class="table-msg">Scanning directory footprints...</div>`, container);
 
   try {
-    const res = await fetch('/api/settings/directories');
+    const res = await apiFetch('/api/settings/directories');
     const data = await res.json();
     const directories = data.directories || data.items || [];
 
@@ -252,7 +253,7 @@ async function restoreItem(item) {
     showToast(`Restored ${item.filename}${notes.length ? `, but ${notes.join(' and ')}` : ''}.`);
     await drawPendingDeletion();
     loadPendingDeletion();
-    window.loadDuplicateResults?.();
+    actions.loadDuplicateResults?.();
   } catch (err) {
     alert(`Restore failed: ${err.message}`);
   }
@@ -297,7 +298,7 @@ async function drawPendingDeletion() {
 export async function openPendingPurge() {
   try {
     await drawPendingDeletion();
-    window.openModal('pending-purge-modal');
+    actions.openModal('pending-purge-modal');
   } catch (err) {
     alert(`Could not read pending deletion: ${err.message}`);
   }
@@ -415,7 +416,7 @@ export async function loadAuditHistory(action = '') {
   const panel = document.getElementById('audit-history-panel');
   if (!panel) return;
   try {
-    const { entries, actions } = await fetchAuditHistory(action);
+    const { entries, actions: auditActions } = await fetchAuditHistory(action);
     render(html`
       <div class="settings-panel-header">
         <div>
@@ -424,7 +425,7 @@ export async function loadAuditHistory(action = '') {
         </div>
         <select id="audit-action" aria-label="Action" @change=${(e) => loadAuditHistory(e.target.value)}>
           <option value="">All actions</option>
-          ${actions.map(a => html`<option value=${a} ?selected=${a === action}>${a}</option>`)}
+          ${auditActions.map(a => html`<option value=${a} ?selected=${a === action}>${a}</option>`)}
         </select>
       </div>
       ${entries.length ? html`
@@ -594,7 +595,7 @@ export async function loadInactive() {
 
 export async function loadAuthStatus() {
   try {
-    const res = await fetch('/api/auth/status');
+    const res = await apiFetch('/api/auth/status');
     const data = await res.json();
 
     const badge = document.getElementById('auth-status-badge');
@@ -644,7 +645,7 @@ export async function loadAuthStatus() {
 
 export async function loadLoggingSettings() {
   try {
-    const res = await fetch('/api/settings/logging');
+    const res = await apiFetch('/api/settings/logging');
     const data = await res.json();
     if (!data.success) return;
 
@@ -679,7 +680,7 @@ export async function saveLoggingSettings() {
   });
 
   try {
-    const res = await fetch('/api/settings/logging', {
+    const res = await apiFetch('/api/settings/logging', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ level, layers })
@@ -700,7 +701,7 @@ export async function purgeLogs(days = 14) {
     return;
   }
   try {
-    const res = await fetch('/api/settings/logs/purge', {
+    const res = await apiFetch('/api/settings/logs/purge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ days, confirm: true })
@@ -764,7 +765,7 @@ export async function saveSettingsForm() {
   };
 
   try {
-    const res = await fetch('/api/settings', {
+    const res = await apiFetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -786,7 +787,7 @@ export async function saveAuthCredentials() {
   const clientId = (document.getElementById('setting-auth-client-id')?.value || '').trim();
 
   try {
-    const res = await fetch('/api/auth/config', {
+    const res = await apiFetch('/api/auth/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ client_id: clientId })
@@ -810,7 +811,7 @@ export function saveAuthSlug() {
 
 export async function connectAccount() {
   try {
-    const res = await fetch('/api/auth/login?redirect=0', { method: 'POST' });
+    const res = await apiFetch('/api/auth/login?redirect=0', { method: 'POST' });
     const data = await res.json();
     if (data.auth_url) {
       window.location.href = data.auth_url;
@@ -824,7 +825,7 @@ export async function connectAccount() {
 
 async function loadSessionStatus() {
   try {
-    const res = await fetch('/api/session');
+    const res = await apiFetch('/api/session');
     const data = await res.json();
     document.getElementById('btn-logout').style.display = data.login_required ? '' : 'none';
   } catch (err) {
@@ -834,7 +835,7 @@ async function loadSessionStatus() {
 
 export async function logOut() {
   try {
-    await fetch('/api/logout', { method: 'POST' });
+    await apiFetch('/api/logout', { method: 'POST' });
     window.location.href = '/login';
   } catch (err) {
     alert(`Log out error: ${err.message}`);
@@ -844,7 +845,7 @@ export async function logOut() {
 export async function disconnectAccount() {
   if (!confirm('Disconnect this MyMiniFactory account?')) return;
   try {
-    const res = await fetch('/api/auth/disconnect', { method: 'POST' });
+    const res = await apiFetch('/api/auth/disconnect', { method: 'POST' });
     const data = await res.json();
     if (data.success) {
       showToast('Account disconnected.');
@@ -857,7 +858,7 @@ export async function disconnectAccount() {
 
 export async function testAccountConnection() {
   try {
-    const res = await fetch('/api/auth/status');
+    const res = await apiFetch('/api/auth/status');
     const data = await res.json();
     if (data.connected) {
       alert(`Connection active! Authenticated as @${data.username} (ID: ${data.user_id}).`);
@@ -881,7 +882,7 @@ export async function openDirectoryPicker(inputId) {
 export async function navigateBrowseFolder(folderPath) {
   try {
     const url = `/api/system/browse${folderPath ? `?path=${encodeURIComponent(folderPath)}` : ''}`;
-    const res = await fetch(url);
+    const res = await apiFetch(url);
     const data = await res.json();
 
     currentBrowsePath = data.current_path || '';
@@ -894,7 +895,7 @@ export async function navigateBrowseFolder(folderPath) {
     const htmlParts = [];
     if (data.parent_path) {
       htmlParts.push(html`
-        <li class="browse-item cursor-pointer" @click=${() => window.navigateBrowseFolder(data.parent_path)}>
+        <li class="browse-item cursor-pointer" @click=${() => navigateBrowseFolder(data.parent_path)}>
           <span class="text-dim font-mono">[..]</span> <span class="font-semibold text-accent">Parent Folder</span>
         </li>
       `);
@@ -906,7 +907,7 @@ export async function navigateBrowseFolder(folderPath) {
     } else {
       dirs.forEach(d => {
         htmlParts.push(html`
-          <li class="browse-item cursor-pointer" @click=${() => window.navigateBrowseFolder(d.path)}>
+          <li class="browse-item cursor-pointer" @click=${() => navigateBrowseFolder(d.path)}>
             <span class="text-accent font-mono">[DIR]</span> ${d.name}
           </li>
         `);
@@ -933,7 +934,7 @@ export const initSettingsView = loadSettingsView;
 export const refreshDirectoryUsage = loadDirectoryUsage;
 
 export async function purgeStashExports(days = 14) {
-  const purge = (body) => fetch('/api/settings/stashes/purge', {
+  const purge = (body) => apiFetch('/api/settings/stashes/purge', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)

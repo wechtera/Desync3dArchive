@@ -1,7 +1,7 @@
 import './views/tags.js';
 import { loadDocuments } from './views/documents.js';
 import { loadBrowse } from './views/browse.js';
-import { bindActions, registerActions } from './actions.js';
+import { actions, bindActions, registerActions } from './actions.js';
 import {
   fetchMetrics,
   fetchStorageStatus,
@@ -202,7 +202,7 @@ export function refreshCurrentView() {
     }
     if (isVisible('sub-dl-history')) loadDownloadHistory();
     if (isVisible('sub-dl-reconcile')) loadReconcileView();
-    if (isVisible('sub-dl-libraries')) window.loadExternalLibraries();
+    if (isVisible('sub-dl-libraries')) actions.loadExternalLibraries();
   }
   if (isVisible('view-stashes')) loadStashesView();
   if (isVisible('view-settings')) {
@@ -345,7 +345,7 @@ export async function checkHealth() {
 
     // Stream telemetry directly to Reconcile view if active
     if (activeTask && activeTask.task_type === 'vault_reconcile') {
-      window.updateReconcileFromHealth?.(activeTask);
+      actions.updateReconcileFromHealth?.(activeTask);
     }
 
     const scrapeModal = document.getElementById('modal-scraper');
@@ -372,7 +372,7 @@ export async function checkHealth() {
       isTaskRunning = currentlyRunning;
       if (!isTaskRunning) {
         loadMetrics();
-        window.loadRunHistory?.();
+        actions.loadRunHistory?.();
       }
     }
   } catch (err) {
@@ -690,17 +690,6 @@ function initApp() {
   });
   markSettingsAttention();
 }
-
-// When a session ends, every view's next request lands here. MMF's own 401s lack this header.
-const nativeFetch = window.fetch.bind(window);
-window.fetch = async (...args) => {
-  const res = await nativeFetch(...args);
-  // Safety: the header tells an expired app session from an MMF 401 passed through.
-  if (res.status === 401 && res.headers.get('X-Login-Required')) {
-    window.location.href = '/login';
-  }
-  return res;
-};
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initApp);

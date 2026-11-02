@@ -37,3 +37,34 @@ def test_the_dispatcher_only_reads_the_map():
     source = (WEB / "static" / "js" / "actions.js").read_text(encoding="utf-8")
     assert "ACTIONS.get(" in source
     assert "window[" not in source
+
+
+def scripts():
+    return sorted((WEB / "static" / "js").rglob("*.js"))
+
+
+def test_every_action_called_from_a_view_is_registered():
+    known = registered_names()
+    called = {
+        name for path in scripts() if path.name != "actions.js"
+        for name in re.findall(r"\bactions\.([A-Za-z_][A-Za-z0-9_]*)\b(?!['\"])", path.read_text(encoding="utf-8"))
+    }
+    assert called <= known, sorted(called - known)
+
+
+def test_views_add_nothing_to_window():
+    allowed = {
+        "location", "scrollTo", "scrollY", "open", "addEventListener", "removeEventListener", "confirm", "alert",
+        "getComputedStyle", "setTimeout", "innerWidth", "innerHeight", "devicePixelRatio", "getSelection",
+    }
+    used = {
+        name for path in scripts() for name in re.findall(r"\bwindow\.([A-Za-z_][A-Za-z0-9_]*)", path.read_text(encoding="utf-8"))
+    }
+    assert used <= allowed, sorted(used - allowed)
+
+
+def test_app_requests_go_through_api_js():
+    pages = {"api.js", "auth_callback.js", "login.js"}
+    direct = [path.name for path in scripts() if path.name not in pages and re.search(r"(?<![A-Za-z.])fetch\(", path.read_text(encoding="utf-8"))]
+    assert not direct
+

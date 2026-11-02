@@ -68,11 +68,11 @@ test.describe('releases, R-12', () => {
 });
 
 test.describe('vault reconcile, S-02, S-03 and R-15', () => {
-  const realign = (page) => page.evaluate(() => window.realignSinglePath(5));
+  const realign = (page) => page.evaluate(async () => (await import('/static/js/actions.js')).actions.realignSinglePath(5));
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/#downloads');
-    await expect.poll(() => page.evaluate(() => typeof window.realignSinglePath)).toBe('function');
+    await expect.poll(() => page.evaluate(async () => typeof (await import('/static/js/actions.js')).actions.realignSinglePath)).toBe('function');
     page.bodies = [];
     await page.route('**/api/reconcile/drift/realign', async (route) => {
       const body = route.request().postDataJSON();
@@ -105,7 +105,7 @@ test.describe('vault reconcile, S-02, S-03 and R-15', () => {
     await page.route('**/api/reconcile/delete-orphans', (route) => route.fulfill({
       json: { success: true, deleted_count: 0, errors: ['Refused 123_Kept: the catalog has files there.'] },
     }));
-    await page.evaluate(() => window.deleteSingleOrphan('/vault/123_Kept'));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.deleteSingleOrphan('/vault/123_Kept'));
     expect(page.dialogs[0]).toContain('Pending Deletion');
     expect(page.dialogs[1]).toContain('Refused 123_Kept');
   });

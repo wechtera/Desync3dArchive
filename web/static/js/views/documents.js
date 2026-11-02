@@ -2,7 +2,7 @@
  * PDFs from every source. Filters run on the server against the catalog, so this works with the NAS offline.
  */
 
-import { registerActions } from '../actions.js';
+import { actions, registerActions } from '../actions.js';
 import { html, imageFallback, nothing, render, safeUrl } from '../template.js';
 import { formatBytes } from '../utils.js';
 import { fetchDocuments, stashDocument, updateDocuments as startUpdate, queueDownloads } from '../api.js';
@@ -28,7 +28,7 @@ async function addToStash(doc) {
   try {
     const res = await stashDocument(doc.key);
     showToast(`Added to ${res.stash_name || 'the stash'}.`);
-    window.checkHealth?.();
+    actions.checkHealth?.();
   } catch (err) {
     alert(err.message);
   }
@@ -110,7 +110,7 @@ export async function updateDocuments() {
   try {
     const res = await startUpdate();
     showToast(`PDF update started (Task #${res.task_id}). Follow it on the Tasks tab.`);
-    window.checkHealth?.();
+    actions.checkHealth?.();
   } catch (err) {
     alert(err.message);
   }

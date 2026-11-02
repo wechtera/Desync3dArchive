@@ -1,3 +1,4 @@
+import { actions } from '../actions.js';
 import {
   fetchTask,
   fetchTasksStatus,
@@ -200,8 +201,8 @@ export async function triggerLibraryScrape() {
     if (summaryEl) summaryEl.textContent = `Task #${res.task_id} launched. Intercepting API payloads...`;
     if (logEl) logEl.textContent = `Scrape task #${res.task_id} started successfully.\n`;
 
-    if (typeof window.checkHealth === 'function') {
-      window.checkHealth();
+    if (typeof actions.checkHealth === 'function') {
+      actions.checkHealth();
     }
   } catch (err) {
     if (statusEl) {
@@ -295,8 +296,8 @@ export async function triggerMetadataIngest() {
       triggerBtn.textContent = `Task #${res.task_id} Ingesting...`;
     }
 
-    if (typeof window.checkHealth === 'function') {
-      window.checkHealth();
+    if (typeof actions.checkHealth === 'function') {
+      actions.checkHealth();
     }
   } catch (err) {
     alert(`Ingest start failed: ${err.message}`);

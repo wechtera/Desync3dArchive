@@ -2,6 +2,7 @@
  * The STL preview: one movable window that shows a mesh in the browser, lit like 4pm sun.
  * three.js loads on first use, because it's 2 MB and most sessions never open this.
  */
+import { apiFetch } from '../api.js';
 import { html, render } from '../template.js';
 
 const VENDOR = '/static/vendor/three-0.186.1';
@@ -78,7 +79,7 @@ function buildWindow(title) {
 }
 
 async function fetchMesh(preview, sourceType, sourceId) {
-  const res = await fetch('/api/preview/stl', {
+  const res = await apiFetch('/api/preview/stl', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ source_type: sourceType, id: sourceId }),

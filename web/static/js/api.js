@@ -6,8 +6,18 @@
 
 const RENDER_RETRIES = 3;
 
-async function request(url, options = {}) {
+/** Every app request goes through here, so an ended session has one place to land. */
+export async function apiFetch(url, options) {
   const res = await fetch(url, options);
+  // Safety: the header tells an expired app session from an MMF 401 passed through.
+  if (res.status === 401 && res.headers.get('X-Login-Required')) {
+    window.location.href = '/login';
+  }
+  return res;
+}
+
+async function request(url, options = {}) {
+  const res = await apiFetch(url, options);
   if (!res.ok) {
     let errorDetail = `HTTP ${res.status}`;
     try {
@@ -165,7 +175,7 @@ export async function browseDirectory(path = '') {
 }
 
 export async function fetchDirectoryUsage() {
-  const resp = await fetch('/api/settings/directories');
+  const resp = await apiFetch('/api/settings/directories');
   if (!resp.ok) {
     throw new Error(`Failed to fetch directory usage: ${resp.statusText}`);
   }
@@ -221,7 +231,7 @@ export async function renderModelView(modelId, view = 'front_left', force = fals
 // The server runs two renders at a time and answers 429 past that, saying when to come back.
 export async function requestRender(payload) {
   for (let attempt = 0; ; attempt += 1) {
-    const res = await fetch('/api/render/stl', {
+    const res = await apiFetch('/api/render/stl', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -443,7 +453,7 @@ export async function deleteStash(stashId) {
 }
 
 export async function addStashItem(stashId, { item_type, model_id, file_id = null, submodel_id = null, archive_member_id = null, notes = '' }) {
-  const res = await fetch(`/api/stashes/${stashId}/items`, {
+  const res = await apiFetch(`/api/stashes/${stashId}/items`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ item_type, model_id, file_id, submodel_id, archive_member_id, notes })
@@ -471,7 +481,7 @@ export async function bulkAddStashModels(stashId, modelIds) {
 }
 
 export async function exportStash(stashId, options = {}) {
-  const res = await fetch(`/api/stashes/${stashId}/export`, {
+  const res = await apiFetch(`/api/stashes/${stashId}/export`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(options)

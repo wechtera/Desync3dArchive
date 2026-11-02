@@ -183,7 +183,7 @@ test('clearing task history previews, then confirms', async ({ page }) => {
   const messages = [];
   page.on('dialog', (dialog) => { messages.push(dialog.message()); dialog.accept(); });
   await page.goto('/#settings');
-  await page.evaluate(() => window.clearTaskHistory());
+  await page.evaluate(async () => (await import('/static/js/actions.js')).actions.clearTaskHistory());
   expect(messages[0]).toContain('Clear 4');
   expect(bodies).toEqual([{}, { confirm: true }]);
 });
@@ -196,7 +196,7 @@ test('declining the dialog sends no destructive request', async ({ page }) => {
   });
   page.on('dialog', (dialog) => dialog.dismiss());
   await page.goto('/#settings');
-  await page.evaluate(() => window.clearTaskHistory());
+  await page.evaluate(async () => (await import('/static/js/actions.js')).actions.clearTaskHistory());
   expect(bodies).toEqual([{}]);
 });
 
@@ -278,10 +278,13 @@ test('the sign-in callback finishes under the policy', async ({ page }) => {
 
 test('every static handler names a real function', async ({ page }) => {
   await page.goto('/');
-  const missing = await page.evaluate(() => ['data-click', 'data-change', 'data-input'].flatMap((attribute) => (
-    [...document.querySelectorAll(`[${attribute}]`)]
-      .map((element) => element.getAttribute(attribute))
-      .filter((name) => typeof window[name] !== 'function')
-  )));
+  const missing = await page.evaluate(async () => {
+    const { actions } = await import('/static/js/actions.js');
+    return ['data-click', 'data-change', 'data-input'].flatMap((attribute) => (
+      [...document.querySelectorAll(`[${attribute}]`)]
+        .map((element) => element.getAttribute(attribute))
+        .filter((name) => typeof actions[name] !== 'function')
+    ));
+  });
   expect(missing).toEqual([]);
 });

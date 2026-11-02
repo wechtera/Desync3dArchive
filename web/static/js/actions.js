@@ -6,14 +6,16 @@
 const ACTIONS = new Map();
 
 /**
- * Names functions for markup. tests/test_frontend_actions.py fails on any data-click with no entry
- * here, because a name in markup would otherwise break silently on a rename. Views still call each
- * other through window, so these stay there until those calls become imports.
+ * Names functions for markup, and for views that can't import each other without a cycle.
+ * tests/test_frontend_actions.py fails on a name with no entry here, because a name in a string
+ * would otherwise break silently on a rename.
  */
-export function registerActions(actions) {
-  Object.entries(actions).forEach(([name, handler]) => ACTIONS.set(name, handler));
-  Object.assign(window, actions);
+export function registerActions(entries) {
+  Object.entries(entries).forEach(([name, handler]) => ACTIONS.set(name, handler));
 }
+
+/** actions.name(...) calls the registered function. Reading it is safe before it's registered. */
+export const actions = new Proxy({}, { get: (_, name) => ACTIONS.get(name) });
 
 function dispatch(event, attribute) {
   const target = event.target.closest?.(`[${attribute}]`);

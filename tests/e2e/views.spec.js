@@ -178,7 +178,7 @@ test.describe('tasks', () => {
     }));
     await mock(page, '/api/tasks/9', { id: 9, log_output: 'login page' });
     await page.goto('/#downloads');
-    await page.evaluate(() => window.openModal('modal-scraper'));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.openModal('modal-scraper'));
     await page.locator('#btn-trigger-scrape').click();
 
     await expect(page.locator('#scrape-modal-status')).toHaveText('FAILED');
@@ -205,7 +205,7 @@ test.describe('tasks', () => {
     await expect(page.locator('#task-history-tbody')).toContainText('No recent tasks recorded.');
     await page.unroute('**/api/tasks/status*');
     await mock(page, '/api/tasks/status', { active_task: null, recent_tasks: [task({})] });
-    await page.evaluate(() => window.renderTasksView());
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.renderTasksView());
     await expect(page.locator('#task-history-tbody tr')).toHaveCount(1);
     await expect(page.locator('#task-history-tbody')).not.toContainText('No recent tasks recorded.');
   });
@@ -213,7 +213,7 @@ test.describe('tasks', () => {
   test('scrape folders list in the ingest dialog, with hostile names as text', async ({ page }) => {
     await mock(page, '/api/scrapes/list', { scrapes: [{ folder: HOSTILE, model_count: 3 }, { folder: 'scrape_2', model_count: 0 }] });
     await open(page, { active_task: null, recent_tasks: [] });
-    await page.evaluate(() => window.openIngestModal());
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.openIngestModal());
     const options = page.locator('#ingest-scrape-folder-select option');
     await expect(options).toHaveCount(2);
     await expect(options.first()).toHaveAttribute('value', HOSTILE);
@@ -223,18 +223,18 @@ test.describe('tasks', () => {
   test('no scrape folders says so', async ({ page }) => {
     await mock(page, '/api/scrapes/list', { scrapes: [] });
     await open(page, { active_task: null, recent_tasks: [] });
-    await page.evaluate(() => window.openIngestModal());
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.openIngestModal());
     await expect(page.locator('#ingest-scrape-folder-select')).toContainText('No scrape runs found');
   });
 
   test('the ingest report breaks down creators', async ({ page }) => {
     await open(page, { active_task: null, recent_tasks: [] });
-    await page.evaluate((name) => window.renderIngestReport({
+    await page.evaluate(async (name) => (await import('/static/js/actions.js')).actions.renderIngestReport({
       submitted: 3, ingested: 2, creators: { [name]: { count: 2, pre_supported: 1 } },
     }), HOSTILE);
     await expect(page.locator('#report-ingested')).toHaveText('2');
     await expect(page.locator('.cell-creator-accent')).toHaveText(HOSTILE);
-    await page.evaluate(() => window.renderIngestReport({ creators: {} }));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.renderIngestReport({ creators: {} }));
     await expect(page.locator('#report-creators-container')).toContainText('No new creators');
   });
 });
@@ -267,7 +267,7 @@ test.describe('unlinked library items', () => {
       id: 1, name: 'Golem', designer_name: 'Forge', source: 'external', is_active: 0, tags: [], files: [],
     });
     await page.goto('/');
-    await page.evaluate(() => window.openModelDetailModal(1));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.openModelDetailModal(1));
     await expect(page.locator('#detail-unavailable-note')).toContainText('Not available for local download');
     await expect(page.getByRole('button', { name: '+ Add Model to Stash' })).toBeHidden();
     expect(page.pageErrors).toEqual([]);
@@ -349,7 +349,7 @@ test.describe('duplicate report', () => {
     const dialogs = [];
     page.on('dialog', (dialog) => { dialogs.push(dialog.message()); dialog.accept(); });
     await page.goto('/');
-    await page.evaluate(() => window.switchTab('settings'));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.switchTab('settings'));
     await expect(page.locator('#pending-deletion-status')).toContainText('2 files');
     await page.locator('#btn-purge-pending').click();
     await expect(page.locator('#pending-purge-list tbody tr')).toHaveCount(2);
@@ -374,7 +374,7 @@ test.describe('add to stash', () => {
     await mock(page, '/api/stashes', { stashes: list });
     await mock(page, '/api/stashes/active', { active_stash: current });
     await page.goto('/');
-    await page.evaluate((context) => window.openAddToStashModal(context), item);
+    await page.evaluate(async (context) => (await import('/static/js/actions.js')).actions.openAddToStashModal(context), item);
   }
 
   test('with no stashes it points to the stash manager', async ({ page }) => {
@@ -779,7 +779,7 @@ test.describe('settings', () => {
     await page.route('**/api/catalog-models/8', (route) => route.fulfill({ json: { ...variant, tags: [], scales: [], artifacts: [] } }));
     await page.route('**/api/model-groups/4', (route) => route.fulfill({ json: { id: 4, name: 'Ghul', models: [browseModel, variant] } }));
     await page.goto('/');
-    await page.evaluate(() => window.switchTab('browse'));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.switchTab('browse'));
     await page.locator('.browse-card[data-model="7"]').click();
     await expect(page.locator('#browse-model-view')).toContainText('32mm_Ghul_A.stl');
 
@@ -848,7 +848,7 @@ test.describe('settings', () => {
       const box = document.createElement('div');
       box.innerHTML = '<div id="submodel-thumb-container-1"><button id="render-it">Render</button></div>';
       document.body.append(box);
-      await window.triggerSubmodelRender(1, 2, document.getElementById('render-it'));
+      await (await import('/static/js/actions.js')).actions.triggerSubmodelRender(1, 2, document.getElementById('render-it'));
       window.renderedBox = box;
     });
     expect(await page.evaluate(() => window.renderedBox.textContent)).not.toContain('[object');
@@ -913,7 +913,7 @@ test.describe('settings', () => {
       { group: 'Backups', name: 'Backup mirror', path: '', purpose: 'Second copy', change: 'Settings', state: 'not set' },
     ] } }));
     await page.goto('/');
-    await page.evaluate(() => window.switchTab('settings'));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.switchTab('settings'));
     await page.locator('[data-settings-tab-btn="directories"]').click();
     const panel = page.locator('#locations-panel');
     await expect(panel).toContainText('/c/production.env');
@@ -934,7 +934,7 @@ test.describe('settings', () => {
     });
     await page.goto('/');
     await expect(page.locator('#nav-tab-settings')).toHaveClass(/nav-attention/);
-    await page.evaluate(() => window.switchTab('settings'));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.switchTab('settings'));
     await page.locator('[data-settings-tab-btn="health"]').click();
     await expect(page.locator('#health-overall')).toHaveText('Needs attention');
     await expect(page.locator('#health-panel')).toContainText('Expires in 5 hours.');
@@ -984,7 +984,7 @@ test.describe('settings', () => {
       return route.fulfill({ json: { creators: ['Loot Studios', 'Maker'], models: [], total: 0, page: 1, page_size: 48 } });
     });
     await page.goto('/');
-    await page.evaluate(() => window.switchTab('browse'));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.switchTab('browse'));
     await expect(page.locator('#browse-creator option')).toHaveCount(3);
     await page.locator('#browse-creator').selectOption('Loot Studios');
     await expect.poll(() => urls.at(-1)).toContain('creator=Loot%20Studios');
@@ -1077,7 +1077,7 @@ test.describe('settings', () => {
 
   test('help cards and tables stay inside the page', async ({ page }) => {
     await page.goto('/');
-    await page.evaluate(() => window.switchTab('help'));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.switchTab('help'));
     await page.setViewportSize({ width: 1300, height: 800 });
     const overflow = await page.locator('.help-card').evaluateAll((cards) => cards.filter((card) => card.scrollWidth > card.clientWidth + 1).length);
     expect(overflow).toBe(0);
@@ -1099,7 +1099,7 @@ test.describe('settings', () => {
 
   test('help explains the server settings file', async ({ page }) => {
     await page.goto('/');
-    await page.evaluate(() => window.switchTab('help'));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.switchTab('help'));
     await expect(page.locator('#help-configuration')).toContainText('DESYNC_ALLOWED_ROOTS');
   });
 
@@ -1111,7 +1111,7 @@ test.describe('settings', () => {
       return route.fulfill({ json: { models: [], total: 0, page: 1, page_size: 48 } });
     });
     await page.goto('/');
-    await page.evaluate(() => window.switchTab('stashes'));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.switchTab('stashes'));
     await page.locator('#stash-tab-tags').click();
     await page.locator('.tag-open-page').click();
     await expect(page.locator('#browse-tag-filter')).toContainText('undead');
@@ -1194,7 +1194,7 @@ test.describe('settings', () => {
       return route.fulfill({ json: { success: true, current_path: '/a', parent_path: '/', directories: [{ name: HOSTILE, path: `/a/${HOSTILE}` }], dirs: [HOSTILE] } });
     });
     await page.goto('/#settings');
-    await page.evaluate(() => window.openDirectoryPicker('setting-work-path'));
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.openDirectoryPicker('setting-work-path'));
     const items = page.locator('.browse-item');
     await expect(items).toHaveCount(2);
     await expect(items.nth(1)).toContainText(HOSTILE);
@@ -1232,7 +1232,7 @@ test.describe('downloads', () => {
   test('a ticked row stays ticked after a refresh', async ({ page }) => {
     await open(page);
     await page.locator('.pending-row-chk').first().check();
-    await page.evaluate(() => window.refreshCurrentView());
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.refreshCurrentView());
     await expect(page.locator('.pending-row-chk').first()).toBeChecked();
   });
 

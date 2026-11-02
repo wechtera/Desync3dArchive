@@ -3,7 +3,7 @@
  * models, and clicking a variant there goes back to the model view for that variant.
  */
 
-import { registerActions } from '../actions.js';
+import { actions, registerActions } from '../actions.js';
 import { formatBytes } from '../utils.js';
 import { html, imageFallback, nothing, render, safeUrl } from '../template.js';
 import {
@@ -33,7 +33,7 @@ function card(model, onClick) {
 
 function stashArtifact(artifact) {
   const inArchive = artifact.archive_member_id != null;
-  window.openAddToStashModal({
+  actions.openAddToStashModal({
     item_type: inArchive ? 'archive_member' : 'file',
     model_id: artifact.collection_id,
     file_id: artifact.file_id,
@@ -115,7 +115,7 @@ async function stashSelection() {
     const res = await stashModelSelection(shownModel.id, selection());
     const left = res.matched - res.added;
     showToast(`Added ${res.added} to ${res.stash}.${left ? ` ${left} couldn't be added.` : ''}`);
-    window.checkHealth?.();
+    actions.checkHealth?.();
   } catch (err) {
     alert(`Could not stash: ${err.message}`);
   }
@@ -176,7 +176,7 @@ export async function openBrowseModel(modelId) {
     </div>
   `, document.getElementById('model-view-body'));
   if (model.artifacts.length) showSelection();
-  window.openModal('model-view-modal');
+  actions.openModal('model-view-modal');
 }
 
 export async function openBrowseGroup(groupId) {
@@ -188,16 +188,16 @@ export async function openBrowseGroup(groupId) {
       ${group.models.map(m => card(m, () => openBrowseModel(m.id)))}
     </div>
   `, document.getElementById('model-view-body'));
-  window.openModal('model-view-modal');
+  actions.openModal('model-view-modal');
 }
 
 // Reached from the Tags page and from a model's tag chips.
 /** Sets or clears the tag filter. Reached from the Tags page and from tag chips. */
 export function showTag(tag) {
   activeTag = tag;
-  window.closeModal('model-view-modal');
+  actions.closeModal('model-view-modal');
   if (tag) {
-    window.switchTab('browse');
+    actions.switchTab('browse');
   } else {
     loadBrowse(1);
   }

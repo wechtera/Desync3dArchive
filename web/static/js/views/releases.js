@@ -1,4 +1,4 @@
-import { registerActions } from '../actions.js';
+import { actions, registerActions } from '../actions.js';
 import { fetchReleases, fetchAudit, fetchModels, fetchCreators, queueDownloads, dequeueDownloads } from '../api.js';
 import { formatBytes, statusBadge } from '../utils.js';
 import { html, imageFallback, nothing, render, stopPropagation } from '../template.js';
@@ -311,12 +311,12 @@ export async function queueReleasePack(releaseId) {
   } catch (err) {
     alert(`Couldn't queue this pack: ${err.message}`);
   }
-  window.refreshCurrentView();
+  actions.refreshCurrentView();
 }
 
 export async function cancelReleaseQueue(releaseId) {
   await dequeueDownloads({ release_id: releaseId });
-  window.refreshCurrentView();
+  actions.refreshCurrentView();
 }
 
 registerActions({ filterReleaseByCreator });

@@ -64,7 +64,10 @@ test('an expired session sends the open app back to login', async ({ page, conte
   await expect(page).toHaveURL(`${BASE}/#models`);
   await context.clearCookies();
   // The app's own polling may get the 401 first, and either one navigates away mid-call.
-  await page.evaluate(() => fetch('/api/settings')).catch(() => {});
+  await page.evaluate(async () => {
+    const { apiFetch } = await import('/static/js/api.js');
+    await apiFetch('/api/settings');
+  }).catch(() => {});
   await expect(page).toHaveURL(`${BASE}/login`);
 });
 

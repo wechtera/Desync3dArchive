@@ -4,7 +4,7 @@
  * Stacks cleanly at z-index: 1200 over any active modal.
  */
 
-import { registerActions } from '../actions.js';
+import { actions, registerActions } from '../actions.js';
 import {
   fetchStashes,
   fetchActiveStash,
@@ -269,8 +269,8 @@ export async function executeAddToStash(stashId, stashName) {
  */
 export function goToStashManager() {
   closeAddToStashModal();
-  if (typeof window.switchTab === 'function') {
-    window.switchTab('stashes');
+  if (typeof actions.switchTab === 'function') {
+    actions.switchTab('stashes');
   } else {
     window.location.hash = '#view-stashes';
   }

@@ -1,3 +1,4 @@
+import { actions } from '../actions.js';
 import { fetchCreators } from '../api.js';
 import { html, render } from '../template.js';
 
@@ -36,8 +37,8 @@ export async function loadCreators() {
 
 /** Jumps to Releases, filtered to one creator. */
 export function filterByCreator(name) {
-  window.switchTab('releases');
+  actions.switchTab('releases');
   const releaseSearch = document.getElementById('release-search');
   if (releaseSearch) releaseSearch.value = name;
-  window.loadReleases();
+  actions.loadReleases();
 }

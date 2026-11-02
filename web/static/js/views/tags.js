@@ -2,7 +2,7 @@
  * views/tags.js - The one place tags are managed. Elsewhere you can only choose an existing tag.
  */
 
-import { registerActions } from '../actions.js';
+import { actions, registerActions } from '../actions.js';
 import { html, render } from '../template.js';
 import { fetchTags, postTag } from '../api.js';
 import { showToast } from './settings.js';
@@ -63,7 +63,7 @@ export async function loadTagsPage(query = document.getElementById('tag-search')
           <tbody>
             ${tags.map(t => html`
               <tr>
-                <td><button type="button" class="link-btn tag-open-page" @click=${() => window.showTag(t.name)}>${t.name}</button></td>
+                <td><button type="button" class="link-btn tag-open-page" @click=${() => actions.showTag(t.name)}>${t.name}</button></td>
                 <td class="font-mono font-xs">${t.uses.toLocaleString()}</td>
                 <td class="tag-actions">
                   <button type="button" class="btn-pill font-xs" @click=${() => renameTag(t.name)}>Rename</button>
