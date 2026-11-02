@@ -35,6 +35,7 @@ from desync_archival.services import (
     catalog_browse,
     catalog_levels,
     downloader,
+    duplicates,
     paths,
     pending_deletion,
 )
@@ -1183,3 +1184,41 @@ class LooseArtifactLookupP08Tests(unittest.TestCase):
     def test_a_key_with_no_slash_is_skipped_and_the_name_is_used(self):
         rows = self.sync([("plain", 8)], [(Path("/root/a.stl"), 10, 0)])
         self.assertEqual(rows[0][1], 1)
+
+
+class DuplicatePairsP08Tests(TempDb):
+    def add_copies(self, count):
+        with self.conn:
+            for number in range(1, count + 1):
+                self.conn.execute(
+                    "INSERT INTO collections (id, name, url, raw_backup_path, is_active) VALUES (?, ?, '', '', 1)",
+                    (number, f"m{number}"),
+                )
+                self.conn.execute(
+                    "INSERT INTO model_files (file_id, model_id, filename, size_bytes, download_url, source, external_key) "
+                    "VALUES (?, ?, 'a.stl', 100, '', 'mmf', ?)", (number, number, str(number)),
+                )
+                self.conn.execute(
+                    "INSERT INTO downloaded_files (file_id, model_id, original_filename, cleaned_filename, "
+                    "local_relative_path, actual_bytes, storage_tier, vault_path, sha256) "
+                    "VALUES (?, ?, 'a.stl', 'a.stl', 'a.stl', 100, 'nas', ?, 'samehash')", (number, number, f"/v/{number}"),
+                )
+
+    def test_each_group_is_paired_once(self):
+        self.add_copies(3)
+        real = duplicates._open_pairs
+        with patch.object(duplicates, "_open_pairs", wraps=real) as pairs:
+            duplicates.find_duplicates(self.conn, include_shared=True)
+        self.assertLessEqual(pairs.call_count, 2)
+
+    def test_the_count_stays_whole_past_the_list_limit(self):
+        self.add_copies(4)
+        with patch.object(duplicates, "MAX_LISTED", 2):
+            found = duplicates.find_duplicates(self.conn, include_shared=True)
+        self.assertEqual(found["summary"]["pairs"], 6)
+        self.assertEqual(len(found["pairs"]), 2)
+
+    def test_a_listed_pair_keeps_its_shape(self):
+        self.add_copies(2)
+        pair = duplicates.find_duplicates(self.conn, include_shared=True)["pairs"][0]
+        self.assertEqual((pair["kind"], pair["first"]["file_id"], pair["second"]["file_id"]), ("exact", 1, 2))

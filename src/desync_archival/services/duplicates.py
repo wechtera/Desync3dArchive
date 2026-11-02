@@ -9,6 +9,7 @@ import json
 import re
 import sqlite3
 from collections import defaultdict
+from collections.abc import Iterable
 from itertools import combinations
 from typing import Any
 
@@ -134,20 +135,21 @@ def find_duplicates(conn: sqlite3.Connection, include_shared: bool = False) -> d
             by_name[(normalize_name(item["filename"]), item["size_bytes"])].append(item)
 
     decided = {(row[0], row[1]) for row in conn.execute(queries.SELECT_DECISIONS)}
-    exact = [members for members in by_hash.values() if _open_pairs(members, decided)]
-    # Two hashed files with the same name and size that differ in hash are proven different.
-    candidate = [
-        members for members in by_name.values()
-        if _open_pairs(members, decided) and any(not m["sha256"] for m in members)
-    ]
 
-    file_groups = [_group(m, "exact") for m in exact] + [_group(m, "candidate") for m in candidate]
+    def with_open_pairs(groups: Iterable[list[dict[str, Any]]]) -> list[tuple[list[dict[str, Any]], list]]:
+        return [(members, found) for members in groups if (found := _open_pairs(members, decided))]
+
+    exact = with_open_pairs(by_hash.values())
+    # Two hashed files with the same name and size that differ in hash are proven different.
+    candidate = with_open_pairs(members for members in by_name.values() if any(not m["sha256"] for m in members))
+
+    file_groups = [_group(m, "exact") for m, _ in exact] + [_group(m, "candidate") for m, _ in candidate]
     file_groups.sort(key=lambda g: (g["kind"] != "exact", -len(g["models"]), g["filename"]))
-    model_groups = _model_level(exact + candidate, file_counts, names)
-    pairs = [
-        {"kind": kind, "first": _side(a), "second": _side(b)}
+    model_groups = _model_level([m for m, _ in exact + candidate], file_counts, names)
+    open_pairs = [
+        (kind, pair)
         for kind, groups in (("exact", exact), ("candidate", candidate))
-        for members in groups for a, b in _open_pairs(members, decided)
+        for _, found in groups for pair in found
     ]
 
     return {
@@ -159,10 +161,11 @@ def find_duplicates(conn: sqlite3.Connection, include_shared: bool = False) -> d
             "overlapping_models": sum(1 for g in model_groups if g["kind"] == "overlap"),
             "ignored_names": [] if include_shared else [" ".join(entry) for entry in ignored],
             "excluded_files": total_files - len(files),
-            "pairs": len(pairs),
+            "pairs": len(open_pairs),
         },
         "include_shared": include_shared,
-        "pairs": pairs[:MAX_LISTED],
+        # The page says how many it isn't showing, so the count stays whole and only the list stops.
+        "pairs": [{"kind": kind, "first": _side(a), "second": _side(b)} for kind, (a, b) in open_pairs[:MAX_LISTED]],
         "files": file_groups[:MAX_LISTED],
         "models": model_groups[:MAX_LISTED],
     }
