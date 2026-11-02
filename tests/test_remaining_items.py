@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from test_fix_first import FILE_URL, DownloadCase
 
-from desync_archival import backup, external, migrations
+from desync_archival import backup, external, migrations, mounts
 from desync_archival import settings as app_config
 from desync_archival.api import routing, schemas, server
 from desync_archival.api.routes import auth as auth_routes
@@ -1338,3 +1338,61 @@ class ZipAuditOnePassP08Tests(unittest.TestCase):
             except (zipfile.BadZipFile, zlib.error):
                 damaged = "raised"
         self.assertIsNotNone(damaged)
+
+
+class StalledMountP07Tests(unittest.TestCase):
+    def setUp(self):
+        self.release = threading.Event()
+        self.addCleanup(self.release.set)
+        self.key = f"test:{time.monotonic_ns()}"
+        self.calls = []
+
+    def stalled(self):
+        self.calls.append(1)
+        self.release.wait(5)
+        return "from the mount"
+
+    def test_a_stalled_mount_gets_the_fallback_quickly(self):
+        with patch.object(mounts, "FIRST_ANSWER_SECONDS", 0.01):
+            started = time.monotonic()
+            self.assertEqual(mounts.remembered(self.key, self.stalled, "fallback"), "fallback")
+        self.assertLess(time.monotonic() - started, 1)
+
+    def test_only_one_read_waits_on_a_stalled_mount(self):
+        with patch.object(mounts, "FIRST_ANSWER_SECONDS", 0.01):
+            for _ in range(5):
+                mounts.remembered(self.key, self.stalled, "fallback")
+        self.assertEqual(len(self.calls), 1)
+
+    def test_the_answer_arrives_once_the_mount_returns(self):
+        with patch.object(mounts, "FIRST_ANSWER_SECONDS", 0.01):
+            mounts.remembered(self.key, self.stalled, "fallback")
+            self.release.set()
+            deadline = time.monotonic() + 2
+            while mounts._reading.get(self.key) and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertEqual(mounts.remembered(self.key, self.stalled, "fallback"), "from the mount")
+
+    def test_a_fresh_answer_never_reads(self):
+        mounts.remembered(self.key, lambda: "first", "fallback")
+        self.assertEqual(mounts.remembered(self.key, lambda: "second", "fallback"), "first")
+
+    def test_an_old_answer_is_served_while_it_refreshes(self):
+        mounts.remembered(self.key, lambda: "first", "fallback")
+        with patch.object(mounts, "FRESH_SECONDS", 0):
+            self.assertEqual(mounts.remembered(self.key, self.stalled, "fallback"), "first")
+        self.assertEqual(len(self.calls), 1)
+
+    def test_an_os_error_reads_as_the_fallback(self):
+        def broken():
+            raise OSError("share dropped")
+
+        self.assertEqual(mounts.remembered(self.key, broken, "fallback"), "fallback")
+
+    def test_folders_report_their_real_state(self):
+        with tempfile.TemporaryDirectory() as folder:
+            (Path(folder) / "a.db").touch()
+            self.assertTrue(mounts.is_online(folder))
+            self.assertEqual(mounts.names_in(folder), {"a.db"})
+            mounts.forget(folder)
+        self.assertFalse(mounts.is_online(folder))

@@ -8,6 +8,7 @@ import tarfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+from desync_archival import mounts
 from desync_archival import settings as app_config
 from desync_archival.services.logger import logger
 
@@ -132,6 +133,7 @@ def mirror_backup(target: Path, keep: int = DEFAULT_RETENTION) -> str:
     except (OSError, sqlite3.Error, BackupError) as e:
         logger.warning(f"Backup mirror failed for {target.name}: {e}")
         return "failed"
+    mounts.forget(mirror)
     logger.info(f"Backup mirrored to {mirror}, {len(removed)} old copies removed")
     return "copied"
 
@@ -139,10 +141,13 @@ def mirror_backup(target: Path, keep: int = DEFAULT_RETENTION) -> str:
 def list_backups() -> dict[str, object]:
     directory = backup_dir()
     mirror = app_config.backup_mirror_dir()
-    online = bool(mirror and mirror.is_dir())
-    names = lambda folder: {p.name for p in folder.iterdir() if BACKUP_PATTERN.fullmatch(p.name)}
-    mirrored = names(mirror) if online and mirror else set()
-    local = sorted(names(directory) if directory.is_dir() else set(), reverse=True)
+    online = bool(mirror and mounts.is_online(mirror))
+    # The mirror is on the NAS, and this runs every time the page opens.
+    mirrored = mounts.names_in(mirror) if online and mirror else set()
+    local = sorted(
+        (p.name for p in directory.iterdir() if BACKUP_PATTERN.fullmatch(p.name)) if directory.is_dir() else (),
+        reverse=True,
+    )
     return {
         "backup_dir": str(directory), "mirror_dir": str(mirror) if mirror else "", "mirror_online": online,
         "backups": [

@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from desync_archival import backup
+from desync_archival import backup, mounts
 from desync_archival import settings as app_config
 from desync_archival.db.queries import settings as queries
 from desync_archival.services import (
@@ -320,7 +320,7 @@ def handle_get_external_libraries(
         else:
             item["disk_formatted"] = "0 B"
 
-        item["exists"] = Path(item["path"]).exists() if item.get("path") else False
+        item["exists"] = mounts.is_online(item["path"]) if item.get("path") else False
         libraries.append(item)
 
     return {"success": True, "libraries": libraries, "total": len(libraries)}, 200
