@@ -686,8 +686,8 @@ class S02OrphanDeletes(RouteCase):
         tombstone, pending = self.live.execute("SELECT id, pending_path FROM deleted_files").fetchone()
         early = pending_deletion.purge(self.live, confirm=True, ids=[tombstone])
         self.assertEqual(early["purged"], 0)
-        stale = time.time() - (pending_deletion.WAIT_DAYS + 1) * 86400
-        os.utime(pending, (stale, stale))
+        with self.live:
+            self.live.execute("UPDATE deleted_files SET deleted_at = datetime('now', ?)", (f"-{pending_deletion.WAIT_DAYS + 1} days",))
         late = pending_deletion.purge(self.live, confirm=True, ids=[tombstone])
         self.assertEqual(late["purged"], 1)
         self.assertFalse(Path(pending).exists())

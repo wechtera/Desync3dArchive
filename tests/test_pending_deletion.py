@@ -17,6 +17,10 @@ from desync_archival.services.task_manager import TaskManager
 
 
 class Case(unittest.TestCase):
+    def age(self, days):
+        with self.conn:
+            self.conn.execute("UPDATE deleted_files SET deleted_at = datetime('now', ?)", (f"-{days} days",))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -240,11 +244,11 @@ class DeleteTests(Case):
         self.assertEqual(self.conn.execute("SELECT reason FROM inactive_log").fetchone()[0], "deleted_duplicate")
         self.assertEqual(self.conn.execute("SELECT action FROM audit_log").fetchone()[0], "duplicate_delete")
 
-    def test_an_old_file_gets_a_fresh_date_when_moved(self):
+    def test_an_old_file_still_waits_from_the_day_it_was_moved(self):
         self.twins()
         os.utime(self.first_path, (time.time() - 900 * 86400,) * 2)
-        moved = Path(pending_deletion.delete_file(self.conn, self.first)["pending_path"])
-        self.assertLess(time.time() - moved.stat().st_mtime, 60)
+        pending_deletion.delete_file(self.conn, self.first)
+        self.assertEqual(pending_deletion.purge(self.conn)["waiting"], 1)
 
     def test_same_names_never_collide(self):
         one, two = self.collection("One"), self.collection("Two")
@@ -397,8 +401,7 @@ class RestoreTests(Case):
 
     def test_a_purged_file_cant_be_restored(self):
         tombstone = self.deleted()
-        held = Path(self.conn.execute("SELECT pending_path FROM deleted_files").fetchone()[0])
-        os.utime(held, (time.time() - 20 * 86400,) * 2)
+        self.age(20)
         pending_deletion.purge(self.conn, confirm=True, ids=[tombstone])
         with self.assertRaises(pending_deletion.DeleteRefused):
             pending_deletion.restore_file(self.conn, tombstone)
@@ -485,8 +488,7 @@ class RestoreTests(Case):
     def test_listing_marks_what_can_be_purged(self):
         self.deleted()
         self.assertFalse(pending_deletion.listing(self.conn)["items"][0]["can_purge"])
-        held = Path(self.conn.execute("SELECT pending_path FROM deleted_files").fetchone()[0])
-        os.utime(held, (time.time() - 20 * 86400,) * 2)
+        self.age(20)
         item = pending_deletion.listing(self.conn)["items"][0]
         self.assertEqual((item["can_purge"], item["age_days"]), (True, 20))
 
@@ -502,7 +504,7 @@ class PurgeTests(Case):
     def held(self, days=20):
         self.twins()
         moved = Path(pending_deletion.delete_file(self.conn, self.first)["pending_path"])
-        os.utime(moved, (time.time() - days * 86400,) * 2)
+        self.age(days)
         return moved
 
     def test_the_default_only_lists(self):

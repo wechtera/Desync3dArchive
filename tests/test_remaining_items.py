@@ -10,6 +10,7 @@ import sqlite3
 import stat
 import tempfile
 import threading
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -19,7 +20,7 @@ from db_helper import create_database
 
 from desync_archival import backup
 from desync_archival import settings as app_config
-from desync_archival.services import auth_service
+from desync_archival.services import auth_service, pending_deletion
 from desync_archival.services.reconciler import VaultReconciler
 from desync_archival.services.task_manager import TaskManager
 
@@ -221,3 +222,84 @@ class BundleSecretsS07Tests(TempDb):
             backup.copy_private(secrets_file, target)
         self.assertEqual(seen, [0o600])
         self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
+
+
+class PurgeWaitS08Tests(TempDb):
+    def setUp(self):
+        super().setUp()
+        self.vault = self.root / "vault"
+        self.held_dir = self.vault / ".Pending-Deletion" / "1"
+        self.held_dir.mkdir(parents=True)
+        self.held = self.held_dir / "a.zip"
+        self.held.write_bytes(b"x")
+        with self.conn:
+            auth_service.set_settings(self.conn, {"download_root_path": str(self.vault)})
+            self.conn.execute(
+                "INSERT INTO deleted_files (id, file_id, collection_id, filename, original_path, pending_path, deleted_at)"
+                " VALUES (1, 1, 1, 'a.zip', '/v/a.zip', ?, datetime('now', '-1 day'))", (str(self.held),),
+            )
+
+    def age(self, days):
+        with self.conn:
+            self.conn.execute("UPDATE deleted_files SET deleted_at = datetime('now', ?)", (f"-{days} days",))
+
+    def state(self):
+        return self.conn.execute("SELECT purged_at FROM deleted_files").fetchone()[0]
+
+    def test_a_file_the_nas_cant_read_still_waits(self):
+        real = Path.stat
+
+        def failing(path, *args, **kwargs):
+            if path.name == "a.zip":
+                raise OSError(5, "Input/output error")
+            return real(path, *args, **kwargs)
+
+        with patch.object(Path, "stat", failing):
+            result = pending_deletion.purge(self.conn)
+        self.assertEqual((result["waiting"], result["items"]), (1, []))
+
+    def test_a_vanished_file_still_waits_its_turn(self):
+        self.held.unlink()
+        self.assertEqual(pending_deletion.purge(self.conn)["waiting"], 1)
+
+    def test_age_comes_from_the_catalog_not_the_file(self):
+        os.utime(self.held, (1_600_000_000, 1_600_000_000))
+        self.assertEqual(pending_deletion.purge(self.conn)["waiting"], 1)
+        self.age(15)
+        os.utime(self.held)
+        self.assertEqual(len(pending_deletion.purge(self.conn)["items"]), 1)
+
+    def test_the_catalog_date_reads_as_utc(self):
+        now = time.gmtime(time.time() - 3600)
+        self.assertAlmostEqual(pending_deletion._age_days(time.strftime("%Y-%m-%d %H:%M:%S", now)), 1 / 24, places=3)
+
+    def test_a_date_that_cant_be_read_never_makes_a_file_purgeable(self):
+        self.assertEqual(pending_deletion._age_days("garbage"), 0.0)
+        self.assertEqual(pending_deletion._age_days(None), 0.0)
+
+    def test_the_listing_never_reads_held_files(self):
+        self.age(20)
+        with patch.object(pending_deletion, "_vault_root_or_none", return_value=self.vault), \
+                patch.object(Path, "stat", side_effect=OSError(5, "Input/output error")):
+            item = pending_deletion.listing(self.conn)["items"][0]
+        self.assertEqual((item["age_days"], item["can_purge"]), (20, True))
+
+    def test_a_read_error_at_purge_time_keeps_the_file_held(self):
+        self.age(20)
+        with patch.object(Path, "lstat", side_effect=OSError(5, "Input/output error")):
+            result = pending_deletion.purge(self.conn, confirm=True, ids=[1])
+        self.assertEqual((result["purged"], result["skipped_unreadable"]), (0, ["a.zip"]))
+        self.assertTrue(self.held.exists())
+        self.assertIsNone(self.state())
+
+    def test_a_file_already_gone_is_recorded_as_purged(self):
+        self.age(20)
+        self.held.unlink()
+        self.assertEqual(pending_deletion.purge(self.conn, confirm=True, ids=[1])["purged"], 1)
+        self.assertIsNotNone(self.state())
+
+    def test_an_old_enough_file_is_purged(self):
+        self.age(20)
+        self.assertEqual(pending_deletion.purge(self.conn, confirm=True, ids=[1])["purged"], 1)
+        self.assertFalse(self.held.exists())
+

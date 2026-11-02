@@ -11,6 +11,7 @@ import os
 import shutil
 import sqlite3
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -86,9 +87,6 @@ def _hold(root: Path, source: Path, tombstone: int) -> Path:
     target = root / PENDING_DELETION_FOLDER / str(tombstone) / source.name
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(source), target)
-    # A move keeps the old modified date, which would make a two year old file purgeable today.
-    # Business rule: the 14 day wait counts from this move.
-    os.utime(target)
     return target
 
 
@@ -272,12 +270,12 @@ def listing(conn: sqlite3.Connection) -> dict[str, Any]:
     items = []
     for row in conn.execute(queries.SELECT_RESTORABLE).fetchall():
         path = row["pending_path"]
-        age = _age_days(Path(path)) if path and online else None
+        age = _age_days(row["deleted_at"])
         items.append({
             "id": row["id"], "filename": row["filename"], "collection": row["collection_name"],
             "original_path": row["original_path"], "size_bytes": row["size_bytes"], "deleted_at": row["deleted_at"],
-            "held": bool(path), "age_days": int(age) if age is not None else None,
-            "can_purge": bool(path) and online and (age is None or age >= WAIT_DAYS),
+            "held": bool(path), "age_days": int(age),
+            "can_purge": bool(path) and online and age >= WAIT_DAYS,
         })
     return {"success": True, "online": online, "wait_days": WAIT_DAYS, "items": items}
 
@@ -288,11 +286,16 @@ def summary(conn: sqlite3.Connection) -> dict[str, Any]:
     return {"count": count, "size_bytes": size, "wait_days": WAIT_DAYS}
 
 
-def _age_days(path: Path) -> float | None:
+def _age_days(deleted_at: str | None) -> float:
+    """Days a file has been held, from the catalog alone, so a NAS error can't shorten the wait.
+
+    Business rule: the 14 day wait counts from the move, which is when the tombstone is written.
+    """
     try:
-        return (time.time() - path.stat().st_mtime) / DAY_SECONDS
-    except OSError:
-        return None
+        held = datetime.strptime(deleted_at or "", "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+    except ValueError:
+        return 0.0
+    return (time.time() - held.timestamp()) / DAY_SECONDS
 
 
 def purge(conn: sqlite3.Connection, confirm: bool = False, ids: list[int] | None = None) -> dict[str, Any]:
@@ -303,9 +306,8 @@ def purge(conn: sqlite3.Connection, confirm: bool = False, ids: list[int] | None
     ready, waiting = [], 0
     for row in conn.execute(queries.SELECT_PENDING).fetchall():
         path = Path(row["pending_path"])
-        age = _age_days(path)
-        # FIXME(S-08): any stat failure reads as missing and skips the wait. Use deleted_at from the catalog.
-        if age is not None and age < WAIT_DAYS:
+        age = _age_days(row["deleted_at"])
+        if age < WAIT_DAYS:
             waiting += 1
             continue
         if not path.resolve().is_relative_to(root):
@@ -313,7 +315,7 @@ def purge(conn: sqlite3.Connection, confirm: bool = False, ids: list[int] | None
         ready.append({
             "id": row["id"], "filename": row["filename"], "collection": row["collection_name"],
             "original_path": row["original_path"], "pending_path": str(path), "size_bytes": row["size_bytes"],
-            "age_days": int(age or 0), "missing": age is None,
+            "age_days": int(age),
         })
     result: dict[str, Any] = {
         "success": True, "dry_run": not confirm, "items": ready, "waiting": waiting,
@@ -321,10 +323,20 @@ def purge(conn: sqlite3.Connection, confirm: bool = False, ids: list[int] | None
     }
     if confirm:
         purged = []
+        unreadable = []
         for item in ready:
             if item["id"] not in chosen:
                 continue
             path = Path(item["pending_path"])
+            # Already gone is fine. Anything else means the file may still be there, so it stays held.
+            try:
+                path.lstat()
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                log_layer("storage", logging.ERROR, f"Pending deletion #{item['id']} can't be read, so it wasn't purged: {e}")
+                unreadable.append(item["filename"])
+                continue
             if path.is_dir():
                 shutil.rmtree(path)
             else:
@@ -335,6 +347,7 @@ def purge(conn: sqlite3.Connection, confirm: bool = False, ids: list[int] | None
                 conn.execute(queries.UPDATE_PURGED, (item["id"],))
             purged.append(item["filename"])
         result["purged"] = len(purged)
+        result["skipped_unreadable"] = unreadable
         log_layer("storage", logging.WARNING, f"Purged {len(purged)} files from pending deletion")
     audit.record(conn, "pending_deletion_purge", not confirm, {k: v for k, v in result.items() if k != "items"})
     return result
