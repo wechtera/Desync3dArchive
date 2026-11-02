@@ -113,6 +113,9 @@ def split_host_header(value: str) -> tuple[str, str]:
     return (parts.hostname or "").lower(), port
 
 
+# A day, because the LAN certificate is the owner's own. A long policy would lock the browser out
+# for its whole length if that certificate ever lapsed, and this app has no plain port to protect.
+HSTS_POLICY = "max-age=86400"
 CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
     "script-src 'self'; "
@@ -168,6 +171,8 @@ class SecurityMiddleware:
                 headers = MutableHeaders(scope=message)
                 headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
                 headers["X-Content-Type-Options"] = "nosniff"
+                if scope.get("scheme") == "https":
+                    headers["Strict-Transport-Security"] = HSTS_POLICY
             await send(message)
 
         try:

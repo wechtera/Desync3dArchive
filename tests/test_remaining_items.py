@@ -1065,3 +1065,15 @@ class CoverCopyWS7Tests(unittest.TestCase):
         self.worker._cover(MagicMock(), self.job)
         self.assertEqual(self.cover.read_bytes(), b"full picture")
         self.assertEqual([p.name for p in self.cover.parent.iterdir()], ["cover.jpg"])
+
+
+class StrictTransportWS7Tests(unittest.TestCase):
+    def headers(self, base_url):
+        client = TestClient(server.create_app(manage_workers=False), base_url=base_url)
+        return client.get("/api/session").headers
+
+    def test_a_tls_response_carries_the_policy(self):
+        self.assertEqual(self.headers("https://localhost")["strict-transport-security"], "max-age=86400")
+
+    def test_a_plain_response_does_not(self):
+        self.assertNotIn("strict-transport-security", self.headers("http://localhost"))
