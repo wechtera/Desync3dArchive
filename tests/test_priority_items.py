@@ -1500,12 +1500,14 @@ class SecondReviewSmallFixTests(TempCase):
 
     def test_a_broken_secrets_file_answers_login_with_a_clear_503(self):
         client = TestClient(server.create_app(manage_workers=False), base_url="http://localhost")
-        with patch.object(login, "verify_password", side_effect=secret_store.SecretsError("nope")), \
-                patch.object(login, "record_failure") as failure:
-            reply = client.post("/api/login", json={"password": "anything-long"})
-        self.assertEqual(reply.status_code, 503)
+        login.clear_failures()
+        self.addCleanup(login.clear_failures)
+        with patch.object(login, "verify_password", side_effect=secret_store.SecretsError("nope")):
+            for _ in range(login.MAX_FAILURES + 1):
+                reply = client.post("/api/login", json={"password": "anything-long"})
+                self.assertEqual(reply.status_code, 503)
         self.assertIn("error", reply.json())
-        failure.assert_not_called()
+        self.assertFalse(login.is_locked_out("testclient"))
 
     def test_set_password_reports_a_broken_secrets_file_without_a_traceback(self):
         with patch.object(sys, "argv", ["dbtool", "set-password"]), \

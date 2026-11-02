@@ -41,15 +41,20 @@ async def log_in(request: Request) -> Response:
     except ValidationError:
         return JSONResponse({"error": "A password is required."}, 400)
 
+    # Counted before the result, because scrypt takes long enough for parallel tries to overlap.
+    if not login.begin_attempt(client):
+        return JSONResponse({"error": "Too many attempts. Try again later."}, 429)
+
     # scrypt takes real time, so it stays off the event loop.
     try:
         matched = await run_in_threadpool(login.verify_password, body.password)
     except secret_store.SecretsError as e:
         # Not a wrong password, so it doesn't count toward the lockout.
+        login.forget_attempt(client)
         logger.error(f"Login unavailable: {e}")
         return JSONResponse({"error": "The password can't be read right now. See the server log."}, 503)
     if not matched:
-        login.record_failure(client)
+        logger.warning(f"Failed login from {client}")
         return JSONResponse({"error": "Wrong password."}, 401)
 
     login.clear_failures(client)

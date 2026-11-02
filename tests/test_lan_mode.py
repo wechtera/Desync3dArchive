@@ -9,8 +9,10 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -167,6 +169,33 @@ class LoginTests(LanCase):
         for _ in range(login.MAX_FAILURES):
             self.assertEqual(self.log_in("wrong password here").status_code, 401)
         self.assertEqual(self.log_in().status_code, 429)
+
+    def test_parallel_wrong_passwords_can_not_pass_the_lockout_together(self):
+        started = []
+        release = threading.Event()
+
+        def slow_verify(_password):
+            started.append(1)
+            release.wait(5)
+            return False
+
+        with patch.object(login, "verify_password", side_effect=slow_verify), ThreadPoolExecutor(12) as pool:
+            replies = [pool.submit(self.log_in, "wrong password here") for _ in range(12)]
+            deadline = time.monotonic() + 5
+            while len(started) < login.MAX_FAILURES and time.monotonic() < deadline:
+                time.sleep(0.01)
+            time.sleep(0.2)
+            release.set()
+            codes = sorted(reply.result().status_code for reply in replies)
+        self.assertEqual(len(started), login.MAX_FAILURES)
+        self.assertEqual(codes.count(401), login.MAX_FAILURES)
+        self.assertEqual(codes.count(429), 12 - login.MAX_FAILURES)
+
+    def test_a_right_password_inside_the_limit_still_works_and_clears_the_count(self):
+        for _ in range(login.MAX_FAILURES - 1):
+            self.log_in("wrong password here")
+        self.assertEqual(self.log_in().status_code, 200)
+        self.assertFalse(login.is_locked_out("testclient"))
 
     def test_lockout_ends_after_the_window(self):
         for _ in range(login.MAX_FAILURES):

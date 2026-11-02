@@ -129,10 +129,25 @@ def is_locked_out(client: str) -> bool:
         return len(_recent_failures(client)) >= MAX_FAILURES
 
 
-def record_failure(client: str) -> None:
+def begin_attempt(client: str) -> bool:
+    """Counts a try before the slow hash, so parallel requests can't all pass one lockout check.
+
+    Returns False if the client is locked out. A try that turns out not to be a wrong password
+    goes back through forget_attempt, and a right one clears the count.
+    """
     with _lock:
-        _recent_failures(client).append(time.time())
-    logger.warning(f"Failed login from {client}")
+        recent = _recent_failures(client)
+        if len(recent) >= MAX_FAILURES:
+            return False
+        recent.append(time.time())
+    return True
+
+
+def forget_attempt(client: str) -> None:
+    with _lock:
+        recent = _failures.get(client)
+        if recent:
+            recent.pop()
 
 
 def clear_failures(client: str | None = None) -> None:
