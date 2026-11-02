@@ -27,6 +27,9 @@ SELECT_UNREAD_PDF_PRODUCTS = f"""
     WHERE c.is_active = 1 AND c.name LIKE '%pdf%' AND f.peeked_at IS NULL
       AND (lower(f.filename) LIKE '%.zip' OR lower(f.filename) LIKE '%.rar' OR lower(f.filename) LIKE '%.7z');
 """
+SELECT_PDF_FILE_BY_ID = SELECT_PDF_FILES.rstrip().removesuffix(";") + " AND f.file_id = ?;"
+SELECT_PDF_MEMBER_BY_ID = SELECT_PDF_MEMBERS.rstrip().removesuffix(";") + " AND a.id = ?;"
+SELECT_UNREAD_PDF_PRODUCT_BY_ID = SELECT_UNREAD_PDF_PRODUCTS.rstrip().removesuffix(";") + " AND f.file_id = ?;"
 SELECT_ACTIVE_LIBRARIES = "SELECT id, name, path, default_creator FROM external_libraries WHERE is_active = 1 ORDER BY id;"
 SELECT_LIBRARY_PDF_KEYS = "SELECT external_key FROM model_files WHERE source = 'external' AND external_key LIKE ? AND lower(filename) LIKE '%.pdf';"
 SELECT_DOCUMENT_COLLECTION = "SELECT id FROM collections WHERE source = 'document' AND external_key = ?;"

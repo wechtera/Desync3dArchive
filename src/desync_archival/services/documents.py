@@ -44,6 +44,12 @@ KINDS = (
 OTHER = "Other"
 
 
+KEY_QUERIES = {
+    "file": (queries.SELECT_PDF_FILE_BY_ID, queries.SELECT_UNREAD_PDF_PRODUCT_BY_ID),
+    "member": (queries.SELECT_PDF_MEMBER_BY_ID,),
+}
+
+
 class DocumentUnavailable(Exception):
     """The message is shown to the user, and the code becomes the response status."""
 
@@ -70,36 +76,40 @@ def _clean_collection_name(name: str) -> str:
     return re.sub(r"^[#*\s]+", "", name).strip() or name
 
 
+def _document(row: sqlite3.Row) -> dict[str, Any]:
+    member = row["member_id"]
+    pdf = row["filename"].lower().endswith(".pdf")
+    if member:
+        state, name = IN_ARCHIVE if row["disk_path"] else NOT_DOWNLOADED, Path(row["internal_path"]).name
+    elif pdf:
+        state, name = ON_DISK if row["disk_path"] else NOT_DOWNLOADED, row["filename"]
+    else:
+        state, name = UNREAD, row["filename"]
+    return {
+        "key": f"member-{member}" if member else f"file-{row['file_id']}",
+        "title": _title(name) if pdf or member else _clean_collection_name(row["collection"]),
+        "filename": name,
+        "kind": _kind(f"{name} {row['collection']}"),
+        "creator": row["creator"] or "",
+        "collection": row["collection"],
+        "collection_id": row["collection_id"],
+        "source": SOURCE_LABELS.get(row["source"], row["source"]),
+        "size_bytes": row["size_bytes"] or 0,
+        "state": state,
+        "cover": row["primary_image_url"] or "",
+        "file_id": row["file_id"],
+        "member_id": member,
+        "submodel_id": row["submodel_id"] if member else None,
+        "disk_path": row["disk_path"],
+        "internal_path": row["internal_path"],
+    }
+
+
 def _rows(conn: sqlite3.Connection) -> Iterator[dict[str, Any]]:
     conn.row_factory = sqlite3.Row
     for query in (queries.SELECT_PDF_FILES, queries.SELECT_PDF_MEMBERS, queries.SELECT_UNREAD_PDF_PRODUCTS):
         for row in conn.execute(query):
-            member = row["member_id"]
-            pdf = row["filename"].lower().endswith(".pdf")
-            if member:
-                state, name = IN_ARCHIVE if row["disk_path"] else NOT_DOWNLOADED, Path(row["internal_path"]).name
-            elif pdf:
-                state, name = ON_DISK if row["disk_path"] else NOT_DOWNLOADED, row["filename"]
-            else:
-                state, name = UNREAD, row["filename"]
-            yield {
-                "key": f"member-{member}" if member else f"file-{row['file_id']}",
-                "title": _title(name) if pdf or member else _clean_collection_name(row["collection"]),
-                "filename": name,
-                "kind": _kind(f"{name} {row['collection']}"),
-                "creator": row["creator"] or "",
-                "collection": row["collection"],
-                "collection_id": row["collection_id"],
-                "source": SOURCE_LABELS.get(row["source"], row["source"]),
-                "size_bytes": row["size_bytes"] or 0,
-                "state": state,
-                "cover": row["primary_image_url"] or "",
-                "file_id": row["file_id"],
-                "member_id": member,
-                "submodel_id": row["submodel_id"] if member else None,
-                "disk_path": row["disk_path"],
-                "internal_path": row["internal_path"],
-            }
+            yield _document(row)
 
 
 def _made_previews() -> dict[str, int]:
@@ -141,12 +151,15 @@ def listing(
     }
 
 
-# FIXME(P-04): classifies every PDF to find one.
 def _find(conn: sqlite3.Connection, key: str) -> dict[str, Any]:
-    row = next((r for r in _rows(conn) if r["key"] == key), None)
-    if row is None:
-        raise DocumentUnavailable("That PDF isn't in the catalog.", 404)
-    return row
+    """Finds one PDF by its key, because make_previews asks once per file."""
+    conn.row_factory = sqlite3.Row
+    prefix, _, number = key.partition("-")
+    for query in KEY_QUERIES.get(prefix, ()) if number.isdigit() else ():
+        row = conn.execute(query, (int(number),)).fetchone()
+        if row:
+            return _document(row)
+    raise DocumentUnavailable("That PDF isn't in the catalog.", 404)
 
 
 def _extract(row: dict[str, Any], archive: Path, target: Path) -> None:

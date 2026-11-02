@@ -34,6 +34,7 @@ from desync_archival.services import (
     auth_service,
     catalog_browse,
     catalog_levels,
+    documents,
     downloader,
     duplicates,
     paths,
@@ -1222,3 +1223,41 @@ class DuplicatePairsP08Tests(TempDb):
         self.add_copies(2)
         pair = duplicates.find_duplicates(self.conn, include_shared=True)["pairs"][0]
         self.assertEqual((pair["kind"], pair["first"]["file_id"], pair["second"]["file_id"]), ("exact", 1, 2))
+
+
+class PdfLookupP04Tests(TempDb):
+    def setUp(self):
+        super().setUp()
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO collections (id, name, url, raw_backup_path, designer_name, is_active) "
+                "VALUES (1, 'Rules', '', '', 'Maker', 1), (2, 'PDF pack', '', '', 'Maker', 1)"
+            )
+            self.conn.execute(
+                "INSERT INTO model_files (file_id, model_id, filename, size_bytes, download_url, source, external_key) VALUES "
+                "(10, 1, 'guide.pdf', 5, '', 'mmf', '10'), (11, 2, 'pack.zip', 5, '', 'mmf', '11'), "
+                "(12, 1, 'other.zip', 5, '', 'mmf', '12')"
+            )
+            self.conn.execute(
+                "INSERT INTO file_archive_members (id, file_id, internal_path, filename, size_bytes) "
+                "VALUES (7, 12, 'books/inner.pdf', 'inner.pdf', 5)"
+            )
+
+    def test_every_key_finds_what_the_full_list_finds(self):
+        everything = list(documents._rows(self.conn))
+        self.assertEqual(len(everything), 3)
+        for row in everything:
+            self.assertEqual(documents._find(self.conn, row["key"]), row)
+
+    def test_finding_one_pdf_reads_no_other_rows(self):
+        with patch.object(documents, "_rows", side_effect=AssertionError("walked every PDF")):
+            self.assertEqual(documents._find(self.conn, "file-10")["filename"], "guide.pdf")
+
+    def test_unknown_or_malformed_keys_are_not_found(self):
+        for key in ("file-999", "member-999", "file-x", "other-10", "file-", "../etc"):
+            with self.subTest(key), self.assertRaises(documents.DocumentUnavailable):
+                documents._find(self.conn, key)
+
+    def test_a_file_that_is_not_a_pdf_has_no_key(self):
+        with self.assertRaises(documents.DocumentUnavailable):
+            documents._find(self.conn, "file-12")
