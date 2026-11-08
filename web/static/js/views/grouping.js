@@ -49,6 +49,7 @@ let previewError = '';
 let previewTimer = null;
 let report = null;
 let outcome = null;
+let undoOutcome = null;
 let choices = new Map();
 let pasted = '';
 let busy = false;
@@ -413,6 +414,25 @@ function outcomeLine(result) {
   ].filter(Boolean).join(' ');
 }
 
+const TOTAL_LABELS = [
+  ['files', 'file'], ['artifacts', 'artifact'], ['archive_members', 'archive member'],
+  ['downloaded_files', 'downloaded file'], ['collections', 'collection'],
+];
+
+// Catalog-wide, so a download finishing meanwhile can raise a count. Only a fall means trouble.
+function totalsView(totals) {
+  if (!totals) return nothing;
+  const { before, after } = totals;
+  const fell = TOTAL_LABELS.filter(([key]) => after[key] < before[key]);
+  if (fell.length) {
+    return html`<p class="text-alert font-sm grouping-totals" role="alert">
+      ${fell.map(([key, word]) => `${plural(before[key], word)} became ${after[key].toLocaleString()}`).join(', ')}.
+      Something was lost. Undo this answer and stop until it's understood.</p>`;
+  }
+  const listed = TOTAL_LABELS.map(([key, word]) => plural(after[key], word));
+  return html`<p class="font-xs text-dim grouping-totals">Every file is still listed: ${listed.slice(0, -1).join(', ')} and ${listed.at(-1)}, none fewer than before.</p>`;
+}
+
 function outcomeView() {
   if (!outcome) return nothing;
   return html`
@@ -421,6 +441,20 @@ function outcomeView() {
       ${outcome.refused.length ? html`
         <ul class="font-xs">${outcome.refused.map(r => html`<li class="text-alert">${r.unit}: ${r.why}</li>`)}</ul>
       ` : nothing}
+      ${totalsView(outcome.totals)}
+    </div>
+  `;
+}
+
+function undoOutcomeView() {
+  if (!undoOutcome) return nothing;
+  return html`
+    <div class="grouping-outcome font-sm" id="grouping-undo-outcome" role="status">
+      <p>Restored ${plural(undoOutcome.restored.length, 'unit')}.</p>
+      ${undoOutcome.left.length ? html`
+        <ul class="font-xs">${undoOutcome.left.map(u => html`<li><strong>${u.title || u.unit}</strong>: ${u.why}</li>`)}</ul>
+      ` : nothing}
+      ${totalsView(undoOutcome.totals)}
     </div>
   `;
 }
@@ -481,6 +515,7 @@ async function undoImport(item) {
   if (!confirm(`Undo ${item.name}? Each unit it applied goes back to how it was, unless someone has changed it since.`)) return;
   try {
     const result = await undoGroupingImport(item.id);
+    undoOutcome = result;
     const left = result.left.length
       ? ` ${result.left.length === 1 ? '1 unit was changed since, so it was' : `${result.left.length} units were changed since, so they were`} left alone.` : '';
     showToast(`Restored ${plural(result.restored.length, 'unit')}.${left}`);
@@ -526,6 +561,7 @@ function importsPanel() {
   return html`
     <section class="card grouping-panel" id="grouping-imports">
       <h3 class="grouping-step">Recent answers</h3>
+      ${undoOutcomeView()}
       ${items.length ? html`
         <table class="table-compact">
           <thead><tr><th>Checked</th><th>Answer</th><th>State</th><th>Units</th><th></th></tr></thead>

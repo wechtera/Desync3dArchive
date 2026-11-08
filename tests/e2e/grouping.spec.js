@@ -36,6 +36,8 @@ const UNIT_WAIT = {
   reasons: ['The LLM rated the unit medium: brother and sister unclear', 'The LLM rated Brother medium: shares a base'],
   summary: 'Waits for you in review: 17 models become 18.',
 };
+const COUNTS = { collections: 7471, files: 60006, archive_members: 7717, artifacts: 42463, downloaded_files: 36942 };
+const TOTALS = { before: COUNTS, after: COUNTS };
 const FIX = 'Your answer to export e-20261108-120000-ab12 needs these fixes.\nUnit archive:2 (Frog Riders):\n- It changes creator.\n';
 const GOOD_REPORT = { export_id: 'e-20261108-120000-ab12', notes: [], error: '', units: [UNIT_OK], fix_request: '', import_id: 7, counts: { apply: 1, suggest: 0, refuse: 0 } };
 const MIXED_REPORT = { ...GOOD_REPORT, units: [UNIT_OK, UNIT_REFUSED], fix_request: FIX, counts: { apply: 1, suggest: 0, refuse: 1 } };
@@ -103,9 +105,10 @@ test.beforeEach(async ({ page, context }) => {
     record(route);
     const step = new URL(route.request().url()).pathname.split('/').pop();
     const bodies = {
-      apply: { import_id: 7, applied: [{ unit: 'archive:1' }], suggested: [], refused: [], pictures_held_back: [] },
+      apply: { import_id: 7, applied: [{ unit: 'archive:1' }], suggested: [], refused: [], pictures_held_back: [], totals: page.totals || TOTALS },
       discard: { success: true },
-      undo: { import_id: 3, restored: ['archive:1', 'archive:4'], left: [{ unit: 'archive:6', why: 'Changed since' }] },
+      undo: { import_id: 3, restored: ['archive:1', 'archive:4'], totals: TOTALS,
+        left: [{ unit: 'archive:6', title: 'Margo', why: 'Changed since the import applied: Margo is now called Margo the Angel. It was left as it is.' }] },
       tags: { success: true, created: ['banshee'], added: 1 },
       review: { import_id: 7, unit: 'archive:3', suggestion_id: 5 },
     };
@@ -267,6 +270,19 @@ test('undo asks first and says what it left alone', async ({ page }) => {
   await page.locator('.grouping-import .grouping-undo').click();
   expect(page.calls.some(c => c.dialog?.startsWith('Undo answer-01.json?'))).toBe(true);
   await expect(page.locator('#settings-toast')).toContainText('Restored 2 units. 1 unit was changed since, so it was left alone.');
+  const shown = page.locator('#grouping-undo-outcome');
+  await expect(shown).toContainText('Margo: Changed since the import applied: Margo is now called Margo the Angel.');
+  await expect(shown.locator('.grouping-totals')).toContainText('Every file is still listed: 60,006 files, 42,463 artifacts');
+});
+
+test('the apply result shows every file is still listed, and says loudly when a count fell', async ({ page }) => {
+  await page.locator('#grouping-answer-file').setInputFiles({ name: 'answer.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
+  await page.locator('#btn-grouping-confirm').click();
+  await expect(page.locator('#grouping-outcome .grouping-totals')).toContainText('none fewer than before');
+  page.totals = { before: COUNTS, after: { ...COUNTS, artifacts: 42460 } };
+  await page.locator('#grouping-answer-file').setInputFiles({ name: 'answer.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
+  await page.locator('#btn-grouping-confirm').click();
+  await expect(page.locator('#grouping-outcome [role="alert"]')).toContainText('42,463 artifacts became 42,460. Something was lost.');
 });
 
 test('suggested tags are only created once ticked and approved', async ({ page }) => {

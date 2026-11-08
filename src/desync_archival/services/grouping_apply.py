@@ -345,6 +345,7 @@ def apply(conn: sqlite3.Connection, import_id: int, choices: dict[str, str] | No
         raise ApplyRefused(f"That import was already {row['status']}.")
     report, plans = json.loads(row["report_json"]), json.loads(row["answer_json"])
     chosen = _choices(report, choices or {})
+    totals_before = file_totals(conn)
     result: dict[str, Any] = {"import_id": import_id, "applied": [], "suggested": [], "skipped": [], "filed": [],
                               "refused": [], "pictures_held_back": []}
     for verdict in report["units"]:
@@ -378,9 +379,11 @@ def apply(conn: sqlite3.Connection, import_id: int, choices: dict[str, str] | No
             result["refused"].append({"unit": plan["unit_key"], "why": str(e)})
     with conn:
         conn.execute(queries.UPDATE_IMPORT_STATUS, ("applied", "applied", "applied", import_id))
+    result["totals"] = {"before": totals_before, "after": file_totals(conn)}
     audit.record(conn, "grouping_apply", False, {
         "import_id": import_id, "applied": [a["unit"] for a in result["applied"]],
         "suggested": result["suggested"], "skipped": result["skipped"], "refused": result["refused"],
+        "totals": result["totals"],
     })
     return result
 
@@ -391,6 +394,47 @@ def _suggest_pictures(conn: sqlite3.Connection, import_id: int, plan: dict, held
             import_id, plan["unit_key"], "medium", json.dumps({"cards": [], "pictures": held_back, "plan": None}),
             json.dumps(["Pictures the LLM wasn't sure of, or that would replace a picture found in the archive"]),
         ))
+
+
+def file_totals(conn: sqlite3.Connection) -> dict[str, int]:
+    """Catalog-wide counts of every file record, for the person to see an apply or undo lost none."""
+    conn.row_factory = sqlite3.Row
+    return dict(conn.execute(queries.SELECT_FILE_TOTALS).fetchone())
+
+
+def what_changed(now: dict[str, Any], plan: dict | None, before: dict[str, Any]) -> list[str]:
+    """What a person changed since an apply, read against what the apply set out to do.
+
+    Only the after state's hash is kept, so this compares today's unit with the answer's plan: a
+    renamed model, files moved to another model, a model moved to another group, a picture the
+    person chose, or a review they saved. Anything else falls to the caller's general wording.
+    """
+    notes: list[str] = []
+    rows = {m["id"]: m for m in now["models"]}
+    group_of = {member: g["name"] for g in now["groups"] for member in g["members"]}
+    renamed, regrouped, moved = [], [], 0
+    for model in (plan or {}).get("models", []):
+        holder = now["artifacts"].get(str(model["artifacts"][0]))
+        moved += sum(1 for artifact in model["artifacts"] if now["artifacts"].get(str(artifact)) != holder)
+        row = rows.get(holder)
+        if row is None:
+            continue
+        if row["name"] != model["name"]:
+            renamed.append(f"{model['name']} is now called {row['name']}")
+        elif (group_of.get(holder) or "") != (model.get("group") or ""):
+            regrouped.append(row["name"])
+    notes += renamed
+    if moved:
+        notes.append(f"{moved} file{'s' if moved != 1 else ''} moved to another model")
+    if regrouped:
+        notes.append(f"{', '.join(regrouped)} {'is' if len(regrouped) == 1 else 'are'} in another group")
+    had_owner = {m["id"] for m in before.get("models", []) if m.get("image_source") == OWNER}
+    chosen = [m["name"] for m in now["models"] if m.get("image_source") == OWNER and m["id"] not in had_owner]
+    if chosen:
+        notes.append(f"you chose a picture for {', '.join(chosen)}")
+    if now.get("reviewed") and not before.get("reviewed"):
+        notes.append("a person saved a review of it")
+    return notes
 
 
 # Undo ----------------------------------------------------------------------------------------
@@ -461,12 +505,19 @@ def undo(conn: sqlite3.Connection, import_id: int) -> dict[str, Any]:
     if row["status"] != "applied":
         raise ApplyRefused("Only an applied import can be undone.")
     restored, left = [], []
+    plans = json.loads(row["answer_json"])
+    titles = {v["unit"]: v["title"] for v in json.loads(row["report_json"]).get("units", [])}
+    totals_before = file_totals(conn)
     for snapshot in conn.execute(queries.SELECT_SNAPSHOTS, (import_id,)).fetchall():
         if snapshot["restored_at"]:
             continue
         unit_key = snapshot["unit_key"]
-        if state_hash(state(conn, unit_key)) != snapshot["after_hash"]:
-            left.append({"unit": unit_key, "why": "Changed since the import applied, so it was left as it is."})
+        now = state(conn, unit_key)
+        if state_hash(now) != snapshot["after_hash"]:
+            changes = what_changed(now, plans.get(unit_key), json.loads(snapshot["before_json"]))
+            why = (f"Changed since the import applied: {'; '.join(changes)}. It was left as it is." if changes else
+                   "Changed since the import applied, in a way the app can't name, such as its tags. It was left as it is.")
+            left.append({"unit": unit_key, "title": titles.get(unit_key, unit_key), "why": why})
             continue
         with conn:
             restore(conn, unit_key, json.loads(snapshot["before_json"]))
@@ -475,6 +526,7 @@ def undo(conn: sqlite3.Connection, import_id: int) -> dict[str, Any]:
         restored.append(unit_key)
     with conn:
         conn.execute(queries.UPDATE_IMPORT_STATUS, ("undone", "undone", "undone", import_id))
-    result = {"import_id": import_id, "restored": restored, "left": left}
+    result = {"import_id": import_id, "restored": restored, "left": left,
+              "totals": {"before": totals_before, "after": file_totals(conn)}}
     audit.record(conn, "grouping_undo", False, result)
     return result

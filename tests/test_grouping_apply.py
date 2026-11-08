@@ -199,6 +199,55 @@ class ChoiceTests(ApplyCase):
         self.assertEqual(detail["skipped"], [self.key])
 
 
+class TotalsAndUndoReasonTests(ApplyCase):
+    """E66: the file totals before and after an apply or undo. E65: what stopped an undo, by name."""
+
+    def left_why(self, import_id):
+        left = grouping_apply.undo(self.conn, import_id)["left"]
+        self.assertEqual([(u["unit"], u["title"]) for u in left], [(self.key, "Vampire Court")])
+        return left[0]["why"]
+
+    def test_apply_and_undo_report_the_same_file_totals_before_and_after(self):
+        import_id, applied = self.apply_answer(self.answer())
+        self.assertEqual(applied["totals"]["before"], applied["totals"]["after"])
+        self.assertEqual(set(applied["totals"]["before"]), {"collections", "files", "archive_members", "artifacts", "downloaded_files"})
+        undone = grouping_apply.undo(self.conn, import_id)
+        self.assertEqual(undone["totals"]["before"], undone["totals"]["after"])
+
+    def test_an_untouched_unit_reads_as_unchanged(self):
+        # Guards the names below against false alarms: straight after an apply there is nothing to name.
+        import_id, _ = self.apply_answer(self.answer())
+        row = self.one("SELECT before_json FROM grouping_snapshots WHERE import_id = ?", import_id)
+        plan = json.loads(self.one("SELECT answer_json FROM grouping_imports WHERE id = ?", import_id)[0])[self.key]
+        now = grouping_apply.state(self.conn, self.key)
+        self.assertEqual(grouping_apply.what_changed(now, plan, json.loads(row[0])), [])
+
+    def test_a_renamed_model_is_named(self):
+        import_id, _ = self.apply_answer(self.answer())
+        with self.conn:
+            self.conn.execute("UPDATE models SET name = 'Ghul the First' WHERE name = 'Ghul A'")
+        self.assertIn("Ghul A is now called Ghul the First", self.left_why(import_id))
+
+    def test_a_moved_file_is_counted(self):
+        import_id, _ = self.apply_answer(self.answer())
+        with self.conn:
+            self.conn.execute("""UPDATE model_artifacts SET model_id = (SELECT id FROM models WHERE name = 'Ghul B')
+                                 WHERE filename = 'Banshee_Head.stl'""")
+        self.assertIn("1 file moved to another model", self.left_why(import_id))
+
+    def test_a_picture_the_person_chose_is_named(self):
+        import_id, _ = self.apply_answer(self.answer())
+        with self.conn:
+            self.conn.execute("UPDATE models SET image_path = 'mine.png', image_source = 'owner', image_locked = 1 WHERE name = 'Banshee'")
+        self.assertIn("you chose a picture for Banshee", self.left_why(import_id))
+
+    def test_a_change_it_cant_name_says_so(self):
+        import_id, _ = self.apply_answer(self.answer())
+        with self.conn:
+            self.conn.execute("UPDATE models SET category = 'Terrain' WHERE name = 'Banshee'")
+        self.assertIn("in a way the app can't name", self.left_why(import_id))
+
+
 class ReviewNowTests(ApplyCase):
     """E57: one unit of a checked answer opened in the review editor before the rest is confirmed."""
 
