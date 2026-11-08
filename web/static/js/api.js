@@ -71,6 +71,10 @@ export async function keepDownloadIssue(issueId) {
   return request(`/api/download-issues/${issueId}/keep`, { method: 'POST' });
 }
 
+export async function keepAllDownloadIssues(modelId) {
+  return request(`/api/download-issues/models/${modelId}/keep`, { method: 'POST' });
+}
+
 /** Sends the file as raw bytes. The server checks the name and type before it takes any of them. */
 export async function uploadDownloadIssueFile(issueId, file, confirmName = false) {
   const params = new URLSearchParams({ name: file.name });

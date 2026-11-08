@@ -14,6 +14,7 @@ RESOLVE_FILE = """
     WHERE file_id = ? AND resolved_at IS NULL;
 """
 COUNT_OPEN = "SELECT COUNT(*) FROM download_issues WHERE resolved_at IS NULL;"
+COUNT_OPEN_FOR_MODEL = "SELECT COUNT(*) FROM download_issues WHERE resolved_at IS NULL AND model_id = ?;"
 
 _ISSUE_COLUMNS = """
     SELECT i.id, i.file_id, i.model_id, i.kind, i.listed_bytes, i.received_bytes, i.detail, i.found_at,
@@ -34,6 +35,29 @@ CONFIRM_SIZE = "UPDATE model_files SET size_bytes = ?, size_confirmed_at = CURRE
 RESOLVE_ISSUE = """
     UPDATE download_issues SET resolved_at = CURRENT_TIMESTAMP, resolution = ?
     WHERE id = ? AND resolved_at IS NULL;
+"""
+
+# Models with more than one open issue, for the per-model summary and Keep All.
+SELECT_OPEN_MODELS = """
+    SELECT i.model_id, c.name AS model_name,
+           COALESCE(NULLIF(c.designer_name, ''), NULLIF(c.designer_username, ''), 'Unknown') AS creator_name,
+           COUNT(*) AS open, SUM(i.kind = 'size_differs') AS size_differs,
+           SUM(i.kind = 'size_differs' AND d.storage_tier = 'nas' AND d.vault_path IS NOT NULL) AS keepable
+    FROM download_issues i JOIN collections c ON c.id = i.model_id LEFT JOIN downloaded_files d ON d.file_id = i.file_id
+    WHERE i.resolved_at IS NULL GROUP BY i.model_id HAVING COUNT(*) > 1 ORDER BY c.name;
+"""
+# Each file of a model with what MMF listed for it, taken from its latest size issue when it had one,
+# since Keep overwrites model_files.size_bytes with the real size.
+SELECT_MODEL_SIZES = """
+    SELECT f.file_id, d.actual_bytes AS real_bytes,
+           COALESCE((SELECT i.listed_bytes FROM download_issues i WHERE i.file_id = f.file_id AND i.kind = 'size_differs'
+                     ORDER BY i.id DESC LIMIT 1), f.size_bytes) AS listed_bytes
+    FROM model_files f LEFT JOIN downloaded_files d ON d.file_id = f.file_id WHERE f.model_id = ?;
+"""
+SELECT_OPEN_KEEPABLE_FOR_MODEL = """
+    SELECT i.id FROM download_issues i JOIN downloaded_files d ON d.file_id = i.file_id
+    WHERE i.model_id = ? AND i.resolved_at IS NULL AND i.kind = 'size_differs' AND d.storage_tier = 'nas' AND d.vault_path IS NOT NULL
+    ORDER BY i.id;
 """
 
 # The job, if any, so an upload never races a download of the same model.

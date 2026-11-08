@@ -34,6 +34,13 @@ def handle_post_download_issue_keep(conn: Conn, issue_id: int) -> tuple[dict[str
         return {"error": str(e)}, e.code
 
 
+def handle_post_download_issue_keep_all(conn: Conn, model_id: int) -> tuple[dict[str, Any], int]:
+    try:
+        return download_issues.keep_all(conn, model_id), 200
+    except IssueRefused as e:
+        return {"error": str(e)}, e.code
+
+
 def _with_connection(request: Request, work: Any, *args: Any, **kwargs: Any) -> Any:
     conn = request.app.state.open_database()
     try:

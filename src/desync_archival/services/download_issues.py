@@ -61,7 +61,46 @@ def listing(conn: sqlite3.Connection, resolved: bool = False) -> dict[str, Any]:
     rows = (
         conn.execute(queries.SELECT_RESOLVED, (RESOLVED_SHOWN,)) if resolved else conn.execute(queries.SELECT_OPEN)
     )
-    return {"items": [_item(row) for row in rows], "open": open_count(conn)}
+    return {"items": [_item(row) for row in rows], "open": open_count(conn), "models": [] if resolved else open_models(conn)}
+
+
+def scrambled(conn: sqlite3.Connection, model_id: int) -> bool:
+    """Whether MMF lists this model's real sizes against the wrong files.
+
+    Seen on Duncan Shadow's models on 2026-11-08: every size MMF listed was another file's real size,
+    largest first against files in another order. Then the files are right and only the list is
+    wrong. It needs every file downloaded, and at least two that disagree.
+    """
+    rows = conn.execute(queries.SELECT_MODEL_SIZES, (model_id,)).fetchall()
+    if not rows or any(r[1] is None or r[2] is None for r in rows):
+        return False
+    listed, real = sorted(r[2] for r in rows), sorted(r[1] for r in rows)
+    return listed == real and sum(1 for r in rows if r[1] != r[2]) >= 2
+
+
+def open_models(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Models with more than one open issue, each with how many Keep All can settle now."""
+    conn.row_factory = sqlite3.Row
+    items = []
+    for row in conn.execute(queries.SELECT_OPEN_MODELS).fetchall():
+        item = dict(row)
+        item["waiting"] = item["size_differs"] - item["keepable"]
+        item["scrambled"] = scrambled(conn, row["model_id"])
+        items.append(item)
+    return items
+
+
+def keep_all(conn: sqlite3.Connection, model_id: int) -> dict[str, Any]:
+    """Keep for every open size issue of a model whose file is already on the NAS."""
+    conn.row_factory = sqlite3.Row
+    ids = [r[0] for r in conn.execute(queries.SELECT_OPEN_KEEPABLE_FOR_MODEL, (model_id,)).fetchall()]
+    if not ids:
+        raise IssueRefused("Nothing to keep yet. The files are still on their way to the NAS, or already settled.", 409)
+    kept = [keep(conn, issue_id)["id"] for issue_id in ids]
+    left = conn.execute(queries.COUNT_OPEN_FOR_MODEL, (model_id,)).fetchone()[0]
+    result = {"success": True, "model_id": model_id, "kept": kept, "left": left}
+    audit.record(conn, "download_issue_keep_all", False, result)
+    return result
 
 
 def open_issue(conn: sqlite3.Connection, issue_id: int) -> sqlite3.Row:

@@ -256,6 +256,59 @@ class KeepTests(IssueCase):
         self.assertEqual(download_issues.listing(self.conn, resolved=True)["items"], [])
 
 
+class KeepAllTests(IssueCase):
+    """E60 and E64: a model whose files MMF lists with each other's sizes, settled in one go."""
+
+    def swapped(self, offload=True):
+        # MMF lists a.stl at 1000 and b.stl at 700, and serves 700 and 1000 bytes: each size is the other's.
+        self.add_second_file()
+        with self.conn:
+            self.conn.execute("UPDATE model_files SET size_bytes = 700 WHERE file_id = 10")
+        self.run_stage(Server({FILE_URL: [ok(b"c" * 700)], SECOND_URL: [ok(b"d" * 1000)]}))
+        if offload:
+            self.dm._process_nas_offload(1, self.claim_offload(), self.vault)
+
+    def test_a_reshuffled_size_list_is_spotted_on_the_model(self):
+        self.swapped()
+        model = download_issues.listing(self.conn)["models"][0]
+        self.assertEqual((model["model_id"], model["open"], model["keepable"], model["waiting"], model["scrambled"]), (5, 2, 2, 0, True))
+
+    def test_keep_all_settles_every_stored_file_of_the_model(self):
+        self.swapped()
+        result = download_issues.keep_all(self.conn, 5)
+        self.assertEqual((len(result["kept"]), result["left"]), (2, 0))
+        sizes = dict(self.conn.execute("SELECT file_id, size_bytes FROM model_files WHERE size_confirmed_at IS NOT NULL").fetchall())
+        self.assertEqual(sizes, {9: 700, 10: 1000})
+        self.assertEqual(download_issues.listing(self.conn)["models"], [])
+
+    def test_files_still_moving_to_the_nas_wait(self):
+        self.swapped(offload=False)
+        model = download_issues.listing(self.conn)["models"][0]
+        self.assertEqual((model["keepable"], model["waiting"]), (0, 2))
+        with self.assertRaises(download_issues.IssueRefused) as caught:
+            download_issues.keep_all(self.conn, 5)
+        self.assertEqual(caught.exception.code, 409)
+
+    def test_sizes_that_are_just_wrong_arent_called_a_reshuffle(self):
+        self.add_second_file()
+        self.run_stage(Server({FILE_URL: [ok(b"c" * 700)], SECOND_URL: [ok(b"d" * 800)]}))
+        self.assertFalse(download_issues.scrambled(self.conn, 5))
+
+    def test_still_spotted_after_some_files_were_kept(self):
+        # Keep writes the real size over MMF's, so the check reads what MMF listed from the issue.
+        self.swapped()
+        download_issues.keep(self.conn, self.issues()[0]["id"])
+        self.assertTrue(download_issues.scrambled(self.conn, 5))
+
+    def test_the_route_keeps_all_and_says_how_many(self):
+        self.swapped()
+        app = server.create_app(manage_workers=False)
+        app.state.open_database = lambda: get_db_connection(self.db, shared=True)
+        response = TestClient(app, base_url="http://localhost").post("/api/download-issues/models/5/keep")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(len(response.json()["kept"]), 2)
+
+
 class MigrationTests(IssueCase):
     def test_one_open_issue_per_file(self):
         with self.conn:

@@ -15,6 +15,11 @@ const MISSING = {
   stored_bytes: null, filename: 'chickenbear-arm-left.chitubox', model_name: 'Chickenbear', detail: 'HTTP 500 downloading file 527246',
 };
 const SETTLED = { ...KEPT, id: 9, resolved_at: '2026-11-08 04:00:00', resolution: 'uploaded' };
+const MOVING = { ...KEPT, id: 13, file_id: 545059, filename: 'pot.stl', stored: false, vault_path: null };
+const OGRE = {
+  model_id: 136138, model_name: 'Ogre Butchers (presupported)', creator_name: 'Duncan Shadow',
+  open: 2, size_differs: 2, keepable: 1, waiting: 1, scrambled: true,
+};
 
 test.beforeEach(async ({ page }) => {
   page.pageErrors = [];
@@ -32,7 +37,13 @@ test.beforeEach(async ({ page }) => {
   });
   await page.route((url) => url.pathname === '/api/download-issues', (route) => {
     const resolved = new URL(route.request().url()).searchParams.get('state') === 'resolved';
-    return route.fulfill({ json: { items: resolved ? [SETTLED] : page.open, open: page.open.length } });
+    return route.fulfill({ json: { items: resolved ? [SETTLED] : page.open, open: page.open.length, models: resolved ? [] : (page.models || []) } });
+  });
+  await page.route('**/api/download-issues/models/*/keep', (route) => {
+    page.calls.push({ method: route.request().method(), url: route.request().url() });
+    page.models = [];
+    page.open = page.open.filter((issue) => issue.id !== KEPT.id);
+    return route.fulfill({ json: { success: true, model_id: 136138, kept: [KEPT.id], left: 1 } });
   });
   await page.route('**/api/download-issues/*/keep', (route) => {
     page.calls.push({ method: route.request().method(), url: route.request().url() });
@@ -173,4 +184,27 @@ test('History shows a finished job with issues, and its window leads to them', a
   await window.getByRole('button', { name: 'Open Download Issues' }).click();
   await expect(page.locator('#job-detail')).toHaveCount(0);
   await expect(page.locator('#sub-dl-issues')).toBeVisible();
+});
+
+test('a file still moving to the NAS says Keep comes once it is stored', async ({ page }) => {
+  page.open = [MOVING];
+  await page.evaluate(async () => (await import('/static/js/actions.js')).actions.showDownloadIssues('open'));
+  const card = page.locator('.issue-card[data-issue-id="13"]');
+  await expect(card.locator('.issue-moving')).toHaveText("Moving to the NAS. Keep as is appears once it's stored.");
+  await expect(card.getByRole('button', { name: 'Keep as is' })).toHaveCount(0);
+});
+
+test('a model with a scrambled size list says so once and keeps all its stored files', async ({ page }) => {
+  page.open = [KEPT, MOVING];
+  page.models = [OGRE];
+  await page.evaluate(async () => (await import('/static/js/actions.js')).actions.showDownloadIssues('open'));
+  const model = page.locator('.issue-model[data-model-id="136138"]');
+  await expect(model.locator('.issue-scrambled')).toContainText("MMF's size list for this model is out of order");
+  await expect(model).toContainText('1 still moving to the NAS');
+  page.once('dialog', (dialog) => { page.calls.push({ dialog: dialog.message() }); dialog.accept(); });
+  await model.locator('.issue-keep-all').click();
+  await expect(page.locator('.issues-banner')).toHaveText('Kept 1 file of Ogre Butchers (presupported). 1 still open.');
+  expect(page.calls.find(c => c.dialog).dialog).toContain('ogre-butcher-pot.chitubox: 16.4 MB');
+  expect(page.calls.some(c => c.url?.endsWith('/api/download-issues/models/136138/keep'))).toBe(true);
+  await expect(page.locator('#issue-models')).toHaveCount(0);
 });

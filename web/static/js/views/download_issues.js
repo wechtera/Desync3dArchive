@@ -3,7 +3,7 @@
  * Each is settled by Keep, by uploading a file downloaded by hand, or by a clean download later.
  */
 import { actions, registerActions } from '../actions.js';
-import { fetchDownloadIssues, keepDownloadIssue, uploadDownloadIssueFile } from '../api.js';
+import { fetchDownloadIssues, keepAllDownloadIssues, keepDownloadIssue, uploadDownloadIssueFile } from '../api.js';
 import { html, nothing, render } from '../template.js';
 import { formatBytes, formatLocalDateTime as formatDate } from '../utils.js';
 
@@ -86,6 +86,8 @@ function issueCard(issue) {
       </div>
       <p class="font-sm issue-sizes">${sizes(issue)}</p>
       ${issue.stored ? html`<p class="font-xs text-dim issue-stored">Stored at <span class="font-mono">${issue.vault_path}</span></p>` : nothing}
+      ${issue.kind === 'size_differs' && !issue.stored && !issue.resolved_at
+        ? html`<p class="font-xs text-dim issue-moving">Moving to the NAS. Keep as is appears once it's stored.</p>` : nothing}
       <div class="issue-links font-sm">
         ${issue.model_url ? html`<a href=${issue.model_url} target="_blank" rel="noopener noreferrer">Model page on MMF</a>` : nothing}
         ${issue.download_url ? html`<a href=${issue.download_url} target="_blank" rel="noopener noreferrer">Download this file from MMF</a>` : nothing}
@@ -103,6 +105,49 @@ function issueCard(issue) {
 }
 
 let items = [];
+let models = [];
+const workingModels = new Set();
+
+// A model with several open issues, with Keep All for the files already on the NAS.
+function modelSummary(model) {
+  const busy = workingModels.has(model.model_id);
+  return html`
+    <article class="card issue-model" data-model-id=${model.model_id}>
+      <div class="issue-path">
+        <span class="text-dim">${model.creator_name}</span>
+        <span class="text-dim" aria-hidden="true">›</span>
+        <button type="button" class="link-button" @click=${() => actions.openModelDetailModal(model.model_id)}>${model.model_name}</button>
+        <span class="text-dim">: ${model.open} open</span>
+      </div>
+      ${model.scrambled ? html`<p class="font-sm issue-scrambled">MMF's size list for this model is out of order: every size it
+        lists is another file's real size. The files themselves are right, so keeping them is safe.</p>` : nothing}
+      <div class="issue-actions">
+        ${model.keepable ? html`<button type="button" class="btn-pill issue-keep-all" ?disabled=${busy}
+          @click=${() => keepAll(model)}>Keep All ${model.keepable}</button>` : nothing}
+        ${model.waiting ? html`<span class="font-xs text-dim">${model.waiting} still moving to the NAS</span>` : nothing}
+      </div>
+    </article>
+  `;
+}
+
+async function keepAll(model) {
+  const files = items.filter(i => i.model_id === model.model_id && i.kind === 'size_differs' && i.stored);
+  const listed = files.map(i => `${i.filename}: ${formatBytes(i.stored_bytes)}`).join('\n');
+  const these = files.length === 1 ? 'this file' : `these ${files.length} files`;
+  if (!confirm(`Keep ${these} of ${model.model_name} as they are? Each file's real size replaces the size MMF lists.\n\n${listed}`)) return;
+  workingModels.add(model.model_id);
+  paint();
+  try {
+    const result = await keepAllDownloadIssues(model.model_id);
+    const kept = result.kept.length === 1 ? '1 file' : `${result.kept.length} files`;
+    banner = `Kept ${kept} of ${model.model_name}.${result.left ? ` ${result.left} still open.` : ''}`;
+  } catch (err) {
+    banner = `Couldn't keep them: ${err.message}`;
+  } finally {
+    workingModels.delete(model.model_id);
+  }
+  await loadDownloadIssues();
+}
 
 function paint() {
   const list = document.getElementById('issues-list');
@@ -112,6 +157,7 @@ function paint() {
     : 'Nothing settled yet.';
   render(html`
     ${banner ? html`<p class="issues-banner font-sm" role="status">${banner}</p>` : nothing}
+    ${shown === 'open' && models.length ? html`<div class="issue-models" id="issue-models">${models.map(modelSummary)}</div>` : nothing}
     ${items.length ? items.map(issueCard) : html`<div class="table-msg">${empty}</div>`}
   `, list);
 }
@@ -123,9 +169,11 @@ export async function loadDownloadIssues(state = shown) {
   try {
     const data = await fetchDownloadIssues(state);
     items = data.items;
+    models = data.models || [];
     showIssueCount(data.open);
   } catch (err) {
     items = [];
+    models = [];
     banner = `Couldn't load Download Issues: ${err.message}`;
   }
   paint();
