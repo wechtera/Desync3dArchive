@@ -27,7 +27,8 @@ PORT="${DESYNC_PORT:-8080}"
 LOG="$DESYNC_DATA_DIR/logs/server.out"
 
 listener() {
-    lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true
+    # -b skips stat() on mounts. Without it a busy NAS held one call for 29 seconds. -w drops the warnings -b brings.
+    lsof -b -w -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true
 }
 
 is_our_server() {

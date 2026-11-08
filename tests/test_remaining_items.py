@@ -34,6 +34,7 @@ from desync_archival import settings as app_config
 from desync_archival.api import routing, schemas, server
 from desync_archival.api.routes import auth as auth_routes
 from desync_archival.api.routes import catalog as catalog_routes
+from desync_archival.api.routes import downloads as downloads_routes
 from desync_archival.api.routes import reconcile as reconcile_routes
 from desync_archival.api.routes import settings as settings_routes
 from desync_archival.services import (
@@ -1735,4 +1736,47 @@ class FreshInstallTests(unittest.TestCase):
         self.assertIn("## Production and development", readme)
         self.assertIn("Leave `APP_ENV=development`", readme)
         self.assertLess(readme.index("cp .env.example .env"), readme.index("dbtool migrate"))
+
+
+class DownloadJobDetailTests(TempDb):
+    LONG = "Size mismatch on ogre-butcher-pot.chitubox: expected 197131215, got 17192220. " * 40
+
+    def setUp(self):
+        super().setUp()
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO collections (id, name, url, raw_backup_path, designer_name) VALUES (7, 'Ogre Butchers', '', '', 'Duncan Shadow')"
+            )
+            self.conn.execute(
+                "INSERT INTO model_files (file_id, model_id, filename, size_bytes) VALUES (70, 7, 'ogre-butcher-pot.chitubox', 197131215)"
+            )
+            self.conn.execute(
+                "INSERT INTO download_jobs (id, model_id, status, error_message) VALUES (3, 7, 'failed', ?)", (self.LONG,)
+            )
+            for number in range(1, 4):
+                self.conn.execute(
+                    "INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, error_detail) "
+                    "VALUES (7, 70, ?, 'failed', ?)", (number, f"attempt {number}"),
+                )
+
+    def detail(self, job_id):
+        return downloads_routes.handle_get_download_job(self.conn, job_id=job_id)
+
+    def test_the_whole_error_comes_back_untrimmed(self):
+        body, status = self.detail(3)
+        self.assertEqual(status, 200)
+        self.assertEqual(body["job"]["error_message"], self.LONG)
+        self.assertEqual((body["job"]["model_name"], body["job"]["creator_name"]), ("Ogre Butchers", "Duncan Shadow"))
+
+    def test_attempts_come_newest_first_with_their_file(self):
+        attempts = self.detail(3)[0]["attempts"]
+        self.assertEqual([a["error_detail"] for a in attempts], ["attempt 3", "attempt 2", "attempt 1"])
+        self.assertEqual(attempts[0]["filename"], "ogre-butcher-pot.chitubox")
+
+    def test_attempts_are_capped(self):
+        with patch.object(downloads_routes, "ATTEMPTS_SHOWN", 2):
+            self.assertEqual(len(self.detail(3)[0]["attempts"]), 2)
+
+    def test_an_unknown_job_is_not_found(self):
+        self.assertEqual(self.detail(999)[1], 404)
 

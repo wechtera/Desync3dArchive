@@ -3541,3 +3541,118 @@ button.duplicate-delete:disabled { opacity: 0.45; cursor: not-allowed; filter: g
 .stl-preview-failed {
   color: var(--danger);
 }
+
+/* Download job details */
+.history-error-link {
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  font: inherit;
+  color: var(--danger);
+  text-align: left;
+  text-decoration: underline dotted;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.job-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(10, 14, 11, 0.6);
+}
+
+.job-detail-window {
+  display: flex;
+  flex-direction: column;
+  width: min(900px, 100%);
+  max-height: min(800px, 100%);
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+}
+
+.job-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.job-detail-title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 1rem;
+  color: var(--text-main);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.job-detail-body {
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.job-detail-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0 0 14px;
+}
+
+.job-detail-facts dt {
+  color: var(--text-dim);
+}
+
+.job-detail-facts dd {
+  margin: 0;
+}
+
+.job-detail-error-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.job-detail-error {
+  max-height: 40vh;
+  margin: 0 0 12px;
+  padding: 10px;
+  overflow: auto;
+  font-size: 0.8rem;
+  color: var(--text-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.job-detail-subhead {
+  margin: 8px 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.job-detail-attempts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.job-detail-attempt {
+  margin-bottom: 10px;
+}
+

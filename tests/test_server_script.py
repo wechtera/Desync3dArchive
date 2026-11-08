@@ -45,6 +45,10 @@ class ServerScriptTests(unittest.TestCase):
         self.assertIn('mv "$LOG" "$LOG.1"', text)
         self.assertLess(text.index('mv "$LOG" "$LOG.1"'), text.index('nohup "$ROOT/scripts/production.sh"'))
 
+    def test_finding_the_listener_never_waits_on_a_mount(self):
+        # A busy NAS made plain lsof block for 29 seconds, which stalled stop and status.
+        self.assertIn("lsof -b -w ", SCRIPT.read_text(encoding="utf-8"))
+
     def test_an_unknown_command_shows_usage(self):
         result = self.run_script("bounce")
         self.assertEqual(result.returncode, 2)
@@ -73,13 +77,17 @@ class ServerScriptTests(unittest.TestCase):
         )
         self.addCleanup(other.wait)
         self.addCleanup(other.terminate)
-        for _ in range(100):
+        # A busy machine can take seconds to start Python, and a check run before then proves nothing.
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
             with socket.socket() as sock:
                 if sock.connect_ex(("127.0.0.1", self.port)) == 0:
                     break
             time.sleep(0.05)
+        else:
+            self.fail("the stand-in program never started listening")
 
         for command in ("stop", "start", "restart"):
             result = self.run_script(command)
-            self.assertEqual(result.returncode, 1, command)
+            self.assertEqual(result.returncode, 1, f"{command}: {result.stdout} {result.stderr}")
             self.assertIsNone(other.poll(), command)

@@ -59,6 +59,10 @@ export async function fetchDownloadHistory({ status = '', sort = '', limit = 50,
   return request(`/api/downloads/history?${params.toString()}`);
 }
 
+export async function fetchDownloadJob(jobId) {
+  return request(`/api/downloads/jobs/${jobId}`);
+}
+
 export async function queueDownloads(payload) {
   return request('/api/downloads/queue', {
     method: 'POST',

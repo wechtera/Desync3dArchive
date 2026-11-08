@@ -10,6 +10,7 @@ router = APIRouter()
 
 add_route(router, "GET", ("/api/downloads/status", "/api/downloads/queue"), handlers.handle_get_downloads_status)
 add_route(router, "GET", "/api/downloads/history", handlers.handle_get_downloads_history)
+add_route(router, "GET", "/api/downloads/jobs/{job_id:int}", handlers.handle_get_download_job)
 add_route(router, "POST", "/api/downloads/queue", handlers.handle_post_downloads_queue, schemas.DownloadQueueBody)
 add_route(router, "DELETE", "/api/downloads/queue", handlers.handle_delete_downloads_queue,
           schemas.DownloadDequeueBody)

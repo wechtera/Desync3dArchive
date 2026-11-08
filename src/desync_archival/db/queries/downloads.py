@@ -59,3 +59,16 @@ UPDATE_DOWNLOAD_JOBS_STATUS_BY_STATUS = """
 COUNT_INCOMPLETE_JOBS = "SELECT COUNT(*) FROM download_jobs WHERE status IN ('pending', 'failed');"
 
 COUNT_JOBS_BY_STATUS = "SELECT COUNT(*) FROM download_jobs WHERE status = ?;"
+
+SELECT_DOWNLOAD_JOB_DETAIL = """
+    SELECT dj.id, dj.model_id, dj.status, dj.enqueued_at, dj.completed_at, dj.retry_count, dj.error_message,
+           c.name AS model_name, COALESCE(NULLIF(c.designer_name, ''), c.designer_username) AS creator_name
+    FROM download_jobs dj LEFT JOIN collections c ON c.id = dj.model_id
+    WHERE dj.id = ?;
+"""
+SELECT_DOWNLOAD_ATTEMPTS = """
+    SELECT a.logged_at, a.attempt_number, a.status, a.http_status, a.error_detail, f.filename
+    FROM download_audit_log a LEFT JOIN model_files f ON f.file_id = a.file_id
+    WHERE a.model_id = ? ORDER BY a.id DESC LIMIT ?;
+"""
+

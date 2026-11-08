@@ -1,4 +1,5 @@
 import { actions, registerActions } from '../actions.js';
+import { openJobDetail } from './job_detail.js';
 import { loadArchiveQueue, loadExternalLibraries } from './libraries.js';
 import {
   fetchModels,
@@ -618,8 +619,11 @@ export async function loadDownloadHistory(page = currentHistoryPage) {
           <td>${creator}</td>
           <td>${statusBadge(j.status)}</td>
           <td class="font-mono">${j.retry_count || 0}</td>
-          <td class="cell-label-truncate font-mono font-xs" title="${j.error_message || ''}">
-            ${j.error_message || '-'}
+          <td class="cell-label-truncate font-mono font-xs">
+            ${j.error_message
+              ? html`<button type="button" class="history-error-link" title="Show the full error"
+                  @click=${() => openJobDetail(j.id, j.model_name || `Model #${j.model_id}`)}>${j.error_message}</button>`
+              : '-'}
           </td>
           <td>
             ${j.status === 'failed'

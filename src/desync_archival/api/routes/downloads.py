@@ -70,6 +70,23 @@ def handle_get_downloads_history(
     }, 200
 
 
+# Enough to show a stuck job's whole story without paging. Older attempts stay in the table.
+ATTEMPTS_SHOWN = 50
+
+
+def handle_get_download_job(
+    conn: Conn,
+    job_id: int,
+) -> tuple[dict[str, Any], int]:
+    """The full error and every attempt, for the History window. The table cuts errors short."""
+    conn.row_factory = sqlite3.Row
+    job = conn.execute(queries.SELECT_DOWNLOAD_JOB_DETAIL, (job_id,)).fetchone()
+    if not job:
+        return {"error": f"Download job #{job_id} doesn't exist."}, 404
+    attempts = conn.execute(queries.SELECT_DOWNLOAD_ATTEMPTS, (job["model_id"], ATTEMPTS_SHOWN)).fetchall()
+    return {"job": dict(job), "attempts": [dict(a) for a in attempts]}, 200
+
+
 def handle_post_downloads_queue(
     conn: Conn,
     download_manager: Downloads,
