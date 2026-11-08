@@ -1125,6 +1125,19 @@ test.describe('settings', () => {
     }
     await expect(issues).toContainText('Keep as is');
     await expect(issues).toContainText('Upload file');
+    await expect(issues).toContainText('Keep All');
+  });
+
+  test('the 1.0.3 how-tos name what the screens show', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.switchTab('help'));
+    const grouping = page.locator('#help-llm-grouping');
+    for (const label of ['Review Now', 'Why it waits', 'Recent exports', 'Review All Myself']) await expect(grouping).toContainText(label);
+    const audit = page.locator('#help-vault-audit');
+    for (const label of ['Dismiss', 'Dismissed findings', 'Restore']) await expect(audit).toContainText(label);
+    await page.goto('/#downloads');
+    await page.locator('#group-grouping').click();
+    await expect(page.locator('#grouping-root')).toContainText('Download Export');
   });
 
   test('help explains the server settings file', async ({ page }) => {

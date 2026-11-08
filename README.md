@@ -114,21 +114,29 @@ scripts/production.sh python -m desync_archival.dbtool repair-models --apply --c
 
 **When a file won't download cleanly,** the rest of the collection still finishes. A file that brings the same wrong size twice is kept, because MMF's listing is usually what's wrong, and a file that fails twice another way is left out. Both wait in **Vault Reconcile > Download Issues**, with links to the model and file on MMF: keep a kept file, or download it yourself and upload it there. The upload replaces the stored copy, which goes to Pending Deletion. **History & Audit Log** shows such a job as Completed with issues, and clicking any error shows it in full. An expired sign-in, a Cloudflare check, a dropped connection or a full disk still stops the job, and **Retry** in History restarts it.
 
+A model with several flagged files gets a summary card with **Keep All** for the ones already on the NAS, after one confirm that lists each file and its real size. When every size MMF lists for that model is another file's real size, the card says the list is out of order and the files are right. A kept file still moving to the NAS says **Keep as is** appears once it's stored.
+
 ### Grouping with an LLM
 
 **Manage / Retrieve / Reconcile Assets > LLM Grouping** lets an LLM such as Claude or ChatGPT do the grouping Archive Review asks of you. It sees file names and sizes only, never the files.
 
-1. **Export.** Choose **Changed since the last answer** or **Everything**, tick archives, linked libraries or both, and choose **Download Export**. The count says how many units and batches go out. Units a person reviewed stay out unless you tick them.
+1. **Export.** Choose **Changed since the last answer** or **Everything**, tick archives, linked libraries or both, and choose **Download Export**. The count says how many units and batches go out. Units a person reviewed stay out unless you tick them. **Recent exports** lists each export's batches and where each stands, done, waiting to be confirmed, partly done or not answered, with the answer file that covered it, so a long run can be picked up where it stopped.
 2. **Ask the LLM.** Give it the zip, or one batch file with `README.txt`, `prompt.md` and `answer-format.json`, and ask it to follow `prompt.md`. Save its reply.
-3. **Check the answer.** Choose **Choose Answer File**, or paste the reply. The dry run shows each unit: what changes ("7 models become 3"), what waits for you, and what's refused and why. Nothing has changed yet.
+3. **Check the answer.** Choose **Choose Answer File**, or paste the reply. The dry run shows each unit: what changes ("7 models become 3"), what waits for you, and what's refused and why. Each row shows its main reason, and the rest fold under **Why it waits**. Nothing has changed yet.
 4. **Fix it with the LLM, if needed.** A refused unit comes with a fix request. Choose **Copy Fix Request**, paste it to the LLM in the same chat, and check its corrected answer the same way.
-5. **Choose, then confirm.** Each unit's **Your choice** starts as the checks decided: units the LLM was sure of apply, and anything it was unsure of, any unit a person reviewed, and anything that looks wrong, such as unrelated files joined or pictured figures folded together, waits under **Waiting for you**. Change any unit to **Wait for me** to review it first, or to **Skip, keep today's** to leave it out; a skipped unit goes out again in the next export. **Review All Myself** holds every unit for review. A unit the checks sent to review can only wait or be skipped. Then choose **Confirm and Apply**, or **Confirm** when nothing applies straight away.
+5. **Choose, then confirm.** Each unit's **Your choice** starts as the checks decided: units the LLM was sure of apply, and anything it was unsure of, any unit a person reviewed, and anything that looks wrong, such as unrelated files joined or pictured figures folded together, waits under **Waiting for you**. Change any unit to **Wait for me** to review it first, or to **Skip, keep today's** to leave it out; a skipped unit goes out again in the next export. **Review All Myself** holds every unit for review. A unit the checks sent to review can only wait or be skipped. **Review Now** on a row opens just that unit in the review editor, and the rest of the answer waits to be confirmed. Then choose **Confirm and Apply**, or **Confirm** when nothing applies straight away.
 6. **Decide what waits.** **Open** shows it in the review editor with the LLM's cards, its reasons, and a picture choice on each card. **Accept** saves it as your review, edited or not. **Reject** keeps today's grouping.
-7. **Undo**, under **Recent answers**, puts back every unit that answer changed, except any changed since.
+7. **Undo**, under **Recent answers**, puts back every unit that answer changed, except any changed since, and says what changed, such as a renamed model, moved files or a picture you chose.
+
+After every confirm and undo, a line says every file is still listed, with the catalog's counts of files, artifacts, archive members, downloaded files and collections. If any count fell, it says so in red: undo that answer and stop until it's understood.
 
 An answer can't change a creator, collection, file or size, touch a unit it wasn't sent, or remove a file. Every file stays listed in Archive Inspection and in the model's files, and files it left out sit on a skipped **Unplaced files** card. New tags it suggests are only created once you tick them under **Recent answers**. A picture that needs the NAS, such as an image not yet extracted, a linked library's image, or a render, is fetched when the NAS is reachable.
 
 After upgrading to 1.0.1, run **Preview New Folders** once on each linked library, so its releases go out with their images.
+
+### Vault Audit
+
+**Manage / Retrieve / Reconcile Assets > Vault Reconcile > Vault Audit** checks every collection's files on the NAS against the catalog. A finding that isn't a real problem can be set aside with **Dismiss**, and **Dismissed findings** lists them with **Restore**. A dismissed finding stays hidden until an audit reports it differently. The line above the results says when they were saved by another version of the app; run the audit again for current results.
 
 ### Importing files
 

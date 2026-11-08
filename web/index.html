@@ -1224,10 +1224,32 @@
               <strong>Not downloaded:</strong> the file failed twice. Download it from MMF with the link on its card, then choose <code>Upload file</code>. The name and file type must match, and a browser's <code>(1)</code> copy is fine.
             </li>
             <li>
+              <strong>Several files of one model?</strong> Its summary card offers <code>Keep All</code> for the files already on the NAS, after one confirm that lists them. When every size MMF lists is another file's real size, it says MMF's size list is out of order and the files are right. A file still moving to the NAS gets <code>Keep as is</code> once it's stored.
+            </li>
+            <li>
               <strong>An upload replaces the stored copy,</strong> which goes to Pending Deletion for 14 days, and its size becomes the one the app expects from then on.
             </li>
             <li>
               <strong>Some failures still stop the whole job,</strong> because every file after would fail the same way: an expired sign-in, a Cloudflare check, a dropped connection or a full disk. Fix the cause, then use <code>Retry</code> in History.
+            </li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="card help-card help-card-wide" id="help-vault-audit">
+        <div class="help-card-header">
+          <h3>Vault Audit findings</h3>
+        </div>
+        <div class="help-card-body">
+          <ul class="help-bullet-list">
+            <li>
+              <strong>Dismiss</strong> sets aside a finding that isn't a real problem. It stays hidden until an audit reports it differently.
+            </li>
+            <li>
+              <strong>Dismissed findings</strong>, below the results, lists them with <code>Restore</code>.
+            </li>
+            <li>
+              <strong>Saved by another version?</strong> The line above the results says so. Run the audit again for current results.
             </li>
           </ul>
         </div>
@@ -1240,16 +1262,16 @@
         <div class="help-card-body">
           <ul class="help-bullet-list">
             <li>
-              <strong>Export.</strong> Under <code>Manage / Retrieve / Reconcile Assets &rarr; LLM Grouping</code>, choose what to send and <code>Download Export</code>. The zip holds file names and sizes and the LLM's instructions, never the files.
+              <strong>Export.</strong> Under <code>Manage / Retrieve / Reconcile Assets &rarr; LLM Grouping</code>, choose what to send and <code>Download Export</code>. The zip holds file names and sizes and the LLM's instructions, never the files. <code>Recent exports</code> shows where each batch stands and which answer covered it.
             </li>
             <li>
               <strong>Ask the LLM.</strong> Give Claude, ChatGPT or another LLM the zip, or one batch with <code>README.txt</code>, <code>prompt.md</code> and <code>answer-format.json</code>, and ask it to follow <code>prompt.md</code>.
             </li>
             <li>
-              <strong>Check its answer.</strong> Upload or paste the reply. The dry run shows what each unit would become, what waits for you, and what's refused and why. Nothing changes until <code>Confirm and Apply</code>.
+              <strong>Check its answer.</strong> Upload or paste the reply. The dry run shows what each unit would become, what waits for you, and what's refused and why, with the rest of each row's reasons under <code>Why it waits</code>. Nothing changes until <code>Confirm and Apply</code>.
             </li>
             <li>
-              <strong>Choose per unit.</strong> Each unit's <code>Your choice</code> starts as the checks decided. Set any to <code>Wait for me</code> to review it first, or <code>Skip, keep today's</code> to leave it out; a skipped unit goes out again in the next export. <code>Review All Myself</code> holds every unit for review. A unit the checks sent to review can only wait or be skipped.
+              <strong>Choose per unit.</strong> Each unit's <code>Your choice</code> starts as the checks decided. Set any to <code>Wait for me</code> to review it first, or <code>Skip, keep today's</code> to leave it out; a skipped unit goes out again in the next export. <code>Review All Myself</code> holds every unit for review. A unit the checks sent to review can only wait or be skipped. <code>Review Now</code> opens one unit in the review editor while the rest waits to be confirmed.
             </li>
             <li>
               <strong>When something's refused,</strong> choose <code>Copy Fix Request</code>, paste it to the LLM in the same chat, and check its corrected answer.
@@ -1258,7 +1280,7 @@
               <strong>Waiting for you</strong> holds anything the LLM was unsure of, any unit a person reviewed, and anything that looks wrong. <code>Open</code> shows it in the review editor with the LLM's cards and a picture choice on each. <code>Accept</code> saves it as your review, edited or not, and <code>Reject</code> keeps today's grouping.
             </li>
             <li>
-              <strong>Nothing is lost.</strong> An answer can't change a creator, file or size, or remove a file. Every file stays listed, and files it left out sit on a skipped <code>Unplaced files</code> card. <code>Undo</code> under <code>Recent answers</code> puts an answer's changes back.
+              <strong>Nothing is lost.</strong> An answer can't change a creator, file or size, or remove a file. Every file stays listed, and files it left out sit on a skipped <code>Unplaced files</code> card. <code>Undo</code> under <code>Recent answers</code> puts an answer's changes back, and names what stopped it for any unit changed since. After each confirm and undo, a line shows the catalog's file counts, in red if any fell.
             </li>
           </ul>
         </div>
