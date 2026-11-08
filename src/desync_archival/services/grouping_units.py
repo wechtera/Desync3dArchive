@@ -186,13 +186,24 @@ def archive_unit(conn: sqlite3.Connection, collection_id: int) -> Unit:
     groups = dict(conn.execute(queries.SELECT_ARCHIVE_GROUPS, (collection_id,)).fetchall())
     reviewed = conn.execute(queries.SELECT_ARCHIVE_REVIEWED, (collection_id,)).fetchone()
     source = collection["source"] or "mmf"
+    # Most units come from one archive. Naming it once, not on every path, keeps a batch within an
+    # LLM's context. The ID map keeps full paths, so the checks never depend on this.
+    archives = sorted({a["archive"] for a in artifacts} | {m["archive"] for m in members})
+    inside = f"{archives[0]}/" if len(archives) == 1 else ""
+
+    def shown(path: str) -> str:
+        return path[len(inside):] if inside and path.startswith(inside) else path
+
+    for entry in (*printables, *images):
+        entry["path"] = shown(entry["path"])
     payload = {
         "unit_id": archive_key(collection_id), "kind": ARCHIVE, "source": source,
         "collection": collection["name"], "creator": collection["creator"], "release_month": collection["release_month"] or "",
         "fingerprint": fingerprint(entries),
         "tags_allowed": source != "mmf",
+        "archives": archives,
         "printables": printables, "images": images,
-        "other_files": [f"{m['archive']}/{m['internal_path']}" for m in others[:OTHER_FILES_SHOWN]],
+        "other_files": [shown(f"{m['archive']}/{m['internal_path']}") for m in others[:OTHER_FILES_SHOWN]],
         "current": {"note": "How the app groups this unit today. It may be wrong.", "models": _hints(conn, held, groups, image_ids)},
         "current_tags": _tags(conn, list(held)) if source != "mmf" else [],
     }

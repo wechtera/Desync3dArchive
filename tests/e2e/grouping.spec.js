@@ -16,7 +16,7 @@ const OVERVIEW = {
   imports: [APPLIED],
   exports: [{ export_key: 'e-20261108-120000-ab12', mode: 'delta', scope: 'both', unit_count: 5, batch_count: 1, created_at: '2026-11-08 11:59:00' }],
   pictures: { pending: 2, done: 7, failed: 0, skipped: 0 },
-  batch_lines: { default: 2000, min: 200, max: 20000 },
+  batch_lines: { default: 1000, min: 200, max: 20000 },
   max_answer_chars: 2031616,
 };
 const PREVIEW = { units: 12, batches: 2, files: 340, oversized: [], left_out: [{ unit: 'archive:9', why: 'Reviewed by a person' }] };
@@ -145,7 +145,7 @@ test('the export saves as a zip named after the export', async ({ page }) => {
   const download = page.waitForEvent('download');
   await page.locator('#btn-grouping-export').click();
   expect((await download).suggestedFilename()).toBe('e-20261108-130000-cd34.zip');
-  expect(page.calls.find(c => c.path === '/api/grouping/exports').body).toMatchObject({ mode: 'delta', scope: 'archives', batch_lines: 2000 });
+  expect(page.calls.find(c => c.path === '/api/grouping/exports').body).toMatchObject({ mode: 'delta', scope: 'archives', batch_lines: 1000 });
 });
 
 test('an answer file gets a dry run, and confirming applies it', async ({ page }) => {

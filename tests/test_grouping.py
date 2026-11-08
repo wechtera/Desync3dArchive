@@ -101,9 +101,29 @@ class UnitTests(GroupingCase):
     def test_files_go_out_under_short_ids_in_path_order(self):
         unit = self.unit().payload
         self.assertEqual([p["id"] for p in unit["printables"]], ["a1", "a2", "a3", "a4", "a5"])
-        self.assertTrue(unit["printables"][0]["path"].startswith("a.zip/28mm Supported/Ghuls/"))
         self.assertEqual([i["id"] for i in unit["images"]], ["i1", "i2", "i3"])
-        self.assertEqual(unit["other_files"], ["a.zip/Readme.pdf"])
+
+    def test_one_archive_is_named_once_and_paths_start_inside_it(self):
+        unit = self.unit()
+        self.assertEqual(unit.payload["archives"], ["a.zip"])
+        self.assertEqual(unit.payload["printables"][0]["path"], "28mm Supported/Ghuls/28mm_Ghul_A_Supported.stl")
+        self.assertEqual(unit.payload["images"][0]["path"], "Renders/Ghul_A.png")
+        self.assertEqual(unit.payload["other_files"], ["Readme.pdf"])
+        # The checks and the review use the ID map, which keeps the full path.
+        self.assertEqual(unit.ids["a1"]["path"], "a.zip/28mm Supported/Ghuls/28mm_Ghul_A_Supported.stl")
+
+    def test_several_archives_keep_their_names_on_each_path(self):
+        with self.conn:
+            file_id = self.conn.execute(
+                "INSERT INTO model_files (model_id, filename, size_bytes, download_url, source) VALUES (?, 'b.zip', 1, '', 'mmf')",
+                (self.collection,)).lastrowid
+            self.conn.execute("INSERT INTO file_archive_members (file_id, internal_path, filename, size_bytes) VALUES (?, 'Wraith/Wraith.stl', 'Wraith.stl', 40)",
+                              (file_id,))
+        self.build()
+        payload = self.unit().payload
+        self.assertEqual(payload["archives"], ["a.zip", "b.zip"])
+        self.assertIn("b.zip/Wraith/Wraith.stl", [p["path"] for p in payload["printables"]])
+        self.assertTrue(all(p["path"].startswith(("a.zip/", "b.zip/")) for p in payload["printables"]))
 
     def test_images_say_their_size_whether_theyre_here_and_what_they_seem_to_show(self):
         group = next(i for i in self.unit().payload["images"] if "Group" in i["path"])
@@ -143,6 +163,18 @@ class ExportTests(GroupingCase):
         self.assertEqual(sorted(archive.namelist()), ["README.txt", "answer-format.json", "batch-01.json", "prompt.md"])
         self.assertEqual(json.loads(archive.read("answer-format.json")), grouping_contract.answer_schema())
         self.assertEqual(summary["units"], 1)
+
+    def test_a_batch_holds_one_unit_per_line_without_indents(self):
+        with self.conn:
+            other = self.add_collection("Banshees", "1/c")
+        self.archive(other, [("Banshee_C.stl", 20)])
+        self.build()
+        _, archive, _ = self.export(mode="full", include_reviewed=True)
+        text = archive.read("batch-01.json").decode()
+        body = json.loads(text)
+        self.assertEqual(len(body["units"]), 2)
+        self.assertEqual(len(text.splitlines()), 4)
+        self.assertNotIn("\n ", text)
 
     def test_tags_go_out_only_where_a_unit_takes_them(self):
         with self.conn:

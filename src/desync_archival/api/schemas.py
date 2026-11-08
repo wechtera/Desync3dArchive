@@ -269,7 +269,7 @@ class GroupingExportBody(RequestBody):
     mode: str = Field(default="delta", pattern="^(delta|full|single)$")
     scope: str = Field(default="both", pattern="^(archives|libraries|both)$")
     include_reviewed: bool = False
-    batch_lines: int = 2000
+    batch_lines: int = 1000
     unit_key: str = ""
 
 

@@ -35,7 +35,7 @@ const PREVIEW_DELAY_MS = 300;
 
 let overview = null;
 let loadError = '';
-const form = { mode: 'delta', archives: true, libraries: true, includeReviewed: false, batchLines: 2000 };
+const form = { mode: 'delta', archives: true, libraries: true, includeReviewed: false, batchLines: 1000 };
 let preview = null;
 let previewError = '';
 let previewTimer = null;
@@ -155,7 +155,7 @@ function exportPanel() {
           <input type="number" class="grouping-lines" id="grouping-lines" min=${overview?.batch_lines.min || 200} max=${overview?.batch_lines.max || 20000}
             step="100" .value=${String(form.batchLines)} @change=${e => setForm('batchLines', e.target.value)}> lines
         </label>
-        <span class="text-dim font-xs">Smaller batches suit LLMs with less room. 2,000 suits most.</span>
+        <span class="text-dim font-xs">About 40,000 tokens a batch at 1,000. Go smaller for an LLM with less room.</span>
       </div>
       ${previewLine()}
       <button type="button" class="btn-pill btn-action-primary" id="btn-grouping-export"

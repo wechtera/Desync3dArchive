@@ -36,7 +36,7 @@ class OverviewTests(RouteCase):
     def test_the_screen_gets_everything_it_shows(self):
         data = self.client.get("/api/grouping").json()
         self.assertEqual(set(data), {"waiting", "imports", "exports", "pictures", "batch_lines", "max_answer_chars"})
-        self.assertEqual(data["batch_lines"], {"default": 2000, "min": 200, "max": 20000})
+        self.assertEqual(data["batch_lines"], {"default": 1000, "min": 200, "max": 20000})
 
     def test_the_preview_counts_what_an_export_would_hold(self):
         data = self.client.get("/api/grouping/preview", params={"mode": "full", "scope": "archives"}).json()

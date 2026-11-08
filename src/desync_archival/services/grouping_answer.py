@@ -32,8 +32,8 @@ UNPLACED_SHARE = 0.10  # A high unit may leave out less than this share of its p
 APPLY, SUGGEST, REFUSE = "apply", "suggest", "refuse"
 # Fields that say who made a unit or what it is. The batch shows them, and an answer may repeat them
 # unchanged. A different value is an attempt to rewrite the catalog, and refuses the unit.
-UNIT_IDENTITY = ("collection", "creator", "release_month", "source", "kind", "tags_allowed", "printables", "images",
-                 "other_files", "current", "current_tags")
+UNIT_IDENTITY = ("collection", "creator", "release_month", "source", "kind", "tags_allowed", "archives", "printables",
+                 "images", "other_files", "current", "current_tags")
 UNIT_FORBIDDEN = ("creator_name", "designer", "designer_name", "collection_name", "collection_id", "release",
                   "library", "library_id", "title", "path", "paths", "files", "size", "size_bytes", "model_id")
 MODEL_FORBIDDEN = ("creator", "creator_name", "designer", "designer_name", "collection", "collection_name",

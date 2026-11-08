@@ -19,7 +19,8 @@ from desync_archival.services.grouping_units import Unit, UnitError
 
 MODES = ("delta", "full", "single")
 SCOPES = ("archives", "libraries", "both")
-DEFAULT_BATCH_LINES = 2000
+# About 40,000 tokens a batch: room in a 128k context for the prompt and a full answer.
+DEFAULT_BATCH_LINES = 1000
 MIN_BATCH_LINES = 200
 MAX_BATCH_LINES = 20000
 
@@ -108,14 +109,15 @@ def _export_key() -> str:
 
 
 def _batch_file(export_key: str, number: int, total: int, units: list[Unit]) -> str:
-    body = {
+    """One unit per line, without indents: whitespace would take a quarter of an LLM's context."""
+    head = json.dumps({
         "export_id": export_key,
         "batch": number,
         "of": total,
         "instructions": "Follow prompt.md. Answer with one JSON object matching answer-format.json.",
-        "units": [u.payload for u in units],
-    }
-    return json.dumps(body, indent=1, ensure_ascii=False)
+    }, ensure_ascii=False)
+    lines = ",\n".join(json.dumps(u.payload, ensure_ascii=False, separators=(",", ":")) for u in units)
+    return f'{head[:-1]}, "units": [\n{lines}\n]}}\n'
 
 
 def build(

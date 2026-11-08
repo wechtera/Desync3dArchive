@@ -100,6 +100,9 @@ name, and choose the best picture for each model.
 Judge only by the file and folder names you are given. You cannot see the meshes, the pictures,
 or any web page.
 
+Paths start inside the unit's archive when `archives` lists one, and with the archive's name when
+it lists several. A linked library's paths start inside its release folder.
+
 ## The levels
 
 - A **collection** holds **model groups**, which hold **models**, which are built from **artifacts**.
