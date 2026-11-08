@@ -256,3 +256,46 @@ class SuggestionRouteTests(RouteCase):
         response = self.client.post(f"/api/grouping/suggestions/{suggestion}/accept", json={"cards": cards[1:]})
         self.assertEqual(response.status_code, 409)
         self.assertEqual(len(self.client.get("/api/grouping").json()["waiting"]), 1)
+
+
+class BatchTests(RouteCase):
+    """E62: where each batch of an export stands, so a 51-batch run doesn't live in the owner's head."""
+
+    def batch(self, index=0):
+        return self.client.get("/api/grouping").json()["exports"][index]["batches"][0]
+
+    def test_a_batch_nobody_answered_is_open(self):
+        self.answer()
+        batch = self.batch()
+        self.assertEqual((batch["batch"], batch["units"], batch["counts"]["open"], batch["answers"]), (1, 1, 1, []))
+
+    def test_a_checked_answer_waits_to_be_confirmed(self):
+        self.check(self.answer(), name="answer-01.json")
+        batch = self.batch()
+        self.assertEqual((batch["counts"]["checked"], batch["answers"]), (1, ["answer-01.json"]))
+
+    def test_a_confirmed_batch_is_done(self):
+        import_id = self.check(self.answer())["import_id"]
+        self.client.post(f"/api/grouping/imports/{import_id}/apply")
+        self.assertEqual(self.batch()["counts"]["done"], 1)
+
+    def test_a_skipped_unit_is_counted_as_skipped(self):
+        import_id = self.check(self.answer())["import_id"]
+        self.client.post(f"/api/grouping/imports/{import_id}/apply", json={"choices": {self.key: "skip"}})
+        self.assertEqual((self.batch()["counts"]["skipped"], self.batch()["counts"]["done"]), (1, 0))
+
+    def test_an_undone_answer_leaves_its_batch_undone(self):
+        import_id = self.check(self.answer())["import_id"]
+        self.client.post(f"/api/grouping/imports/{import_id}/apply")
+        self.client.post(f"/api/grouping/imports/{import_id}/undo")
+        self.assertEqual(self.batch()["counts"]["undone"], 1)
+
+    def test_a_discarded_answer_doesnt_count(self):
+        import_id = self.check(self.answer())["import_id"]
+        self.client.post(f"/api/grouping/imports/{import_id}/discard")
+        self.assertEqual(self.batch()["counts"]["open"], 1)
+
+    def test_a_unit_sent_again_later_is_marked_on_the_earlier_batch(self):
+        self.answer()
+        self.answer()
+        self.assertEqual((self.batch(0)["sent_again"], self.batch(1)["sent_again"]), (0, 1))

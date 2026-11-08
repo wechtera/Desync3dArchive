@@ -60,7 +60,46 @@ def imports(conn: sqlite3.Connection, limit: int = RECENT_IMPORTS) -> list[dict[
 
 def exports(conn: sqlite3.Connection, limit: int = RECENT_EXPORTS) -> list[dict[str, Any]]:
     conn.row_factory = sqlite3.Row
-    return [dict(r) for r in conn.execute(queries.SELECT_EXPORTS, (limit,)).fetchall()]
+    items = [dict(r) for r in conn.execute(queries.SELECT_EXPORTS, (limit,)).fetchall()]
+    for item in items:
+        item["batches"] = batches(conn, item.pop("id"))
+    return items
+
+
+def _unit_state(import_status: str, verdict: dict[str, Any]) -> str:
+    if import_status == "checked":
+        return "checked"
+    if import_status == "undone":
+        return "undone"
+    if verdict["outcome"] not in (APPLY, SUGGEST):
+        return "refused"
+    # Answers confirmed before choices were recorded went as the checks decided.
+    return "skipped" if verdict.get("choice") == "skip" else "done"
+
+
+def batches(conn: sqlite3.Connection, export_id: int) -> list[dict[str, Any]]:
+    """Each batch of an export, and where its units stand: answered and confirmed, waiting to be
+    confirmed, refused, undone, or not answered yet. Only an answer's latest word on a unit counts,
+    and a unit that went out again in a later export is counted as sent again."""
+    conn.row_factory = sqlite3.Row
+    latest: dict[str, tuple[str, str]] = {}
+    for row in conn.execute(queries.SELECT_EXPORT_IMPORTS, (export_id,)).fetchall():
+        for verdict in json.loads(row["report_json"]).get("units", []):
+            latest[verdict["unit"]] = (_unit_state(row["status"], verdict), row["source_name"])
+    found: dict[int, dict[str, Any]] = {}
+    for row in conn.execute(queries.SELECT_EXPORT_BATCH_UNITS, (export_id,)).fetchall():
+        batch = found.setdefault(row["batch"], {
+            "batch": row["batch"], "units": 0, "answers": [], "sent_again": 0,
+            "counts": {"open": 0, "checked": 0, "done": 0, "skipped": 0, "refused": 0, "undone": 0},
+        })
+        batch["units"] += 1
+        state, answer = latest.get(row["unit_key"], ("open", ""))
+        batch["counts"][state] += 1
+        if answer and answer not in batch["answers"]:
+            batch["answers"].append(answer)
+        if row["last_export_id"] and row["last_export_id"] > export_id:
+            batch["sent_again"] += 1
+    return [found[n] for n in sorted(found)]
 
 
 def overview(conn: sqlite3.Connection) -> dict[str, Any]:

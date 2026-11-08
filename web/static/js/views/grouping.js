@@ -172,14 +172,59 @@ function exportPanel() {
         ?disabled=${busy || !preview?.units} @click=${downloadExport}>Download Export</button>
       ${form.includeReviewed ? html`<p class="font-xs text-dim">Answers for reviewed units only ever wait for you in review.</p>` : nothing}
       ${recent.length ? html`
-        <details class="grouping-recent">
+        <details class="grouping-recent" id="grouping-recent" ?open=${outstanding(recent[0])}>
           <summary class="font-xs text-dim">Recent exports</summary>
           <ul class="font-xs">
-            ${recent.map(e => html`<li><span class="font-mono">${e.export_key}</span> ${e.mode}, ${e.scope}: ${plural(e.unit_count, 'unit')} in ${plural(e.batch_count, 'batch', 'batches')}, ${formatDate(e.created_at)}</li>`)}
+            ${recent.map(e => html`<li class="grouping-export" data-export=${e.export_key}>
+              <span class="font-mono">${e.export_key}</span> ${e.mode}, ${e.scope}: ${plural(e.unit_count, 'unit')} in ${plural(e.batch_count, 'batch', 'batches')}, ${formatDate(e.created_at)}
+              ${batchesView(e)}
+            </li>`)}
           </ul>
         </details>
       ` : nothing}
     </section>
+  `;
+}
+
+const batchDone = (b) => b.counts.done + b.counts.skipped === b.units;
+const outstanding = (e) => (e?.batches || []).some(b => !batchDone(b));
+
+function batchState(b) {
+  const c = b.counts;
+  if (c.checked) return ['status-issues', 'Checked, waiting for you to confirm'];
+  if (batchDone(b)) return ['status-completed', 'Done'];
+  if (c.open === b.units) return ['', b.sent_again === b.units ? 'Not answered, sent again later' : 'Not answered yet'];
+  return ['status-issues', 'Partly done'];
+}
+
+function batchDetails(b) {
+  const c = b.counts;
+  return [
+    c.done && c.done < b.units ? `${c.done} applied or in review` : '',
+    c.skipped ? `${c.skipped} skipped` : '',
+    c.refused ? `${c.refused} refused, fix with the LLM` : '',
+    c.undone ? `${c.undone} undone, answer again` : '',
+    c.open && c.open < b.units ? `${c.open} not answered` : '',
+  ].filter(Boolean).join(', ');
+}
+
+// Where each batch of an export stands, so a run of many batches can be picked up where it left off.
+function batchesView(e) {
+  if (!e.batches?.length) return nothing;
+  const done = e.batches.filter(batchDone).length;
+  return html`
+    <div class="grouping-batch-total">${done} of ${plural(e.batches.length, 'batch', 'batches')} done</div>
+    <ul class="grouping-batches">
+      ${e.batches.map(b => {
+        const [css, label] = batchState(b);
+        const details = batchDetails(b);
+        return html`<li class="grouping-batch" data-batch=${b.batch}>
+          Batch ${b.batch}, ${plural(b.units, 'unit')}: ${css ? html`<span class="status-badge ${css}">${label}</span>` : html`<span class="text-dim">${label}</span>`}
+          ${b.answers.length ? html` <span class="text-dim">${b.answers.join(', ')}</span>` : nothing}
+          ${details ? html` <span class="text-dim">(${details})</span>` : nothing}
+        </li>`;
+      })}
+    </ul>
   `;
 }
 

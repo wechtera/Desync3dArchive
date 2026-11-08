@@ -14,7 +14,14 @@ const APPLIED = {
 const OVERVIEW = {
   waiting: [SUGGESTION_ITEM],
   imports: [APPLIED],
-  exports: [{ export_key: 'e-20261108-120000-ab12', mode: 'delta', scope: 'both', unit_count: 5, batch_count: 1, created_at: '2026-11-08 11:59:00' }],
+  exports: [{
+    export_key: 'e-20261108-120000-ab12', mode: 'delta', scope: 'both', unit_count: 5, batch_count: 3, created_at: '2026-11-08 11:59:00',
+    batches: [
+      { batch: 1, units: 2, answers: ['answer-01.json'], sent_again: 0, counts: { open: 0, checked: 0, done: 1, skipped: 1, refused: 0, undone: 0 } },
+      { batch: 2, units: 2, answers: ['answer-02.json'], sent_again: 0, counts: { open: 0, checked: 0, done: 1, skipped: 0, refused: 1, undone: 0 } },
+      { batch: 3, units: 1, answers: [], sent_again: 0, counts: { open: 1, checked: 0, done: 0, skipped: 0, refused: 0, undone: 0 } },
+    ],
+  }],
   pictures: { pending: 2, done: 7, failed: 0, skipped: 0 },
   batch_lines: { default: 1000, min: 200, max: 20000 },
   max_answer_chars: 2031616,
@@ -139,6 +146,15 @@ test('the tab says what an export would hold and what was left out', async ({ pa
   await page.locator('#grouping-reviewed').check();
   await expect.poll(() => page.calls.filter(c => c.path === '/api/grouping/preview').at(-1)?.query)
     .toMatchObject({ mode: 'full', scope: 'both', include_reviewed: '1' });
+});
+
+test('recent exports show where each batch stands, open while any is outstanding', async ({ page }) => {
+  const recent = page.locator('#grouping-recent');
+  await expect(recent).toHaveAttribute('open', '');
+  await expect(recent.locator('.grouping-batch-total')).toHaveText('1 of 3 batches done');
+  await expect(recent.locator('.grouping-batch[data-batch="1"]')).toContainText('Done answer-01.json (1 applied or in review, 1 skipped)');
+  await expect(recent.locator('.grouping-batch[data-batch="2"]')).toContainText('Partly done answer-02.json (1 applied or in review, 1 refused, fix with the LLM)');
+  await expect(recent.locator('.grouping-batch[data-batch="3"]')).toContainText('Batch 3, 1 unit: Not answered yet');
 });
 
 test('with nothing ticked there is nothing to export, and it says why', async ({ page }) => {

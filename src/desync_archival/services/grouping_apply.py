@@ -377,7 +377,11 @@ def apply(conn: sqlite3.Connection, import_id: int, choices: dict[str, str] | No
                 result["suggested"].append(plan["unit_key"])
         except (ApplyRefused, grouping_units.UnitError) as e:
             result["refused"].append({"unit": plan["unit_key"], "why": str(e)})
+    # The batch list reads each unit's choice from here; the audit row alone isn't enough to show it.
+    for verdict in report["units"]:
+        verdict["choice"] = "review" if verdict.get("filed") else chosen.get(verdict["unit"], CHOOSE_SKIP)
     with conn:
+        conn.execute(queries.UPDATE_IMPORT_REPORT, (json.dumps(report), import_id))
         conn.execute(queries.UPDATE_IMPORT_STATUS, ("applied", "applied", "applied", import_id))
     result["totals"] = {"before": totals_before, "after": file_totals(conn)}
     audit.record(conn, "grouping_apply", False, {

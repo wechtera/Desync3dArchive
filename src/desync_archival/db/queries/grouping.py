@@ -183,7 +183,12 @@ SELECT_IMPORTS = """
     FROM grouping_imports i LEFT JOIN grouping_exports e ON e.id = i.export_id ORDER BY i.id DESC LIMIT ?;
 """
 SELECT_EXPORT_UNITS = "SELECT unit_key, ids_json FROM grouping_export_units WHERE export_id = ? ORDER BY id;"
-SELECT_EXPORTS = "SELECT export_key, mode, scope, unit_count, batch_count, created_at FROM grouping_exports ORDER BY id DESC LIMIT ?;"
+SELECT_EXPORTS = "SELECT id, export_key, mode, scope, unit_count, batch_count, created_at FROM grouping_exports ORDER BY id DESC LIMIT ?;"
+SELECT_EXPORT_BATCH_UNITS = """
+    SELECT u.unit_key, u.batch, g.last_export_id FROM grouping_export_units u
+    LEFT JOIN grouping_units g ON g.unit_key = u.unit_key WHERE u.export_id = ? ORDER BY u.batch, u.id;
+"""
+SELECT_EXPORT_IMPORTS = "SELECT id, source_name, status, report_json FROM grouping_imports WHERE export_id = ? AND status != 'discarded' ORDER BY id;"
 DISCARD_IMPORT = "UPDATE grouping_imports SET status = 'discarded' WHERE id = ? AND status = 'checked';"
 SELECT_MODEL_IMAGE = "SELECT image_path FROM models WHERE id = ?;"
 SELECT_REMOVED_TAG = """
