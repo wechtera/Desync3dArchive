@@ -21,7 +21,7 @@ import httpx
 
 from desync_archival import settings as app_config
 from desync_archival.db.queries import reconciler as queries
-from desync_archival.services import pending_deletion
+from desync_archival.services import audit_findings, pending_deletion
 from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.db import scoped_connection
 from desync_archival.services.downloader import StorageManager, StorageUnavailableError
@@ -523,6 +523,8 @@ class VaultReconciler:
         return report
 
     def _save_run_snapshot(self, status: str, scan_mode: str, report_data: Dict[str, Any]):
+        # The screen says when saved results came from another version, as the 2026-11-01 scan did.
+        report_data["app_version"] = audit_findings.app_version()
         summary = report_data.get("summary", {})
         with self._get_db() as conn:
             with conn:
@@ -547,10 +549,12 @@ class VaultReconciler:
                     report = json.loads(row["report_json"])
                 except Exception:
                     report = {}
-            return {
+            return audit_findings.view(conn, {
                 "status": row["status"],
                 "scan_mode": row["scan_mode"] or "fast",
                 "timestamp": row["completed_at"] or row["started_at"],
+                "saved_version": report.get("app_version"),
+                "current_version": audit_findings.app_version(),
                 "summary": report.get("summary", {
                     "total_audited": row["total_audited"],
                     "healthy": row["healthy_count"],
@@ -559,7 +563,7 @@ class VaultReconciler:
                 "discrepancies": report.get("discrepancies", []),
                 "orphan_directories": report.get("orphan_directories", []),
                 "untracked_files": report.get("untracked_files", []),
-            }
+            })
 
     def _offline_library_roots(self) -> list[str]:
         with self._get_db() as conn:

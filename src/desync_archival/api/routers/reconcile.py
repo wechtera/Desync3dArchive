@@ -21,6 +21,8 @@ add_route(router, "POST", "/api/pending-deletion/purge", handlers.handle_post_pe
           schemas.PendingPurgeBody)
 add_route(router, "GET", "/api/reconcile/history", handlers.handle_get_reconcile_history)
 add_route(router, "GET", "/api/reconcile/status", handlers.handle_get_reconcile_status)
+add_route(router, "POST", "/api/reconcile/findings/dismiss", handlers.handle_post_reconcile_dismiss, schemas.AuditFindingBody)
+add_route(router, "POST", "/api/reconcile/findings/restore", handlers.handle_post_reconcile_restore_finding, schemas.AuditFindingBody)
 add_route(router, "POST", "/api/reconcile/scan", handlers.handle_post_reconcile_scan, schemas.ReconcileScanBody)
 add_route(router, "POST", "/api/reconcile/cancel", handlers.handle_post_reconcile_cancel)
 add_route(router, "POST", "/api/reconcile/reset", handlers.handle_post_reconcile_reset, schemas.ResetBody)

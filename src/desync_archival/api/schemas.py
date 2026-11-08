@@ -265,6 +265,15 @@ class TokenCallbackBody(RequestBody):
     state: str | None = None
 
 
+class AuditFindingBody(RequestBody):
+    """One Vault Audit finding, named the way the saved report names it."""
+    model_id: int
+    defect: str
+    filename: str = ""
+    detail: str = ""
+    model_name: str = ""
+
+
 class GroupingExportBody(RequestBody):
     mode: str = Field(default="delta", pattern="^(delta|full|single)$")
     scope: str = Field(default="both", pattern="^(archives|libraries|both)$")

@@ -3698,6 +3698,8 @@ button.duplicate-delete:disabled { opacity: 0.45; cursor: not-allowed; filter: g
   margin-top: 12px;
 }
 
+.reconcile-dismiss, .reconcile-restore { margin-left: auto; }
+.reconcile-dismissed { margin-top: 16px; }
 .issue-models { display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; }
 .issue-scrambled { margin: 6px 0; }
 .issue-moving { margin: 0; }

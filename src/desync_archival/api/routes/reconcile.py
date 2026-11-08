@@ -10,6 +10,7 @@ from desync_archival.api.routing import Body, Conn, Downloads, Params
 from desync_archival.db.queries import reconcile as queries
 from desync_archival.services import (
     audit,
+    audit_findings,
     duplicates,
     jobs,
     pending_deletion,
@@ -332,6 +333,21 @@ def handle_post_reconcile_catalog_previews(
         "task_id": res["task_id"],
         "message": "Catalog preview cache sweep dispatched in background.",
     }, 200
+
+
+def handle_post_reconcile_dismiss(conn: Conn, body: Body) -> tuple[dict[str, Any], int]:
+    try:
+        return audit_findings.dismiss(conn, int(body["model_id"]), str(body["defect"]), str(body.get("filename") or ""),
+                                      str(body.get("detail") or ""), str(body.get("model_name") or "")), 200
+    except audit_findings.FindingRefused as e:
+        return {"error": str(e)}, 400
+
+
+def handle_post_reconcile_restore_finding(conn: Conn, body: Body) -> tuple[dict[str, Any], int]:
+    try:
+        return audit_findings.restore(conn, int(body["model_id"]), str(body["defect"]), str(body.get("filename") or "")), 200
+    except audit_findings.FindingRefused as e:
+        return {"error": str(e)}, 409
 
 
 def handle_get_reconcile_history(

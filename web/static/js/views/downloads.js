@@ -13,6 +13,8 @@ import {
   controlDownloads,
   runReconcileScan,
   fetchReconcileStatus,
+  dismissAuditFinding,
+  restoreAuditFinding,
   fetchReconcileHistory,
   fetchLatestDuplicates,
   postDuplicateDecision,
@@ -44,6 +46,7 @@ let totalHistoryCount = 0;
 
 let activeTransfersTimer = null;
 let currentDiscrepancies = [];
+let currentDismissed = [];
 let currentOrphanDirectories = [];
 let currentUntrackedFiles = [];
 let currentStagingGarbage = [];
@@ -763,6 +766,7 @@ export async function loadReconcileView() {
 
     const summary = data.summary || {};
     currentDiscrepancies = data.discrepancies || [];
+    currentDismissed = data.dismissed || [];
     currentOrphanDirectories = data.orphan_directories || [];
     currentUntrackedFiles = data.untracked_files || [];
 
@@ -789,6 +793,7 @@ export async function loadReconcileView() {
         if (summary.hashes_baselined > 0) {
           msg += ` Established & stored ${summary.hashes_baselined} new SHA-256 checksums.`;
         }
+        msg += versionNote(data);
         lastScanEl.textContent = msg;
       } else {
         lastScanEl.textContent = 'Audit not run yet. Choose a tool below.';
@@ -944,6 +949,59 @@ function renderReverseOrphanSection(container, orphans, untracked) {
   render(htmlParts, container);
 }
 
+// Saved results outlive an upgrade, so say when they came from another version (E59).
+function versionNote(data) {
+  if (!data.current_version) return '';
+  if (!data.saved_version) return ' It was saved by an earlier version of the app. Run the audit again for current results.';
+  if (data.saved_version !== data.current_version) {
+    return ` It was saved by version ${data.saved_version}, and this is ${data.current_version}. Run the audit again for current results.`;
+  }
+  return '';
+}
+
+const findingOf = (m, iss) => ({
+  model_id: m.model_id, defect: iss.defect, filename: iss.filename || '', detail: iss.detail || '', model_name: m.model_name || '',
+});
+
+async function dismissFinding(m, iss) {
+  try {
+    await dismissAuditFinding(findingOf(m, iss));
+  } catch (err) {
+    alert(`Couldn't dismiss it: ${err.message}`);
+  }
+  await loadReconcileView();
+}
+
+async function restoreFinding(d) {
+  try {
+    await restoreAuditFinding(findingOf(d, d));
+  } catch (err) {
+    alert(`Couldn't restore it: ${err.message}`);
+  }
+  await loadReconcileView();
+}
+
+function dismissedView() {
+  if (!currentDismissed.length) return nothing;
+  return html`
+    <details class="reconcile-dismissed" id="reconcile-dismissed">
+      <summary class="font-sm text-dim">Dismissed findings (${currentDismissed.length})</summary>
+      <p class="font-xs text-dim">Each stays hidden until the next audit reports it differently.</p>
+      ${currentDismissed.map(d => html`
+        <div class="reconcile-issue-row" data-model-id=${d.model_id}>
+          <div class="issue-top">
+            <span class="reconcile-defect-pill">${d.defect}</span>
+            <span class="font-sm">${d.model_name || `Model #${d.model_id}`}</span>
+            <span class="font-mono text-dim font-xs">${d.filename || 'Directory Defect'}</span>
+            <button type="button" class="btn-pill font-xs reconcile-restore" @click=${() => restoreFinding(d)}>Restore</button>
+          </div>
+          <div class="text-dim font-xs">${d.detail}</div>
+        </div>
+      `)}
+    </details>
+  `;
+}
+
 function renderReconcileDiscrepancies(items) {
   const container = document.getElementById('reconcile-results-container');
   if (!container) return;
@@ -953,16 +1011,19 @@ function renderReconcileDiscrepancies(items) {
       <div class="results-placeholder text-accent">
         100% Integrity Confirmed: All audited models have valid directories, expected files, matching sizes, and uncorrupted archive checksums.
       </div>
+      ${dismissedView()}
     `, container);
     return;
   }
 
-  render(items.map(m => {
+  render(html`${items.map(m => {
     const issuesHtml = m.issues.map(iss => html`
       <div class="reconcile-issue-row">
         <div class="issue-top">
           <span class="reconcile-defect-pill">${iss.defect}</span>
           <span class="font-mono text-dim font-xs">${iss.filename || 'Directory Defect'}</span>
+          <button type="button" class="btn-pill font-xs reconcile-dismiss" title="Hide this finding until an audit reports it differently"
+            @click=${() => dismissFinding(m, iss)}>Dismiss</button>
         </div>
         <div class="defect-detail text-alert font-sm">
           ${iss.detail}
@@ -995,7 +1056,7 @@ function renderReconcileDiscrepancies(items) {
         </div>
       </div>
     `;
-  }), container);
+  })}${dismissedView()}`, container);
 }
 
 export async function resetSingleReconcileModel(modelId) {

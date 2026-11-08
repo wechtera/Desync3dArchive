@@ -543,6 +543,9 @@ const postJson = (url, payload) => request(url, {
 });
 
 export const fetchTags = (search, hints = false) => request(`/api/tags?q=${encodeURIComponent(search)}${hints ? '&hints=1' : ''}`);
+// A Vault Audit finding as the saved report names it: model_id, defect, filename, detail.
+export const dismissAuditFinding = (finding) => postJson('/api/reconcile/findings/dismiss', finding);
+export const restoreAuditFinding = (finding) => postJson('/api/reconcile/findings/restore', finding);
 export const postTag = (payload) => postJson('/api/tags', payload);
 export const postModelTag = (modelId, payload) => postJson(`/api/catalog-models/${modelId}/tags`, payload);
 export const postGroupTag = (groupId, payload) => postJson(`/api/model-groups/${groupId}/tags`, payload);

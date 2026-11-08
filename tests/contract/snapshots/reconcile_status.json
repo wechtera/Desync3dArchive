@@ -7,8 +7,11 @@
   "response": {
     "content_type": "application/json",
     "json": {
+      "current_version": "1.0.2",
       "discrepancies": [],
+      "dismissed": [],
       "orphan_directories": [],
+      "saved_version": null,
       "scan_mode": "reverse",
       "status": "completed",
       "summary": {
