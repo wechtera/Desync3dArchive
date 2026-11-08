@@ -1,7 +1,7 @@
 """Raw SQL for services/catalog_browse.py. Names with braces take format() values."""
 
 SELECT_MODEL_GROUPS_BY_MODEL_ID = """
-        SELECT g.id, g.name FROM model_groups g JOIN model_group_members m ON m.group_id = g.id
+        SELECT g.id, g.name, g.image_path FROM model_groups g JOIN model_group_members m ON m.group_id = g.id
         WHERE m.model_id = ? ORDER BY g.name;
     """
 
@@ -32,7 +32,7 @@ SELECT_COLLECTIONS_BY_MODEL_ID_V2 = """
         WHERE l.model_id = ? ORDER BY c.id LIMIT 1;
     """
 
-SELECT_MODEL_GROUPS_BY_ID = "SELECT id, name, collection_id, release_name FROM model_groups WHERE id = ?;"
+SELECT_MODEL_GROUPS_BY_ID = "SELECT id, name, collection_id, release_name, image_path FROM model_groups WHERE id = ?;"
 
 SELECT_MODEL_ARTIFACTS_BY_MODEL_ID_STATE = """
         SELECT m.id, m.name, m.category, m.state, m.image_path,

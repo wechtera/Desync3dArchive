@@ -242,6 +242,40 @@ class NameTests(unittest.TestCase):
         self.assertEqual(grouping_answer.visible("a\u202eb"), "a\\u202eb")
 
 
+class RenderChoiceTests(GroupingCase):
+    """Only an STL can be rendered, so a render_artifact that isn't one falls back to the model's STL."""
+
+    FILES = (*GroupingCase.FILES, ("32mm Unsupported/Banshee/Banshee_Body.lys", 15))
+
+    def artifact_id(self, name):
+        return self.one("SELECT id FROM model_artifacts WHERE filename = ?", name)[0]
+
+    def test_a_lychee_file_picked_to_render_becomes_the_models_stl(self):
+        answer = self.answer()
+        banshee = answer["units"][0]["models"][2]
+        lychee = next(s for s in banshee["artifacts"] if self.exported_path(s).endswith(".lys"))
+        banshee["render_artifact"] = lychee
+        report = self.check(answer)
+        self.assertIn("isn't an STL", " ".join(report["units"][0]["warnings"]))
+        self.assertEqual(report["units"][0]["outcome"], APPLY)
+        plan = report["plans"][self.key]["models"][2]
+        self.assertEqual(plan["render_artifact"], self.artifact_id("Banshee_Body.stl"))
+
+    def test_a_model_with_no_stl_gets_no_render(self):
+        answer = self.answer()
+        models = answer["units"][0]["models"]
+        lychee = next(s for s in models[2]["artifacts"] if self.exported_path(s).endswith(".lys"))
+        models[2]["artifacts"].remove(lychee)
+        models[2]["render_artifact"] = models[2]["artifacts"][0]
+        models.append({"name": "Banshee Lychee", "artifacts": [lychee], "image": None, "render_artifact": lychee, "confidence": "high"})
+        report = self.check(answer)
+        self.assertIn("no render will be made", " ".join(report["units"][0]["warnings"]))
+        self.assertIsNone(report["plans"][self.key]["models"][3]["render_artifact"])
+
+    def exported_path(self, short):
+        return next(p["path"] for p in self.exported["printables"] if p["id"] == short)
+
+
 class CheckTests(GroupingCase):
     def test_a_careful_answer_applies(self):
         verdict = self.verdict(self.answer())

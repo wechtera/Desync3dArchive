@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from desync_archival import settings as app_config
 from desync_archival.db.queries import image_worker as queries
-from desync_archival.services import inactive_log
+from desync_archival.services import inactive_log, picture_jobs
 from desync_archival.services.db import scoped_connection
 from desync_archival.services.external_indexer import COVER, ExternalLibraryIndexer
 from desync_archival.services.logger import log_layer, logger
@@ -115,7 +115,8 @@ class ImageWorker:
 
             job = conn.execute(queries.SELECT_LIBRARY_WORK_QUEUE_BY_STATUS).fetchone()
             if not job:
-                return self._set_state(IDLE)
+                # E54's pictures wait behind covers and peeks, which every page needs first.
+                return self._set_state(picture_jobs.run_one(conn, self.renderer))
 
             # Offline just means wait. It says nothing about the model, so the job stays pending.
             if not Path(job["library_path"]).is_dir():

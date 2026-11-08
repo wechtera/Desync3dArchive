@@ -157,6 +157,11 @@ SELECT_SUGGESTION = "SELECT id, import_id, unit_key, bucket, cards_json, reasons
 DECIDE_SUGGESTION = "UPDATE grouping_suggestions SET status = ?, decided_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'waiting';"
 SELECT_ARTIFACT_BY_ID = "SELECT model_id FROM model_artifacts WHERE id = ?;"
 LOCK_MODEL_PICTURE = "UPDATE models SET image_path = ?, image_source = 'owner', image_locked = 1 WHERE id = ?;"
+# A person's newer choice wins over a job still waiting for the NAS.
+SKIP_MODEL_PICTURE_JOBS = """
+    UPDATE picture_jobs SET status = 'skipped', detail = 'Replaced by a later choice', updated_at = CURRENT_TIMESTAMP
+    WHERE status = 'pending' AND model_id = ?;
+"""
 
 # Imports for the screen.
 SELECT_IMPORTS = """
@@ -168,4 +173,8 @@ DISCARD_IMPORT = "UPDATE grouping_imports SET status = 'discarded' WHERE id = ? 
 SELECT_MODEL_IMAGE = "SELECT image_path FROM models WHERE id = ?;"
 SELECT_REMOVED_TAG = """
     SELECT 1 FROM removed_tags WHERE tag = ? AND collection_id IN (SELECT collection_id FROM model_collections WHERE model_id = ?);
+"""
+SELECT_ARTIFACT_COLLECTION = "SELECT f.model_id FROM model_artifacts a JOIN model_files f ON f.file_id = a.file_id WHERE a.id = ?;"
+COUNT_COLLECTION_ARTIFACTS = """
+    SELECT COUNT(*) FROM model_artifacts a JOIN model_files f ON f.file_id = a.file_id WHERE f.model_id = ? AND a.archive_member_id IS NULL;
 """

@@ -311,6 +311,15 @@ def check_unit(
 
     # The answer is well formed. Now: does it make sense to a person?
     path_of = {k: v["path"] for k, v in ids.items()}
+    for model in unit.models:
+        # Only an STL can be rendered. Rather than a render that can't happen, use the model's own STL.
+        if model.render_artifact and not path_of[model.render_artifact].lower().endswith(".stl"):
+            stl = next((s for s in model.artifacts if path_of[s].lower().endswith(".stl")), None)
+            verdict.warnings.append(
+                f"{model.name}'s render_artifact {model.render_artifact} isn't an STL, so "
+                + (f"{stl} will be rendered instead." if stl else "no render will be made.")
+            )
+            model.render_artifact = stl
     total = len(artifacts)
     for model in unit.models:
         paths = [path_of[s] for s in model.artifacts]

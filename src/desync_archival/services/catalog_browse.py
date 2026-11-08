@@ -56,8 +56,13 @@ def _collections_of(conn: sqlite3.Connection, model_id: int) -> list[dict[str, A
 
 def _summary(conn: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
     collections = _collections_of(conn, row["id"])
+    groups = _groups_of(conn, row["id"])
+    summary = dict(row)
+    # A model's own picture, then its group's, then the collection cover the page falls back to.
+    if not summary.get("image_path"):
+        summary["image_path"] = next((g["image_path"] for g in groups if g["image_path"]), None)
     return {
-        **dict(row), "groups": _groups_of(conn, row["id"]), "collections": collections,
+        **summary, "groups": groups, "collections": collections,
         "designer_name": collections[0]["designer_name"] if collections else "",
         "cover_id": collections[0]["id"] if collections else row["id"],
         "image_url": collections[0]["primary_image_url"] if collections else None,

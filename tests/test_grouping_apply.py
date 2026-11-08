@@ -4,6 +4,7 @@ import json
 
 from test_grouping import GroupingCase
 
+from desync_archival import settings as app_config
 from desync_archival.services import (
     archive_review,
     grouping_answer,
@@ -304,8 +305,36 @@ class SuggestionReviewTests(ApplyCase):
     def test_a_picture_must_be_one_of_this_units(self):
         suggestion = self.suggest()
         cards = grouping_suggestions.view(self.conn, suggestion)["cards"]
+        before = grouping_apply.state(self.conn, self.key)
         with self.assertRaisesRegex(grouping_apply.ApplyRefused, "isn't a picture of this unit"):
             grouping_suggestions.accept(self.conn, suggestion, cards, {cards[0]["paths"][0]: "a1"})
+        # Nothing was saved, and the suggestion still waits.
+        self.assertEqual(grouping_apply.state(self.conn, self.key), before)
+        self.assertEqual(self.one("SELECT status FROM grouping_suggestions WHERE id = ?", suggestion)[0], "waiting")
+
+    def test_a_picture_not_held_here_is_fetched_for_the_person_not_refused(self):
+        suggestion = self.suggest()
+        cards = grouping_suggestions.view(self.conn, suggestion)["cards"]
+        (app_config.previews_dir() / str(self.collection) / str(self.file_id) / "Ghuls_Group.png").unlink()
+        before = self.one("SELECT image_path FROM models WHERE name = 'Ghul A'")[0]
+        result = grouping_suggestions.accept(self.conn, suggestion, cards, {cards[0]["paths"][0]: "i3"})
+        self.assertEqual((result["pictures"], result["pictures_waiting"]), (0, 1))
+        kind, source = tuple(self.one("SELECT kind, source_json FROM picture_jobs WHERE status = 'pending'"))
+        self.assertEqual((kind, json.loads(source)["source"]), ("extract", "owner"))
+        self.assertTrue(json.loads(source)["preview"].endswith("Ghuls_Group.png"))
+        # It keeps today's picture until the job lands, rather than showing nothing.
+        self.assertEqual(self.one("SELECT image_path FROM models WHERE name = 'Ghul A'")[0], before)
+
+    def test_a_persons_choice_cancels_a_job_still_waiting_for_that_model(self):
+        suggestion = self.suggest()
+        cards = grouping_suggestions.view(self.conn, suggestion)["cards"]
+        ghul_a = self.one("SELECT id FROM models WHERE name = 'Ghul A'")[0]
+        with self.conn:
+            waiting = self.conn.execute("INSERT INTO picture_jobs (kind, model_id, source_json) VALUES ('render', ?, '{}')",
+                                        (ghul_a,)).lastrowid
+        grouping_suggestions.accept(self.conn, suggestion, cards, {cards[0]["paths"][0]: "i2"})
+        self.assertEqual(tuple(self.one("SELECT status, detail FROM picture_jobs WHERE id = ?", waiting)),
+                         ("skipped", "Replaced by a later choice"))
 
     def test_a_pictures_only_suggestion_sets_just_the_pictures(self):
         answer = self.answer()

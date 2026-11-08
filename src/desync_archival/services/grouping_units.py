@@ -224,7 +224,7 @@ def library_unit(conn: sqlite3.Connection, library_id: int, release: str) -> Uni
         short = f"i{n}"
         path = row["rel_path"][len(release) + 1:] if row["rel_path"].startswith(f"{release}/") else row["rel_path"]
         # Library images live on the NAS until one is chosen, so no size and no local copy yet.
-        ids[short] = {"kind": "image", "library_image": row["id"], "path": path, "source": str(root / row["rel_path"]),
+        ids[short] = {"kind": "image", "library_image": row["id"], "path": path, "origin": str(root / row["rel_path"]),
                       "available": False}
         images.append({"id": short, "path": path, "size": row["size_bytes"] or 0, "pixels": None,
                        "roles": roles_of(PurePosixPath(path).stem), "available": False})

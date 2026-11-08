@@ -106,23 +106,34 @@ def view(conn: sqlite3.Connection, suggestion_id: int) -> dict[str, Any]:
     }
 
 
-def _set_pictures(conn: sqlite3.Connection, unit: grouping_units.Unit, choices: list[tuple[int, str]]) -> int:
-    """A person's choices, locked. An empty choice leaves the model as it is."""
-    set_count = 0
+def _set_pictures(conn: sqlite3.Connection, unit: grouping_units.Unit, collection: int | None,
+                  choices: list[tuple[int, str]]) -> tuple[int, int]:
+    """A person's choices, locked. Returns (set now, waiting for the NAS).
+
+    A picture not held here yet, like any library image, is fetched by a picture job that locks it
+    when it lands. An empty choice leaves the model as it is.
+    """
+    set_now = waiting_for_nas = 0
     for model_id, short in choices:
         if not short:
             continue
         if short == COVER:
+            conn.execute(queries.SKIP_MODEL_PICTURE_JOBS, (model_id,))
             conn.execute(queries.LOCK_MODEL_PICTURE, (None, model_id))
-        else:
-            meta = unit.ids.get(short)
-            if not meta or meta["kind"] != "image":
-                raise ApplyRefused(f"{short} isn't a picture of this unit.")
-            if not meta.get("available"):
-                raise ApplyRefused(f"{meta['path'].rpartition('/')[2]} isn't held on this Mac yet, so it can't be chosen here.")
+            set_now += 1
+            continue
+        meta = unit.ids.get(short)
+        if not meta or meta["kind"] != "image":
+            raise ApplyRefused(f"{short} isn't a picture of this unit.")
+        conn.execute(queries.SKIP_MODEL_PICTURE_JOBS, (model_id,))
+        if meta.get("available") and meta.get("preview"):
             conn.execute(queries.LOCK_MODEL_PICTURE, (meta["preview"], model_id))
-        set_count += 1
-    return set_count
+            set_now += 1
+        else:
+            kind = "extract" if meta.get("member") else "copy"
+            conn.execute(queries.INSERT_PICTURE_JOB, (kind, model_id, None, collection, json.dumps({**meta, "source": "owner"})))
+            waiting_for_nas += 1
+    return set_now, waiting_for_nas
 
 
 def accept(conn: sqlite3.Connection, suggestion_id: int, cards: list[dict] | None, pictures: dict[str, str] | None = None) -> dict[str, Any]:
@@ -143,6 +154,10 @@ def accept(conn: sqlite3.Connection, suggestion_id: int, cards: list[dict] | Non
     if plan and plan.get("fingerprint") != unit.fingerprint:
         raise ApplyRefused("Its files changed after the LLM answered, so this suggestion no longer fits. Export it again.")
     pictures = pictures or {}
+    # Checked before anything is saved, so a bad choice can't leave the cards half accepted.
+    for short in pictures.values():
+        if short and short != COVER and (unit.ids.get(short) or {}).get("kind") != "image":
+            raise ApplyRefused(f"{short} isn't a picture of this unit.")
 
     if cards is not None:
         save_cards(conn, unit_key, cards, True)
@@ -156,12 +171,13 @@ def accept(conn: sqlite3.Connection, suggestion_id: int, cards: list[dict] | Non
     else:
         choices = [(int(model_id), short) for model_id, short in pictures.items() if str(model_id).isdigit()]
 
+    kind, number, _release = grouping_units.parse_key(unit_key)
     with conn:
-        chosen = _set_pictures(conn, unit, choices)
+        chosen, queued = _set_pictures(conn, unit, number if kind == ARCHIVE else None, choices)
         conn.execute(queries.DECIDE_SUGGESTION, ("accepted", suggestion_id))
         if cards is not None:
             conn.execute(queries.UPDATE_UNIT_DECIDED, ("applied", unit.fingerprint, unit_key))
-    result = {"success": True, "suggestion": suggestion_id, "unit": unit_key, "pictures": chosen}
+    result = {"success": True, "suggestion": suggestion_id, "unit": unit_key, "pictures": chosen, "pictures_waiting": queued}
     audit.record(conn, "grouping_accept", False, result)
     return result
 

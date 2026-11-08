@@ -146,6 +146,20 @@ def _model_of(conn: sqlite3.Connection, artifact_id: int) -> int:
     return conn.execute(queries.SELECT_ARTIFACT_MODEL, (artifact_id,)).fetchone()[0]
 
 
+def _covers(conn: sqlite3.Connection, unit_key: str, artifacts: list[int]) -> list[int]:
+    """E54-9: library collections whose cover this model's render should replace. Those it holds
+    most of the files of, in a release with no artwork, where every cover is a size-picked render."""
+    kind, number, release = grouping_units.parse_key(unit_key)
+    if kind == ARCHIVE or conn.execute(queries.SELECT_LIBRARY_IMAGES, (number, release)).fetchone():
+        return []
+    held: dict[int, int] = {}
+    for artifact in artifacts:
+        row = conn.execute(queries.SELECT_ARTIFACT_COLLECTION, (artifact,)).fetchone()
+        if row:
+            held[row[0]] = held.get(row[0], 0) + 1
+    return sorted(c for c, n in held.items() if n * 2 > conn.execute(queries.COUNT_COLLECTION_ARTIFACTS, (c,)).fetchone()[0])
+
+
 def _picture(conn: sqlite3.Connection, plan: dict, unit_key: str, model_id: int, model: dict,
              before: dict[int, dict], held_back: list[dict]) -> None:
     """Applies a model's picture by 9A.4, or holds it back as a suggestion."""
@@ -156,7 +170,8 @@ def _picture(conn: sqlite3.Connection, plan: dict, unit_key: str, model_id: int,
     collection = None if not unit_key.startswith(f"{ARCHIVE}:") else grouping_units.parse_key(unit_key)[1]
     if picture is None:
         if model.get("render_artifact") and not had.get("image_path") and had.get("image_source") in (None, "render"):
-            conn.execute(queries.INSERT_PICTURE_JOB, ("render", model_id, None, collection, json.dumps({"artifact": model["render_artifact"]})))
+            source = {"artifact": model["render_artifact"], "covers": _covers(conn, unit_key, model["artifacts"])}
+            conn.execute(queries.INSERT_PICTURE_JOB, ("render", model_id, None, collection, json.dumps(source)))
         return
     fallback = had.get("image_source") in FALLBACK_SOURCES and (had.get("image_source") is not None or not had.get("image_path"))
     if model["image_confidence"] != "high" or not fallback:
