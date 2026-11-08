@@ -1,6 +1,6 @@
 [project]
 name = "desync-archival"
-version = "1.0.0"
+version = "1.0.1"
 description = "Personal archive and asset manager for a MyMiniFactory 3D-printing library"
 readme = "README.md"
 license = "MIT"
