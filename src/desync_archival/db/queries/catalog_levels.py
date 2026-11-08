@@ -47,12 +47,16 @@ SELECT_FILE_ARCHIVE_MEMBERS_BY_MODEL_ID = """
 
 SELECT_MODELS_BY_MODEL_ID = """
         SELECT DISTINCT m.id, m.name FROM models m JOIN model_artifacts a ON a.model_id = m.id
-        JOIN model_files f ON f.file_id = a.file_id WHERE f.model_id = ? AND m.image_path IS NULL;
+        JOIN model_files f ON f.file_id = a.file_id WHERE f.model_id = ? AND m.image_path IS NULL AND COALESCE(m.image_source, 'archive') = 'archive';
     """
 
 SELECT_MODEL_ARTIFACTS_PATH_BY_MODEL_ID = "SELECT path FROM model_artifacts WHERE model_id = ?;"
 
-UPDATE_MODELS_IMAGE_PATH_BY_ID = "UPDATE models SET image_path = ? WHERE id = ?;"
+# Only the matcher's own pictures. One an LLM or a person chose, the cover included, is never replaced here.
+UPDATE_MODELS_IMAGE_PATH_BY_ID = """
+    UPDATE models SET image_path = ?, image_source = 'archive'
+    WHERE id = ? AND COALESCE(image_source, 'archive') = 'archive';
+"""
 
 SELECT_COLLECTION_REVIEWS_COLLECTION_ID_BY_REVIEWED = "SELECT collection_id FROM collection_reviews WHERE reviewed = 1;"
 

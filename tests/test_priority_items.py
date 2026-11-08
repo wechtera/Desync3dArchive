@@ -61,8 +61,10 @@ NOT_MOVED_WITH_A_BUNDLE = {
     ("library_candidates", "folders_json"),
     ("library_candidates", "rel_path"),
     ("library_model_folders", "rel_path"),
+    ("library_images", "rel_path"),
     ("library_release_trees", "folders_json"),
     ("model_artifacts", "path"),
+    ("model_groups", "image_path"),
     ("models", "image_path"),
 }
 

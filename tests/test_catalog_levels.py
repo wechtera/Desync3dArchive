@@ -487,6 +487,19 @@ class PeekTests(unittest.TestCase):
         row = self.conn.execute("SELECT name, image_path FROM models WHERE name = 'Piotr Renamed'").fetchone()
         self.assertEqual(tuple(row), ("Piotr Renamed", path))
 
+    def test_a_chosen_picture_is_never_replaced_by_the_matcher(self):
+        # An LLM or a person picked the cover on purpose, which leaves no path, only a source.
+        self.peek(["Piotr/Piotr_Body.stl", "Piotr/Piotr.jpg"])
+        with self.conn:
+            self.conn.execute("UPDATE models SET image_path = NULL, image_source = 'cover'")
+        catalog_levels.assign_images(self.conn, self.collection)
+        self.assertEqual(tuple(self.conn.execute("SELECT image_path, image_source FROM models WHERE state = 'proposed'").fetchone()),
+                         (None, "cover"))
+
+    def test_the_matcher_marks_its_pictures(self):
+        self.peek(["Piotr/Piotr_Body.stl", "Piotr/Piotr.jpg"])
+        self.assertEqual(self.conn.execute("SELECT image_source FROM models WHERE state = 'proposed'").fetchone()[0], "archive")
+
     def test_a_peek_records_when_it_ran(self):
         self.peek(["Piotr/Piotr_Body.stl"])
         self.assertIsNotNone(self.conn.execute("SELECT peeked_at FROM model_files WHERE file_id = ?", (self.file_id,)).fetchone()[0])
