@@ -91,6 +91,16 @@ class CheckRouteTests(RouteCase):
         self.assertEqual(undone["restored"], [self.key])
         self.assertEqual(grouping_apply.state(self.conn, self.key), before)
 
+    def test_after_undo_the_same_answer_checks_and_applies_again(self):
+        # The release's first run applies a batch, undoes it to prove the way back, then reapplies.
+        first = self.check(self.answer())["import_id"]
+        self.client.post(f"/api/grouping/imports/{first}/apply")
+        self.client.post(f"/api/grouping/imports/{first}/undo")
+        again = self.check(self.answer(), name="answer-again.json")
+        self.assertEqual(again["counts"]["apply"], 1)
+        applied = self.client.post(f"/api/grouping/imports/{again['import_id']}/apply").json()
+        self.assertEqual([a["unit"] for a in applied["applied"]], [self.key])
+
     def test_text_that_isnt_json_gets_a_fix_request_and_isnt_kept(self):
         report = self.check("Sure! Here are the groupings you asked for: Ghul A, Ghul B, Banshee.")
         self.assertTrue(report["error"])
