@@ -45,12 +45,13 @@ UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID = """
 
 UPDATE_COLLECTIONS_ARCHIVE_DOWNLOAD_URL_BY_ID = "UPDATE collections SET archive_download_url = ? WHERE id = ?;"
 
+# Keeps a size the owner confirmed, for the same reason as identity's file update.
 UPDATE_MODEL_FILES_DOWNLOAD_URL_BY_SOURCE = """
-                                            UPDATE model_files
-                                            SET download_url = ?,
-                                                size_bytes = COALESCE(?, size_bytes)
-                                            WHERE source = 'mmf' AND external_key = ?;
-                                        """
+    UPDATE model_files
+    SET download_url = ?,
+        size_bytes = CASE WHEN size_confirmed_at IS NULL THEN COALESCE(?, size_bytes) ELSE size_bytes END
+    WHERE source = 'mmf' AND external_key = ?;
+"""
 
 SELECT_MODEL_FILES_BY_MODEL_ID = """
                 SELECT mf.file_id, mf.filename, mf.download_url, mf.size_bytes
@@ -108,8 +109,14 @@ UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V3 = """
 
 INSERT_DOWNLOAD_AUDIT_LOG_V8 = """
                 INSERT INTO download_audit_log (model_id, attempt_number, status, error_detail)
-                VALUES (?, 1, 'failed', ?);
+                VALUES (?, ?, 'failed', ?);
             """
+
+# One row per try of one file. Status is retrying, failed or kept.
+INSERT_FILE_ATTEMPT = """
+    INSERT INTO download_audit_log (model_id, file_id, attempt_number, status, http_status, error_detail)
+    VALUES (?, ?, ?, ?, ?, ?);
+"""
 
 UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V4 = "UPDATE download_jobs SET status = 'offloading' WHERE id = ? AND status = 'staging_complete';"
 
@@ -151,7 +158,7 @@ UPDATE_COLLECTIONS_VAULT_PATH_BY_ID = """
 
 INSERT_DOWNLOAD_AUDIT_LOG_V9 = """
                     INSERT INTO download_audit_log (model_id, attempt_number, status, error_detail)
-                    VALUES (?, 1, 'completed', ?);
+                    VALUES (?, ?, 'completed', ?);
                 """
 
 SELECT_APP_SETTINGS_VALUE_BY_KEY_V3 = "SELECT value FROM app_settings WHERE key = 'circuit_breaker_reason'"

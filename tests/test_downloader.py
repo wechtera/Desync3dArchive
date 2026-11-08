@@ -173,6 +173,7 @@ class TestDownloaderOAuth(unittest.TestCase):
         # Mock 2: Stream response for downloading payload
         mock_stream_resp = MagicMock()
         mock_stream_resp.status_code = 200
+        mock_stream_resp.headers = {}
         mock_stream_resp.iter_bytes.return_value = [VALID_ZIP_CONTENT]
         mock_stream.return_value.__enter__.return_value = mock_stream_resp
 
@@ -242,6 +243,7 @@ class TestDownloaderOAuth(unittest.TestCase):
 
         mock_stream_resp = MagicMock()
         mock_stream_resp.status_code = 200
+        mock_stream_resp.headers = {}
         mock_stream_resp.iter_bytes.return_value = [VALID_ZIP_CONTENT]
         mock_stream.return_value.__enter__.return_value = mock_stream_resp
 

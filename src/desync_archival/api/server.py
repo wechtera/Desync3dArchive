@@ -6,6 +6,7 @@ Supports both 2-tuple JSON responses and 3-tuple binary image streams.
 import fcntl
 import logging
 import mimetypes
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -134,11 +135,21 @@ CONTENT_SECURITY_POLICY = (
 )
 
 
+# The one route that takes raw bytes. A cross-site page can't send a PUT without a preflight, and
+# no CORS headers are ever returned, so this needs no JSON rule to stay same-site.
+UPLOAD_PATH = re.compile(r"^/api/download-issues/\d+/file$")
+
+
+def is_upload(scope: dict) -> bool:
+    return scope["method"] == "PUT" and bool(UPLOAD_PATH.match(scope["path"]))
+
+
 class SecurityMiddleware:
     """Validates Host, Origin, content type and body size before a request reaches a route.
 
     Host blocks DNS rebinding, and Origin blocks cross-site requests. A POST or DELETE with a body
     must be JSON, so a cross-site form can't reach a route. An empty body has nothing to parse.
+    An upload is a PUT of raw bytes to one exact path, with its own size limit.
     """
 
     def __init__(self, app: Any):
@@ -159,13 +170,14 @@ class SecurityMiddleware:
 
         total = 0
         started = False
+        limit = app_config.MAX_UPLOAD_BYTES if is_upload(scope) else app_config.MAX_BODY_BYTES
 
         async def limited_receive() -> dict:
             nonlocal total
             message = await receive()
             if message["type"] == "http.request":
                 total += len(message.get("body", b""))
-                if total > app_config.MAX_BODY_BYTES:
+                if total > limit:
                     raise BodyTooLargeError
             return message
 
@@ -214,6 +226,16 @@ class SecurityMiddleware:
                 return 415, "Content-Type must be application/json"
             if length.isdigit() and int(length) > app_config.MAX_BODY_BYTES:
                 return 413, "Request body too large"
+        if is_upload(scope):
+            length = request.headers.get("content-length", "")
+            content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+            if content_type != "application/octet-stream":
+                return 415, "An upload must be sent as application/octet-stream"
+            # The length is checked against free space before any of it is accepted.
+            if not length.isdigit():
+                return 411, "An upload must state its length"
+            if int(length) > app_config.MAX_UPLOAD_BYTES:
+                return 413, "That file is larger than an upload can be"
         return None
 
 

@@ -17,15 +17,16 @@ import threading
 import time
 import zipfile
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import httpx
 
 from desync_archival import settings as app_config
 from desync_archival.db.queries import downloader as queries
-from desync_archival.services import auth_service, identity, secret_store
+from desync_archival.services import auth_service, download_issues, identity, secret_store
 from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.db import scoped_connection
 from desync_archival.services.logger import job_logged, log_layer, logger
@@ -187,8 +188,130 @@ class StorageManager:
         return metrics
 
 
-class DeadDownloadLink(Exception):
+class FileProblem(Exception):
+    """One file went wrong. The job carries on with the rest, and this file goes to Download Issues.
+
+    Anything else raised while staging stops the whole job: a sign-in that expired, a Cloudflare
+    check, a dropped connection or a full disk would fail every file after it the same way.
+    """
+
+    def __init__(self, message: str, http_status: int | None = None, retry: bool = True):
+        super().__init__(message)
+        self.http_status = http_status
+        self.retry = retry
+
+
+class DeadDownloadLink(FileProblem):
     """A download link answered 404 or 410, so MMF is asked whether it has a newer one."""
+
+
+@dataclass
+class Fetched:
+    """What one try delivered, before anything decides whether to keep it."""
+
+    size: int
+    content_type: str
+    sent_name: str
+    page: bool
+
+    def described(self) -> str:
+        kind = self.content_type.split(";")[0].strip() or "no stated type"
+        return f"{kind}, named {self.sent_name}" if self.sent_name else f"{kind}, with no name given"
+
+
+class SizeDiffers(FileProblem):
+    def __init__(self, filename: str, expected: int, fetched: Fetched, page: bool):
+        what = "a web page, not the file" if page else f"sent as {fetched.described()}"
+        super().__init__(f"Size mismatch on {filename}: expected {expected}, got {fetched.size} ({what})")
+        self.fetched = fetched
+        self.received = fetched.size
+        self.page = page
+
+
+# A Cloudflare challenge or error page arrives as a 200. It's never kept, whatever its size, unless
+# the file itself is a web page.
+PAGE_SUFFIXES = (".html", ".htm")
+PAGE_STARTS = (b"<!doctype html", b"<html")
+NAMES_IN_SUMMARY = 3
+
+
+def looks_like_page(path: Path, content_type: str) -> bool:
+    if content_type.split(";")[0].strip().lower() == "text/html":
+        return True
+    with open(path, "rb") as handle:
+        head = handle.read(512).lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    return head.startswith(PAGE_STARTS)
+
+
+def disposition_name(header: str) -> str:
+    """The filename a server gave in Content-Disposition, or an empty string."""
+    match = re.search(r"filename\*=(?:UTF-8'')?([^;]+)", header, re.IGNORECASE)
+    if match:
+        return unquote(match.group(1).strip().strip('"'))
+    match = re.search(r'filename="?([^";]+)"?', header, re.IGNORECASE)
+    return match.group(1).strip() if match else ""
+
+
+def check_zip(path: Path, name: str) -> None:
+    """Raises FileProblem for a damaged ZIP, and removes it so a retry starts clean."""
+    if path.suffix.lower() != ".zip" and Path(name).suffix.lower() != ".zip":
+        return
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            bad_file = zf.testzip()
+            if bad_file:
+                raise zipfile.BadZipFile(f"Corrupt entry in archive: {bad_file}")
+    except Exception as e:
+        path.unlink(missing_ok=True)
+        log_layer("archive", logging.ERROR, f"ZIP CRC failed on {name}: {e}")
+        raise FileProblem(f"ZIP validation failed for {name}: {e}") from e
+
+
+def nothing_downloaded(issues: list[dict[str, Any]]) -> str:
+    named = "; ".join(f"{issue['filename']}: {issue['detail']}" for issue in issues[:NAMES_IN_SUMMARY])
+    more = f"; and {len(issues) - NAMES_IN_SUMMARY} more" if len(issues) > NAMES_IN_SUMMARY else ""
+    return f"No file could be downloaded. {named}{more}"
+
+
+def job_attempt(job: sqlite3.Row) -> int:
+    """Which run of the job this is, so History's attempts don't all read 1."""
+    return (job["retry_count"] or 0) + 1
+
+
+def model_folder(creator: str, month: str, external_key: Any, model_id: int, name: str | None) -> Path:
+    """A model's folder under the vault root. Staging, offload and uploads must all agree on it."""
+    folder = f"{external_key or model_id}_{sanitize_segment(name or f'Model_{model_id}')}"
+    return Path(sanitize_segment(creator)) / sanitize_segment(month) / folder
+
+
+def write_model_metadata_json(conn: sqlite3.Connection, model_id: int, target_dir: Path) -> None:
+    """Dumps formatted metadata.json directly into the object directory on the NAS."""
+    model_row = conn.execute(queries.SELECT_COLLECTIONS_BY_ID_V2, (model_id,)).fetchone()
+    raw_payload = None
+
+    if model_row and model_row["raw_backup_path"]:
+        p = app_config.resolve_data_path(model_row["raw_backup_path"])
+        if p.exists() and p.is_file():
+            try:
+                raw_payload = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                raw_payload = None
+
+    if not raw_payload:
+        fallback = app_config.metadata_dir() / f"model_{model_row['external_key']}.json" if model_row else Path()
+        if fallback.is_file():
+            try:
+                raw_payload = json.loads(fallback.read_text(encoding="utf-8"))
+            except Exception:
+                raw_payload = None
+
+    target_file = target_dir / "metadata.json"
+    if raw_payload:
+        target_file.write_text(json.dumps(raw_payload, indent=2), encoding="utf-8")
+    elif model_row:
+        meta = dict(model_row)
+        meta["tags"] = [r[0] for r in conn.execute(queries.SELECT_COLLECTION_TAGS_TAG_BY_MODEL_ID, (model_id,)).fetchall()]
+        target_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
 class StagedFileMissing(FileNotFoundError):
@@ -399,7 +522,7 @@ class DownloadManager:
         try:
             self._process_download_to_staging(worker_id, job, work_dir)
         except Exception as e:
-            self._handle_download_failure(job["id"], model_id, str(e))
+            self._handle_download_failure(job, str(e))
         finally:
             with self._lock:
                 self.active_downloads.pop(worker_id, None)
@@ -410,23 +533,19 @@ class DownloadManager:
     def _process_download_to_staging(self, worker_id: int, job: sqlite3.Row, work_dir: Path):
         # Links don't change once issued: stored and live matched on every file checked, so asking MMF
         # before each model only added a request. It's asked when a link is missing or has died.
-        if self._links_missing(job["model_id"]):
+        fresh = self._links_missing(job["model_id"])
+        if fresh:
             self._refresh_links(worker_id, job)
-        try:
-            self._stage_files(worker_id, job, work_dir)
-        except DeadDownloadLink as e:
-            if not self._refresh_links(worker_id, job):
-                raise RuntimeError(str(e)) from e
-            log_layer("http", logging.INFO, f"Worker #{worker_id}: Model #{job['model_id']} has a new link. Trying once more.")
-            try:
-                self._stage_files(worker_id, job, work_dir)
-            except DeadDownloadLink as retry_error:
-                raise RuntimeError(str(retry_error)) from retry_error
+        self._stage_files(worker_id, job, work_dir, links_fresh=fresh)
 
     def _links_missing(self, model_id: int) -> bool:
         with self._get_db() as conn:
             rows = conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID, (model_id,)).fetchall()
         return not rows or any(not row["download_url"] for row in rows)
+
+    def _current_links(self, model_id: int) -> dict[int, str]:
+        with self._get_db() as conn:
+            return {row["file_id"]: row["download_url"] for row in conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID, (model_id,))}
 
     def _refresh_links(self, worker_id: int, job: sqlite3.Row) -> bool:
         """Asks MMF's API for current links, as a plain client. Returns whether a stored one changed."""
@@ -468,10 +587,9 @@ class DownloadManager:
             log_layer("http", logging.WARNING, f"Worker #{worker_id}: Could not check download links for Model #{model_id}: {req_err}")
         return changed
 
-    def _stage_files(self, worker_id: int, job: sqlite3.Row, work_dir: Path):
+    def _files_for(self, job: sqlite3.Row) -> list[sqlite3.Row]:
         model_id = job["model_id"]
         mmf_id = job["external_key"]
-
         with self._get_db() as conn:
             files = conn.execute(queries.SELECT_MODEL_FILES_BY_MODEL_ID, (model_id,)).fetchall()
 
@@ -488,16 +606,34 @@ class DownloadManager:
 
         if not files:
             raise RuntimeError(f"No file metadata recorded for Model ID {model_id}")
+        return files
+
+    def _show_progress(self, worker_id: int, **values: Any) -> None:
+        with self._lock:
+            if worker_id in self.active_downloads:
+                self.active_downloads[worker_id].update(values)
+
+    def _log_attempt(self, job: sqlite3.Row, file_id: int, status: str, detail: str, http_status: int | None = None) -> None:
+        with self._get_db() as conn:
+            conn.execute(queries.INSERT_FILE_ATTEMPT, (job["model_id"], file_id, job_attempt(job), status, http_status, detail))
+
+    def _stage_files(self, worker_id: int, job: sqlite3.Row, work_dir: Path, links_fresh: bool = False):
+        model_id = job["model_id"]
+        files = self._files_for(job)
 
         in_flight_dir = work_dir / "in_flight"
         in_flight_dir.mkdir(parents=True, exist_ok=True)
         staged_model_dir = work_dir / "staged" / str(model_id)
         staged_model_dir.mkdir(parents=True, exist_ok=True)
+        folder = model_folder(job["creator_name"], job["release_month"], job["external_key"], model_id, job["model_name"])
 
         total_bytes = sum(f["size_bytes"] or 0 for f in files)
-        downloaded_bytes_acc = 0
+        done_bytes = 0
         staged_files_info = []
+        issues: list[dict[str, Any]] = []
         taken_names: set[str] = set()
+        links = {f["file_id"]: f["download_url"] for f in files}
+        self._show_progress(worker_id, total_bytes=total_bytes)
 
         # NOTE: the one disguised MMF request left, kept by the owner's decision on 2026-11-01. File bytes
         # sit on the website behind a Cloudflare challenge, which a plain client with a valid token
@@ -511,154 +647,97 @@ class DownloadManager:
             for file_row in files:
                 file_id = file_row["file_id"]
                 filename = file_row["filename"]
-                dl_url = file_row["download_url"]
                 expected_size = file_row["size_bytes"] or 0
-
-                if not dl_url:
-                    raise RuntimeError(f"No valid download URL available for file #{file_id} ('{filename}')")
-
                 cleaned_name = distinct_filename(stored_filename(filename), file_id, taken_names)
                 part_path = in_flight_dir / f"{model_id}_{file_id}.part"
                 staged_path = staged_model_dir / cleaned_name
+                self._show_progress(worker_id, current_file=cleaned_name)
 
-                with self._lock:
-                    if worker_id in self.active_downloads:
-                        self.active_downloads[worker_id]["current_file"] = cleaned_name
-                        self.active_downloads[worker_id]["total_bytes"] = total_bytes
-
-                t0 = time.time()
-                bytes_received = 0
-                hasher = hashlib.sha256()
-                resume_from = part_path.stat().st_size if part_path.exists() else 0
-                request_headers = {"Range": f"bytes={resume_from}-"} if resume_from else {}
-                # The URL comes from MMF's response, so it decides here whether the token may go along.
-                if urlsplit(dl_url).scheme != "https":
-                    raise RuntimeError(f"Refusing a download URL that isn't https for file #{file_id}")
-                if self.access_token and auth_service.is_mmf_url(dl_url):
-                    request_headers["Authorization"] = f"Bearer {self.access_token}"
-
-                log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Streaming {cleaned_name} ({expected_size} B) for Model #{model_id}")
-
-                with client.stream("GET", dl_url, headers=request_headers) as resp:
-                    if resp.status_code in (404, 410):
-                        raise DeadDownloadLink(f"HTTP {resp.status_code} downloading file {file_id}")
-                    if resp.status_code in (401, 403):
-                        challenged = resp.status_code == 403 and resp.headers.get("cf-mitigated")
-                        reason = (
-                            f"Cloudflare asked for a browser check on file {filename}. Paste fresh session cookies, then resume."
-                            if challenged else
-                            f"MyMiniFactory OAuth token expired (HTTP {resp.status_code}) on file {filename}"
-                            if self.access_token else
-                            f"Cloudflare/MMF Session expired (HTTP {resp.status_code}) on file {filename}"
-                        )
-                        self.trip_circuit_breaker(reason)
-                        raise RuntimeError(f"Authentication failure (HTTP {resp.status_code})")
-                    if resp.status_code == 416:
-                        part_path.unlink(missing_ok=True)
-                        raise RuntimeError(f"Saved partial file for {file_id} was refused. Restarting it.")
-                    if resp.status_code not in (200, 206):
-                        raise RuntimeError(f"HTTP {resp.status_code} downloading file {file_id}")
-                    # Host only, because the full URL is signed. This shows where MMF's downloads really go.
-                    if resp.url.host != urlsplit(dl_url).hostname:
-                        log_layer("http", logging.INFO, f"Worker #{worker_id}: {cleaned_name} redirected to {resp.url.host}")
-
-                    resuming = can_resume(resp.status_code, resp.headers.get("Content-Range"), resume_from)
-                    if resuming:
-                        # The checksum has to cover the whole file, including the saved part.
-                        with open(part_path, "rb") as saved:
-                            for block in iter(lambda: saved.read(1024 * 1024), b""):
-                                hasher.update(block)
-                        downloaded_bytes_acc += resume_from
-                        log_layer("http", logging.INFO, f"Resuming {cleaned_name} from byte {resume_from}")
-
-                    with open(part_path, "ab" if resuming else "wb") as f_out:
-                        for chunk in resp.iter_bytes(chunk_size=self.stream_chunk_size):
-                            if not chunk:
-                                continue
-                            f_out.write(chunk)
-                            hasher.update(chunk)
-                            bytes_received += len(chunk)
-                            downloaded_bytes_acc += len(chunk)
-
-                            elapsed = max(0.001, time.time() - t0)
-                            speed = int(bytes_received / elapsed)
-                            with self._lock:
-                                if worker_id in self.active_downloads:
-                                    self.active_downloads[worker_id]["downloaded_bytes"] = downloaded_bytes_acc
-                                    self.active_downloads[worker_id]["speed_bps"] = speed
-
-                file_sha256 = hasher.hexdigest()
-                log_layer("storage", logging.DEBUG, f"Worker #{worker_id}: In-flight buffer finished for {cleaned_name} (SHA-256: {file_sha256[:10]}...)")
-
-                # The stream ended cleanly, so a wrong size isn't a dropped connection. It's not the
-                # file, such as a 200 holding a Cloudflare page, so its bytes can't be resumed from.
-                # A dropped connection raises above and keeps its .part for the next attempt.
-                final_size = part_path.stat().st_size
-                if expected_size and final_size != expected_size:
-                    part_path.unlink(missing_ok=True)
-                    raise RuntimeError(f"Size mismatch on {cleaned_name}: expected {expected_size}, got {final_size}")
-
-                ext = Path(cleaned_name).suffix.lower()
-                if ext == ".zip":
+                # Each file gets one more try. A second try that brings the same wrong size is MMF's
+                # listing being wrong, not a bad transfer: Duncan Shadow's files did this every time.
+                first_size: int | None = None
+                kept: Fetched | None = None
+                problem: FileProblem | None = None
+                for try_number in (1, 2):
+                    last_try = try_number == 2
                     try:
-                        with zipfile.ZipFile(part_path, "r") as zf:
-                            bad_file = zf.testzip()
-                            if bad_file:
-                                raise zipfile.BadZipFile(f"Corrupt entry in archive: {bad_file}")
-                    except Exception as e:
+                        fetched = self._fetch_file(worker_id, client, links[file_id], file_id, part_path, done_bytes)
+                        page = fetched.page and Path(filename).suffix.lower() not in PAGE_SUFFIXES
+                        if (expected_size and fetched.size != expected_size) or page:
+                            if not last_try or page or fetched.size != first_size:
+                                raise SizeDiffers(filename, expected_size, fetched, page)
+                            kept = fetched
+                        check_zip(part_path, cleaned_name)
+                        problem = None
+                        break
+                    except DeadDownloadLink as e:
+                        problem = e
+                        retry = not last_try and not links_fresh and self._refresh_links(worker_id, job)
+                        if retry:
+                            links_fresh = True
+                            links.update(self._current_links(model_id))
+                            log_layer("http", logging.INFO, f"Worker #{worker_id}: {cleaned_name} has a new link. Trying once more.")
+                    except SizeDiffers as e:
+                        problem = e
+                        retry = not last_try
                         part_path.unlink(missing_ok=True)
-                        log_layer("archive", logging.ERROR, f"Worker #{worker_id}: ZIP CRC failed on {cleaned_name}: {e}")
-                        raise RuntimeError(f"ZIP validation failed for {cleaned_name}: {e}")
+                        first_size = None if e.page else e.fetched.size
+                    except FileProblem as e:
+                        problem = e
+                        retry = not last_try and e.retry
+                    self._log_attempt(job, file_id, "retrying" if retry else "failed", str(problem), problem.http_status)
+                    if not retry:
+                        break
+
+                if problem:
+                    log_layer("storage", logging.WARNING, f"Worker #{worker_id}: {cleaned_name} needs a manual download: {problem}")
+                    issues.append({
+                        "file_id": file_id, "filename": filename, "kind": download_issues.NOT_DOWNLOADED,
+                        "listed": expected_size or None, "received": getattr(problem, "received", None), "detail": str(problem),
+                    })
+                    continue
+
+                final_size = part_path.stat().st_size
+                file_sha256 = sha256_of(part_path, self.stream_chunk_size)
+                log_layer("storage", logging.DEBUG, f"Worker #{worker_id}: In-flight buffer finished for {cleaned_name} (SHA-256: {file_sha256[:10]}...)")
+                if kept:
+                    detail = (
+                        f"MMF lists {expected_size:,} bytes for {filename}, and both tries delivered {final_size:,} bytes. "
+                        f"The file was kept. MMF sent it as {kept.described()}."
+                    )
+                    log_layer("storage", logging.WARNING, f"Worker #{worker_id}: {detail}")
+                    self._log_attempt(job, file_id, "kept", detail)
+                    issues.append({
+                        "file_id": file_id, "filename": filename, "kind": download_issues.SIZE_DIFFERS,
+                        "listed": expected_size, "received": final_size, "detail": detail,
+                    })
 
                 shutil.move(str(part_path), str(staged_path))
-
-                # Non-blocking ArchivePeeker inspection hook
-                if ext in (".zip", ".rar", ".7z"):
-                    try:
-                        peeker = ArchivePeeker(self.db_path)
-                        peek_res = peeker.inspect_and_record(model_id, file_id, staged_path)
-                        if not peek_res.get("success"):
-                            warn_msg = f"Archive peaking notice for file {file_id}: {peek_res.get('error')}"
-                            log_layer("archive", logging.WARNING, f"Worker #{worker_id}: {warn_msg}")
-                            with self._get_db() as conn:
-                                conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V7, (model_id, warn_msg))
-                        else:
-                            log_layer(
-                                "archive",
-                                logging.INFO,
-                                f"Worker #{worker_id}: Peaked into {cleaned_name} - Indexed {peek_res.get('submodels_count')} submodels, extracted {peek_res.get('images_extracted')} previews."
-                            )
-                    except Exception as pe:
-                        warn_msg = f"Archive peaking failed for {cleaned_name}: {pe}"
-                        log_layer("archive", logging.WARNING, f"Worker #{worker_id}: {warn_msg}")
-                        try:
-                            with self._get_db() as conn:
-                                conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V7, (model_id, warn_msg))
-                        except Exception:
-                            pass
-
-                clean_creator = sanitize_segment(job["creator_name"])
-                rel_month = sanitize_segment(job["release_month"])
-                m_name = job["model_name"] or f"Model_{model_id}"
-                clean_model_folder = f"{job['external_key'] or model_id}_{sanitize_segment(m_name)}"
-
-                nas_rel_path = str(Path(clean_creator) / rel_month / clean_model_folder / "files" / cleaned_name)
+                self._peek(worker_id, model_id, file_id, staged_path, cleaned_name)
+                done_bytes += final_size
 
                 staged_files_info.append({
                     "file_id": file_id,
                     "original_filename": filename,
                     "cleaned_filename": cleaned_name,
-                    "local_relative_path": nas_rel_path,
+                    "local_relative_path": str(folder / "files" / cleaned_name),
                     "expected_bytes": expected_size,
                     "actual_bytes": final_size,
-                    "file_extension": ext,
+                    "file_extension": Path(cleaned_name).suffix.lower(),
                     "staging_path": str(staged_path),
                     "sha256": file_sha256,
+                    "clean": not kept,
                 })
 
         with self._get_db() as conn:
             with conn:
+                for issue in issues:
+                    download_issues.record(
+                        conn, issue["file_id"], model_id, issue["kind"], issue["listed"], issue["received"], issue["detail"],
+                    )
                 for s in staged_files_info:
+                    if s["clean"]:
+                        download_issues.resolve(conn, s["file_id"], download_issues.DOWNLOADED)
                     updated = conn.execute(queries.UPDATE_DOWNLOADED_FILES_STORAGE_TIER_BY_FILE_ID, (s["staging_path"], s["local_relative_path"], s["actual_bytes"], s["sha256"], s["file_id"]))
                     if updated.rowcount:
                         continue
@@ -668,17 +747,109 @@ class DownloadManager:
                         s["file_extension"], s["staging_path"], s["sha256"]
                     ))
 
-                conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V2, (len(staged_files_info), downloaded_bytes_acc, total_bytes, job["id"]))
+                if staged_files_info:
+                    conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V2, (len(staged_files_info), done_bytes, total_bytes, job["id"]))
 
-        log_layer("storage", logging.INFO, f"Worker #{worker_id}: Model #{model_id} staging complete ({len(staged_files_info)} files, {downloaded_bytes_acc} bytes). Queued for NAS offload.")
+        if not staged_files_info:
+            raise RuntimeError(nothing_downloaded(issues))
+
+        flagged = f", {len(issues)} need attention in Download Issues" if issues else ""
+        log_layer("storage", logging.INFO, f"Worker #{worker_id}: Model #{model_id} staging complete ({len(staged_files_info)} files, {done_bytes} bytes{flagged}). Queued for NAS offload.")
         self._offloads_ready.set()
 
-    def _handle_download_failure(self, job_id: int, model_id: int, error_msg: str):
+    def _fetch_file(
+        self, worker_id: int, client: httpx.Client, dl_url: str | None, file_id: int, part_path: Path, done_bytes: int,
+    ) -> "Fetched":
+        """Streams one file into its .part and says what arrived. A full transfer of the wrong thing still returns."""
+        if not dl_url:
+            raise FileProblem(f"No download link recorded for file #{file_id}", retry=False)
+        # The URL comes from MMF's response, so it decides here whether the token may go along.
+        if urlsplit(dl_url).scheme != "https":
+            raise FileProblem(f"Refusing a download URL that isn't https for file #{file_id}", retry=False)
+
+        resume_from = part_path.stat().st_size if part_path.exists() else 0
+        request_headers = {"Range": f"bytes={resume_from}-"} if resume_from else {}
+        if self.access_token and auth_service.is_mmf_url(dl_url):
+            request_headers["Authorization"] = f"Bearer {self.access_token}"
+        log_layer("http", logging.DEBUG, f"Worker #{worker_id}: Streaming file #{file_id}")
+
+        t0 = time.time()
+        received = 0
+        with client.stream("GET", dl_url, headers=request_headers) as resp:
+            if resp.status_code in (404, 410):
+                raise DeadDownloadLink(f"HTTP {resp.status_code} downloading file {file_id}", http_status=resp.status_code)
+            if resp.status_code in (401, 403):
+                challenged = resp.status_code == 403 and resp.headers.get("cf-mitigated")
+                reason = (
+                    f"Cloudflare asked for a browser check on file {file_id}. Paste fresh session cookies, then resume."
+                    if challenged else
+                    f"MyMiniFactory OAuth token expired (HTTP {resp.status_code}) on file {file_id}"
+                    if self.access_token else
+                    f"Cloudflare/MMF Session expired (HTTP {resp.status_code}) on file {file_id}"
+                )
+                self.trip_circuit_breaker(reason)
+                raise RuntimeError(f"Authentication failure (HTTP {resp.status_code})")
+            if resp.status_code == 416:
+                part_path.unlink(missing_ok=True)
+                raise FileProblem(f"Saved partial file for {file_id} was refused. Restarting it.", http_status=416)
+            if resp.status_code not in (200, 206):
+                raise FileProblem(f"HTTP {resp.status_code} downloading file {file_id}", http_status=resp.status_code)
+            # Host only, because the full URL is signed. This shows where MMF's downloads really go.
+            if resp.url.host != urlsplit(dl_url).hostname:
+                log_layer("http", logging.INFO, f"Worker #{worker_id}: file #{file_id} redirected to {resp.url.host}")
+
+            resuming = can_resume(resp.status_code, resp.headers.get("Content-Range"), resume_from)
+            if resuming:
+                log_layer("http", logging.INFO, f"Resuming file #{file_id} from byte {resume_from}")
+            already = resume_from if resuming else 0
+            with open(part_path, "ab" if resuming else "wb") as f_out:
+                for chunk in resp.iter_bytes(chunk_size=self.stream_chunk_size):
+                    if not chunk:
+                        continue
+                    f_out.write(chunk)
+                    received += len(chunk)
+                    speed = int(received / max(0.001, time.time() - t0))
+                    self._show_progress(worker_id, downloaded_bytes=done_bytes + already + received, speed_bps=speed)
+            content_type = resp.headers.get("content-type", "")
+            sent_name = disposition_name(resp.headers.get("content-disposition", ""))
+
+        # A dropped connection raises above and keeps its .part for the next attempt.
+        return Fetched(part_path.stat().st_size, content_type, sent_name, looks_like_page(part_path, content_type))
+
+    def _peek(self, worker_id: int, model_id: int, file_id: int, staged_path: Path, cleaned_name: str) -> None:
+        """Indexes an archive's contents. A failure here never costs the download."""
+        if staged_path.suffix.lower() not in (".zip", ".rar", ".7z"):
+            return
+        try:
+            peeker = ArchivePeeker(self.db_path)
+            peek_res = peeker.inspect_and_record(model_id, file_id, staged_path)
+            if not peek_res.get("success"):
+                warn_msg = f"Archive peaking notice for file {file_id}: {peek_res.get('error')}"
+                log_layer("archive", logging.WARNING, f"Worker #{worker_id}: {warn_msg}")
+                with self._get_db() as conn:
+                    conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V7, (model_id, warn_msg))
+            else:
+                log_layer(
+                    "archive",
+                    logging.INFO,
+                    f"Worker #{worker_id}: Peaked into {cleaned_name} - Indexed {peek_res.get('submodels_count')} submodels, extracted {peek_res.get('images_extracted')} previews."
+                )
+        except Exception as pe:
+            warn_msg = f"Archive peaking failed for {cleaned_name}: {pe}"
+            log_layer("archive", logging.WARNING, f"Worker #{worker_id}: {warn_msg}")
+            try:
+                with self._get_db() as conn:
+                    conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V7, (model_id, warn_msg))
+            except Exception:
+                pass
+
+    def _handle_download_failure(self, job: sqlite3.Row, error_msg: str):
+        job_id, model_id = job["id"], job["model_id"]
         logger.error(f"[DownloadManager] Job #{job_id} (Model #{model_id}) failed: {error_msg}")
         with self._get_db() as conn:
             conn.execute(queries.UPDATE_DOWNLOAD_JOBS_STATUS_BY_ID_V3, (error_msg, job_id))
 
-            conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V8, (model_id, error_msg))
+            conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V8, (model_id, job_attempt(job), error_msg))
 
     def _claim_next_offload_job(self) -> Optional[sqlite3.Row]:
         now = time.time()
@@ -772,43 +943,14 @@ class DownloadManager:
         return {"running": sum(thread.is_alive() for thread in threads), "expected": len(threads)}
 
     def _write_model_metadata_json(self, conn: sqlite3.Connection, model_id: int, target_dir: Path):
-        """Dumps formatted metadata.json directly into the object directory on the NAS."""
-        model_row = conn.execute(queries.SELECT_COLLECTIONS_BY_ID_V2, (model_id,)).fetchone()
-        raw_payload = None
-
-        if model_row and model_row["raw_backup_path"]:
-            p = app_config.resolve_data_path(model_row["raw_backup_path"])
-            if p.exists() and p.is_file():
-                try:
-                    raw_payload = json.loads(p.read_text(encoding="utf-8"))
-                except Exception:
-                    raw_payload = None
-
-        if not raw_payload:
-            fallback = app_config.metadata_dir() / f"model_{model_row['external_key']}.json" if model_row else Path()
-            if fallback.is_file():
-                try:
-                    raw_payload = json.loads(fallback.read_text(encoding="utf-8"))
-                except Exception:
-                    raw_payload = None
-
-        target_file = target_dir / "metadata.json"
-        if raw_payload:
-            target_file.write_text(json.dumps(raw_payload, indent=2), encoding="utf-8")
-        elif model_row:
-            meta = dict(model_row)
-            meta["tags"] = [r[0] for r in conn.execute(queries.SELECT_COLLECTION_TAGS_TAG_BY_MODEL_ID, (model_id,)).fetchall()]
-            target_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        write_model_metadata_json(conn, model_id, target_dir)
 
     @job_logged(lambda self, worker_id, job, *_: f"offload-{job['id']}")
     def _process_nas_offload(self, worker_id: int, job: sqlite3.Row, nas_root: Path):
         model_id = job["model_id"]
-        clean_creator = sanitize_segment(job["creator_name"])
-        rel_month = sanitize_segment(job["release_month"])
-        m_name = job["model_name"] or f"Model_{model_id}"
-        clean_model_folder = f"{job['external_key'] or model_id}_{sanitize_segment(m_name)}"
+        folder = model_folder(job["creator_name"], job["release_month"], job["external_key"], model_id, job["model_name"])
 
-        model_dest_dir = nas_root / clean_creator / rel_month / clean_model_folder
+        model_dest_dir = nas_root / folder
         files_dest_dir = model_dest_dir / "files"
         files_dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -871,7 +1013,7 @@ class DownloadManager:
                 with contextlib.suppress(OSError):
                     temp_nas_path.unlink(missing_ok=True)
 
-            nas_rel_path = str(Path(clean_creator) / rel_month / clean_model_folder / "files" / cleaned_name)
+            nas_rel_path = str(folder / "files" / cleaned_name)
             with self._get_db() as conn:
                 conn.execute(queries.UPDATE_DOWNLOADED_FILES_STORAGE_TIER_BY_FILE_ID_V2, (str(target_nas_path), nas_rel_path, file_id))
 
@@ -892,7 +1034,7 @@ class DownloadManager:
 
                 conn.execute(queries.UPDATE_COLLECTIONS_VAULT_PATH_BY_ID, (str(model_dest_dir), model_id))
 
-                conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V9, (model_id, f"Archived to: {model_dest_dir}"))
+                conn.execute(queries.INSERT_DOWNLOAD_AUDIT_LOG_V9, (model_id, job_attempt(job), f"Archived to: {model_dest_dir}"))
 
         log_layer("storage", logging.INFO, f"Offloader #{worker_id}: Model #{model_id} permanently archived to {model_dest_dir}")
 
@@ -903,6 +1045,7 @@ class DownloadManager:
 
             counts = conn.execute(queries.SELECT_DOWNLOAD_JOBS).fetchall()
             status_map = {r["status"]: r["c"] for r in counts}
+            open_issues = download_issues.open_count(conn)
 
             queued_query = f"""
                 SELECT dj.id, dj.model_id, dj.status, dj.enqueued_at, dj.total_files, dj.total_bytes,
@@ -931,6 +1074,7 @@ class DownloadManager:
             "active_workers": active_dl_list,
             "queued_jobs": queued_jobs,
             "queued_total": sum(status_map.get(status, 0) for status in ("pending", *queries.LIVE_JOB_STATUSES)),
+            "open_issues": open_issues,
             "counts": {
                 "pending": status_map.get("pending", 0),
                 "downloading": status_map.get("downloading", 0),

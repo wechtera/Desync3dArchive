@@ -4,8 +4,11 @@ SELECT_COLLECTIONS_ID_BY_SOURCE = "SELECT id FROM collections WHERE source = ? A
 
 SELECT_COLLECTIONS_EXTERNAL_KEY_BY_ID = "SELECT external_key FROM collections WHERE id = ? AND source = ?;"
 
+# A size the owner confirmed by keeping or uploading the file stays. MMF's listing was wrong for it.
 UPDATE_MODEL_FILES_MODEL_ID_BY_SOURCE = """
-            UPDATE model_files SET model_id = ?, filename = ?, size_bytes = ?, download_url = ?, created_at = ?
+            UPDATE model_files SET model_id = ?, filename = ?,
+                size_bytes = CASE WHEN size_confirmed_at IS NULL THEN ? ELSE size_bytes END,
+                download_url = ?, created_at = ?
             WHERE source = ? AND external_key = ?;
         """
 

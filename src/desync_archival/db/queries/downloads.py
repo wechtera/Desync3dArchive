@@ -8,7 +8,8 @@ SELECT_DOWNLOAD_JOBS = """
         SELECT dj.*,
                m.name AS model_name,
                COALESCE(NULLIF(m.designer_name, ''), NULLIF(m.designer_username, ''), 'Unknown') AS creator_name,
-               m.designer_name
+               m.designer_name,
+               (SELECT COUNT(*) FROM download_issues i WHERE i.model_id = dj.model_id AND i.resolved_at IS NULL) AS open_issues
         FROM download_jobs dj
         LEFT JOIN collections m ON dj.model_id = m.id
         {where_clause}
@@ -59,6 +60,13 @@ UPDATE_DOWNLOAD_JOBS_STATUS_BY_STATUS = """
 COUNT_INCOMPLETE_JOBS = "SELECT COUNT(*) FROM download_jobs WHERE status IN ('pending', 'failed');"
 
 COUNT_JOBS_BY_STATUS = "SELECT COUNT(*) FROM download_jobs WHERE status = ?;"
+
+# Completed with issues isn't a stored status. It's a finished job whose model still has a flagged file,
+# so every place that counts 'completed' as done keeps working, and it clears itself.
+WITH_ISSUES = (
+    " AND dj.status = 'completed' AND EXISTS "
+    "(SELECT 1 FROM download_issues i WHERE i.model_id = dj.model_id AND i.resolved_at IS NULL)"
+)
 
 SELECT_DOWNLOAD_JOB_DETAIL = """
     SELECT dj.id, dj.model_id, dj.status, dj.enqueued_at, dj.completed_at, dj.retry_count, dj.error_message,

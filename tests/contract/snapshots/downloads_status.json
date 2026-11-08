@@ -22,6 +22,7 @@
       },
       "is_paused": false,
       "is_running": false,
+      "open_issues": 0,
       "queued_jobs": [],
       "queued_total": 0,
       "reconnect_required": false

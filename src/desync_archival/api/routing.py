@@ -130,10 +130,19 @@ def validation_message(error: ValidationError) -> str:
     return f"Invalid value for {field}: {first['msg']}"
 
 
+def name_route(request: Request) -> None:
+    """Names the request in any error a handler logs, including from its worker threads."""
+    _current_route.set(f"{request.method} {request.url.path}")
+
+
+def current_route() -> str:
+    return _current_route.get()
+
+
 def _checked_body(model: type[BaseModel] | None) -> Callable[[Request], Awaitable[None]]:
     """Reads the body before anything else runs, so a bad one never opens a connection."""
     async def check(request: Request) -> None:
-        _current_route.set(f"{request.method} {request.url.path}")
+        name_route(request)
         request.state.body = {}
         if request.method == "GET":
             return

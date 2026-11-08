@@ -17,6 +17,8 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
 DEFAULT_ALLOWED_HOSTS = ("localhost", "127.0.0.1", "::1")
 MAX_BODY_BYTES = 2 * 1024 * 1024
+# A file uploaded for Download Issues. The largest MMF file seen was 0.4 GB, and archives run to a few.
+MAX_UPLOAD_BYTES = 32 * 1024 ** 3
 # Stored settings that hold filesystem paths.
 PATH_SETTING_KEYS = ("download_root_path", "download_work_path", "stash_download_path", "metadata_backup_path")
 

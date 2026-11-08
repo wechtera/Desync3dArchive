@@ -4,7 +4,7 @@ from typing import Any
 from desync_archival.api.routing import Body, Conn, Downloads, Params, paging
 from desync_archival.db.queries import downloads as queries
 from desync_archival.db.queries.downloader import LIVE_JOB_STATUSES
-from desync_archival.services import audit
+from desync_archival.services import audit, download_issues
 from desync_archival.services.downloader import (
     queue_models,
     remove_waiting_jobs,
@@ -35,6 +35,8 @@ def handle_get_downloads_history(
 
     if status == "completed":
         where_clause += " AND dj.status = 'completed'"
+    elif status == "issues":
+        where_clause += queries.WITH_ISSUES
     elif status == "failed":
         where_clause += " AND dj.status = 'failed'"
     elif status:
@@ -84,7 +86,8 @@ def handle_get_download_job(
     if not job:
         return {"error": f"Download job #{job_id} doesn't exist."}, 404
     attempts = conn.execute(queries.SELECT_DOWNLOAD_ATTEMPTS, (job["model_id"], ATTEMPTS_SHOWN)).fetchall()
-    return {"job": dict(job), "attempts": [dict(a) for a in attempts]}, 200
+    issues = download_issues.for_model(conn, job["model_id"])
+    return {"job": dict(job), "attempts": [dict(a) for a in attempts], "issues": issues}, 200
 
 
 def handle_post_downloads_queue(

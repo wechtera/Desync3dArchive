@@ -29,7 +29,8 @@ SUM_PENDING = """
 """
 SELECT_STASHED_FILE_IDS = "SELECT DISTINCT file_id FROM stash_items WHERE file_id IS NOT NULL;"
 SELECT_RESTORABLE = """
-    SELECT id, filename, collection_name, original_path, pending_path, size_bytes, deleted_at
+    SELECT id, filename, collection_name, original_path, pending_path, size_bytes, deleted_at,
+           COALESCE(json_valid(snapshot_json) AND json_extract(snapshot_json, '$.replaced_by_upload'), 0) AS replaced
     FROM deleted_files WHERE purged_at IS NULL AND restored_at IS NULL ORDER BY deleted_at DESC;
 """
 SELECT_TOMBSTONE = "SELECT * FROM deleted_files WHERE id = ? AND purged_at IS NULL AND restored_at IS NULL;"

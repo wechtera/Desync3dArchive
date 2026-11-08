@@ -152,6 +152,33 @@ def delete_file(conn: sqlite3.Connection, file_id: int) -> dict[str, Any]:
     return result
 
 
+# Marks a copy an upload replaced. Its rows stayed with the file, so there are none to put back.
+REPLACED_MARK = "replaced_by_upload"
+
+
+def hold_replaced_file(conn: sqlite3.Connection, root: Path, file: dict[str, Any], source: Path) -> Path:
+    """Holds the copy an upload replaces, for the same 14 days as a delete. The caller commits.
+
+    Raises:
+        OSError: The move failed. Nothing was moved, and the caller's transaction rolls back.
+    """
+    tombstone = int(conn.execute(queries.INSERT_TOMBSTONE, (
+        file["file_id"], file["model_id"], file["model_name"] or "", file["filename"], str(source),
+        file["stored_bytes"] or 0, file["sha256"], file["external_key"], json.dumps({REPLACED_MARK: True}),
+    )).lastrowid or 0)
+    moved = _hold(root, source, tombstone)
+    conn.execute(queries.UPDATE_PENDING_PATH, (str(moved), tombstone))
+    log_layer("storage", logging.WARNING, f"Held the replaced copy of file #{file['file_id']} ({file['filename']})")
+    return moved
+
+
+def _replaced(tombstone: sqlite3.Row) -> bool:
+    try:
+        return bool(json.loads(tombstone["snapshot_json"] or "{}").get(REPLACED_MARK))
+    except ValueError:
+        return False
+
+
 def hold_folder(conn: sqlite3.Connection, root: Path, folder: Path) -> Path:
     """Holds an orphan folder like a deleted file, so a mistaken delete can be undone for 14 days."""
     size = sum(path.stat().st_size for path in folder.rglob("*") if path.is_file())
@@ -215,6 +242,11 @@ def restore_file(conn: sqlite3.Connection, tombstone_id: int) -> dict[str, Any]:
     if not tombstone:
         raise DeleteRefused("That file can no longer be restored.", 404)
     is_folder = tombstone["file_id"] == FOLDER_ID
+    if _replaced(tombstone):
+        # The upload holds the old path and the file's rows, so putting this back would need a swap.
+        raise DeleteRefused(
+            f"An upload replaced this copy, so it isn't restored automatically. It's held at {tombstone['pending_path']}.", 409,
+        )
     collection = conn.execute(queries.SELECT_COLLECTION, (tombstone["collection_id"],)).fetchone()
     if not collection and not is_folder:
         raise DeleteRefused("Its collection is no longer in the catalog.", 409)
@@ -274,7 +306,7 @@ def listing(conn: sqlite3.Connection) -> dict[str, Any]:
         items.append({
             "id": row["id"], "filename": row["filename"], "collection": row["collection_name"],
             "original_path": row["original_path"], "size_bytes": row["size_bytes"], "deleted_at": row["deleted_at"],
-            "held": bool(path), "age_days": int(age),
+            "held": bool(path), "age_days": int(age), "replaced": bool(row["replaced"]),
             "can_purge": bool(path) and online and age >= WAIT_DAYS,
         })
     return {"success": True, "online": online, "wait_days": WAIT_DAYS, "items": items}
