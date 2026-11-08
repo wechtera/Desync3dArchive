@@ -34,14 +34,19 @@ def _decided(conn: sqlite3.Connection) -> dict[str, str | None]:
 
 def choose(
     conn: sqlite3.Connection, mode: str, scope: str, include_reviewed: bool = False, unit_key: str = "",
+    unit_keys: list[str] | None = None,
 ) -> tuple[list[Unit], list[dict[str, str]]]:
-    """The units an export would hold, and the ones left out with why. Writes nothing."""
+    """The units an export would hold, and the ones left out with why. Writes nothing.
+
+    A single export takes one unit_key, or a list in unit_keys for a chosen set such as a test sample.
+    """
     if mode not in MODES:
         raise ExportRefused(f"Mode must be one of {', '.join(MODES)}")
     if scope not in SCOPES:
         raise ExportRefused(f"Scope must be one of {', '.join(SCOPES)}")
-    keys = [unit_key] if mode == "single" else grouping_units.all_unit_keys(conn, scope)
-    if mode == "single" and not unit_key:
+    chosen_keys = list(unit_keys or ([unit_key] if unit_key else []))
+    keys = chosen_keys if mode == "single" else grouping_units.all_unit_keys(conn, scope)
+    if mode == "single" and not chosen_keys:
         raise ExportRefused("A single export needs a unit")
     decided = _decided(conn)
     chosen, left_out = [], []
@@ -115,7 +120,7 @@ def _batch_file(export_key: str, number: int, total: int, units: list[Unit]) -> 
 
 def build(
     conn: sqlite3.Connection, mode: str = "delta", scope: str = "both", include_reviewed: bool = False,
-    batch_lines: int = DEFAULT_BATCH_LINES, unit_key: str = "",
+    batch_lines: int = DEFAULT_BATCH_LINES, unit_key: str = "", unit_keys: list[str] | None = None,
 ) -> tuple[str, bytes, dict[str, Any]]:
     """Records the export and returns its key, the zip, and a summary.
 
@@ -123,7 +128,7 @@ def build(
         ExportRefused: Nothing to export, or a setting is out of range.
     """
     batch_lines = _checked_lines(batch_lines)
-    units, left_out = choose(conn, mode, scope, include_reviewed, unit_key)
+    units, left_out = choose(conn, mode, scope, include_reviewed, unit_key, unit_keys)
     if not units:
         raise ExportRefused("Nothing to export. Every unit in scope is unchanged since its last answer, or reviewed.")
     packed = batches(units, batch_lines)

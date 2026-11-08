@@ -2,6 +2,7 @@
 
 import argparse
 import getpass
+import json
 import socket
 import sys
 import tempfile
@@ -15,6 +16,8 @@ from desync_archival.services import (
     catalog_levels,
     catalog_repair,
     data_bundle,
+    grouping_compare,
+    grouping_export,
     login,
     secret_store,
     tags,
@@ -93,6 +96,45 @@ def repair_models(db_path: Path, apply: bool, confirm_production: bool) -> str:
         conn.close()
 
 
+def grouping_export_file(db_path: Path, args: argparse.Namespace) -> str:
+    """Writes an E54 export to a file, as the screen's Download Export does, for an LLM test kit."""
+    if settings.is_production() and not args.confirm_production:
+        raise migrations.MigrationError("Refusing to record an export in production without --confirm-production")
+    keys = [*args.unit, *(f"archive:{c}" for c in args.collection)]
+    conn = get_db_connection(db_path)
+    try:
+        export_key, blob, summary = grouping_export.build(
+            conn, "single" if keys else args.mode, args.scope, args.include_reviewed, args.batch_lines, unit_keys=keys or None,
+        )
+    finally:
+        conn.close()
+    args.destination.write_bytes(blob)
+    return f"export {export_key}: {summary['units']} units in {summary['batches']} batches, written to {args.destination}"
+
+
+def grouping_compare_answers(db_path: Path, args: argparse.Namespace) -> str:
+    """Checks and compares LLM answers to one export. Reads the database only."""
+    def texts(path: Path) -> list[str]:
+        # A folder holds one LLM's answers, one file per batch.
+        files = sorted(f for f in path.iterdir() if f.suffix.lower() in (".json", ".txt")) if path.is_dir() else [path]
+        if not files:
+            raise grouping_compare.CompareRefused(f"{path} holds no .json or .txt answers")
+        return [f.read_text(encoding="utf-8", errors="replace") for f in files]
+
+    answers: list[tuple[str, str | list[str]]] = [(path.stem if path.is_file() else path.name, texts(path)) for path in args.answers]
+    reference = texts(args.reference) if args.reference else None
+    expected = json.loads(args.expect.read_text()) if args.expect else None
+    conn = connect(db_path, readonly=True)
+    try:
+        report = grouping_compare.describe(grouping_compare.compare(conn, answers, reference, expected))
+    finally:
+        conn.close()
+    if args.out:
+        args.out.write_text(report)
+        return f"comparison written to {args.out}"
+    return report
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -125,6 +167,20 @@ def main() -> int:
     restore = commands.add_parser("restore")
     restore.add_argument("backup_file", type=Path)
     restore.add_argument("target", type=Path)
+    grouping = commands.add_parser("grouping-export", help="write an E54 export to a file, for testing LLMs")
+    grouping.add_argument("destination", type=Path)
+    grouping.add_argument("--unit", action="append", default=[], help="a unit key, such as archive:325721; repeat for more")
+    grouping.add_argument("--collection", action="append", type=int, default=[], help="an archive collection ID; repeat for more")
+    grouping.add_argument("--mode", choices=("delta", "full"), default="delta", help="without units, what to export")
+    grouping.add_argument("--scope", choices=grouping_export.SCOPES, default="both")
+    grouping.add_argument("--include-reviewed", action="store_true")
+    grouping.add_argument("--batch-lines", type=int, default=grouping_export.DEFAULT_BATCH_LINES)
+    grouping.add_argument("--confirm-production", action="store_true")
+    compare = commands.add_parser("grouping-compare", help="check and compare LLM answers to one export; changes nothing")
+    compare.add_argument("answers", type=Path, nargs="+", help="an answer file, or a folder of one LLM's batch answers, named after the LLM")
+    compare.add_argument("--reference", type=Path, help="an answer, or folder of answers, taken as right, such as one a person fixed")
+    compare.add_argument("--expect", type=Path, help="JSON of expected model counts by unit key or collection name")
+    compare.add_argument("--out", type=Path, help="write the Markdown report here instead of printing it")
     commands.add_parser("set-password")
     commands.add_parser("export-secrets")
     blank = commands.add_parser("blank-secrets")
@@ -202,6 +258,10 @@ def main() -> int:
                 conn.close()
         elif args.command == "export":
             print(data_bundle.export_bundle(db_path, args.destination.resolve(), args.with_secrets))
+        elif args.command == "grouping-export":
+            print(grouping_export_file(db_path, args))
+        elif args.command == "grouping-compare":
+            print(grouping_compare_answers(db_path, args))
         elif args.command == "import":
             if settings.is_production() and not args.confirm_production:
                 raise migrations.MigrationError("Refusing to import in production without --confirm-production")
@@ -211,7 +271,8 @@ def main() -> int:
             # Resolved because restore opens these as URIs, and those can't be relative.
             counts = backup.restore(args.backup_file.resolve(), args.target.resolve())
             print(f"restored {sum(counts.values())} rows to {args.target}")
-    except (backup.BackupError, data_bundle.BundleError, migrations.MigrationError, settings.SettingsError) as e:
+    except (backup.BackupError, data_bundle.BundleError, migrations.MigrationError, settings.SettingsError,
+            grouping_export.ExportRefused, grouping_compare.CompareRefused, OSError, json.JSONDecodeError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     return 0

@@ -175,6 +175,7 @@ SELECT_IMPORTS = """
     SELECT i.id, i.source_name, i.status, i.created_at, i.applied_at, i.undone_at, i.report_json, e.export_key
     FROM grouping_imports i LEFT JOIN grouping_exports e ON e.id = i.export_id ORDER BY i.id DESC LIMIT ?;
 """
+SELECT_EXPORT_UNITS = "SELECT unit_key, ids_json FROM grouping_export_units WHERE export_id = ? ORDER BY id;"
 SELECT_EXPORTS = "SELECT export_key, mode, scope, unit_count, batch_count, created_at FROM grouping_exports ORDER BY id DESC LIMIT ?;"
 DISCARD_IMPORT = "UPDATE grouping_imports SET status = 'discarded' WHERE id = ? AND status = 'checked';"
 SELECT_MODEL_IMAGE = "SELECT image_path FROM models WHERE id = ?;"
