@@ -85,6 +85,7 @@ function issueCard(issue) {
         <span class="font-mono issue-filename">${issue.filename}</span>
       </div>
       <p class="font-sm issue-sizes">${sizes(issue)}</p>
+      ${issue.stored ? html`<p class="font-xs text-dim issue-stored">Stored at <span class="font-mono">${issue.vault_path}</span></p>` : nothing}
       <div class="issue-links font-sm">
         ${issue.model_url ? html`<a href=${issue.model_url} target="_blank" rel="noopener noreferrer">Model page on MMF</a>` : nothing}
         ${issue.download_url ? html`<a href=${issue.download_url} target="_blank" rel="noopener noreferrer">Download this file from MMF</a>` : nothing}

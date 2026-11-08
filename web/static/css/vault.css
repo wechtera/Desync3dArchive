@@ -3717,6 +3717,7 @@ button.duplicate-delete:disabled { opacity: 0.45; cursor: not-allowed; filter: g
 
 .issue-filename { color: var(--text-main); overflow-wrap: anywhere; }
 .issue-sizes { margin: 0; }
+.issue-stored { margin: 0; overflow-wrap: anywhere; }
 .issue-links a { color: var(--info); }
 .issue-detail .job-detail-error { margin-top: 6px; max-height: 20vh; }
 

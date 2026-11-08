@@ -8,6 +8,7 @@ const KEPT = {
   download_url: 'https://www.myminifactory.com/download/136138?downloadfile=ogre-butcher-pot.chitubox',
   model_name: 'Ogre Butchers (presupported)', model_url: 'https://www.myminifactory.com/object/3d-print-ogre-butchers-presupported-136138',
   creator_name: 'Duncan Shadow', stored_bytes: 17192220, stored: true,
+  vault_path: '/Volumes/Vault/Duncan_Shadow/2023-04/136138_Ogre_Butchers/files/ogre-butcher-pot.chitubox',
 };
 const MISSING = {
   ...KEPT, id: 12, file_id: 527246, model_id: 133303, kind: 'not_downloaded', received_bytes: null, stored: false,
@@ -69,6 +70,8 @@ test('each issue names the model and file, with both MMF links', async ({ page }
   await expect(kept.getByRole('link', { name: 'Model page on MMF' })).toHaveAttribute('href', KEPT.model_url);
   await expect(kept.getByRole('link', { name: 'Download this file from MMF' })).toHaveAttribute('href', KEPT.download_url);
   await expect(kept.locator('.status-badge')).toHaveText('Kept, size differs');
+  await expect(kept.locator('.issue-stored')).toContainText(KEPT.vault_path);
+  await expect(card(page, MISSING).locator('.issue-stored')).toHaveCount(0);
   await expect(card(page, MISSING).locator('.status-badge')).toHaveText('Not downloaded');
 });
 

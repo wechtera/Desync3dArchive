@@ -363,6 +363,21 @@ test.describe('duplicate report', () => {
     expect(dialogs).toHaveLength(1);
     expect(bodies[0]).toEqual({ confirm: true, ids: [5] });
   });
+
+  test('a copy an upload replaced says so, and offers no restore', async ({ page }) => {
+    const items = [
+      { id: 7, filename: 'pot.chitubox', collection: 'Ogre Butchers', original_path: '/vault/pot.chitubox', size_bytes: 1024,
+        held: true, age_days: 1, can_purge: false, replaced: true },
+    ];
+    await page.route('**/api/pending-deletion', (route) => route.fulfill({ json: { count: 1, size_bytes: 1024, wait_days: 14 } }));
+    await page.route('**/api/pending-deletion/items', (route) => route.fulfill({ json: { success: true, online: true, wait_days: 14, items } }));
+    await page.goto('/');
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.switchTab('settings'));
+    await page.locator('#btn-purge-pending').click();
+    const row = page.locator('[data-pending="7"]');
+    await expect(row).toContainText('Replaced by an upload');
+    await expect(row.locator('.pending-restore')).toHaveCount(0);
+  });
 });
 
 test.describe('add to stash', () => {

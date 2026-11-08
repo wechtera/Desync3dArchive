@@ -279,10 +279,14 @@ async function drawPendingDeletion() {
         <thead><tr><th>File</th><th>Collection</th><th>Size</th><th>Waited</th><th></th></tr></thead>
         <tbody>
           ${items.map((item) => html`<tr data-pending=${item.id}>
-            <td><strong>${item.filename}</strong><div class="font-mono font-xs text-dim location-path">${item.original_path || 'Not downloaded'}</div></td>
+            <td><strong>${item.filename}</strong><div class="font-mono font-xs text-dim location-path">${item.original_path || 'Not downloaded'}</div>
+              ${item.replaced ? html`<div class="font-xs text-warn">Replaced by an upload</div>` : nothing}</td>
             <td>${item.collection}</td><td>${formatBytes(item.size_bytes)}</td><td>${ageOf(item, days)}</td>
-            <td><button type="button" class="btn-pill font-xs pending-restore" ?disabled=${!online && item.held}
-              title=${!online && item.held ? 'The vault is offline.' : 'Puts the file back where it was.'} @click=${() => restoreItem(item)}>Restore</button></td>
+            <td>${item.replaced
+              // The upload holds its path, so the server refuses a restore. The copy is still purged on schedule.
+              ? html`<span class="font-xs text-dim">Kept ${days} days</span>`
+              : html`<button type="button" class="btn-pill font-xs pending-restore" ?disabled=${!online && item.held}
+                  title=${!online && item.held ? 'The vault is offline.' : 'Puts the file back where it was.'} @click=${() => restoreItem(item)}>Restore</button>`}</td>
           </tr>`)}
         </tbody>
       </table>
