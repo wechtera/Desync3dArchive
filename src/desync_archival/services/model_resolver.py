@@ -23,6 +23,8 @@ PRINT_WORDS = frozenset({
     "fdm", "resin", "stl", "stls", "lychee", "chitubox", "slicer", "supported", "unsupported", "presupported",
     "nosupports", "supports", "support", "hollow", "hollowed", "solid", "files", "all", "readytoslice", "models",
     "scale", "no", "lys", "ctb",
+    # Pre stands alone in Pre-Supported, and Rescale ships a third support level as Beefed or _Bef.
+    "pre", "bef", "beefed",
 })
 # Whole-word scale such as 32mm, 1.5mm or fdm32mm.
 SCALE = re.compile(r"^(fdm)?[\d.]*\d+mm$")
@@ -51,6 +53,10 @@ PIECE_WORDS = frozenset({
     "weapons", "sword", "shield", "wing", "wings", "tail", "cape", "cloak", "hair", "helmet", "foot", "feet",
 })
 BASE_WORDS = frozenset({"base", "basesscenic", "basesandscenic", "scenicbase"})
+# Kit I and Kit II hold one figure's options, so the figure above names the group, not the kit.
+KIT_NUMBER = re.compile(r"^(?:i{1,3}|iv|vi{0,3}|\d{1,2})$")
+# What a size measures in a folder title: Rot Priest 1 (25mm Base 41mm Height).
+MEASURES = frozenset({"base", "height", "tall", "high"})
 BASE_GROUP = "Bases"
 BASE_TAG = "base"
 PIECE_MIN_NAMES = 3  # A trailing word seen after this many different names is a piece, not a pose name.
@@ -86,6 +92,59 @@ def words_in(folder: str) -> list[str]:
 
 def slug_of(words: list[str]) -> str:
     return re.sub(r"[^a-z0-9]", "", "".join(words).lower())
+
+
+def is_kit(words: list[str]) -> bool:
+    return len(words) >= 2 and words[0].lower() == "kit" and bool(KIT_NUMBER.match(words[1].lower()))
+
+
+def clean_title(words: list[str]) -> list[str]:
+    """A folder's words fit to name something. A size and what it measures are attributes, and a
+    leading catalog number (01_Bandit Khan, 727_Deep Sea Valkyries) only orders the folders."""
+    kept: list[str] = []
+    after_size = False
+    for word in words:
+        low = word.lower()
+        if SCALE.match(low):
+            after_size = True
+            continue
+        if after_size and low in MEASURES:
+            after_size = False
+            continue
+        after_size = False
+        kept.append(word)
+    while len(kept) > 1 and kept[0].isdigit():
+        kept.pop(0)
+    return kept
+
+
+def folder_title(part: str, variants: set[str]) -> str:
+    """One folder's name as a person would write it: no sizes, catalog number or trailing print words."""
+    words = clean_title(words_in(part))
+    while words and _is_variant(words[-1], variants):
+        words.pop()
+    return _display(words)
+
+
+def group_title(path: str, variants: set[str]) -> str:
+    """The nearest folder above a file that names something. Format, support and kit folders don't,
+    and before this a group fell back to the folder's slug, so Kit I (Arcane Sword & Staff) became
+    iarcaneswordstaff."""
+    for part in reversed(path.split("/")[:-1]):
+        if is_kit(words_in(part)) or not subject_words(part, variants):
+            continue
+        if title := folder_title(part, variants):
+            return title
+    return ""
+
+
+def file_words(path: str, variants: set[str], pieces: set[str]) -> set[str]:
+    """What a file's name says it is, without print words, pieces or numbers. Ant_A and
+    LYS_Ant_A_Supported say the same thing, Frog_Rider_Body and Sisters_Wraith_Base don't."""
+    return {
+        low for w in _stem_words(path, variants)
+        if (low := w.lower()) not in pieces and not low.isdigit() and not POSE.match(low) and not low.startswith("pose")
+    }
 
 
 def learn_variant_words(folders: list[str]) -> set[str]:
@@ -346,7 +405,8 @@ def resolve_files(paths: list[str], variants: set[str], pieces: set[str] | None 
             continue
 
         shared = _shared_start(named)
-        group = _display(list(shared)) if shared else _display([place.rpartition("/")[2]]) if leaf else ""
+        first_file = next(iter(cores.values()))[0]
+        group = _display(list(shared)) if shared else group_title(first_file, variants)
         for core, held in cores.items():
             model = _model_of(_display(list(core)) or group or "Untitled", place, held)
             model.group = group
@@ -371,7 +431,7 @@ def _folder_title(path: str, leaf: str, variants: set[str]) -> str:
     # Only the tail is trimmed: Warrior of the Hollow Moon keeps a word that's a print word elsewhere.
     for part in reversed(path.split("/")[:-1]):
         if slug_of(subject_words(part, variants)) == leaf:
-            words = words_in(part)
+            words = clean_title(words_in(part))
             while words and _is_variant(words[-1], variants):
                 words.pop()
             return _display(words)

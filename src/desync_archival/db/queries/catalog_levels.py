@@ -110,6 +110,8 @@ UPDATE_MODELS_STATE_BY_ID = "UPDATE models SET state = ?, merged_into = ? WHERE 
 
 DELETE_MODEL_COLLECTIONS_BY_MODEL_ID = "DELETE FROM model_collections WHERE model_id = ? AND collection_id = ?;"
 
+COUNT_OTHER_COLLECTIONS_OF_MODEL = "SELECT COUNT(*) FROM model_collections WHERE model_id = ? AND collection_id != ?;"
+
 
 SELECT_LOOSE_ARTIFACTS_OF_COLLECTION = """
     SELECT a.id, a.file_id FROM model_artifacts a JOIN model_files f ON f.file_id = a.file_id

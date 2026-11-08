@@ -4,6 +4,7 @@ import argparse
 import getpass
 import socket
 import sys
+import tempfile
 from pathlib import Path
 
 from desync_archival import backup, migrations, settings
@@ -12,6 +13,7 @@ from desync_archival.services import (
     analytics,
     archive_peeker,
     catalog_levels,
+    catalog_repair,
     data_bundle,
     login,
     secret_store,
@@ -69,6 +71,28 @@ def refuse_if_app_running() -> None:
             raise migrations.MigrationError(f"The app is running on port {settings.port()}. Stop it first: scripts/server.sh stop")
 
 
+def repair_models(db_path: Path, apply: bool, confirm_production: bool) -> str:
+    """Without apply, repairs a copy and reports, so production can be checked with the app running."""
+    if not apply:
+        with tempfile.TemporaryDirectory() as temp:
+            copy = Path(temp) / db_path.name
+            backup.copy_database(db_path, copy, "WAL")
+            conn = get_db_connection(copy)
+            try:
+                return catalog_repair.describe(catalog_repair.repair(conn), applied=False)
+            finally:
+                conn.close()
+    if settings.is_production() and not confirm_production:
+        raise migrations.MigrationError("Refusing to repair models in production without --confirm-production")
+    refuse_if_app_running()
+    written = backup.create_backup(db_path)
+    conn = get_db_connection(db_path)
+    try:
+        return f"backup written: {written}\n" + catalog_repair.describe(catalog_repair.repair(conn), applied=True)
+    finally:
+        conn.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -86,6 +110,9 @@ def main() -> int:
     commands.add_parser("backup")
     rebuild = commands.add_parser("rebuild-releases")
     rebuild.add_argument("--confirm-production", action="store_true")
+    repair = commands.add_parser("repair-models", help="fix B1 to B4 in the catalog levels; a dry run unless --apply")
+    repair.add_argument("--apply", action="store_true")
+    repair.add_argument("--confirm-production", action="store_true")
     tidy = commands.add_parser("clean-tags")
     tidy.add_argument("--confirm-production", action="store_true")
     export = commands.add_parser("export")
@@ -161,6 +188,8 @@ def main() -> int:
                 print(dict(conn.execute("SELECT COUNT(*) AS releases, SUM(total_files) AS files FROM releases").fetchone()))
             finally:
                 conn.close()
+        elif args.command == "repair-models":
+            print(repair_models(db_path, args.apply, args.confirm_production))
         elif args.command == "clean-tags":
             if settings.is_production() and not args.confirm_production:
                 raise migrations.MigrationError("Refusing to clean tags in production without --confirm-production")

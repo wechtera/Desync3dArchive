@@ -24,6 +24,7 @@ from desync_archival.services import (
     file_import,
     jobs,
     locations,
+    model_resolver,
     tags,
 )
 from desync_archival.services.archive_peeker import ArchivePeeker
@@ -220,6 +221,94 @@ class BuildTests(BuildCase):
         self.assertGreaterEqual(self.search("catalog_search_models", "Ghoul A"), 1)
         self.assertEqual(self.search("catalog_search_groups", "Ghoul"), 1)
         self.assertGreaterEqual(self.search("catalog_search_artifacts", "32mm_Ghoul_B"), 1)
+
+
+class SharedPlaceholderTests(BuildCase):
+    """B1: a single collection's placeholder became the real model a reviewed bundle shares."""
+
+    def setUp(self):
+        super().setUp()
+        self.single = self.add_collection("Ghuls - Vampire Court", "1/g")
+        self.bundle = self.add_collection("Vampire Court Bundle", "1/b")
+        ghouls = [("Ghouls/Ghoul_A.stl", 50), ("Ghouls/Ghoul_B.stl", 51)]
+        self.archive(self.single, ghouls)
+        self.archive(self.bundle, [*ghouls, ("Elm/Elm.stl", 60)])
+        self.build()
+        with self.conn:
+            self.conn.execute("INSERT INTO collection_reviews (collection_id, reviewed) VALUES (?, 1)", (self.bundle,))
+
+    def ghoul_a(self):
+        return self.one("""
+            SELECT m.id, m.name, m.state, m.merged_into FROM models m JOIN model_artifacts a ON a.model_id = m.id
+            JOIN model_files f ON f.file_id = a.file_id WHERE a.filename = 'Ghoul_A.stl' AND f.model_id = ?
+        """, self.bundle)
+
+    def test_the_first_model_takes_over_the_placeholder(self):
+        model_id, name, state, merged = self.ghoul_a()
+        self.assertEqual((model_id, name, state, merged), (self.single, "Ghoul A", "proposed", None))
+
+    def test_a_rebuild_leaves_the_bundles_model_named_and_whole(self):
+        catalog_levels.rebuild_unreviewed(self.conn)
+        _, name, state, merged = self.ghoul_a()
+        self.assertEqual(name, "Ghoul A")
+        self.assertIsNone(merged)
+        self.assertNotEqual(state, "merged")
+
+    def test_a_rebuild_keeps_the_bundles_review_of_that_model(self):
+        with self.conn:
+            self.conn.execute("UPDATE models SET name = 'Ghul the First', state = 'resolved' WHERE id = ?", (self.single,))
+        catalog_levels.rebuild_unreviewed(self.conn)
+        self.assertEqual(tuple(self.one("SELECT name, state FROM models WHERE id = ?", self.single)), ("Ghul the First", "resolved"))
+
+    def test_nothing_is_ever_merged_into_itself(self):
+        catalog_levels.rebuild_unreviewed(self.conn)
+        catalog_levels.rebuild_unreviewed(self.conn)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM models WHERE merged_into = id")[0], 0)
+
+    def test_a_placeholder_left_holding_shared_files_is_named_not_merged_into_itself(self):
+        # What older rebuilds left behind: the row reset to the collection's name, with the bundle's files.
+        with self.conn:
+            self.conn.execute(
+                "DELETE FROM model_artifacts WHERE file_id IN (SELECT file_id FROM model_files WHERE model_id = ?)", (self.single,),
+            )
+            self.conn.execute(
+                "UPDATE models SET name = 'Ghuls - Vampire Court', state = 'placeholder', merged_into = NULL WHERE id = ?",
+                (self.single,),
+            )
+        self.build()
+        self.assertEqual(tuple(self.one("SELECT name, state, merged_into FROM models WHERE id = ?", self.single)),
+                         ("Ghoul A", "proposed", None))
+
+    def test_the_single_still_lists_its_models_after_a_rebuild(self):
+        catalog_levels.rebuild_unreviewed(self.conn)
+        names = {r[0] for r in self.conn.execute("""
+            SELECT m.name FROM models m JOIN model_collections l ON l.model_id = m.id
+            WHERE l.collection_id = ? AND m.merged_into IS NULL
+        """, (self.single,))}
+        self.assertEqual(names, {"Ghoul A", "Ghoul B"})
+
+
+class ImageScoreTests(unittest.TestCase):
+    """Which picture a model gets, from the names and folders alone."""
+
+    def score(self, model_name, model_folder, image_path):
+        slug = model_resolver.slug_of(model_resolver.words_in(model_name))
+        return catalog_levels._image_score(slug, {model_folder}, {"internal_path": image_path})
+
+    def test_a_models_own_folder_beats_a_shorter_name_from_elsewhere(self):
+        # Skinwalker.jpg is the bust's. Skinwalker 1's own folder holds its stat card.
+        own = self.score("Skinwalker 1", "Skinwalker 1", "Skinwalker 1/Skinwalker Stats.jpg")
+        other = self.score("Skinwalker 1", "Skinwalker 1", "Bust_Skinwalker/Skinwalker.jpg")
+        self.assertGreater(own, other)
+
+    def test_a_full_name_match_beats_the_folder(self):
+        named = self.score("Ghul A", "28mm/Ghuls", "Renders/Ghul_A.jpg")
+        beside = self.score("Ghul A", "28mm/Ghuls", "28mm/Ghuls/Bases.jpg")
+        self.assertGreater(named, beside)
+
+    def test_a_group_shot_still_beats_nothing(self):
+        self.assertGreater(self.score("Ghul A", "28mm/Ghuls", "Renders/Ghuls.jpg"), 0)
+        self.assertEqual(self.score("Ghul A", "28mm/Ghuls", "Renders/Banshee.jpg"), 0)
 
 
 class OrphanLinkTests(BuildCase):

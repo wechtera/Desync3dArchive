@@ -183,8 +183,15 @@ def _store_model(
 def _image_score(model_slug: str, folders: set[str], image: sqlite3.Row) -> int:
     folder, _, name = image["internal_path"].rpartition("/")
     stem = model_resolver.slug_of([name.rpartition(".")[0]])
-    named = bool(stem) and (model_slug in stem or stem.removesuffix("s") in model_slug)
-    return (10 if named else 0) + (5 if folder in folders else 0)
+    if stem and model_slug in stem:
+        named = 10
+    elif stem and stem.removesuffix("s") in model_slug:
+        # A shorter name may be another model's: Skinwalker.jpg is the bust's, and Skinwalker 1's
+        # own folder holds its picture. It still beats nothing, so a group shot can stand in.
+        named = 3
+    else:
+        named = 0
+    return named + (5 if folder in folders else 0)
 
 
 def assign_images(conn: sqlite3.Connection, collection_id: int) -> int:
@@ -233,6 +240,12 @@ def rebuild_unreviewed(conn: sqlite3.Connection) -> dict[str, Any]:
                 queries.DELETE_MODEL_COLLECTIONS_BY_COLLECTION_ID,
                 (collection_id, collection_id),
             )
+            # B1: the placeholder row became a real model, and another collection still holds it.
+            # Resetting it renamed that model after this collection, and the build then merged it
+            # into itself. It stays as it is, and the build links this collection again if it shares.
+            if conn.execute(queries.COUNT_OTHER_COLLECTIONS_OF_MODEL, (collection_id, collection_id)).fetchone()[0]:
+                conn.execute(queries.DELETE_MODEL_COLLECTIONS_BY_MODEL_ID, (collection_id, collection_id))
+                continue
             conn.execute(queries.UPDATE_MODELS_NAME_BY_ID_V3, (collection_id, PLACEHOLDER, collection_id))
             conn.execute(
                 queries.INSERT_MODEL_COLLECTIONS,
@@ -256,19 +269,24 @@ def clean_orphan_links(conn: sqlite3.Connection) -> int:
     return members + tags
 
 
-# NOTE: rereads every archive and relearns its words each call, so a batch of peeks runs this once.
-def build_archive_models(conn: sqlite3.Connection, only_collection: int | None = None) -> dict[str, Any]:
-    """Adds whatever a peek stored that has no artifact yet, so it can run any number of times.
-
-    Learning always reads every archive, because one archive is too small to learn from.
-    """
+def vocabulary(conn: sqlite3.Connection) -> tuple[list[sqlite3.Row], set[str], set[str]]:
+    """Every printable archive entry, with the print and piece words learned from all of them."""
     conn.row_factory = sqlite3.Row
     rows = conn.execute(queries.SELECT_FILE_ARCHIVE_MEMBERS).fetchall()
     printable = [r for r in rows if r["internal_path"].lower().endswith(model_resolver.PRINTABLE)]
     paths = [r["internal_path"] for r in printable]
     variants = model_resolver.learn_variant_words(sorted({p.rpartition("/")[0] for p in paths if "/" in p}))
     variants |= model_resolver.PRINT_WORDS
-    pieces = model_resolver.learn_piece_words(paths, variants)
+    return printable, variants, model_resolver.learn_piece_words(paths, variants)
+
+
+# NOTE: rereads every archive and relearns its words each call, so a batch of peeks runs this once.
+def build_archive_models(conn: sqlite3.Connection, only_collection: int | None = None) -> dict[str, Any]:
+    """Adds whatever a peek stored that has no artifact yet, so it can run any number of times.
+
+    Learning always reads every archive, because one archive is too small to learn from.
+    """
+    printable, variants, pieces = vocabulary(conn)
 
     stored = {r[0] for r in conn.execute(queries.SELECT_MODEL_ARTIFACTS_ARCHIVE_MEMBER_ID_BY_ARCHIVE_MEMBER_ID)}
     by_collection: dict[int, dict[int, list[sqlite3.Row]]] = defaultdict(lambda: defaultdict(list))
@@ -293,10 +311,12 @@ def build_archive_models(conn: sqlite3.Connection, only_collection: int | None =
             by_path = {e["internal_path"]: e for e in entries}
             for model in model_resolver.resolve_files(list(by_path), variants, pieces):
                 held = [by_path[p] for p in model.files]
-                if model.name.lower() in merged:
-                    merged[model.name.lower()][1].extend(held)
+                # Lowercase only. Ignoring spaces as well merged XenoLindworm and Xenolindworm, two poses.
+                key = model.name.lower()
+                if key in merged:
+                    merged[key][1].extend(held)
                 else:
-                    merged[model.name.lower()] = (model, held)
+                    merged[key] = (model, held)
 
         # A fresh download peeks each archive on its own, so the sibling archive's models are
         # already in the catalog by the time this one arrives.
@@ -310,7 +330,11 @@ def build_archive_models(conn: sqlite3.Connection, only_collection: int | None =
                     _add_artifacts(conn, model_id, held)
                 else:
                     model_id, created = _store_model(conn, model, collection_id, spare, held, known)
-                if created and spare == model_id:
+                if not created and model_id == spare:
+                    # The placeholder already holds files another collection shares, so it's a
+                    # real model. Left as a placeholder, it would be merged into itself below.
+                    conn.execute(queries.UPDATE_MODELS_NAME_BY_ID_V2, (model.name, PROPOSED, model_id))
+                if spare == model_id:
                     spare = None
                 first = first or model_id
                 conn.executemany(
@@ -325,7 +349,7 @@ def build_archive_models(conn: sqlite3.Connection, only_collection: int | None =
                     conn.execute(
                         queries.INSERT_MODEL_GROUP_MEMBERS, (group_id, model_id),
                     )
-            if spare is not None and first is not None:
+            if spare is not None and first is not None and first != spare:
                 # Everything here is shared with another collection, so the placeholder redirects.
                 conn.execute(queries.UPDATE_MODELS_STATE_BY_ID, (MERGED, first, spare))
                 conn.execute(

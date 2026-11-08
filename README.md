@@ -144,6 +144,7 @@ uv run python -m desync_archival.api.server   # web UI at http://localhost:8080
 uv run python -m desync_archival.dbtool status   # schema version
 uv run python -m desync_archival.dbtool migrate  # back up, migrate a copy, check it, swap it in
 uv run python -m desync_archival.dbtool backup   # write a verified backup to DESYNC_BACKUP_DIR
+uv run python -m desync_archival.dbtool repair-models   # report catalog fixes on a copy; --apply makes them
 uv run python -m desync_archival.dbtool restore BACKUP_FILE NEW_PATH   # restore to a new path
 uv run python -m desync_archival.dbtool export-secrets   # copy secrets from the database to the secrets file
 uv run python scripts/cutover.py --help   # staged migration rehearsal and rollback

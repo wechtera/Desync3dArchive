@@ -123,3 +123,75 @@ class FileResolutionTests(unittest.TestCase):
 
     def test_format_words_do_not_split_a_model(self):
         self.assertEqual(len(self.resolved(["Baron/LYS_Baron.lys", "Baron/Baron.stl"])), 1)
+
+
+class ResolverFixTests(unittest.TestCase):
+    """B2 to B4 from the 2026-11-08 sample. Paths are real ones, trimmed."""
+
+    def resolved(self, paths):
+        variants = set(resolver.PRINT_WORDS)
+        return {m.name: m for m in resolver.resolve_files(paths, variants, resolver.learn_piece_words(paths, variants))}
+
+    def test_a_kit_folder_never_names_a_group(self):
+        # Artisan Guild's groups came out as iarcaneswordstaff, from the folder's slug.
+        # No shared start, which is when a group used to fall back to the folder.
+        paths = [
+            "Apprentice Arcanist A/Kit I (Staff & Spell)/Apprentice_Dagger.stl",
+            "Apprentice Arcanist A/Kit I (Staff & Spell)/Arcanist_Apprentice_A_Hood.stl",
+        ]
+        self.assertEqual({m.group for m in self.resolved(paths).values()}, {"Apprentice Arcanist A"})
+
+    def test_a_group_takes_the_folders_real_words_without_its_catalog_number(self):
+        paths = ["727_Deep Sea Valkyries/STL/Deep Sea Valkyries A.stl", "727_Deep Sea Valkyries/STL/Seahorse A.stl"]
+        self.assertEqual({m.group for m in self.resolved(paths).values()}, {"Deep Sea Valkyries"})
+
+    def test_pre_supported_folders_are_neither_a_model_nor_a_group(self):
+        # Pre stood alone and made Cast n Play's models twice, and a group called pre.
+        paths = ["Ants/Pre-Supported/LYS/LYS_Ant_A_Supported.lys", "Ants/STL/Ant_A.stl", "Ants/STL/Ant_B.stl"]
+        models = self.resolved(paths)
+        self.assertEqual(sorted(models), ["Ant A", "Ant B"])
+        self.assertEqual(len(models["Ant A"].files), 2)
+        self.assertNotIn("pre", {m.group.lower() for m in models.values()})
+
+    def test_beefed_supports_are_the_same_model(self):
+        # Rescale's layout. Before, this made Brass Dragon Stand, Brass Dragon Stand A and ... Bef.
+        paths = [
+            "BrassDragon_Stand_Supports/Supported/BrassDragon_Stand_Body.stl",
+            "BrassDragon_Stand_Supports/Supported/BrassDragon_Stand_TailA.stl",
+            "BrassDragon_Stand_Supports/Beefed/BrassDragon_Stand_Body_Bef.stl",
+            "BrassDragon_Stand_Supports/Beefed/BrassDragon_Stand_TailA_Bef.stl",
+        ]
+        self.assertEqual(list(self.resolved(paths)), ["Brass Dragon Stand"])
+
+    def test_a_folder_title_drops_sizes_and_its_catalog_number(self):
+        names = set(self.resolved([
+            "01_Bandit Khan - 30mm Base/Presupported/STL_Bandit Khan_Supported.stl",
+            "Rot_Priest_1_(25mm_Base_41mm_Height)/STL/Rot_Priest_1.stl",
+        ]))
+        self.assertEqual(names, {"Bandit Khan", "Rot Priest 1"})
+
+    def test_clean_title(self):
+        cases = {
+            ("01", "Bandit", "Khan", "30mm", "Base"): ["Bandit", "Khan"],
+            ("Rot", "Priest", "1", "25mm", "Base", "41mm", "Height"): ["Rot", "Priest", "1"],
+            ("Wolpertingers", "1", "2", "25mm", "Base"): ["Wolpertingers", "1", "2"],
+            ("Base", "25mm"): ["Base"],
+            ("300",): ["300"],
+        }
+        for words, expected in cases.items():
+            with self.subTest(words):
+                self.assertEqual(resolver.clean_title(list(words)), expected)
+
+    def test_is_kit(self):
+        self.assertTrue(resolver.is_kit(["Kit", "II", "No", "Hood"]))
+        self.assertTrue(resolver.is_kit(["Kit", "2"]))
+        self.assertFalse(resolver.is_kit(["Kitchen", "Set"]))
+        self.assertFalse(resolver.is_kit(["Kit", "Bash"]))
+
+    def test_file_words_tell_one_subject_from_another(self):
+        variants = set(resolver.PRINT_WORDS)
+        pieces = set(resolver.PIECE_WORDS)
+        ant = resolver.file_words("STL/Ant_A.stl", variants, pieces)
+        self.assertEqual(ant & resolver.file_words("LYS/LYS_Ant_A_Supported.lys", variants, pieces), {"ant"})
+        frog = resolver.file_words("Pose 01/Frog_Rider_Base_Pose01.lys", variants, pieces)
+        self.assertFalse(frog & resolver.file_words("Sister and Sister/Sisters_Wraith_Base_Pose01.lys", variants, pieces))
