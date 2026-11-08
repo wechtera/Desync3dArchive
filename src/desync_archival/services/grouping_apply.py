@@ -262,11 +262,41 @@ def _suggest(conn: sqlite3.Connection, import_id: int, plan: dict, verdict: dict
         conn.execute(queries.UPDATE_UNIT_DECIDED, ("suggested", plan["fingerprint"], plan["unit_key"]))
 
 
-def apply(conn: sqlite3.Connection, import_id: int) -> dict[str, Any]:
-    """Applies every unit an import may apply, and files the rest as suggestions.
+CHOOSE_APPLY, CHOOSE_WAIT, CHOOSE_SKIP = "apply", "wait", "skip"
+# A person may hold back or leave out anything, but only the checks can let a unit apply unseen.
+# A unit they sent to review goes through the editor; jumping it straight in would skip that.
+CHOICES_ALLOWED = {
+    APPLY: (CHOOSE_APPLY, CHOOSE_WAIT, CHOOSE_SKIP),
+    SUGGEST: (CHOOSE_WAIT, CHOOSE_SKIP),
+}
+HELD_BY_PERSON = "You chose to review this one before it applies."
+
+
+def _choices(report: dict, choices: dict[str, str]) -> dict[str, str]:
+    """Each unit's choice, defaulting to what the checks decided. Refuses the lot on any bad one."""
+    verdicts = {v["unit"]: v for v in report["units"]}
+    for unit, choice in choices.items():
+        verdict = verdicts.get(unit)
+        if verdict is None:
+            raise ApplyRefused(f"{unit} isn't in that answer.")
+        allowed = CHOICES_ALLOWED.get(verdict["outcome"], (CHOOSE_SKIP,))
+        if choice not in allowed:
+            if verdict["outcome"] == SUGGEST and choice == CHOOSE_APPLY:
+                raise ApplyRefused(f"{verdict['title']} can't apply straight away. Let it wait, then accept it in the review editor.")
+            raise ApplyRefused(f"{verdict['title']} can only be {' or '.join(allowed)}, not {choice}.")
+    defaults = {APPLY: CHOOSE_APPLY, SUGGEST: CHOOSE_WAIT}
+    return {unit: choices.get(unit, defaults.get(v["outcome"], CHOOSE_SKIP)) for unit, v in verdicts.items()}
+
+
+def apply(conn: sqlite3.Connection, import_id: int, choices: dict[str, str] | None = None) -> dict[str, Any]:
+    """Applies the units an import may apply, and files the ones waiting as suggestions.
+
+    `choices` maps unit keys to apply, wait or skip, for a person holding back or leaving out
+    units. Units it doesn't name go as the checks decided.
 
     Raises:
-        ApplyRefused: The import doesn't exist, or was already applied or undone.
+        ApplyRefused: The import doesn't exist, was already applied or undone, or a choice isn't
+            allowed for its unit. Nothing changes then.
     """
     conn.row_factory = sqlite3.Row
     row = conn.execute(queries.SELECT_IMPORT, (import_id,)).fetchone()
@@ -275,13 +305,21 @@ def apply(conn: sqlite3.Connection, import_id: int) -> dict[str, Any]:
     if row["status"] != "checked":
         raise ApplyRefused(f"That import was already {row['status']}.")
     report, plans = json.loads(row["report_json"]), json.loads(row["answer_json"])
-    result: dict[str, Any] = {"import_id": import_id, "applied": [], "suggested": [], "refused": [], "pictures_held_back": []}
+    chosen = _choices(report, choices or {})
+    result: dict[str, Any] = {"import_id": import_id, "applied": [], "suggested": [], "skipped": [], "refused": [], "pictures_held_back": []}
     for verdict in report["units"]:
         plan = plans.get(verdict["unit"])
         if not plan or verdict["outcome"] not in (APPLY, SUGGEST):
             continue
+        choice = chosen[verdict["unit"]]
+        if choice == CHOOSE_SKIP:
+            # Nothing is recorded as decided, so the unit keeps today's grouping and goes out in the next delta.
+            result["skipped"].append(plan["unit_key"])
+            continue
+        if choice == CHOOSE_WAIT and verdict["outcome"] == APPLY:
+            verdict = {**verdict, "reasons": [*verdict.get("reasons", []), HELD_BY_PERSON]}
         try:
-            if verdict["outcome"] == APPLY:
+            if choice == CHOOSE_APPLY:
                 applied = apply_plan(conn, import_id, plan)
                 with conn:
                     conn.execute(queries.UPDATE_UNIT_DECIDED, ("applied", plan["fingerprint"], plan["unit_key"]))
@@ -299,7 +337,7 @@ def apply(conn: sqlite3.Connection, import_id: int) -> dict[str, Any]:
         conn.execute(queries.UPDATE_IMPORT_STATUS, ("applied", "applied", "applied", import_id))
     audit.record(conn, "grouping_apply", False, {
         "import_id": import_id, "applied": [a["unit"] for a in result["applied"]],
-        "suggested": result["suggested"], "refused": result["refused"],
+        "suggested": result["suggested"], "skipped": result["skipped"], "refused": result["refused"],
     })
     return result
 

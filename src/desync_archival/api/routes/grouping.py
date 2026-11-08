@@ -62,13 +62,14 @@ def handle_post_grouping_check(conn: Conn, body: Body) -> Result:
     return report, 200
 
 
-def handle_post_grouping_apply(conn: Conn, import_id: int) -> Result:
+def handle_post_grouping_apply(conn: Conn, import_id: int, body: Body) -> Result:
+    choices = {str(unit): str(choice) for unit, choice in (body.get("choices") or {}).items()}
     try:
-        result = grouping_apply.apply(conn, import_id)
+        result = grouping_apply.apply(conn, import_id, choices)
     except ApplyRefused as e:
         return _refused(e)
     log_layer("storage", logging.INFO, f"LLM grouping import {import_id} applied: {len(result['applied'])} units, "
-              f"{len(result['suggested'])} waiting, {len(result['refused'])} refused")
+              f"{len(result['suggested'])} waiting, {len(result['skipped'])} skipped, {len(result['refused'])} refused")
     return result, 200
 
 

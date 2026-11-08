@@ -279,6 +279,11 @@ class GroupingCheckBody(RequestBody):
     name: str = ""
 
 
+class GroupingApplyBody(RequestBody):
+    """A person's choice per unit, apply, wait or skip. Units left out go as the checks decided."""
+    choices: dict[str, str] = Field(default_factory=dict)
+
+
 class GroupingTagsBody(RequestBody):
     approved: list[str] = Field(default_factory=list)
 

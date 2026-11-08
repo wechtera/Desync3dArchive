@@ -91,6 +91,24 @@ class CheckRouteTests(RouteCase):
         self.assertEqual(undone["restored"], [self.key])
         self.assertEqual(grouping_apply.state(self.conn, self.key), before)
 
+    def test_confirm_with_a_choice_holds_a_unit_for_review(self):
+        before = grouping_apply.state(self.conn, self.key)
+        import_id = self.check(self.answer())["import_id"]
+        response = self.client.post(f"/api/grouping/imports/{import_id}/apply", json={"choices": {self.key: "wait"}})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual((response.json()["applied"], response.json()["suggested"]), ([], [self.key]))
+        self.assertEqual(grouping_apply.state(self.conn, self.key), before)
+        self.assertEqual(len(self.client.get("/api/grouping").json()["waiting"]), 1)
+
+    def test_a_choice_not_allowed_is_explained_and_changes_nothing(self):
+        answer = self.answer()
+        answer["units"][0]["confidence"] = "medium"
+        import_id = self.check(answer)["import_id"]
+        response = self.client.post(f"/api/grouping/imports/{import_id}/apply", json={"choices": {self.key: "apply"}})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("accept it in the review editor", response.json()["error"])
+        self.assertEqual(self.client.get("/api/grouping").json()["waiting"], [])
+
     def test_after_undo_the_same_answer_checks_and_applies_again(self):
         # The release's first run applies a batch, undoes it to prove the way back, then reapplies.
         first = self.check(self.answer())["import_id"]

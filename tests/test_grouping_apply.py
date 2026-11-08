@@ -130,6 +130,73 @@ class SuggestTests(ApplyCase):
         self.assertEqual(statuses, ["replaced", "waiting"])
 
 
+class ChoiceTests(ApplyCase):
+    """A person holding back or leaving out units at confirm, instead of taking every verdict."""
+
+    def medium(self):
+        answer = self.answer()
+        answer["units"][0]["confidence"] = "medium"
+        return answer
+
+    def test_a_unit_the_checks_passed_can_be_held_for_review(self):
+        before = grouping_apply.state(self.conn, self.key)
+        import_id, _ = self.checked(self.answer())
+        result = grouping_apply.apply(self.conn, import_id, {self.key: "wait"})
+        self.assertEqual((result["applied"], result["suggested"]), ([], [self.key]))
+        self.assertEqual(grouping_apply.state(self.conn, self.key), before)
+        bucket, reasons = self.one("SELECT bucket, reasons_json FROM grouping_suggestions WHERE status = 'waiting'")
+        self.assertEqual(bucket, "high", "it waits as the LLM rated it")
+        self.assertIn(grouping_apply.HELD_BY_PERSON, json.loads(reasons))
+
+    def test_a_skipped_unit_keeps_todays_grouping_and_goes_out_again(self):
+        before = grouping_apply.state(self.conn, self.key)
+        import_id, _ = self.checked(self.answer())
+        result = grouping_apply.apply(self.conn, import_id, {self.key: "skip"})
+        self.assertEqual((result["applied"], result["suggested"], result["skipped"]), ([], [], [self.key]))
+        self.assertEqual(grouping_apply.state(self.conn, self.key), before)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM grouping_suggestions")[0], 0)
+        self.assertEqual(grouping_export.preview(self.conn, "delta", "archives", False, 1000)["units"], 1)
+
+    def test_a_waiting_unit_can_be_skipped_too(self):
+        import_id, _ = self.checked(self.medium())
+        result = grouping_apply.apply(self.conn, import_id, {self.key: "skip"})
+        self.assertEqual((result["suggested"], result["skipped"]), ([], [self.key]))
+        self.assertEqual(self.one("SELECT COUNT(*) FROM grouping_suggestions")[0], 0)
+
+    def test_a_waiting_unit_cant_be_pushed_straight_in(self):
+        before = grouping_apply.state(self.conn, self.key)
+        import_id, _ = self.checked(self.medium())
+        with self.assertRaisesRegex(grouping_apply.ApplyRefused, "accept it in the review editor"):
+            grouping_apply.apply(self.conn, import_id, {self.key: "apply"})
+        self.assertEqual(grouping_apply.state(self.conn, self.key), before)
+        self.assertEqual(self.one("SELECT status FROM grouping_imports WHERE id = ?", import_id)[0], "checked",
+                         "a refused choice leaves the import to confirm again")
+
+    def test_a_refused_unit_can_only_be_skipped(self):
+        answer = self.answer()
+        answer["units"].append(json.loads(json.dumps(answer["units"][0])))
+        answer["units"][1]["unit_id"] = "archive:999999"
+        import_id, report = self.checked(answer)
+        refused = next(u["unit"] for u in report["units"] if u["outcome"] == grouping_answer.REFUSE)
+        with self.assertRaisesRegex(grouping_apply.ApplyRefused, "can only be skip"):
+            grouping_apply.apply(self.conn, import_id, {refused: "wait"})
+
+    def test_a_unit_not_in_the_answer_is_refused(self):
+        import_id, _ = self.checked(self.answer())
+        with self.assertRaisesRegex(grouping_apply.ApplyRefused, "isn't in that answer"):
+            grouping_apply.apply(self.conn, import_id, {"archive:424242": "skip"})
+
+    def test_units_not_named_go_as_the_checks_decided(self):
+        import_id, _ = self.checked(self.answer())
+        self.assertEqual([a["unit"] for a in grouping_apply.apply(self.conn, import_id, {})["applied"]], [self.key])
+
+    def test_the_audit_row_lists_what_was_skipped(self):
+        import_id, _ = self.checked(self.answer())
+        grouping_apply.apply(self.conn, import_id, {self.key: "skip"})
+        detail = json.loads(self.one("SELECT detail FROM audit_log WHERE action = 'grouping_apply' ORDER BY id DESC")[0])
+        self.assertEqual(detail["skipped"], [self.key])
+
+
 class PictureTests(ApplyCase):
     def picture(self, name):
         return tuple(self.one("SELECT image_path, image_source FROM models WHERE name = ?", name))

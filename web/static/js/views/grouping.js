@@ -31,6 +31,13 @@ const IMPORT_STATES = {
   undone: 'Undone',
   discarded: 'Discarded',
 };
+// What a person may pick per unit before confirming. A unit the checks sent to review can't jump
+// straight in; the server refuses that too. A refused unit has no choice: it's left as it is.
+const CHOICES = {
+  apply: [['apply', 'Apply now'], ['wait', 'Wait for me'], ['skip', "Skip, keep today's"]],
+  suggest: [['wait', 'Wait for me'], ['skip', "Skip, keep today's"]],
+};
+const DEFAULT_CHOICE = { apply: 'apply', suggest: 'wait' };
 const PREVIEW_DELAY_MS = 300;
 
 let overview = null;
@@ -41,6 +48,7 @@ let previewError = '';
 let previewTimer = null;
 let report = null;
 let outcome = null;
+let choices = new Map();
 let pasted = '';
 let busy = false;
 const tagPicks = new Map();
@@ -179,6 +187,7 @@ async function check(text, name) {
   if (!text.trim()) return;
   busy = true;
   outcome = null;
+  choices = new Map();
   paint();
   try {
     report = await checkGroupingAnswer(text, name);
@@ -210,12 +219,13 @@ async function copyFixRequest() {
   }
 }
 
-async function confirmImport(importId) {
+async function confirmImport(importId, picked = {}) {
   busy = true;
   paint();
   try {
-    outcome = await applyGroupingImport(importId);
+    outcome = await applyGroupingImport(importId, picked);
     report = null;
+    choices = new Map();
     showToast(outcomeLine(outcome));
     await loadGrouping();
   } catch (err) {
@@ -236,12 +246,46 @@ async function discardImport(importId) {
   }
 }
 
+const choiceOf = (unit) => choices.get(unit.unit) || DEFAULT_CHOICE[unit.outcome] || 'skip';
+
+function choose(unit, value) {
+  if (value === DEFAULT_CHOICE[unit.outcome]) choices.delete(unit.unit); else choices.set(unit.unit, value);
+  paint();
+}
+
+function reviewAllMyself() {
+  for (const unit of report.units) {
+    if (unit.outcome === 'apply' && choiceOf(unit) === 'apply') choices.set(unit.unit, 'wait');
+  }
+  paint();
+}
+
+function chosenCounts() {
+  const counts = { apply: 0, wait: 0, skip: 0 };
+  for (const unit of report.units) {
+    if (CHOICES[unit.outcome]) counts[choiceOf(unit)] += 1;
+  }
+  return counts;
+}
+
+function choiceCell(unit) {
+  const options = CHOICES[unit.outcome];
+  if (!options) return html`<span class="font-xs text-dim">Left as it is</span>`;
+  const current = choiceOf(unit);
+  return html`
+    <select class="grouping-choice font-xs" aria-label=${`Your choice for ${unit.title}`} @change=${e => choose(unit, e.target.value)}>
+      ${options.map(([value, label]) => html`<option value=${value} ?selected=${value === current}>${label}</option>`)}
+    </select>
+  `;
+}
+
 function unitRow(unit) {
   const lines = [...unit.problems, ...unit.reasons, ...unit.warnings];
   return html`
     <tr class="grouping-unit" data-unit=${unit.unit}>
       <td>${unit.title}<div class="font-xs text-dim">${unit.creator}</div></td>
       <td>${badge(OUTCOMES[unit.outcome] || OUTCOMES.refuse)}</td>
+      <td>${choiceCell(unit)}</td>
       <td class="font-sm">
         ${unit.summary}
         ${lines.length ? html`
@@ -261,9 +305,28 @@ function unitRow(unit) {
   `;
 }
 
+function choicesBar() {
+  if (!report.import_id) return nothing;
+  const chosen = chosenCounts();
+  const changed = choices.size > 0;
+  const holdable = report.units.some(u => u.outcome === 'apply' && choiceOf(u) === 'apply');
+  return html`
+    <div class="grouping-choices font-sm" id="grouping-choices">
+      <span id="grouping-chosen" role="status">
+        ${changed ? 'With your choices: ' : 'On confirm: '}${chosen.apply} ${chosen.apply === 1 ? 'applies' : 'apply'} now,
+        ${chosen.wait} ${chosen.wait === 1 ? 'waits' : 'wait'} for you, ${chosen.skip} skipped.
+      </span>
+      <button type="button" class="btn-pill font-xs" id="btn-grouping-review-all" ?disabled=${!holdable || busy} @click=${reviewAllMyself}>Review All Myself</button>
+      ${changed ? html`<button type="button" class="btn-pill font-xs" id="btn-grouping-reset-choices" ?disabled=${busy}
+        @click=${() => { choices = new Map(); paint(); }}>Use the Checks' Choices</button>` : nothing}
+    </div>
+  `;
+}
+
 function reportView() {
   if (!report) return nothing;
   const { counts } = report;
+  const appliesNow = report.import_id ? chosenCounts().apply : 0;
   return html`
     <div class="grouping-report" id="grouping-report">
       ${report.error ? html`<p class="text-alert font-sm" role="alert">${report.error}</p>` : html`
@@ -275,8 +338,9 @@ function reportView() {
       `}
       ${(report.notes || []).length ? html`<p class="font-xs text-dim">${report.notes.join(' ')}</p>` : nothing}
       ${report.units.length ? html`
+        ${choicesBar()}
         <table class="table-compact grouping-units">
-          <thead><tr><th>Unit</th><th>Result</th><th>What happens</th></tr></thead>
+          <thead><tr><th>Unit</th><th>Result</th><th>Your choice</th><th>What happens</th></tr></thead>
           <tbody>${report.units.map(unitRow)}</tbody>
         </table>
       ` : nothing}
@@ -292,7 +356,7 @@ function reportView() {
       ${report.import_id ? html`
         <div class="flex gap-2 mt-2">
           <button type="button" class="btn-pill btn-action-primary" id="btn-grouping-confirm" ?disabled=${busy}
-            @click=${() => confirmImport(report.import_id)}>Confirm and Apply</button>
+            @click=${() => confirmImport(report.import_id, Object.fromEntries(choices))}>${appliesNow ? 'Confirm and Apply' : 'Confirm'}</button>
           <button type="button" class="btn-pill btn-action-cancel" id="btn-grouping-discard" ?disabled=${busy}
             @click=${() => discardImport(report.import_id)}>Discard</button>
         </div>
@@ -308,6 +372,7 @@ function outcomeLine(result) {
     result.applied.length ? `Applied ${plural(result.applied.length, 'unit')}.` : 'Nothing was applied.',
     result.suggested.length ? waits(result.suggested.length, 'unit') : '',
     result.pictures_held_back.length ? waits(result.pictures_held_back.length, 'picture') : '',
+    result.skipped?.length ? `Skipped ${plural(result.skipped.length, 'unit')}, which ${result.skipped.length === 1 ? 'keeps its' : 'keep their'} grouping and ${result.skipped.length === 1 ? 'goes' : 'go'} out in the next export.` : '',
     result.refused.length ? `${plural(result.refused.length, 'unit')} couldn't apply.` : '',
   ].filter(Boolean).join(' ');
 }

@@ -31,6 +31,10 @@ const UNIT_REFUSED = {
   problems: ['It changes creator. Only the app sets that: leave creator out of the answer.'],
   summary: 'Refused: 1 problem to fix with the LLM.',
 };
+const UNIT_WAIT = {
+  ...UNIT_OK, unit: 'archive:3', title: 'Blighted Fields', outcome: 'suggest', bucket: 'medium',
+  reasons: ['The LLM rated the unit medium'], summary: 'Waits for you: 17 models become 18.',
+};
 const FIX = 'Your answer to export e-20261108-120000-ab12 needs these fixes.\nUnit archive:2 (Frog Riders):\n- It changes creator.\n';
 const GOOD_REPORT = { export_id: 'e-20261108-120000-ab12', notes: [], error: '', units: [UNIT_OK], fix_request: '', import_id: 7, counts: { apply: 1, suggest: 0, refuse: 0 } };
 const MIXED_REPORT = { ...GOOD_REPORT, units: [UNIT_OK, UNIT_REFUSED], fix_request: FIX, counts: { apply: 1, suggest: 0, refuse: 1 } };
@@ -157,6 +161,35 @@ test('an answer file gets a dry run, and confirming applies it', async ({ page }
   await page.locator('#btn-grouping-confirm').click();
   await expect(page.locator('#grouping-outcome')).toContainText('Applied 1 unit.');
   expect(page.calls.some(c => c.path === '/api/grouping/imports/7/apply')).toBe(true);
+});
+
+test('each unit can be held for review or skipped before confirming', async ({ page }) => {
+  page.report = { ...MIXED_REPORT, units: [UNIT_OK, UNIT_WAIT, UNIT_REFUSED], counts: { apply: 1, suggest: 1, refuse: 1 } };
+  await page.locator('#grouping-answer-file').setInputFiles({ name: 'answer.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
+  await expect(page.locator('#grouping-chosen')).toContainText('On confirm: 1 applies now, 1 waits for you, 0 skipped.');
+  await expect(page.locator('.grouping-unit[data-unit="archive:2"]')).toContainText('Left as it is');
+  const waiting = page.locator('.grouping-unit[data-unit="archive:3"] .grouping-choice');
+  await expect(waiting.locator('option')).toHaveText(['Wait for me', "Skip, keep today's"]);
+
+  await page.locator('#btn-grouping-review-all').click();
+  await expect(page.locator('#grouping-chosen')).toContainText('With your choices: 0 apply now, 2 wait for you, 0 skipped.');
+  await expect(page.locator('#btn-grouping-confirm')).toHaveText('Confirm');
+  await waiting.selectOption('skip');
+  await expect(page.locator('#grouping-chosen')).toContainText('0 apply now, 1 waits for you, 1 skipped.');
+
+  await page.locator('#btn-grouping-confirm').click();
+  await expect(page.locator('#grouping-outcome')).toBeVisible();
+  const apply = page.calls.find(c => c.path === '/api/grouping/imports/7/apply');
+  expect(apply.body).toEqual({ choices: { 'archive:1': 'wait', 'archive:3': 'skip' } });
+});
+
+test('the checks\' choices can be put back before confirming', async ({ page }) => {
+  await page.locator('#grouping-answer-file').setInputFiles({ name: 'answer.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
+  await page.locator('.grouping-unit[data-unit="archive:1"] .grouping-choice').selectOption('skip');
+  await page.locator('#btn-grouping-reset-choices').click();
+  await expect(page.locator('#grouping-chosen')).toContainText('On confirm: 1 applies now');
+  await page.locator('#btn-grouping-confirm').click();
+  expect(page.calls.find(c => c.path === '/api/grouping/imports/7/apply').body).toEqual({ choices: {} });
 });
 
 test('a refused unit gives a fix request to copy back to the LLM', async ({ page }) => {
