@@ -229,6 +229,9 @@ def rebuild_unreviewed(conn: sqlite3.Connection) -> dict[str, Any]:
     """Throws away proposals nobody has reviewed and builds them again. Reviewed work stays."""
     conn.row_factory = sqlite3.Row
     reviewed = {r[0] for r in conn.execute(queries.SELECT_COLLECTION_REVIEWS_COLLECTION_ID_BY_REVIEWED).fetchall()}
+    # New files reopen a reviewed collection, and its reviewed models must outlive a rebuild. The
+    # new files were already built in beside them when they arrived.
+    reviewed |= {r[0] for r in conn.execute(queries.SELECT_COLLECTIONS_WITH_RESOLVED_MODELS).fetchall()}
     targets = [
         r[0] for r in conn.execute(queries.SELECT_MODEL_ARTIFACTS_MODEL_ID_BY_ARCHIVE_MEMBER_ID).fetchall() if r[0] not in reviewed
     ]

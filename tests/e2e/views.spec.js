@@ -1112,6 +1112,21 @@ test.describe('settings', () => {
     await expect.poll(() => started).toBe(true);
   });
 
+  test('the download how-to names tabs and buttons that exist', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(async () => (await import('/static/js/actions.js')).actions.switchTab('help'));
+    const flow = page.locator('#help-download-flow');
+    const issues = page.locator('#help-download-issues');
+    const labels = ['Pending & Queue Explorer', 'Queue Selected', 'Active Transfers', 'History & Audit Log', 'Archive Review', 'Download Issues'];
+    for (const label of labels) {
+      await expect(flow).toContainText(label);
+      const named = page.locator('#view-downloads button').filter({ hasText: label });
+      expect(await named.count(), `a button reads "${label}"`).toBeGreaterThan(0);
+    }
+    await expect(issues).toContainText('Keep as is');
+    await expect(issues).toContainText('Upload file');
+  });
+
   test('help explains the server settings file', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(async () => (await import('/static/js/actions.js')).actions.switchTab('help'));

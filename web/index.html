@@ -1166,6 +1166,64 @@
               <strong>Staged Downloads &amp; Offload:</strong> Select models from the <code>Pending &amp; Queue Explorer</code> tab to queue them for fast NVMe chunk downloads and automatic migration to your vault.
             </li>
           </ol>
+          <p>What happens after that is under <strong>From a download to your library</strong>.</p>
+        </div>
+      </article>
+
+      <article class="card help-card help-card-wide" id="help-download-flow">
+        <div class="help-card-header">
+          <h3>From a download to your library</h3>
+        </div>
+        <div class="help-card-body">
+          <p>What happens when you download a collection from MyMiniFactory, such as one zip of a creator's release:</p>
+          <ol class="help-step-list">
+            <li>
+              <strong>Queue it.</strong> In <code>Manage / Retrieve / Reconcile Assets &rarr; Download MMF &rarr; Pending &amp; Queue Explorer</code>, tick the collection and choose <code>Queue Selected</code>. <code>Active Transfers</code> shows each file as it arrives.
+            </li>
+            <li>
+              <strong>It downloads to this Mac first.</strong> Each file goes to the local staging folder and is checked against the size MMF lists. A file that fails gets one more try. If it still fails, the rest of the collection carries on, and that file waits in <code>Download Issues</code>.
+            </li>
+            <li>
+              <strong>Archives are read where they're staged.</strong> For each <code>.zip</code>, <code>.rar</code> or <code>.7z</code>, the app lists the files inside, saves the images as previews, and proposes models from the file names, each with the best matching picture. Nothing is unpacked into your vault.
+            </li>
+            <li>
+              <strong>It moves to the vault.</strong> Files are copied to the NAS, read back to check they arrived whole, and only then removed from staging. <code>History &amp; Audit Log</code> shows the job as Archived, or Completed with issues.
+            </li>
+            <li>
+              <strong>Browse it.</strong> The new models are in <code>View Library &rarr; Models</code> straight away, as proposals, with their pictures.
+            </li>
+            <li>
+              <strong>Review it, if you want.</strong> <code>External Vault &rarr; Archive Review</code> lists collections nobody has checked. Open one to rename, merge, move or skip models, then mark it reviewed. A rebuild never regroups a reviewed collection, and new files for it bring it back here with only those files added.
+            </li>
+          </ol>
+        </div>
+      </article>
+
+      <article class="card help-card help-card-wide" id="help-download-issues">
+        <div class="help-card-header">
+          <h3>When a download needs attention</h3>
+        </div>
+        <div class="help-card-body">
+          <ul class="help-bullet-list">
+            <li>
+              <strong>Read the whole error.</strong> In <code>History &amp; Audit Log</code>, click a job's error or its "files need attention" link. A window shows the full message, every attempt with its file, and a Copy button.
+            </li>
+            <li>
+              <strong>Download Issues</strong>, under <code>Vault Reconcile</code>, lists each file a download couldn't settle, with a count on the tab. Each shows the creator, model and file, what MMF lists against what arrived, where it's stored, and links to the model and the file on MMF.
+            </li>
+            <li>
+              <strong>Kept, size differs:</strong> both tries brought the same bytes, but not the size MMF lists. MMF's listing is usually what's wrong. Check the file, then choose <code>Keep as is</code>, or download it yourself and choose <code>Upload file</code>.
+            </li>
+            <li>
+              <strong>Not downloaded:</strong> the file failed twice. Download it from MMF with the link on its card, then choose <code>Upload file</code>. The name and file type must match, and a browser's <code>(1)</code> copy is fine.
+            </li>
+            <li>
+              <strong>An upload replaces the stored copy,</strong> which goes to Pending Deletion for 14 days, and its size becomes the one the app expects from then on.
+            </li>
+            <li>
+              <strong>Some failures still stop the whole job,</strong> because every file after would fail the same way: an expired sign-in, a Cloudflare check, a dropped connection or a full disk. Fix the cause, then use <code>Retry</code> in History.
+            </li>
+          </ul>
         </div>
       </article>
 
@@ -1181,10 +1239,10 @@
           </div>
           <div class="help-callout">
             <strong>Tier 2: Cold/Archive Target Storage Pool (NAS Vault Path)</strong><br>
-            Once all files for a model are downloaded and validated against expected archive signatures, a background offloader migrates the clean directory tree directly into the destination library path.
+            Once a collection's files are downloaded and checked, a background offloader copies them into the vault, reads each one back, and only then clears staging. A file that failed waits in Download Issues, and the rest move on without it.
           </div>
           <ul class="help-bullet-list">
-            <li><strong>Zero Partial Files:</strong> The destination storage directory never holds corrupted or incomplete downloads.</li>
+            <li><strong>Zero Partial Files:</strong> The vault never holds a file that arrived broken or cut short. A file kept with a size MMF lists wrong is complete, and it's flagged in Download Issues.</li>
             <li><strong>Concurrency Isolation:</strong> Parallel transfers will not choke single-threaded network protocols or trigger disk thrashing.</li>
           </ul>
         </div>

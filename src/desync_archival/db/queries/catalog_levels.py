@@ -56,6 +56,10 @@ UPDATE_MODELS_IMAGE_PATH_BY_ID = "UPDATE models SET image_path = ? WHERE id = ?;
 
 SELECT_COLLECTION_REVIEWS_COLLECTION_ID_BY_REVIEWED = "SELECT collection_id FROM collection_reviews WHERE reviewed = 1;"
 
+SELECT_COLLECTIONS_WITH_RESOLVED_MODELS = """
+    SELECT DISTINCT mc.collection_id FROM model_collections mc JOIN models m ON m.id = mc.model_id WHERE m.state = 'resolved';
+"""
+
 SELECT_MODEL_ARTIFACTS_MODEL_ID_BY_ARCHIVE_MEMBER_ID = """
             SELECT DISTINCT f.model_id FROM model_artifacts a JOIN model_files f ON f.file_id = a.file_id
             WHERE a.archive_member_id IS NOT NULL;

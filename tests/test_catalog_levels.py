@@ -288,6 +288,27 @@ class SharedPlaceholderTests(BuildCase):
         self.assertEqual(names, {"Ghoul A", "Ghoul B"})
 
 
+class ReviewSurvivesRebuildTests(BuildCase):
+    """New files reopen a reviewed collection, and a rebuild must not undo what was reviewed."""
+
+    def test_a_reopened_collection_keeps_its_reviewed_models(self):
+        self.archive(self.collection, self.GHOULS)
+        self.build()
+        with self.conn:
+            self.conn.execute("""
+                UPDATE models SET name = 'Ghoul the First', state = 'resolved'
+                WHERE id IN (SELECT model_id FROM model_artifacts WHERE filename = '32mm_Ghoul_A.stl')
+            """)
+            self.conn.execute("INSERT INTO collection_reviews (collection_id, reviewed) VALUES (?, 1)", (self.collection,))
+        self.archive(self.collection, [("Banshees/Banshee_A.stl", 70)])
+        self.build()
+        self.assertEqual(self.one("SELECT reviewed FROM collection_reviews WHERE collection_id = ?", self.collection)[0], 0)
+        catalog_levels.rebuild_unreviewed(self.conn)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM models WHERE name = 'Ghoul the First' AND state = 'resolved'")[0], 1)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM model_artifacts a JOIN models m ON m.id = a.model_id WHERE m.name = 'Ghoul the First'")[0], 2)
+        self.assertEqual(self.one("SELECT COUNT(*) FROM models WHERE name = 'Banshee A'")[0], 1)
+
+
 class ImageScoreTests(unittest.TestCase):
     """Which picture a model gets, from the names and folders alone."""
 

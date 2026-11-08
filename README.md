@@ -95,7 +95,24 @@ After upgrading, fill the model levels from stored peeks once. It backs up first
 scripts/production.sh python -m desync_archival.dbtool build-models --confirm-production
 ```
 
+When upgrading to 1.0.1, repair the model levels once. The first command only reports what would change, from a copy, and can run with the app up. The second needs the app stopped and backs up first:
+
+```bash
+scripts/production.sh python -m desync_archival.dbtool repair-models
+scripts/production.sh python -m desync_archival.dbtool repair-models --apply --confirm-production
+```
+
 **Archive Review**, beside **Linked Libraries**, works the same way for peeked archives. **View Library > Models** browses models, with search across models, model groups and artifacts.
+
+### Downloading from MyMiniFactory
+
+1. **Bring in your library.** Under **Manage / Retrieve / Reconcile Assets > MMF Sync**, run the library scraper, then the metadata ingest. New collections appear with MMF's cover.
+2. **Queue.** Under **Download MMF > Pending & Queue Explorer**, tick collections and choose **Queue Selected**. **Active Transfers** shows each file.
+3. **What happens next, on its own:** each file downloads to this Mac's staging folder and is checked against MMF's size. Archives are read there: their files listed, their images saved as previews, and models proposed from the file names, each with a matching picture. Then the files are copied to the NAS, read back, and cleared from staging.
+4. **Browse.** The new models are in **View Library > Models** at once, as proposals.
+5. **Review, if you want.** **External Vault > Archive Review** lists collections nobody has checked. A rebuild never regroups a collection holding a reviewed model.
+
+**When a file won't download cleanly,** the rest of the collection still finishes. A file that brings the same wrong size twice is kept, because MMF's listing is usually what's wrong, and a file that fails twice another way is left out. Both wait in **Vault Reconcile > Download Issues**, with links to the model and file on MMF: keep a kept file, or download it yourself and upload it there. The upload replaces the stored copy, which goes to Pending Deletion. **History & Audit Log** shows such a job as Completed with issues, and clicking any error shows it in full. An expired sign-in, a Cloudflare check, a dropped connection or a full disk still stops the job, and **Retry** in History restarts it.
 
 ### Importing files
 
