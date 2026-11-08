@@ -172,9 +172,11 @@ def save(conn: sqlite3.Connection, collection_id: int, cards: list[dict], review
             else:
                 ids.append(None)
 
+        went_to: dict[int, int] = {}
         for path, owner in owners.items():
             target = ids[owner] if owner is not None else None
             if target is not None:
+                went_to.setdefault(shown[path]["model_id"], target)
                 conn.execute(queries.UPDATE_MODEL_ARTIFACTS_MODEL_ID_BY_ID, (target, shown[path]["id"]))
 
         kept = next(i for i in ids if i is not None)
@@ -184,8 +186,9 @@ def save(conn: sqlite3.Connection, collection_id: int, cards: list[dict], review
                 queries.DELETE_MODEL_COLLECTIONS_BY_MODEL_ID, (model_id, collection_id),
             )
             if not left:
-                # An emptied model keeps its row and redirects, so an old ID never dangles.
-                conn.execute(queries.UPDATE_MODELS_STATE_BY_ID, (MERGED, kept, model_id))
+                # An emptied model keeps its row and redirects, so an old ID never dangles. It goes
+                # where its files went: the first card was a stranger, and old links opened it.
+                conn.execute(queries.UPDATE_MODELS_STATE_BY_ID, (MERGED, went_to.get(model_id, kept), model_id))
 
         _apply_groups(conn, collection_id, [
             (model_id, str(card.get("group") or "").strip()) for card, model_id in zip(cards, ids, strict=True) if model_id

@@ -79,3 +79,71 @@ SELECT_EXPORT_BY_KEY = "SELECT id, export_key, created_at FROM grouping_exports 
 SELECT_EXPORT_UNIT = "SELECT fingerprint, ids_json, batch FROM grouping_export_units WHERE export_id = ? AND unit_key = ?;"
 
 INSERT_IMPORT = "INSERT INTO grouping_imports (export_id, source_name, report_json, answer_json) VALUES (?, ?, ?, ?);"
+
+# Apply and undo.
+SELECT_IMPORT = "SELECT id, export_id, status, report_json, answer_json FROM grouping_imports WHERE id = ?;"
+UPDATE_IMPORT_STATUS = "UPDATE grouping_imports SET status = ?, applied_at = COALESCE(applied_at, CASE WHEN ? = 'applied' THEN CURRENT_TIMESTAMP END), undone_at = CASE WHEN ? = 'undone' THEN CURRENT_TIMESTAMP ELSE undone_at END WHERE id = ?;"
+UPDATE_UNIT_DECIDED = "UPDATE grouping_units SET status = ?, decided_fingerprint = ?, updated_at = CURRENT_TIMESTAMP WHERE unit_key = ?;"
+INSERT_SNAPSHOT = "INSERT INTO grouping_snapshots (import_id, unit_key, before_json, after_hash) VALUES (?, ?, ?, '');"
+UPDATE_SNAPSHOT_HASH = "UPDATE grouping_snapshots SET after_hash = ? WHERE id = ?;"
+DELETE_SNAPSHOT = "DELETE FROM grouping_snapshots WHERE id = ?;"
+SELECT_SNAPSHOTS = "SELECT id, unit_key, before_json, after_hash, restored_at FROM grouping_snapshots WHERE import_id = ? ORDER BY id;"
+UPDATE_SNAPSHOT_RESTORED = "UPDATE grouping_snapshots SET restored_at = CURRENT_TIMESTAMP WHERE id = ?;"
+INSERT_SUGGESTION = """
+    INSERT INTO grouping_suggestions (import_id, unit_key, bucket, cards_json, reasons_json) VALUES (?, ?, ?, ?, ?);
+"""
+REPLACE_WAITING_SUGGESTIONS = """
+    UPDATE grouping_suggestions SET status = 'replaced', decided_at = CURRENT_TIMESTAMP
+    WHERE unit_key = ? AND status = 'waiting';
+"""
+
+# A unit's state, for snapshots and for telling whether a person edited it since.
+SELECT_UNIT_ARCHIVE_ARTIFACTS = """
+    SELECT a.id, a.model_id FROM model_artifacts a JOIN model_files f ON f.file_id = a.file_id
+    WHERE f.model_id = ? AND a.archive_member_id IS NOT NULL ORDER BY a.id;
+"""
+SELECT_UNIT_LIBRARY_ARTIFACTS = """
+    SELECT a.id, a.model_id FROM model_artifacts a JOIN model_files f ON f.file_id = a.file_id JOIN collections c ON c.id = f.model_id
+    WHERE c.library_id = ? AND substr(c.external_key, 1, length(?)) = ? AND a.archive_member_id IS NULL ORDER BY a.id;
+"""
+SELECT_MODEL_ROWS = """
+    SELECT id, name, category, state, merged_into, image_path, image_source, image_locked FROM models WHERE id IN ({marks}) ORDER BY id;
+"""
+SELECT_LINKS = "SELECT model_id, collection_id FROM model_collections WHERE model_id IN ({marks}) ORDER BY model_id, collection_id;"
+SELECT_ARCHIVE_GROUP_ROWS = "SELECT id, name, image_path, image_source FROM model_groups WHERE collection_id = ? ORDER BY name;"
+SELECT_LIBRARY_GROUP_ROWS = "SELECT id, name, image_path, image_source FROM model_groups WHERE library_id = ? AND release_name = ? ORDER BY name;"
+SELECT_GROUP_MEMBERS = "SELECT model_id FROM model_group_members WHERE group_id = ? ORDER BY model_id;"
+SELECT_TAG_ROWS = "SELECT model_id, tag FROM model_tags WHERE model_id IN ({marks}) ORDER BY model_id, tag;"
+SELECT_REVIEW_ROW = "SELECT reviewed FROM collection_reviews WHERE collection_id = ?;"
+
+# Restoring a snapshot.
+MOVE_ARTIFACT = "UPDATE model_artifacts SET model_id = ? WHERE id = ?;"
+RESTORE_MODEL = """
+    UPDATE models SET name = ?, category = ?, state = ?, merged_into = ?, image_path = ?, image_source = ?, image_locked = ?
+    WHERE id = ?;
+"""
+REDIRECT_MODEL = "UPDATE models SET state = 'merged', merged_into = ? WHERE id = ?;"
+DELETE_LINKS_TO = "DELETE FROM model_collections WHERE model_id = ? AND collection_id = ?;"
+INSERT_LINK = "INSERT INTO model_collections (model_id, collection_id) VALUES (?, ?);"
+DELETE_ARCHIVE_GROUPS = "DELETE FROM model_groups WHERE collection_id = ?;"
+DELETE_LIBRARY_GROUPS = "DELETE FROM model_groups WHERE library_id = ? AND release_name = ?;"
+INSERT_ARCHIVE_GROUP = "INSERT INTO model_groups (collection_id, name, image_path, image_source) VALUES (?, ?, ?, ?);"
+INSERT_LIBRARY_GROUP = "INSERT INTO model_groups (library_id, release_name, name, image_path, image_source) VALUES (?, ?, ?, ?, ?);"
+INSERT_GROUP_MEMBER = "INSERT INTO model_group_members (group_id, model_id) VALUES (?, ?);"
+DELETE_TAG = "DELETE FROM model_tags WHERE model_id = ? AND tag = ?;"
+INSERT_TAG = "INSERT INTO model_tags (model_id, tag) VALUES (?, ?);"
+UPSERT_REVIEW = "UPDATE collection_reviews SET reviewed = ? WHERE collection_id = ?;"
+DELETE_REVIEW = "DELETE FROM collection_reviews WHERE collection_id = ?;"
+SKIP_PICTURE_JOBS = """
+    UPDATE picture_jobs SET status = 'skipped', detail = 'Undone', updated_at = CURRENT_TIMESTAMP
+    WHERE status = 'pending' AND (model_id IN ({marks}) OR collection_id = ?);
+"""
+
+# Pictures.
+SET_MODEL_PICTURE = "UPDATE models SET image_path = ?, image_source = ? WHERE id = ? AND image_locked = 0;"
+SET_GROUP_PICTURE = "UPDATE model_groups SET image_path = ?, image_source = ? WHERE id = ?;"
+SELECT_GROUP_ID = "SELECT id FROM model_groups WHERE collection_id = ? AND name = ?;"
+SELECT_LIBRARY_GROUP_ID = "SELECT id FROM model_groups WHERE library_id = ? AND release_name = ? AND name = ?;"
+INSERT_PICTURE_JOB = "INSERT INTO picture_jobs (kind, model_id, group_id, collection_id, source_json) VALUES (?, ?, ?, ?, ?);"
+SELECT_ARTIFACT_MODEL = "SELECT model_id FROM model_artifacts WHERE id = ?;"
+SELECT_COLLECTION_SOURCE = "SELECT source FROM collections WHERE id = ?;"
