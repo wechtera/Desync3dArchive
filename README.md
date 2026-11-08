@@ -2,6 +2,17 @@
 
 A single-user, local-first archive and asset manager for a MyMiniFactory (MMF) 3D-printing library. It discovers the models you own, catalogs them in SQLite, archives the files to a NAS vault, and builds slicer-ready folders for printing.
 
+## Production and development
+
+Every copy of the app runs in one of two modes, set by `APP_ENV`.
+
+| Mode | Use it for | Settings file | Start it with |
+|---|---|---|---|
+| `production` | Your one live install, with the real data, NAS and MMF sign-in | `~/.config/desync-archival/production.env` | `scripts/server.sh start` |
+| `development` | Every other copy, including a test install on the same machine | `.env` in that copy's folder | `uv run python -m desync_archival.api.server` |
+
+A copy set to `production` ignores its own `.env` and reads the live settings file, so it points at your real data. If the live server is running, the instance lock refuses it. Development refuses every production path, so a second copy can't touch your live data or the NAS.
+
 ## Prerequisites
 
 | Tool | Needed for | Install on macOS |
@@ -38,9 +49,12 @@ npm --prefix tests/e2e ci
 
 # 6. Local configuration
 cp .env.example .env
+
+# 7. After editing .env as below: create the database. The app never does this itself
+uv run python -m desync_archival.dbtool migrate
 ```
 
-Then edit `.env` and set `DESYNC_DATA_DIR` to an absolute path outside this repository. Set `DESYNC_PROTECTED_PATHS` to your NAS, staging and stash folders. The app refuses to start in development without it.
+Then edit `.env`. Leave `APP_ENV=development`, as explained above. Set `DESYNC_DATA_DIR` to an absolute path outside this repository. Set `DESYNC_PROTECTED_PATHS` to your NAS, staging and stash folders. The app refuses to start in development without it.
 
 To build a sanitized development copy from production:
 
@@ -195,7 +209,7 @@ Settings live in two places. Anything in the Settings tab is stored by the app. 
 
 | Setting | What it does | |
 |---|---|---|
-| `APP_ENV` | `production`. Any other value refuses production paths | Required |
+| `APP_ENV` | `production` in this file. A development copy's `.env` uses `development`, which refuses production paths | Required |
 | `DESYNC_DATA_DIR` | Folder for the database, previews, metadata and logs. Keep it off the NAS | Required |
 | `DESYNC_ALLOWED_ROOTS` | Colon-separated folders the file browsers and Import File can reach. Defaults to the data folder | Usually set |
 | `DESYNC_PROTECTED_PATHS` | Colon-separated folders a development run must never touch | Development |

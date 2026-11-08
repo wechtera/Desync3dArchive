@@ -112,6 +112,10 @@ def main() -> int:
     db_path = settings.db_path()
     try:
         if args.command == "status":
+            if not db_path.exists():
+                print(f"no database at {db_path} yet. Create it with:")
+                print("uv run python -m desync_archival.dbtool migrate")
+                return 1
             conn = connect(db_path, readonly=True)
             version = migrations.current_version(conn)
             conn.close()

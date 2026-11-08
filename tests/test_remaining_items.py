@@ -7,11 +7,13 @@ Each test fails on the code before its fix. Class names carry the item, so
 import ast
 import hashlib
 import inspect
+import io
 import json
 import logging
 import os
 import sqlite3
 import stat
+import sys
 import tempfile
 import threading
 import time
@@ -27,7 +29,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from test_fix_first import FILE_URL, DownloadCase
 
-from desync_archival import backup, external, migrations, mounts
+from desync_archival import backup, dbtool, external, migrations, mounts
 from desync_archival import settings as app_config
 from desync_archival.api import routing, schemas, server
 from desync_archival.api.routes import auth as auth_routes
@@ -1715,4 +1717,22 @@ class HandlerShapeA01Tests(unittest.TestCase):
         self.assertEqual(response.status_code, 500)
         with self.assertRaises(sqlite3.ProgrammingError):
             opened[0].execute("SELECT 1")
+
+
+class FreshInstallTests(unittest.TestCase):
+    def test_status_on_a_missing_database_says_how_to_create_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            missing = Path(folder) / "library.db"
+            with patch.object(sys, "argv", ["dbtool", "status"]), \
+                    patch("desync_archival.settings.db_path", return_value=missing), \
+                    patch("sys.stdout", new_callable=io.StringIO) as out:
+                self.assertEqual(dbtool.main(), 1)
+            self.assertFalse(missing.exists())
+        self.assertIn("dbtool migrate", out.getvalue())
+
+    def test_the_readme_tells_a_new_copy_to_stay_in_development_and_migrate(self):
+        readme = (Path(routing.__file__).parents[3] / "README.md").read_text(encoding="utf-8")
+        self.assertIn("## Production and development", readme)
+        self.assertIn("Leave `APP_ENV=development`", readme)
+        self.assertLess(readme.index("cp .env.example .env"), readme.index("dbtool migrate"))
 
