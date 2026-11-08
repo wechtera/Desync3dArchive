@@ -18,6 +18,7 @@ from typing import Any
 
 from desync_archival import settings as app_config
 from desync_archival.db.queries import picture_jobs as queries
+from desync_archival.services import grouping_apply
 from desync_archival.services.archive_peeker import ArchivePeeker
 from desync_archival.services.logger import log_layer
 from desync_archival.services.mesh_renderer import MeshRenderer
@@ -37,11 +38,31 @@ def _finish(conn: sqlite3.Connection, job_id: int, status: str, detail: str = ""
 
 def _set(conn: sqlite3.Connection, job: sqlite3.Row, path: str, source: str) -> None:
     with conn:
+        carried = None if source == OWNER else _untouched_snapshot(conn, job)
         if job["model_id"]:
             update = queries.SET_OWNER_PICTURE if source == OWNER else queries.SET_MODEL_PICTURE
             conn.execute(update, (path, job["model_id"]) if source == OWNER else (path, source, job["model_id"]))
         if job["group_id"]:
             conn.execute(queries.SET_GROUP_PICTURE, (path, source, job["group_id"]))
+        if carried:
+            snapshot_id, unit_key = carried
+            conn.execute(queries.UPDATE_SNAPSHOT_HASH, (grouping_apply.state_hash(grouping_apply.state(conn, unit_key)), snapshot_id))
+
+
+def _untouched_snapshot(conn: sqlite3.Connection, job: sqlite3.Row) -> tuple[int, str] | None:
+    """The apply snapshot this job belongs to, if the unit still stands exactly as that apply left it.
+
+    The picture is part of what the apply did, so it moves the snapshot's after state with it.
+    Without this, undo would read the app's own late picture as a person's edit and refuse. A unit
+    someone changed meanwhile doesn't match, so their edit still stops undo.
+    """
+    snapshot_id = json.loads(job["source_json"] or "{}").get("snapshot")
+    if not snapshot_id:
+        return None
+    row = conn.execute(queries.SELECT_OPEN_SNAPSHOT, (snapshot_id,)).fetchone()
+    if not row or row[1] != grouping_apply.state_hash(grouping_apply.state(conn, row[0])):
+        return None
+    return snapshot_id, row[0]
 
 
 def _previews() -> Path:

@@ -1,6 +1,7 @@
 """E54: applying a checked answer, and undoing it. Nothing is ever lost."""
 
 import json
+import sqlite3
 
 from test_grouping import GroupingCase
 
@@ -11,6 +12,7 @@ from desync_archival.services import (
     grouping_apply,
     grouping_export,
     grouping_suggestions,
+    picture_jobs,
 )
 
 
@@ -279,6 +281,38 @@ class UndoTests(ApplyCase):
         self.assertEqual(result["restored"], [])
         self.assertIn("Changed since", result["left"][0]["why"])
         self.assertEqual(self.one("SELECT COUNT(*) FROM models WHERE name = 'Ghul A, renamed by hand'")[0], 1)
+
+    def finish_picture_jobs(self):
+        """What the image worker does once the NAS answers: each queued picture lands."""
+        self.conn.row_factory = sqlite3.Row
+        for job in self.conn.execute("SELECT * FROM picture_jobs WHERE status = 'pending'").fetchall():
+            picture_jobs._set(self.conn, job, f"renders/{job['id']}.png", "render")
+            picture_jobs._finish(self.conn, job["id"], "done")
+
+    def test_undo_still_restores_once_its_own_pictures_arrive(self):
+        # Seen on production 2026-11-08: Ogre Boss's renders landed seconds after the apply, and
+        # undo took them for a person's edit and left the unit applied.
+        before = grouping_apply.state(self.conn, self.key)
+        import_id, _ = self.apply_answer(self.answer())
+        self.finish_picture_jobs()
+        self.assertTrue(self.one("SELECT COUNT(*) FROM models WHERE image_source = 'render'")[0])
+        result = grouping_apply.undo(self.conn, import_id)
+        self.assertEqual((result["restored"], result["left"]), ([self.key], []))
+        self.assertEqual(grouping_apply.state(self.conn, self.key), before)
+
+    def test_a_person_edit_after_the_pictures_still_stops_undo(self):
+        import_id, _ = self.apply_answer(self.answer())
+        self.finish_picture_jobs()
+        with self.conn:
+            self.conn.execute("UPDATE models SET name = 'Ghul the First' WHERE name = 'Ghul A'")
+        self.assertEqual([u["unit"] for u in grouping_apply.undo(self.conn, import_id)["left"]], [self.key])
+
+    def test_a_picture_landing_after_a_person_edit_doesnt_hide_the_edit(self):
+        import_id, _ = self.apply_answer(self.answer())
+        with self.conn:
+            self.conn.execute("UPDATE models SET name = 'Ghul the First' WHERE name = 'Ghul A'")
+        self.finish_picture_jobs()
+        self.assertEqual([u["unit"] for u in grouping_apply.undo(self.conn, import_id)["left"]], [self.key])
 
     def test_undo_cancels_picture_jobs_it_queued(self):
         import_id, _ = self.apply_answer(self.answer())

@@ -162,7 +162,7 @@ def _covers(conn: sqlite3.Connection, unit_key: str, artifacts: list[int]) -> li
 
 
 def _picture(conn: sqlite3.Connection, plan: dict, unit_key: str, model_id: int, model: dict,
-             before: dict[int, dict], held_back: list[dict]) -> None:
+             before: dict[int, dict], held_back: list[dict], snapshot_id: int) -> None:
     """Applies a model's picture by 9A.4, or holds it back as a suggestion."""
     picture = model["image"]
     had = before.get(model_id, {})
@@ -171,7 +171,8 @@ def _picture(conn: sqlite3.Connection, plan: dict, unit_key: str, model_id: int,
     collection = None if not unit_key.startswith(f"{ARCHIVE}:") else grouping_units.parse_key(unit_key)[1]
     if picture is None:
         if model.get("render_artifact") and not had.get("image_path") and had.get("image_source") in (None, "render"):
-            source = {"artifact": model["render_artifact"], "covers": _covers(conn, unit_key, model["artifacts"])}
+            source = {"artifact": model["render_artifact"], "covers": _covers(conn, unit_key, model["artifacts"]),
+                      "snapshot": snapshot_id}
             conn.execute(queries.INSERT_PICTURE_JOB, ("render", model_id, None, collection, json.dumps(source)))
         return
     fallback = had.get("image_source") in FALLBACK_SOURCES and (had.get("image_source") is not None or not had.get("image_path"))
@@ -189,11 +190,12 @@ def _picture(conn: sqlite3.Connection, plan: dict, unit_key: str, model_id: int,
         conn.execute(queries.SET_MODEL_PICTURE, (picture["preview"], source, model_id))
     else:
         conn.execute(queries.INSERT_PICTURE_JOB, (
-            "extract" if picture.get("member") else "copy", model_id, None, collection, json.dumps({**picture, "source": source}),
+            "extract" if picture.get("member") else "copy", model_id, None, collection,
+            json.dumps({**picture, "source": source, "snapshot": snapshot_id}),
         ))
 
 
-def _group_pictures(conn: sqlite3.Connection, plan: dict, unit_key: str) -> None:
+def _group_pictures(conn: sqlite3.Connection, plan: dict, unit_key: str, snapshot_id: int) -> None:
     kind, number, release = grouping_units.parse_key(unit_key)
     for group in plan["groups"]:
         picture = group.get("image")
@@ -208,7 +210,7 @@ def _group_pictures(conn: sqlite3.Connection, plan: dict, unit_key: str) -> None
         else:
             conn.execute(queries.INSERT_PICTURE_JOB, (
                 "extract" if picture.get("member") else "copy", None, row[0], number if kind == ARCHIVE else None,
-                json.dumps({**picture, "source": "llm"}),
+                json.dumps({**picture, "source": "llm", "snapshot": snapshot_id}),
             ))
 
 
@@ -240,12 +242,12 @@ def apply_plan(conn: sqlite3.Connection, import_id: int, plan: dict[str, Any], r
     with conn:
         for model in plan["models"]:
             model_id = _model_of(conn, model["artifacts"][0])
-            _picture(conn, plan, unit_key, model_id, model, models_before, held_back)
+            _picture(conn, plan, unit_key, model_id, model, models_before, held_back, snapshot_id)
             for tag in model.get("tags", []):
                 # A tag a person took off this collection stays off. Only a person can put it back.
                 if not conn.execute(queries.SELECT_REMOVED_TAG, (tag, model_id)).fetchone():
                     conn.execute(queries.INSERT_TAG, (model_id, tag))
-        _group_pictures(conn, plan, unit_key)
+        _group_pictures(conn, plan, unit_key, snapshot_id)
         conn.execute(queries.UPDATE_SNAPSHOT_HASH, (state_hash(state(conn, unit_key)), snapshot_id))
     return {"unit": unit_key, "models_before": len([m for m in before["models"] if m["state"] != "skipped"]),
             "models_after": len(plan["models"]), "pictures_held_back": held_back}

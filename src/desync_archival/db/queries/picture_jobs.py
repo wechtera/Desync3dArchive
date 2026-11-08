@@ -17,6 +17,12 @@ SET_GROUP_PICTURE = """
     UPDATE model_groups SET image_path = ?, image_source = ? WHERE id = ? AND COALESCE(image_source, '') != 'owner';
 """
 SELECT_MODEL_PICTURE = "SELECT image_path, image_source, image_locked FROM models WHERE id = ?;"
+# The apply that queued a job, while its import still stands and the unit hasn't been restored.
+SELECT_OPEN_SNAPSHOT = """
+    SELECT s.unit_key, s.after_hash FROM grouping_snapshots s JOIN grouping_imports i ON i.id = s.import_id
+    WHERE s.id = ? AND s.restored_at IS NULL AND i.status = 'applied';
+"""
+UPDATE_SNAPSHOT_HASH = "UPDATE grouping_snapshots SET after_hash = ? WHERE id = ?;"
 SELECT_ARCHIVE_FILE = "SELECT vault_path, staging_path FROM downloaded_files WHERE file_id = ?;"
 SELECT_MEMBER = "SELECT internal_path FROM file_archive_members WHERE id = ?;"
 SELECT_ARTIFACT = "SELECT id, file_id, archive_member_id, path, filename FROM model_artifacts WHERE id = ?;"
