@@ -213,12 +213,16 @@
       <button class="sub-btn active" id="group-sync" data-group="sync" data-click="switchDownloadGroup" data-args='["sync"]'>MMF Sync</button>
       <button class="sub-btn" id="group-download" data-group="download" data-click="switchDownloadGroup" data-args='["download"]'>Download MMF</button>
       <button class="sub-btn" id="group-external" data-group="external" data-click="switchDownloadGroup" data-args='["external"]'>External Vault</button>
-      <button class="sub-btn" id="group-reconcile" data-group="reconcile" data-click="switchDownloadGroup" data-args='["reconcile"]'>Vault Reconcile</button>
+      <button class="sub-btn" id="group-reconcile" data-group="reconcile" data-click="switchDownloadGroup" data-args='["reconcile"]'>Vault Reconcile <span class="tab-count" data-issue-count hidden></span></button>
     </div>
     <div class="sub-tabs sub-tabs-minor" id="minor-download" style="display:none;">
       <button class="sub-btn" data-click="switchDownloadSubView" data-args='["pending"]'>Pending &amp; Queue Explorer</button>
       <button class="sub-btn" data-click="switchDownloadSubView" data-args='["active"]'>Active Transfers</button>
       <button class="sub-btn" data-click="switchDownloadSubView" data-args='["history"]'>History &amp; Audit Log</button>
+    </div>
+    <div class="sub-tabs sub-tabs-minor" id="minor-reconcile" style="display:none;">
+      <button class="sub-btn" data-click="switchDownloadSubView" data-args='["reconcile"]'>Vault Audit</button>
+      <button class="sub-btn" id="sub-btn-issues" data-click="switchDownloadSubView" data-args='["issues"]'>Download Issues <span class="tab-count" data-issue-count hidden></span></button>
     </div>
     <div class="sub-tabs sub-tabs-minor" id="minor-external" style="display:none;">
       <button class="sub-btn" id="sub-btn-libraries" data-click="switchDownloadSubView" data-args='["libraries"]'>Linked Libraries</button>
@@ -327,6 +331,7 @@
           <select id="history-filter" data-change="resetHistoryPageAndLoad">
             <option value="">All Finished / Failed</option>
             <option value="completed">Completed Only</option>
+            <option value="issues">Completed with Issues</option>
             <option value="failed">Failed Only</option>
           </select>
           <select id="history-sort" data-change="resetHistoryPageAndLoad">
@@ -525,6 +530,21 @@
           <details class="reconcile-card-results" id="duplicate-results-panel" hidden></details>
         </section>
       </div>
+    </div>
+
+    <!-- Sub-View: Download Issues. Files a download kept with a size MMF lists wrong, or couldn't get. -->
+    <div id="sub-dl-issues" style="display:none;">
+      <div class="controls controls-between">
+        <p class="text-dim font-sm issues-intro">
+          Files a download couldn't settle. Check a kept file and keep it, or download the file from MMF yourself and upload it.
+          An upload replaces the stored copy, which waits in Pending Deletion.
+        </p>
+        <div class="segmented-control" role="group" aria-label="Which issues">
+          <button type="button" class="segmented-btn active" id="btn-issues-open" data-click="showDownloadIssues" data-args='["open"]'>Open</button>
+          <button type="button" class="segmented-btn" id="btn-issues-resolved" data-click="showDownloadIssues" data-args='["resolved"]'>Settled</button>
+        </div>
+      </div>
+      <div id="issues-list" class="issues-list"></div>
     </div>
 
     <!-- Sub-View E: MMF Sync -->

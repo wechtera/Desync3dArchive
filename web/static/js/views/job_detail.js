@@ -2,7 +2,9 @@
  * The full story of one download job: its error in full, and every attempt. The History table
  * cuts errors short, and these are what explain a failure.
  */
+import { actions } from '../actions.js';
 import { fetchDownloadJob } from '../api.js';
+import { issueBadge } from './download_issues.js';
 import { formatLocalDateTime as formatDate, statusBadge } from '../utils.js';
 import { html, nothing, render } from '../template.js';
 
@@ -66,17 +68,35 @@ function attemptRow(attempt) {
   `;
 }
 
+function openIssues() {
+  closeJobDetail();
+  actions.switchDownloadSubView('issues');
+}
+
+function issuesBlock(issues) {
+  if (!issues?.length) return nothing;
+  return html`
+    <h3 class="job-detail-subhead">Files that need attention</h3>
+    <ul class="job-detail-issues">
+      ${issues.map((issue) => html`<li>${issueBadge(issue.kind)} <span class="font-mono">${issue.filename}</span></li>`)}
+    </ul>
+    <button type="button" class="btn-pill btn-action-queue" @click=${openIssues}>Open Download Issues</button>
+  `;
+}
+
 function body(data) {
-  const { job, attempts } = data;
+  const { job, attempts, issues } = data;
+  const status = job.status === 'completed' && issues?.length ? 'completed_with_issues' : job.status;
   return html`
     <dl class="job-detail-facts">
       <dt>Creator</dt><dd>${job.creator_name || 'Unknown'}</dd>
-      <dt>Status</dt><dd>${statusBadge(job.status)}</dd>
+      <dt>Status</dt><dd>${statusBadge(status)}</dd>
       <dt>Queued</dt><dd>${formatDate(job.enqueued_at)}</dd>
       <dt>Finished</dt><dd>${formatDate(job.completed_at)}</dd>
       <dt>Retries</dt><dd>${job.retry_count || 0}</dd>
     </dl>
-    ${job.error_message ? errorBlock(job.error_message) : html`<p class="text-dim">No error recorded.</p>`}
+    ${issuesBlock(issues)}
+    ${job.error_message ? errorBlock(job.error_message) : issues?.length ? nothing : html`<p class="text-dim">No error recorded.</p>`}
     <h3 class="job-detail-subhead">Attempts for this collection</h3>
     ${attempts.length
       ? html`<ul class="job-detail-attempts">${attempts.map(attemptRow)}</ul>`

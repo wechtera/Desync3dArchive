@@ -63,6 +63,25 @@ export async function fetchDownloadJob(jobId) {
   return request(`/api/downloads/jobs/${jobId}`);
 }
 
+export async function fetchDownloadIssues(state = 'open') {
+  return request(`/api/download-issues?state=${encodeURIComponent(state)}`);
+}
+
+export async function keepDownloadIssue(issueId) {
+  return request(`/api/download-issues/${issueId}/keep`, { method: 'POST' });
+}
+
+/** Sends the file as raw bytes. The server checks the name and type before it takes any of them. */
+export async function uploadDownloadIssueFile(issueId, file, confirmName = false) {
+  const params = new URLSearchParams({ name: file.name });
+  if (confirmName) params.set('confirm', '1');
+  return request(`/api/download-issues/${issueId}/file?${params}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/octet-stream' },
+    body: file,
+  });
+}
+
 export async function queueDownloads(payload) {
   return request('/api/downloads/queue', {
     method: 'POST',

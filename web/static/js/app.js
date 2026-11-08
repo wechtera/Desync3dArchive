@@ -1,6 +1,7 @@
 import './views/tags.js';
 import { loadDocuments } from './views/documents.js';
 import { loadBrowse } from './views/browse.js';
+import { showIssueCount } from './views/download_issues.js';
 import { actions, bindActions, registerActions } from './actions.js';
 import {
   fetchMetrics,
@@ -326,6 +327,7 @@ export async function checkHealth() {
 
     const dlRes = await fetchDownloadsStatus().catch(() => null);
     if (dlRes) {
+      showIssueCount(dlRes.open_issues);
       const reconnectBanner = document.getElementById('banner-reconnect');
       if (reconnectBanner) {
         reconnectBanner.style.display = dlRes.reconnect_required ? 'flex' : 'none';

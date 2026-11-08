@@ -1213,6 +1213,13 @@ pre, .task-log-viewer, .console-output {
   border-color: var(--status-alert-border);
 }
 
+/* Finished, but a file waits in Download Issues. */
+.status-issues {
+  background: var(--status-warn-bg);
+  color: var(--status-warn-fg);
+  border-color: var(--status-warn-fg);
+}
+
 .badge {
   display: inline-block;
   font-size: 10px;
@@ -3656,3 +3663,90 @@ button.duplicate-delete:disabled { opacity: 0.45; cursor: not-allowed; filter: g
   margin-bottom: 10px;
 }
 
+
+/* Download Issues */
+.tab-count {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--status-warn-bg);
+  color: var(--status-warn-fg);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.tab-count[hidden] { display: none; }
+
+.issues-intro { max-width: 70ch; margin: 0; }
+
+.issues-banner {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--warning);
+  background: var(--status-warn-bg);
+  color: var(--text-main);
+}
+
+.issues-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.issue-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.issue-head,
+.issue-path,
+.issue-links,
+.issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.issue-filename { color: var(--text-main); overflow-wrap: anywhere; }
+.issue-sizes { margin: 0; }
+.issue-links a { color: var(--info); }
+.issue-detail .job-detail-error { margin-top: 6px; max-height: 20vh; }
+
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.link-button:hover,
+.link-button:focus-visible { text-decoration: underline; }
+
+.history-error-link-warn { color: var(--status-warn-fg); }
+
+.job-detail-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.job-detail-issues li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

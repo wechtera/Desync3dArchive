@@ -48,6 +48,8 @@ export function getFileExtension(filename) {
 
 const STATUS_BADGES = {
   completed: ['status-completed', 'Archived'],
+  // Not stored: a finished job whose model still has a file in Download Issues.
+  completed_with_issues: ['status-issues', 'Completed with issues'],
   queued: ['status-queued', 'Queued'],
   partial: ['status-partial', 'Partial'],
   failed: ['status-failed', 'Failed'],

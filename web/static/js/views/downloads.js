@@ -1,4 +1,5 @@
 import { actions, registerActions } from '../actions.js';
+import { loadDownloadIssues } from './download_issues.js';
 import { openJobDetail } from './job_detail.js';
 import { loadArchiveQueue, loadExternalLibraries } from './libraries.js';
 import {
@@ -149,7 +150,7 @@ const DOWNLOAD_GROUPS = {
   sync: ['sync'],
   download: ['pending', 'active', 'history'],
   external: ['libraries', 'archives', 'import'],
-  reconcile: ['reconcile'],
+  reconcile: ['reconcile', 'issues'],
 };
 
 export function switchDownloadGroup(group) {
@@ -163,7 +164,7 @@ export function switchDownloadSubView(subview) {
   });
 
   const group = Object.keys(DOWNLOAD_GROUPS).find(g => DOWNLOAD_GROUPS[g].includes(subview));
-  ['download', 'external'].forEach(name => {
+  ['download', 'external', 'reconcile'].forEach(name => {
     const row = document.getElementById(`minor-${name}`);
     if (row) row.style.display = name === group ? 'flex' : 'none';
   });
@@ -184,6 +185,9 @@ export function switchDownloadSubView(subview) {
   } else if (subview === 'reconcile') {
     stopActiveTransfersPolling();
     loadReconcileView();
+  } else if (subview === 'issues') {
+    stopActiveTransfersPolling();
+    loadDownloadIssues();
   } else if (subview === 'sync') {
     stopActiveTransfersPolling();
   } else if (subview === 'libraries') {
@@ -607,6 +611,10 @@ export async function loadDownloadHistory(page = currentHistoryPage) {
 
     render(jobs.map(j => {
       const creator = j.creator_name || j.designer_name || 'Unknown';
+      const withIssues = j.status === 'completed' && j.open_issues > 0;
+      const title = j.model_name || `Model #${j.model_id}`;
+      const attention = `${j.open_issues} file${j.open_issues === 1 ? '' : 's'} need${j.open_issues === 1 ? 's' : ''} attention`;
+      const errorText = withIssues ? attention : j.error_message;
       return html`
         <tr>
           <td class="font-mono text-dim font-sm">${formatDate(j.enqueued_at)}</td>
@@ -617,12 +625,13 @@ export async function loadDownloadHistory(page = currentHistoryPage) {
             </div>
           </td>
           <td>${creator}</td>
-          <td>${statusBadge(j.status)}</td>
+          <td>${statusBadge(withIssues ? 'completed_with_issues' : j.status)}</td>
           <td class="font-mono">${j.retry_count || 0}</td>
           <td class="cell-label-truncate font-mono font-xs">
-            ${j.error_message
-              ? html`<button type="button" class="history-error-link" title="Show the full error"
-                  @click=${() => openJobDetail(j.id, j.model_name || `Model #${j.model_id}`)}>${j.error_message}</button>`
+            ${errorText
+              ? html`<button type="button" class="history-error-link ${withIssues ? 'history-error-link-warn' : ''}"
+                  title=${withIssues ? 'Show the files that need attention' : 'Show the full error'}
+                  @click=${() => openJobDetail(j.id, title)}>${errorText}</button>`
               : '-'}
           </td>
           <td>
