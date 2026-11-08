@@ -377,6 +377,8 @@ def _plan(unit: AnswerUnit, ids: dict[str, dict], group_names: dict, tag_list: s
                 "alternates": [picture(a) for a in m.image_alternates if a != m.image],
                 "render_artifact": ids[m.render_artifact]["id"] if m.render_artifact else None,
                 "tags": [t for t in m.tags if t in tag_list] if tags_allowed else [],
+                # Tags it asked for that don't exist yet. Approving one adds it to these models.
+                "wanted_tags": _clean_tags([t for t in m.tags if t not in tag_list]) if tags_allowed else [],
                 "confidence": m.confidence, "reason": visible(m.reason, 500),
             }
             for m in unit.models

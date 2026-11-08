@@ -226,7 +226,9 @@ def apply_plan(conn: sqlite3.Connection, import_id: int, plan: dict[str, Any], r
             model_id = _model_of(conn, model["artifacts"][0])
             _picture(conn, plan, unit_key, model_id, model, models_before, held_back)
             for tag in model.get("tags", []):
-                conn.execute(queries.INSERT_TAG, (model_id, tag))
+                # A tag a person took off this collection stays off. Only a person can put it back.
+                if not conn.execute(queries.SELECT_REMOVED_TAG, (tag, model_id)).fetchone():
+                    conn.execute(queries.INSERT_TAG, (model_id, tag))
         _group_pictures(conn, plan, unit_key)
         conn.execute(queries.UPDATE_SNAPSHOT_HASH, (state_hash(state(conn, unit_key)), snapshot_id))
     return {"unit": unit_key, "models_before": len([m for m in before["models"] if m["state"] != "skipped"]),

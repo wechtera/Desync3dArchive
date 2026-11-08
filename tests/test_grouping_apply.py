@@ -4,7 +4,13 @@ import json
 
 from test_grouping import GroupingCase
 
-from desync_archival.services import archive_review, grouping_answer, grouping_apply
+from desync_archival.services import (
+    archive_review,
+    grouping_answer,
+    grouping_apply,
+    grouping_export,
+    grouping_suggestions,
+)
 
 
 class ApplyCase(GroupingCase):
@@ -238,3 +244,112 @@ class RedirectTests(ApplyCase):
         ghuls_id = self.one("SELECT model_id FROM model_artifacts WHERE filename = '32mm_Ghul_B.stl'")[0]
         self.assertNotEqual(ghuls_id, old_b, "Ghul A's model has more files, so it keeps its ID")
         self.assertEqual(tuple(self.one("SELECT state, merged_into FROM models WHERE id = ?", old_b)), ("merged", ghuls_id))
+
+
+class SuggestionReviewTests(ApplyCase):
+    """A waiting answer, opened in the review editor and decided by a person."""
+
+    def suggest(self):
+        answer = self.answer()
+        answer["units"][0]["confidence"] = "medium"
+        answer["units"][0]["reason"] = "Not sure the Banshee is one figure"
+        self.apply_answer(answer)
+        return self.one("SELECT id FROM grouping_suggestions WHERE status = 'waiting'")[0]
+
+    def test_it_opens_with_the_llms_cards_and_reasons(self):
+        view = grouping_suggestions.view(self.conn, self.suggest())
+        self.assertEqual([c["name"] for c in view["cards"]], ["Ghul A", "Ghul B", "Banshee"])
+        self.assertIn("Not sure the Banshee", " ".join(view["suggestion"]["reasons"]))
+        self.assertTrue(all("Suggested" in c["flags"][0] for c in view["cards"]))
+        self.assertEqual(view["cards"][1]["picture"], "i2")
+        self.assertTrue(all(i["url"].startswith("/previews/") for i in view["suggestion"]["images"]))
+
+    def test_the_waiting_list_says_what_each_is(self):
+        self.suggest()
+        item = grouping_suggestions.waiting(self.conn)[0]
+        self.assertEqual((item["unit"], item["bucket"], item["kind"], item["models"]), (self.key, "medium", "grouping", 3))
+
+    def test_accepting_saves_it_as_a_persons_review_with_their_pictures_locked(self):
+        suggestion = self.suggest()
+        cards = grouping_suggestions.view(self.conn, suggestion)["cards"]
+        cards[2]["name"] = "Banshee, edited"
+        grouping_suggestions.accept(self.conn, suggestion, cards, {cards[0]["paths"][0]: "i3"})
+        self.assertIn("Banshee, edited", self.holders().values())
+        self.assertEqual(self.one("SELECT reviewed FROM collection_reviews WHERE collection_id = ?", self.collection)[0], 1)
+        path, source, locked = self.one("SELECT image_path, image_source, image_locked FROM models WHERE name = 'Ghul A'")
+        self.assertTrue(path.endswith("Ghuls_Group.png"))
+        self.assertEqual((source, locked), ("owner", 1))
+        self.assertEqual(self.one("SELECT status FROM grouping_suggestions WHERE id = ?", suggestion)[0], "accepted")
+
+    def test_rejecting_keeps_todays_grouping_and_the_unit_out_of_deltas(self):
+        before = grouping_apply.state(self.conn, self.key)
+        grouping_suggestions.reject(self.conn, self.suggest())
+        self.assertEqual(grouping_apply.state(self.conn, self.key), before)
+        self.assertEqual(self.one("SELECT status FROM grouping_units WHERE unit_key = ?", self.key)[0], "rejected")
+        self.assertEqual(grouping_export.preview(self.conn, "delta", "archives", False, 2000)["units"], 0)
+
+    def test_a_suggestion_is_decided_once(self):
+        suggestion = self.suggest()
+        grouping_suggestions.reject(self.conn, suggestion)
+        with self.assertRaisesRegex(grouping_apply.ApplyRefused, "already rejected"):
+            grouping_suggestions.accept(self.conn, suggestion, None)
+
+    def test_a_suggestion_for_files_that_changed_is_refused(self):
+        suggestion = self.suggest()
+        with self.conn:
+            self.conn.execute("UPDATE model_artifacts SET size_bytes = 99 WHERE filename = '32mm_Ghul_B.stl'")
+        with self.assertRaisesRegex(grouping_apply.ApplyRefused, "no longer fits"):
+            grouping_suggestions.view(self.conn, suggestion)
+
+    def test_a_picture_must_be_one_of_this_units(self):
+        suggestion = self.suggest()
+        cards = grouping_suggestions.view(self.conn, suggestion)["cards"]
+        with self.assertRaisesRegex(grouping_apply.ApplyRefused, "isn't a picture of this unit"):
+            grouping_suggestions.accept(self.conn, suggestion, cards, {cards[0]["paths"][0]: "a1"})
+
+    def test_a_pictures_only_suggestion_sets_just_the_pictures(self):
+        answer = self.answer()
+        answer["units"][0]["models"][1]["image_confidence"] = "medium"
+        with self.conn:
+            self.conn.execute("UPDATE models SET image_path = NULL, image_source = NULL")
+        self.apply_answer(answer)
+        suggestion = self.one("SELECT id FROM grouping_suggestions WHERE status = 'waiting'")[0]
+        view = grouping_suggestions.view(self.conn, suggestion)
+        self.assertEqual(view["suggestion"]["kind"], "pictures")
+        item = view["suggestion"]["pictures"][0]
+        grouping_suggestions.accept(self.conn, suggestion, None, {str(item["model_id"]): item["image"]})
+        self.assertEqual(self.one("SELECT image_source FROM models WHERE id = ?", item["model_id"])[0], "owner")
+
+
+class TagTests(ApplyCase):
+    def setUp(self):
+        super().setUp()
+        with self.conn:
+            self.conn.execute("UPDATE collections SET source = 'import' WHERE id = ?", (self.collection,))
+            self.conn.execute("INSERT INTO tags (name) VALUES ('undead')")
+
+    def tagged(self, model="Ghul A"):
+        return [r[0] for r in self.conn.execute(
+            "SELECT t.tag FROM model_tags t JOIN models m ON m.id = t.model_id WHERE m.name = ? ORDER BY t.tag", (model,))]
+
+    def test_an_existing_tag_is_added(self):
+        answer = self.answer()
+        answer["units"][0]["models"][0]["tags"] = ["undead"]
+        self.apply_answer(answer)
+        self.assertEqual(self.tagged(), ["undead"])
+
+    def test_a_tag_a_person_removed_stays_off(self):
+        with self.conn:
+            self.conn.execute("INSERT INTO removed_tags (collection_id, tag) VALUES (?, 'undead')", (self.collection,))
+        answer = self.answer()
+        answer["units"][0]["models"][0]["tags"] = ["undead"]
+        self.apply_answer(answer)
+        self.assertEqual(self.tagged(), [])
+
+    def test_a_new_tag_waits_until_a_person_approves_it(self):
+        answer = self.answer()
+        answer["units"][0]["models"][0]["tags"] = ["ghoulish"]
+        import_id, _ = self.apply_answer(answer)
+        self.assertEqual(self.tagged(), [])
+        grouping_suggestions.approve_tags(self.conn, import_id, ["ghoulish"])
+        self.assertEqual(self.tagged(), ["ghoulish"])

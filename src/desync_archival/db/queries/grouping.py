@@ -147,3 +147,25 @@ SELECT_LIBRARY_GROUP_ID = "SELECT id FROM model_groups WHERE library_id = ? AND 
 INSERT_PICTURE_JOB = "INSERT INTO picture_jobs (kind, model_id, group_id, collection_id, source_json) VALUES (?, ?, ?, ?, ?);"
 SELECT_ARTIFACT_MODEL = "SELECT model_id FROM model_artifacts WHERE id = ?;"
 SELECT_COLLECTION_SOURCE = "SELECT source FROM collections WHERE id = ?;"
+
+# Suggestions.
+SELECT_WAITING_SUGGESTIONS = """
+    SELECT s.id, s.import_id, s.unit_key, s.bucket, s.reasons_json, s.cards_json, s.created_at
+    FROM grouping_suggestions s WHERE s.status = 'waiting' ORDER BY CASE s.bucket WHEN 'low' THEN 1 ELSE 0 END, s.id;
+"""
+SELECT_SUGGESTION = "SELECT id, import_id, unit_key, bucket, cards_json, reasons_json, status FROM grouping_suggestions WHERE id = ?;"
+DECIDE_SUGGESTION = "UPDATE grouping_suggestions SET status = ?, decided_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'waiting';"
+SELECT_ARTIFACT_BY_ID = "SELECT model_id FROM model_artifacts WHERE id = ?;"
+LOCK_MODEL_PICTURE = "UPDATE models SET image_path = ?, image_source = 'owner', image_locked = 1 WHERE id = ?;"
+
+# Imports for the screen.
+SELECT_IMPORTS = """
+    SELECT i.id, i.source_name, i.status, i.created_at, i.applied_at, i.undone_at, i.report_json, e.export_key
+    FROM grouping_imports i LEFT JOIN grouping_exports e ON e.id = i.export_id ORDER BY i.id DESC LIMIT ?;
+"""
+SELECT_EXPORTS = "SELECT export_key, mode, scope, unit_count, batch_count, created_at FROM grouping_exports ORDER BY id DESC LIMIT ?;"
+DISCARD_IMPORT = "UPDATE grouping_imports SET status = 'discarded' WHERE id = ? AND status = 'checked';"
+SELECT_MODEL_IMAGE = "SELECT image_path FROM models WHERE id = ?;"
+SELECT_REMOVED_TAG = """
+    SELECT 1 FROM removed_tags WHERE tag = ? AND collection_id IN (SELECT collection_id FROM model_collections WHERE model_id = ?);
+"""
