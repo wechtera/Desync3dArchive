@@ -699,6 +699,7 @@ export function fetchGroupingPreview({ mode, scope, includeReviewed, batchLines 
 export const checkGroupingAnswer = (text, name) => postJson('/api/grouping/check', { text, name });
 // choices maps unit keys to apply, wait or skip; units left out go as the checks decided.
 export const applyGroupingImport = (importId, choices = {}) => postJson(`/api/grouping/imports/${importId}/apply`, { choices });
+export const reviewGroupingUnit = (importId, unit) => postJson(`/api/grouping/imports/${importId}/review`, { unit });
 export const discardGroupingImport = (importId) => postJson(`/api/grouping/imports/${importId}/discard`, {});
 export const undoGroupingImport = (importId) => postJson(`/api/grouping/imports/${importId}/undo`, {});
 export const approveGroupingTags = (importId, approved) => postJson(`/api/grouping/imports/${importId}/tags`, { approved });

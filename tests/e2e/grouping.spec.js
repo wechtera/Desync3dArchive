@@ -33,7 +33,8 @@ const UNIT_REFUSED = {
 };
 const UNIT_WAIT = {
   ...UNIT_OK, unit: 'archive:3', title: 'Blighted Fields', outcome: 'suggest', bucket: 'medium',
-  reasons: ['The LLM rated the unit medium'], summary: 'Waits for you: 17 models become 18.',
+  reasons: ['The LLM rated the unit medium: brother and sister unclear', 'The LLM rated Brother medium: shares a base'],
+  summary: 'Waits for you in review: 17 models become 18.',
 };
 const FIX = 'Your answer to export e-20261108-120000-ab12 needs these fixes.\nUnit archive:2 (Frog Riders):\n- It changes creator.\n';
 const GOOD_REPORT = { export_id: 'e-20261108-120000-ab12', notes: [], error: '', units: [UNIT_OK], fix_request: '', import_id: 7, counts: { apply: 1, suggest: 0, refuse: 0 } };
@@ -98,7 +99,7 @@ test.beforeEach(async ({ page, context }) => {
     });
   });
   await page.route('**/api/grouping/check', (route) => { record(route); return json(route, page.report); });
-  await page.route((url) => /^\/api\/grouping\/imports\/\d+\/(apply|discard|undo|tags)$/.test(url.pathname), (route) => {
+  await page.route((url) => /^\/api\/grouping\/imports\/\d+\/(apply|discard|undo|tags|review)$/.test(url.pathname), (route) => {
     record(route);
     const step = new URL(route.request().url()).pathname.split('/').pop();
     const bodies = {
@@ -106,6 +107,7 @@ test.beforeEach(async ({ page, context }) => {
       discard: { success: true },
       undo: { import_id: 3, restored: ['archive:1', 'archive:4'], left: [{ unit: 'archive:6', why: 'Changed since' }] },
       tags: { success: true, created: ['banshee'], added: 1 },
+      review: { import_id: 7, unit: 'archive:3', suggestion_id: 5 },
     };
     return json(route, bodies[step]);
   });
@@ -190,6 +192,29 @@ test('the checks\' choices can be put back before confirming', async ({ page }) 
   await expect(page.locator('#grouping-chosen')).toContainText('On confirm: 1 applies now');
   await page.locator('#btn-grouping-confirm').click();
   expect(page.calls.find(c => c.path === '/api/grouping/imports/7/apply').body).toEqual({ choices: {} });
+});
+
+test('a waiting row shows its lead reason and folds the rest', async ({ page }) => {
+  page.report = { ...GOOD_REPORT, units: [UNIT_WAIT], counts: { apply: 0, suggest: 1, refuse: 0 } };
+  await page.locator('#grouping-answer-file').setInputFiles({ name: 'answer.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
+  const row = page.locator('.grouping-unit[data-unit="archive:3"]');
+  await expect(row.locator('.grouping-lead')).toHaveText('The LLM rated the unit medium: brother and sister unclear');
+  await expect(row.locator('.grouping-why summary')).toHaveText('Why it waits: 1 more');
+  await expect(row.getByText('The LLM rated Brother medium: shares a base')).not.toBeVisible();
+  await row.locator('.grouping-why summary').click();
+  await expect(row.getByText('The LLM rated Brother medium: shares a base')).toBeVisible();
+});
+
+test('review now opens one unit in the editor and the rest still waits to confirm', async ({ page }) => {
+  page.report = { ...GOOD_REPORT, units: [UNIT_OK, UNIT_WAIT], counts: { apply: 1, suggest: 1, refuse: 0 } };
+  await page.locator('#grouping-answer-file').setInputFiles({ name: 'answer.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
+  const row = page.locator('.grouping-unit[data-unit="archive:3"]');
+  await row.locator('.grouping-review-now').click();
+  await expect(page.locator('#library-review-modal')).toBeVisible();
+  expect(page.calls.find(c => c.path === '/api/grouping/imports/7/review').body).toEqual({ unit: 'archive:3' });
+  await expect(row).toContainText('In review, under Waiting for you');
+  await expect(page.locator('#grouping-chosen')).toContainText('1 applies now, 0 wait for you, 0 skipped. 1 already in review.');
+  await expect(page.locator('#btn-grouping-confirm')).toBeVisible();
 });
 
 test('a refused unit gives a fix request to copy back to the LLM', async ({ page }) => {

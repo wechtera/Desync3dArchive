@@ -3788,6 +3788,9 @@ button.duplicate-delete:disabled { opacity: 0.45; cursor: not-allowed; filter: g
 .grouping-reasons { margin: 4px 0 0; padding-left: 16px; }
 .grouping-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .grouping-choice { max-width: 100%; }
+.grouping-review-now { margin-top: 4px; display: block; }
+.grouping-lead { margin: 4px 0 0; }
+.grouping-why { margin-top: 2px; }
 .grouping-fix .job-detail-error { max-height: 30vh; }
 .grouping-outcome { padding: 8px 12px; border-left: 2px solid var(--status-ok-fg); background: var(--status-ok-bg); }
 .grouping-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 4px; }

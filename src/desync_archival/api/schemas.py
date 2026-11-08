@@ -284,6 +284,11 @@ class GroupingApplyBody(RequestBody):
     choices: dict[str, str] = Field(default_factory=dict)
 
 
+class GroupingReviewBody(RequestBody):
+    """One unit of a checked answer to review before confirming the rest."""
+    unit: str
+
+
 class GroupingTagsBody(RequestBody):
     approved: list[str] = Field(default_factory=list)
 

@@ -93,6 +93,7 @@ UPDATE_IMPORT_STATUS = "UPDATE grouping_imports SET status = ?, applied_at = COA
 UPDATE_UNIT_DECIDED = "UPDATE grouping_units SET status = ?, decided_fingerprint = ?, updated_at = CURRENT_TIMESTAMP WHERE unit_key = ?;"
 INSERT_SNAPSHOT = "INSERT INTO grouping_snapshots (import_id, unit_key, before_json, after_hash) VALUES (?, ?, ?, '');"
 UPDATE_SNAPSHOT_HASH = "UPDATE grouping_snapshots SET after_hash = ? WHERE id = ?;"
+UPDATE_IMPORT_REPORT = "UPDATE grouping_imports SET report_json = ? WHERE id = ? AND status = 'checked';"
 DELETE_SNAPSHOT = "DELETE FROM grouping_snapshots WHERE id = ?;"
 SELECT_SNAPSHOTS = "SELECT id, unit_key, before_json, after_hash, restored_at FROM grouping_snapshots WHERE import_id = ? ORDER BY id;"
 UPDATE_SNAPSHOT_RESTORED = "UPDATE grouping_snapshots SET restored_at = CURRENT_TIMESTAMP WHERE id = ?;"

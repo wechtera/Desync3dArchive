@@ -199,6 +199,65 @@ class ChoiceTests(ApplyCase):
         self.assertEqual(detail["skipped"], [self.key])
 
 
+class ReviewNowTests(ApplyCase):
+    """E57: one unit of a checked answer opened in the review editor before the rest is confirmed."""
+
+    def medium(self):
+        answer = self.answer()
+        answer["units"][0]["confidence"] = "medium"
+        return answer
+
+    def test_a_waiting_unit_goes_to_review_and_the_answer_stays_unconfirmed(self):
+        before = grouping_apply.state(self.conn, self.key)
+        import_id, _ = self.checked(self.medium())
+        result = grouping_apply.review_now(self.conn, import_id, self.key)
+        self.assertEqual(self.one("SELECT status FROM grouping_suggestions WHERE id = ?", result["suggestion_id"])[0], "waiting")
+        self.assertEqual(self.one("SELECT status FROM grouping_imports WHERE id = ?", import_id)[0], "checked")
+        self.assertEqual(grouping_apply.state(self.conn, self.key), before)
+
+    def test_the_later_confirm_leaves_it_to_the_review(self):
+        import_id, _ = self.checked(self.medium())
+        grouping_apply.review_now(self.conn, import_id, self.key)
+        result = grouping_apply.apply(self.conn, import_id, {self.key: "skip"})
+        self.assertEqual((result["filed"], result["suggested"], result["skipped"]), ([self.key], [], []))
+        self.assertEqual(self.one("SELECT COUNT(*) FROM grouping_suggestions WHERE status = 'waiting'")[0], 1)
+
+    def test_a_unit_that_would_apply_is_held_and_says_why(self):
+        import_id, _ = self.checked(self.answer())
+        suggestion = grouping_apply.review_now(self.conn, import_id, self.key)["suggestion_id"]
+        reasons = json.loads(self.one("SELECT reasons_json FROM grouping_suggestions WHERE id = ?", suggestion)[0])
+        self.assertIn(grouping_apply.HELD_BY_PERSON, reasons)
+        self.assertEqual(grouping_apply.apply(self.conn, import_id)["applied"], [])
+
+    def test_accepting_before_the_confirm_counts(self):
+        import_id, _ = self.checked(self.medium())
+        suggestion = grouping_apply.review_now(self.conn, import_id, self.key)["suggestion_id"]
+        cards = grouping_suggestions.view(self.conn, suggestion)["cards"]
+        grouping_suggestions.accept(self.conn, suggestion, cards)
+        self.assertEqual(self.holders()["28mm_Ghul_A_Supported.stl"], "Ghul A")
+        self.assertEqual(grouping_apply.apply(self.conn, import_id)["filed"], [self.key])
+
+    def test_it_goes_to_review_once(self):
+        import_id, _ = self.checked(self.medium())
+        grouping_apply.review_now(self.conn, import_id, self.key)
+        with self.assertRaisesRegex(grouping_apply.ApplyRefused, "already waiting for you"):
+            grouping_apply.review_now(self.conn, import_id, self.key)
+
+    def test_a_refused_unit_has_nothing_to_review(self):
+        answer = self.answer()
+        answer["units"].append(json.loads(json.dumps(answer["units"][0])))
+        answer["units"][1]["unit_id"] = "archive:999999"
+        import_id, report = self.checked(answer)
+        refused = next(u["unit"] for u in report["units"] if u["outcome"] == grouping_answer.REFUSE)
+        with self.assertRaisesRegex(grouping_apply.ApplyRefused, "nothing to review"):
+            grouping_apply.review_now(self.conn, import_id, refused)
+
+    def test_only_an_answer_waiting_for_confirmation(self):
+        import_id, _ = self.apply_answer(self.answer())
+        with self.assertRaisesRegex(grouping_apply.ApplyRefused, "already applied"):
+            grouping_apply.review_now(self.conn, import_id, self.key)
+
+
 class PictureTests(ApplyCase):
     def picture(self, name):
         return tuple(self.one("SELECT image_path, image_source FROM models WHERE name = ?", name))

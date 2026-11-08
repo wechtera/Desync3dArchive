@@ -73,6 +73,15 @@ def handle_post_grouping_apply(conn: Conn, import_id: int, body: Body) -> Result
     return result, 200
 
 
+def handle_post_grouping_review(conn: Conn, import_id: int, body: Body) -> Result:
+    try:
+        result = grouping_apply.review_now(conn, import_id, str(body.get("unit", "")))
+    except ApplyRefused as e:
+        return _refused(e)
+    log_layer("storage", logging.INFO, f"LLM grouping import {import_id}: {result['unit']} sent to review before confirming")
+    return result, 200
+
+
 def handle_post_grouping_discard(conn: Conn, import_id: int) -> Result:
     try:
         return grouping_screen.discard(conn, import_id), 200

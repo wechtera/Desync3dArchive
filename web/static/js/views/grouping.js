@@ -13,6 +13,7 @@ import {
   downloadGroupingExport,
   fetchGrouping,
   fetchGroupingPreview,
+  reviewGroupingUnit,
   undoGroupingImport,
 } from '../api.js';
 import { html, nothing, render } from '../template.js';
@@ -255,32 +256,72 @@ function choose(unit, value) {
 
 function reviewAllMyself() {
   for (const unit of report.units) {
-    if (unit.outcome === 'apply' && choiceOf(unit) === 'apply') choices.set(unit.unit, 'wait');
+    if (unit.outcome === 'apply' && !unit.filed && choiceOf(unit) === 'apply') choices.set(unit.unit, 'wait');
   }
   paint();
 }
 
 function chosenCounts() {
-  const counts = { apply: 0, wait: 0, skip: 0 };
+  const counts = { apply: 0, wait: 0, skip: 0, review: 0 };
   for (const unit of report.units) {
-    if (CHOICES[unit.outcome]) counts[choiceOf(unit)] += 1;
+    if (unit.filed) counts.review += 1;
+    else if (CHOICES[unit.outcome]) counts[choiceOf(unit)] += 1;
   }
   return counts;
+}
+
+// Files just this unit as waiting and opens it, leaving the rest of the answer to confirm.
+async function reviewNow(unit) {
+  busy = true;
+  paint();
+  try {
+    const result = await reviewGroupingUnit(report.import_id, unit.unit);
+    unit.filed = result.suggestion_id;
+    choices.delete(unit.unit);
+    await loadGrouping();
+    openSuggestionReview(result.suggestion_id, loadGrouping);
+  } catch (err) {
+    alert(`Couldn't open it for review: ${err.message}`);
+  } finally {
+    busy = false;
+    paint();
+  }
 }
 
 function choiceCell(unit) {
   const options = CHOICES[unit.outcome];
   if (!options) return html`<span class="font-xs text-dim">Left as it is</span>`;
+  if (unit.filed) return html`<span class="font-xs grouping-filed">In review, under Waiting for you</span>`;
   const current = choiceOf(unit);
   return html`
     <select class="grouping-choice font-xs" aria-label=${`Your choice for ${unit.title}`} @change=${e => choose(unit, e.target.value)}>
       ${options.map(([value, label]) => html`<option value=${value} ?selected=${value === current}>${label}</option>`)}
     </select>
+    ${report.import_id ? html`<button type="button" class="btn-pill font-xs grouping-review-now" ?disabled=${busy}
+      @click=${() => reviewNow(unit)}>Review Now</button>` : nothing}
+  `;
+}
+
+// The lead reason shows; the rest, often one per model, fold away so a row stays short.
+function reasonsView(unit) {
+  const [lead, ...more] = unit.reasons;
+  const folded = [...more, ...unit.warnings];
+  const label = unit.outcome === 'suggest' ? 'Why it waits' : 'Notes';
+  return html`
+    ${unit.problems.length ? html`<ul class="grouping-reasons font-xs">${unit.problems.map(p => html`<li class="text-alert">${p}</li>`)}</ul>` : nothing}
+    ${lead ? html`<p class="grouping-lead font-xs">${lead}</p>` : nothing}
+    ${folded.length ? html`
+      <details class="grouping-why"><summary class="font-xs text-dim">${label}: ${folded.length} more</summary>
+        <ul class="grouping-reasons font-xs">
+          ${more.map(r => html`<li>${r}</li>`)}
+          ${unit.warnings.map(w => html`<li class="text-dim">${w}</li>`)}
+        </ul>
+      </details>
+    ` : nothing}
   `;
 }
 
 function unitRow(unit) {
-  const lines = [...unit.problems, ...unit.reasons, ...unit.warnings];
   return html`
     <tr class="grouping-unit" data-unit=${unit.unit}>
       <td>${unit.title}<div class="font-xs text-dim">${unit.creator}</div></td>
@@ -288,13 +329,7 @@ function unitRow(unit) {
       <td>${choiceCell(unit)}</td>
       <td class="font-sm">
         ${unit.summary}
-        ${lines.length ? html`
-          <ul class="grouping-reasons font-xs">
-            ${unit.problems.map(p => html`<li class="text-alert">${p}</li>`)}
-            ${unit.reasons.map(r => html`<li>${r}</li>`)}
-            ${unit.warnings.map(w => html`<li class="text-dim">${w}</li>`)}
-          </ul>
-        ` : nothing}
+        ${reasonsView(unit)}
         ${unit.models?.length ? html`
           <details><summary class="font-xs text-dim">Models after</summary>
             <ul class="font-xs">${unit.models.map(m => html`<li>${m.name}${m.group ? html` <span class="text-dim">in ${m.group}</span>` : nothing}: ${plural(m.files, 'file')}</li>`)}</ul>
@@ -309,12 +344,12 @@ function choicesBar() {
   if (!report.import_id) return nothing;
   const chosen = chosenCounts();
   const changed = choices.size > 0;
-  const holdable = report.units.some(u => u.outcome === 'apply' && choiceOf(u) === 'apply');
+  const holdable = report.units.some(u => u.outcome === 'apply' && !u.filed && choiceOf(u) === 'apply');
   return html`
     <div class="grouping-choices font-sm" id="grouping-choices">
       <span id="grouping-chosen" role="status">
         ${changed ? 'With your choices: ' : 'On confirm: '}${chosen.apply} ${chosen.apply === 1 ? 'applies' : 'apply'} now,
-        ${chosen.wait} ${chosen.wait === 1 ? 'waits' : 'wait'} for you, ${chosen.skip} skipped.
+        ${chosen.wait} ${chosen.wait === 1 ? 'waits' : 'wait'} for you, ${chosen.skip} skipped.${chosen.review ? ` ${chosen.review} already in review.` : ''}
       </span>
       <button type="button" class="btn-pill font-xs" id="btn-grouping-review-all" ?disabled=${!holdable || busy} @click=${reviewAllMyself}>Review All Myself</button>
       ${changed ? html`<button type="button" class="btn-pill font-xs" id="btn-grouping-reset-choices" ?disabled=${busy}
@@ -372,6 +407,7 @@ function outcomeLine(result) {
     result.applied.length ? `Applied ${plural(result.applied.length, 'unit')}.` : 'Nothing was applied.',
     result.suggested.length ? waits(result.suggested.length, 'unit') : '',
     result.pictures_held_back.length ? waits(result.pictures_held_back.length, 'picture') : '',
+    result.filed?.length ? `${plural(result.filed.length, 'unit')} ${result.filed.length === 1 ? 'was' : 'were'} already in review.` : '',
     result.skipped?.length ? `Skipped ${plural(result.skipped.length, 'unit')}, which ${result.skipped.length === 1 ? 'keeps its' : 'keep their'} grouping and ${result.skipped.length === 1 ? 'goes' : 'go'} out in the next export.` : '',
     result.refused.length ? `${plural(result.refused.length, 'unit')} couldn't apply.` : '',
   ].filter(Boolean).join(' ');

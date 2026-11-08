@@ -552,7 +552,8 @@ def _summary(v: Verdict, outcome: str) -> str:
     change = f"{v.before.get('models', 0)} models become {v.after.get('models', 0)}"
     if outcome == APPLY:
         return f"Applies on confirm: {change}."
-    return f"Waits for you in review: {change}. {v.reasons[0] if v.reasons else ''}".strip()
+    # The reasons follow on the screen, so repeating the first here only made the row longer.
+    return f"Waits for you in review: {change}."
 
 
 def record(conn: sqlite3.Connection, report: dict[str, Any], source_name: str) -> int:

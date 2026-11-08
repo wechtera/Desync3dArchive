@@ -253,15 +253,49 @@ def apply_plan(conn: sqlite3.Connection, import_id: int, plan: dict[str, Any], r
             "models_after": len(plan["models"]), "pictures_held_back": held_back}
 
 
-def _suggest(conn: sqlite3.Connection, import_id: int, plan: dict, verdict: dict) -> None:
+def _suggest(conn: sqlite3.Connection, import_id: int, plan: dict, verdict: dict) -> int:
     before = state(conn, plan["unit_key"])
     payload = {"cards": cards_for(conn, plan, before), "plan": plan}
     with conn:
         conn.execute(queries.REPLACE_WAITING_SUGGESTIONS, (plan["unit_key"],))
-        conn.execute(queries.INSERT_SUGGESTION, (
+        suggestion_id = conn.execute(queries.INSERT_SUGGESTION, (
             import_id, plan["unit_key"], verdict.get("bucket") or "medium", json.dumps(payload), json.dumps(verdict.get("reasons", [])),
-        ))
+        )).lastrowid
         conn.execute(queries.UPDATE_UNIT_DECIDED, ("suggested", plan["fingerprint"], plan["unit_key"]))
+    return int(suggestion_id or 0)
+
+
+def review_now(conn: sqlite3.Connection, import_id: int, unit_key: str) -> dict[str, Any]:
+    """Files one unit of a checked answer as waiting, so a person can review it before confirming the rest.
+
+    The unit is marked filed in the stored report, so the later confirm leaves it to the review.
+
+    Raises:
+        ApplyRefused: The import isn't waiting for confirmation, the unit isn't in it, was refused,
+            or is already filed.
+    """
+    conn.row_factory = sqlite3.Row
+    row = conn.execute(queries.SELECT_IMPORT, (import_id,)).fetchone()
+    if not row:
+        raise ApplyRefused("That import doesn't exist.")
+    if row["status"] != "checked":
+        raise ApplyRefused(f"That import was already {row['status']}.")
+    report, plans = json.loads(row["report_json"]), json.loads(row["answer_json"])
+    verdict = next((v for v in report["units"] if v["unit"] == unit_key), None)
+    if verdict is None:
+        raise ApplyRefused(f"{unit_key} isn't in that answer.")
+    if verdict.get("filed"):
+        raise ApplyRefused(f"{verdict['title']} is already waiting for you.")
+    plan = plans.get(unit_key)
+    if not plan or verdict["outcome"] not in (APPLY, SUGGEST):
+        raise ApplyRefused(f"{verdict['title']} was refused, so there's nothing to review. Fix it with the LLM.")
+    shown = verdict if verdict["outcome"] == SUGGEST else {**verdict, "reasons": [*verdict.get("reasons", []), HELD_BY_PERSON]}
+    suggestion_id = _suggest(conn, import_id, plan, shown)
+    verdict["filed"] = suggestion_id
+    with conn:
+        conn.execute(queries.UPDATE_IMPORT_REPORT, (json.dumps(report), import_id))
+    audit.record(conn, "grouping_review_now", False, {"import_id": import_id, "unit": unit_key, "suggestion": suggestion_id})
+    return {"import_id": import_id, "unit": unit_key, "suggestion_id": suggestion_id}
 
 
 CHOOSE_APPLY, CHOOSE_WAIT, CHOOSE_SKIP = "apply", "wait", "skip"
@@ -281,6 +315,9 @@ def _choices(report: dict, choices: dict[str, str]) -> dict[str, str]:
         verdict = verdicts.get(unit)
         if verdict is None:
             raise ApplyRefused(f"{unit} isn't in that answer.")
+        if verdict.get("filed"):
+            # Already in the review editor through Review Now; the confirm leaves it there.
+            continue
         allowed = CHOICES_ALLOWED.get(verdict["outcome"], (CHOOSE_SKIP,))
         if choice not in allowed:
             if verdict["outcome"] == SUGGEST and choice == CHOOSE_APPLY:
@@ -308,10 +345,14 @@ def apply(conn: sqlite3.Connection, import_id: int, choices: dict[str, str] | No
         raise ApplyRefused(f"That import was already {row['status']}.")
     report, plans = json.loads(row["report_json"]), json.loads(row["answer_json"])
     chosen = _choices(report, choices or {})
-    result: dict[str, Any] = {"import_id": import_id, "applied": [], "suggested": [], "skipped": [], "refused": [], "pictures_held_back": []}
+    result: dict[str, Any] = {"import_id": import_id, "applied": [], "suggested": [], "skipped": [], "filed": [],
+                              "refused": [], "pictures_held_back": []}
     for verdict in report["units"]:
         plan = plans.get(verdict["unit"])
         if not plan or verdict["outcome"] not in (APPLY, SUGGEST):
+            continue
+        if verdict.get("filed"):
+            result["filed"].append(plan["unit_key"])
             continue
         choice = chosen[verdict["unit"]]
         if choice == CHOOSE_SKIP:

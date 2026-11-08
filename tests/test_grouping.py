@@ -330,6 +330,14 @@ class CheckTests(GroupingCase):
         self.assertEqual((verdict["outcome"], verdict["bucket"]), (SUGGEST, "medium"))
         self.assertIn("Might be two figures", " ".join(verdict["reasons"]))
 
+    def test_a_waiting_summary_doesnt_repeat_the_first_reason(self):
+        # E58: Vampire Court's row said its first reason twice, once in the summary and once below.
+        answer = self.answer()
+        answer["units"][0].update(confidence="medium", reason="Horses not paired")
+        verdict = self.verdict(answer)
+        self.assertEqual(verdict["summary"], "Waits for you in review: 3 models become 3.")
+        self.assertIn("Horses not paired", verdict["reasons"][0])
+
     def test_a_low_unit_is_low(self):
         answer = self.answer()
         answer["units"][0]["confidence"] = "low"

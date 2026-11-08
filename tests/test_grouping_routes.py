@@ -109,6 +109,15 @@ class CheckRouteTests(RouteCase):
         self.assertIn("accept it in the review editor", response.json()["error"])
         self.assertEqual(self.client.get("/api/grouping").json()["waiting"], [])
 
+    def test_review_now_files_one_unit_for_the_editor(self):
+        import_id = self.check(self.answer())["import_id"]
+        response = self.client.post(f"/api/grouping/imports/{import_id}/review", json={"unit": self.key})
+        self.assertEqual(response.status_code, 200, response.text)
+        waiting = self.client.get("/api/grouping").json()["waiting"]
+        self.assertEqual([w["id"] for w in waiting], [response.json()["suggestion_id"]])
+        again = self.client.post(f"/api/grouping/imports/{import_id}/review", json={"unit": self.key})
+        self.assertEqual(again.status_code, 409)
+
     def test_after_undo_the_same_answer_checks_and_applies_again(self):
         # The release's first run applies a batch, undoes it to prove the way back, then reapplies.
         first = self.check(self.answer())["import_id"]

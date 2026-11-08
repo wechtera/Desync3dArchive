@@ -13,6 +13,7 @@ add_route(router, "GET", "/api/grouping/preview", handlers.handle_get_grouping_p
 add_route(router, "POST", "/api/grouping/exports", handlers.handle_post_grouping_export, schemas.GroupingExportBody)
 add_route(router, "POST", "/api/grouping/check", handlers.handle_post_grouping_check, schemas.GroupingCheckBody)
 add_route(router, "POST", "/api/grouping/imports/{import_id:int}/apply", handlers.handle_post_grouping_apply, schemas.GroupingApplyBody)
+add_route(router, "POST", "/api/grouping/imports/{import_id:int}/review", handlers.handle_post_grouping_review, schemas.GroupingReviewBody)
 add_route(router, "POST", "/api/grouping/imports/{import_id:int}/discard", handlers.handle_post_grouping_discard)
 add_route(router, "POST", "/api/grouping/imports/{import_id:int}/undo", handlers.handle_post_grouping_undo)
 add_route(router, "POST", "/api/grouping/imports/{import_id:int}/tags", handlers.handle_post_grouping_tags, schemas.GroupingTagsBody)
