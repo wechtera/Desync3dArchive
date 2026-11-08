@@ -6,6 +6,7 @@ never the whole file. What fails is written up twice: plainly for the owner, and
 the LLM, so the owner can paste it back and get a corrected answer.
 """
 
+import difflib
 import json
 import re
 import sqlite3
@@ -18,7 +19,12 @@ from pydantic import ValidationError
 
 from desync_archival.db.queries import grouping as queries
 from desync_archival.services import grouping_contract, grouping_units, model_resolver
-from desync_archival.services.grouping_contract import AnswerUnit
+from desync_archival.services.grouping_contract import (
+    AnswerGroup,
+    AnswerModel,
+    AnswerUnit,
+    Unplaced,
+)
 
 MAX_ANSWER_BYTES = 8 * 1024 * 1024
 MISSING_SHOWN = 20
@@ -146,6 +152,36 @@ def _identity_problems(raw: dict, exported: dict) -> tuple[list[str], list[str]]
     return problems, notes
 
 
+IGNORED = "was ignored"
+
+
+def _unknown(keys: Any, known: set[str], where: str) -> list[str]:
+    """A field the contract doesn't have is dropped. Saying so, with the likely name, lets a person
+    or the LLM see that its alternates or tags never arrived."""
+    warnings = []
+    for key in sorted(str(k) for k in keys if str(k) not in known)[:5]:
+        close = difflib.get_close_matches(key, sorted(known), n=1, cutoff=0.6)
+        hint = f" Did you mean {close[0]}?" if close else ""
+        warnings.append(f"Unknown field {visible(key, 40)} in {where} {IGNORED}.{hint}")
+    return warnings
+
+
+def _unknown_fields(raw: dict) -> list[str]:
+    unit_known = set(AnswerUnit.model_fields) | set(UNIT_IDENTITY) | set(UNIT_FORBIDDEN)
+    warnings = _unknown(raw, unit_known, "the unit")
+    for index, model in enumerate(raw.get("models") or []):
+        if isinstance(model, dict):
+            where = f"model {visible(model.get('name'), 40)}" if model.get("name") else f"models[{index}]"
+            warnings += _unknown(model, set(AnswerModel.model_fields) | set(MODEL_FORBIDDEN), where)
+    for index, group in enumerate(raw.get("groups") or []):
+        if isinstance(group, dict):
+            warnings += _unknown(group, set(AnswerGroup.model_fields), f"groups[{index}]")
+    for index, item in enumerate(raw.get("unplaced") or []):
+        if isinstance(item, dict):
+            warnings += _unknown(item, set(Unplaced.model_fields), f"unplaced[{index}]")
+    return warnings[:10]
+
+
 def _norm(word: str) -> str:
     word = word.lower()
     return word[:-1] if len(word) > 3 and word.endswith("s") else word
@@ -221,7 +257,7 @@ def check_unit(
 
     identity, notes = _identity_problems(raw, exported)
     verdict.problems += identity
-    verdict.warnings += notes
+    verdict.warnings += notes + _unknown_fields(raw)
     try:
         unit = AnswerUnit.model_validate(raw)
     except ValidationError as e:
@@ -397,7 +433,9 @@ def _plan(unit: AnswerUnit, ids: dict[str, dict], group_names: dict, tag_list: s
             for key, (name, g) in group_names.items() if key in used_groups
         ],
         "unplaced": [{"artifact": ids[u.id]["id"], "reason": visible(u.reason, 500) or "No reason given"} for u in unit.unplaced],
-        "suggested_tags": _clean_tags([*unit.suggested_tags, *(t for m in unit.models for t in m.tags if t not in tag_list)]),
+        # MMF's own tags are the only ones an MMF unit gets, so it suggests none.
+        "suggested_tags": _clean_tags([*unit.suggested_tags, *(t for m in unit.models for t in m.tags if t not in tag_list)])
+        if tags_allowed else [],
     }
 
 
@@ -418,6 +456,7 @@ def fix_request(export_key: str, verdicts: list[Verdict], read_error: str = "") 
     for v in broken:
         lines.append(f"Unit {v.unit_key} ({v.title}):" if v.title else f"Unit {v.unit_key}:")
         lines += [f"- {p}" for p in v.problems]
+        lines += [f"- {w}" for w in v.warnings if IGNORED in w]
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 

@@ -6,6 +6,7 @@ from desync_archival.api.routers import (
     catalog,
     download_issues,
     downloads,
+    grouping,
     reconcile,
     session,
     settings,
@@ -13,4 +14,4 @@ from desync_archival.api.routers import (
     tasks,
 )
 
-ALL = [session.router, catalog.router, archives.router, downloads.router, download_issues.router, stashes.router, settings.router, tasks.router, reconcile.router, auth.router]
+ALL = [session.router, catalog.router, archives.router, downloads.router, download_issues.router, grouping.router, stashes.router, settings.router, tasks.router, reconcile.router, auth.router]

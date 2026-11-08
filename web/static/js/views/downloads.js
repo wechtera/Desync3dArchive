@@ -1,5 +1,6 @@
 import { actions, registerActions } from '../actions.js';
 import { loadDownloadIssues } from './download_issues.js';
+import { loadGrouping } from './grouping.js';
 import { openJobDetail } from './job_detail.js';
 import { loadArchiveQueue, loadExternalLibraries } from './libraries.js';
 import {
@@ -151,6 +152,7 @@ const DOWNLOAD_GROUPS = {
   download: ['pending', 'active', 'history'],
   external: ['libraries', 'archives', 'import'],
   reconcile: ['reconcile', 'issues'],
+  grouping: ['grouping'],
 };
 
 export function switchDownloadGroup(group) {
@@ -196,6 +198,9 @@ export function switchDownloadSubView(subview) {
   } else if (subview === 'archives') {
     stopActiveTransfersPolling();
     loadArchiveQueue();
+  } else if (subview === 'grouping') {
+    stopActiveTransfersPolling();
+    loadGrouping();
   }
 }
 

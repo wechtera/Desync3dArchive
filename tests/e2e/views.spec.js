@@ -1152,7 +1152,7 @@ test.describe('settings', () => {
 
   test('manage tabs group downloads and external sources', async ({ page }) => {
     await page.goto('/#downloads');
-    await expect(page.locator('#view-downloads > .sub-tabs').first().locator('.sub-btn')).toHaveText(['MMF Sync', 'Download MMF', 'External Vault', 'Vault Reconcile']);
+    await expect(page.locator('#view-downloads > .sub-tabs').first().locator('.sub-btn')).toHaveText(['MMF Sync', 'Download MMF', 'External Vault', 'Vault Reconcile', 'LLM Grouping']);
     await expect(page.locator('#sub-dl-sync')).toBeVisible();
     await page.locator('#group-download').click();
     await expect(page.locator('#sub-dl-pending')).toBeVisible();
@@ -1160,6 +1160,10 @@ test.describe('settings', () => {
     await page.locator('#group-external').click();
     await expect(page.locator('#sub-dl-libraries')).toBeVisible();
     await expect(page.locator('#group-external')).toHaveClass(/active/);
+    await page.locator('#group-grouping').click();
+    await expect(page.locator('#sub-dl-grouping')).toBeVisible();
+    await expect(page.locator('#sub-dl-libraries')).toBeHidden();
+    await expect(page.locator('#minor-external')).toBeHidden();
   });
 
   test('settings shows library disk figures but no library actions', async ({ page }) => {

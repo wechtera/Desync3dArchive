@@ -192,8 +192,9 @@ Rate the unit, each model and each picture as `high`, `medium` or `low`, and giv
 anything below high. Rate low when unsure: a unit rated high applies without a person checking.
 """
 
-FIX_INTRO = """\
-The app checked your answer and found problems. Fix only what is listed, keep everything else as
-it was, and send the whole answer again: one JSON object matching answer-format.json, with
-export_id {export_id}, and only the units listed below. Nothing else.
-"""
+# One paragraph: a person copies it into a chat as is, so line breaks would land mid-sentence.
+FIX_INTRO = (
+    "The app checked your answer and found problems. Fix only what is listed and keep everything else "
+    "about those units as it was. Then send just these units again: one JSON object matching "
+    "answer-format.json, with export_id {export_id}, holding only the units listed below. Nothing else.\n"
+)

@@ -263,3 +263,27 @@ class TokenCallbackBody(RequestBody):
     access_token: str = ""
     expires_in: int = 21600
     state: str | None = None
+
+
+class GroupingExportBody(RequestBody):
+    mode: str = Field(default="delta", pattern="^(delta|full|single)$")
+    scope: str = Field(default="both", pattern="^(archives|libraries|both)$")
+    include_reviewed: bool = False
+    batch_lines: int = 2000
+    unit_key: str = ""
+
+
+class GroupingCheckBody(RequestBody):
+    """An LLM's answer as text, from a file or pasted. It's parsed by the checks, not here."""
+    text: str
+    name: str = ""
+
+
+class GroupingTagsBody(RequestBody):
+    approved: list[str] = Field(default_factory=list)
+
+
+class GroupingAcceptBody(RequestBody):
+    """The editor's cards, or none for a pictures-only suggestion, and each picture chosen."""
+    cards: list[dict[str, Any]] | None = None
+    pictures: dict[str, str] = Field(default_factory=dict)

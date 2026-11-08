@@ -23,7 +23,10 @@ import {
   fetchArchiveReview,
   saveArchiveReview,
   fetchImageQueue,
-  postImageQueue
+  postImageQueue,
+  fetchGroupingSuggestion,
+  acceptGroupingSuggestion,
+  rejectGroupingSuggestion
 } from '../api.js';
 import { showToast } from './settings.js';
 
@@ -499,6 +502,13 @@ function concernOf(flag) {
     return { label: 'Unusually large', terms: [], ask: 'It covers far more folders than others here. Check its paths: if different designs were merged, split them with New Card.' };
   }
   if (flag.startsWith('New since your review')) return { label: 'New', terms: [], ask: 'This appeared after you reviewed the release.' };
+  const suggested = flag.match(/^Suggested(?:: (.+))?$/);
+  if (suggested) {
+    return {
+      label: 'LLM suggestion', terms: [],
+      ask: suggested[1] ? `The LLM says: ${suggested[1]}` : 'The LLM grouped this card. Check it before accepting.',
+    };
+  }
   return { label: 'Check', terms: [], ask: flag };
 }
 
@@ -661,6 +671,44 @@ function newCard() {
   moveSelected(card);
 }
 
+const COVER = 'cover';
+
+function pictureLabel(short) {
+  if (short === COVER) return 'The collection cover';
+  const image = review.data.suggestion.images.find(i => i.id === short);
+  return image ? image.name : short;
+}
+
+function pictureThumb(short, chosen, pick) {
+  const image = review.data.suggestion.images.find(i => i.id === short);
+  const label = pictureLabel(short);
+  return html`
+    <button type="button" class=${`pick-thumb ${chosen ? 'pick-chosen' : ''}`} title=${label} aria-label=${`Use ${label}`}
+      aria-pressed=${chosen ? 'true' : 'false'} @click=${() => pick(short)}>
+      ${image?.url ? html`<img src=${image.url} alt="" loading="lazy">` : html`<span class="pick-name">${label}</span>`}
+    </button>
+  `;
+}
+
+// A suggestion's picture: the LLM's choice large, its alternates one click away, and any other
+// picture in the unit from the list. What's chosen when the person accepts is locked as theirs.
+function drawPicturePicker(chosen, alternates, pick) {
+  const { images } = review.data.suggestion;
+  const shown = [...new Set([chosen, ...alternates].filter(Boolean))];
+  const held = (short) => short === COVER || !!images.find(i => i.id === short)?.url;
+  return html`
+    <div class="pick-row">
+      ${shown.map(short => pictureThumb(short, short === chosen, pick))}
+      <select class="pick-other font-xs" aria-label="Choose another picture" @change=${e => pick(e.target.value)}>
+        <option value="" ?selected=${!chosen}>${chosen ? 'Other picture...' : 'No picture change'}</option>
+        <option value=${COVER} ?selected=${chosen === COVER}>The collection cover</option>
+        ${images.map(i => html`<option value=${i.id} ?selected=${i.id === chosen}>${i.name}</option>`)}
+      </select>
+    </div>
+    ${chosen && !held(chosen) ? html`<div class="font-xs text-dim">Fetched from the NAS once you accept.</div>` : nothing}
+  `;
+}
+
 function drawCard(card) {
   const edit = (field) => (event) => {
     card[field] = field === 'skip' ? event.target.checked : event.target.value;
@@ -680,8 +728,84 @@ function drawCard(card) {
         <label><input type="checkbox" class="review-skip" .checked=${!!card.skip} @change=${edit('skip')}> Skip</label>
       </div>
       ${(card.flags || []).map(flag => html`<div class=${`font-xs ${isNote(flag) ? 'text-dim' : 'review-flag'}`}>${isNote(flag) ? flag : concernOf(flag).label}</div>`)}
+      ${review.data.suggestion?.kind === 'grouping' && card.paths.length ? drawPicturePicker(card.picture || '', card.picture_alternates || [], (short) => {
+        card.picture = short;
+        drawReview();
+      }) : nothing}
     </div>
   `;
+}
+
+function drawSuggestionPanel() {
+  const { suggestion } = review.data;
+  const choose = (item) => (short) => {
+    item.chosen = short;
+    drawReview();
+  };
+  return html`
+    <div class="review-suggestion" id="review-suggestion">
+      <div class="font-sm"><strong>Suggested by an LLM</strong>, ${suggestion.bucket} confidence.</div>
+      <ul class="review-suggestion-reasons font-sm">${suggestion.reasons.map(r => html`<li>${r}</li>`)}</ul>
+      <div class="font-xs text-dim">
+        ${suggestion.kind === 'pictures'
+          ? 'The grouping is today\'s. Choose each picture, then accept.'
+          : `Accept saves these cards as your review. Change anything first if it's wrong. ${suggestion.unplaced_note}`}
+      </div>
+      ${suggestion.kind === 'pictures' ? html`
+        <div class="review-suggestion-pictures">
+          ${suggestion.pictures.map(item => html`
+            <div class="review-suggestion-picture" data-model=${item.model_id}>
+              <div class="font-sm">${item.name} <span class="font-xs text-dim">${item.reason || ''}</span></div>
+              ${drawPicturePicker(item.chosen ?? item.image, (item.alternates || []).map(a => (typeof a === 'object' ? a.short : a)).filter(Boolean), choose(item))}
+            </div>
+          `)}
+        </div>
+      ` : nothing}
+    </div>
+  `;
+}
+
+function suggestionPictures(cards) {
+  const { suggestion } = review.data;
+  if (suggestion.kind === 'grouping') {
+    return Object.fromEntries(cards.filter(c => c.picture && c.paths.length).map(c => [c.paths[0], c.picture]));
+  }
+  const choices = suggestion.pictures.map(item => [String(item.model_id), item.chosen ?? item.image]).filter(([, short]) => short);
+  if (!review.dirty) return Object.fromEntries(choices);
+  // Edited cards are saved too, and their pictures are matched by each card's first path.
+  return Object.fromEntries(choices.map(([modelId, short]) => {
+    const card = cards.find(c => c.key === modelId && c.paths.length);
+    return card ? [card.paths[0], short] : null;
+  }).filter(Boolean));
+}
+
+async function acceptSuggestion() {
+  const { source, data } = review;
+  const cards = data.suggestion.kind === 'grouping' || review.dirty ? review.cards : null;
+  try {
+    const result = await source.save(cards, suggestionPictures(review.cards));
+    const waiting = result.pictures_waiting ? ` ${result.pictures_waiting} picture${result.pictures_waiting === 1 ? '' : 's'} will appear once fetched from the NAS.` : '';
+    showToast(`Accepted ${data.title || data.release}.${waiting}`);
+    review.dirty = false;
+    closeReview();
+    await source.refresh();
+  } catch (err) {
+    alert(`Accept failed: ${err.message}`);
+  }
+}
+
+async function rejectSuggestion() {
+  if (!confirm('Reject the suggestion and keep today\'s grouping? It stays out of later exports until its files change.')) return;
+  const { source, data } = review;
+  try {
+    await source.reject();
+    showToast(`Kept today's grouping for ${data.title || data.release}.`);
+    review.dirty = false;
+    closeReview();
+    await source.refresh();
+  } catch (err) {
+    alert(`Reject failed: ${err.message}`);
+  }
 }
 
 function drawReview() {
@@ -696,6 +820,7 @@ function drawReview() {
   // Flagged cards first. The key tiebreak stops a card jumping while its name is being edited.
   const cards = [...review.cards].sort((a, b) => (b.flags || []).length - (a.flags || []).length || a.key.localeCompare(b.key));
   render(html`
+    ${data.suggestion ? drawSuggestionPanel() : nothing}
     ${data.settled.length ? html`<p class="text-dim font-sm">${data.settled.length} cards here are already approved and hidden. Their paths show as In library.</p>` : nothing}
     ${drawConcerns()}
     <div class="review-layout">
@@ -715,6 +840,12 @@ function drawReview() {
         <div class="review-card-list">${cards.map(drawCard)}</div>
       </div>
     </div>
+    ${data.suggestion ? html`
+      <div class="flex gap-2 mt-2">
+        <button type="button" class="btn-pill btn-action-primary" id="btn-suggestion-accept" @click=${acceptSuggestion}>${review.dirty ? 'Accept with My Changes' : 'Accept'}</button>
+        <button type="button" class="btn-pill btn-action-cancel" id="btn-suggestion-reject" @click=${rejectSuggestion}>Reject, Keep Today's Grouping</button>
+      </div>
+    ` : html`
     <div class="flex gap-2 mt-2">
       <button type="button" class="btn-pill btn-action-primary" id="btn-review-next" ?disabled=${!data.cards.length} @click=${() => saveReview(true, true)}>Mark Reviewed and Next</button>
       <button type="button" class="btn-pill" id="btn-review-save" ?disabled=${!data.cards.length} @click=${() => saveReview(data.reviewed, false)}>Save</button>
@@ -722,6 +853,7 @@ function drawReview() {
         <button type="button" class="btn-pill btn-action-cancel" id="btn-review-reset" ?disabled=${!data.changed} @click=${resetReview}>Reset to Code's Guess</button>
       ` : nothing}
     </div>
+    `}
   `, body);
 }
 
@@ -779,6 +911,18 @@ function openArchiveReview(collectionId) {
       return next ? () => openArchiveReview(next.id) : null;
     },
     again: () => openArchiveReview(collectionId),
+  });
+}
+
+/** Opens an LLM suggestion in the editor. `after` reloads the screen it was opened from. */
+export function openSuggestionReview(suggestionId, after = async () => {}) {
+  return showReview({
+    load: () => fetchGroupingSuggestion(suggestionId),
+    save: (cards, pictures) => acceptGroupingSuggestion(suggestionId, { cards, pictures }),
+    reject: () => rejectGroupingSuggestion(suggestionId),
+    refresh: after,
+    next: () => null,
+    again: () => openSuggestionReview(suggestionId, after),
   });
 }
 

@@ -435,10 +435,32 @@ class PoisonTests(GroupingCase):
         self.assertIn("this unit takes no tags", " ".join(verdict["warnings"]))
 
     def test_suggested_tags_are_cleaned_and_markup_dropped(self):
+        with self.conn:
+            self.conn.execute("UPDATE collections SET source = 'import' WHERE id = ?", (self.collection,))
         answer = self.answer()
         answer["units"][0]["suggested_tags"] = ["Vampire Court", "<script>", "ok\u202e"]
         report = self.check(answer)
         self.assertEqual(report["plans"][self.key]["suggested_tags"], ["vampire-court"])
+
+    def test_an_mmf_unit_suggests_no_tags(self):
+        answer = self.answer()
+        answer["units"][0]["suggested_tags"] = ["vampire-court"]
+        self.assertEqual(self.check(answer)["plans"][self.key]["suggested_tags"], [])
+
+    def test_a_misnamed_field_is_named_with_the_likely_one(self):
+        answer = self.answer()
+        answer["units"][0]["models"][0]["alternates"] = ["i3"]
+        verdict = self.verdict(answer)
+        self.assertEqual(verdict["outcome"], APPLY)
+        self.assertIn("Unknown field alternates in model Ghul A was ignored. Did you mean image_alternates?", verdict["warnings"])
+
+    def test_a_refused_unit_tells_the_llm_about_ignored_fields_too(self):
+        answer = self.answer()
+        answer["units"][0]["models"][0]["alternates"] = ["i3"]
+        answer["units"][0]["models"][1]["artifacts"] = ["a99"]
+        request = self.check(answer)["fix_request"]
+        self.assertIn("a99", request)
+        self.assertIn("Did you mean image_alternates?", request)
 
     def test_a_broken_structure_is_explained_per_field(self):
         answer = self.answer()
@@ -490,7 +512,9 @@ class FixRequestTests(GroupingCase):
         self.assertIn(answer["export_id"], request)
         self.assertIn(f"Unit {self.key}", request)
         self.assertIn("a99", request)
-        self.assertIn("send the whole answer again", request)
+        self.assertIn("send just these units again", request)
+        # One paragraph to paste into a chat: no break lands mid-sentence.
+        self.assertNotIn("\n", request.split("\n\n")[0].rstrip("\n"))
 
     def test_unreadable_text_gets_a_request_too(self):
         report = self.check("I couldn't do this one, sorry.")

@@ -214,6 +214,7 @@
       <button class="sub-btn" id="group-download" data-group="download" data-click="switchDownloadGroup" data-args='["download"]'>Download MMF</button>
       <button class="sub-btn" id="group-external" data-group="external" data-click="switchDownloadGroup" data-args='["external"]'>External Vault</button>
       <button class="sub-btn" id="group-reconcile" data-group="reconcile" data-click="switchDownloadGroup" data-args='["reconcile"]'>Vault Reconcile <span class="tab-count" data-issue-count hidden></span></button>
+      <button class="sub-btn" id="group-grouping" data-group="grouping" data-click="switchDownloadGroup" data-args='["grouping"]'>LLM Grouping</button>
     </div>
     <div class="sub-tabs sub-tabs-minor" id="minor-download" style="display:none;">
       <button class="sub-btn" data-click="switchDownloadSubView" data-args='["pending"]'>Pending &amp; Queue Explorer</button>
@@ -533,6 +534,11 @@
     </div>
 
     <!-- Sub-View: Download Issues. Files a download kept with a size MMF lists wrong, or couldn't get. -->
+    <!-- LLM Grouping (E54): views/grouping.js draws it -->
+    <div id="sub-dl-grouping" style="display:none;">
+      <div id="grouping-root"></div>
+    </div>
+
     <div id="sub-dl-issues" style="display:none;">
       <div class="controls controls-between">
         <p class="text-dim font-sm issues-intro">
@@ -1222,6 +1228,34 @@
             </li>
             <li>
               <strong>Some failures still stop the whole job,</strong> because every file after would fail the same way: an expired sign-in, a Cloudflare check, a dropped connection or a full disk. Fix the cause, then use <code>Retry</code> in History.
+            </li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="card help-card help-card-wide" id="help-llm-grouping">
+        <div class="help-card-header">
+          <h3>Grouping with an LLM</h3>
+        </div>
+        <div class="help-card-body">
+          <ul class="help-bullet-list">
+            <li>
+              <strong>Export.</strong> Under <code>Manage / Retrieve / Reconcile Assets &rarr; LLM Grouping</code>, choose what to send and <code>Download Export</code>. The zip holds file names and sizes and the LLM's instructions, never the files.
+            </li>
+            <li>
+              <strong>Ask the LLM.</strong> Give Claude, ChatGPT or another LLM the zip, or one batch with <code>README.txt</code>, <code>prompt.md</code> and <code>answer-format.json</code>, and ask it to follow <code>prompt.md</code>.
+            </li>
+            <li>
+              <strong>Check its answer.</strong> Upload or paste the reply. The dry run shows what each unit would become, what waits for you, and what's refused and why. Nothing changes until <code>Confirm and Apply</code>.
+            </li>
+            <li>
+              <strong>When something's refused,</strong> choose <code>Copy Fix Request</code>, paste it to the LLM in the same chat, and check its corrected answer.
+            </li>
+            <li>
+              <strong>Waiting for you</strong> holds anything the LLM was unsure of, any unit a person reviewed, and anything that looks wrong. <code>Open</code> shows it in the review editor with the LLM's cards and a picture choice on each. <code>Accept</code> saves it as your review, edited or not, and <code>Reject</code> keeps today's grouping.
+            </li>
+            <li>
+              <strong>Nothing is lost.</strong> An answer can't change a creator, file or size, or remove a file. Every file stays listed, and files it left out sit on a skipped <code>Unplaced files</code> card. <code>Undo</code> under <code>Recent answers</code> puts an answer's changes back.
             </li>
           </ul>
         </div>

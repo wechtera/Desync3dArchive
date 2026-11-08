@@ -3751,3 +3751,83 @@ button.duplicate-delete:disabled { opacity: 0.45; cursor: not-allowed; filter: g
   align-items: center;
   gap: 8px;
 }
+
+
+/* LLM Grouping (E54) */
+.grouping-intro { max-width: 90ch; margin: 0 0 12px; }
+
+.grouping-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.grouping-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.grouping-grid .grouping-panel { margin-bottom: 0; }
+.grouping-step { margin: 0; font-size: 0.95rem; }
+.grouping-panel p { margin: 0; }
+
+.grouping-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.grouping-lines { width: 90px; }
+.grouping-paste-box { width: 100%; margin: 6px 0; font-family: var(--font-mono, monospace); font-size: 0.8rem; }
+.grouping-report { display: flex; flex-direction: column; gap: 8px; }
+.grouping-reasons { margin: 4px 0 0; padding-left: 16px; }
+.grouping-fix .job-detail-error { max-height: 30vh; }
+.grouping-outcome { padding: 8px 12px; border-left: 2px solid var(--status-ok-fg); background: var(--status-ok-bg); }
+.grouping-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 4px; }
+
+.review-suggestion {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--info);
+  background: var(--surface-elevated);
+}
+
+.review-suggestion-pictures { display: flex; flex-direction: column; gap: 8px; }
+
+.pick-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.pick-thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.pick-thumb:first-child { width: 96px; height: 96px; }
+.pick-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.pick-chosen { border: 2px solid var(--info); }
+.pick-name { padding: 2px; font-size: 9px; color: var(--text-muted); overflow-wrap: anywhere; }
+.pick-other { max-width: 180px; }
+.grouping-units .status-badge { white-space: nowrap; }
+.review-suggestion-reasons { margin: 0; padding-left: 18px; }

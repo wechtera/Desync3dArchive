@@ -689,3 +689,34 @@ export async function fetchInactive(filters = {}) {
   const params = new URLSearchParams(Object.entries(filters).filter(([, value]) => value));
   return request(`/api/inactive?${params}`);
 }
+
+// LLM Grouping (E54).
+export const fetchGrouping = () => request('/api/grouping');
+export function fetchGroupingPreview({ mode, scope, includeReviewed, batchLines }) {
+  const params = new URLSearchParams({ mode, scope, include_reviewed: includeReviewed ? '1' : '0', batch_lines: batchLines });
+  return request(`/api/grouping/preview?${params}`);
+}
+export const checkGroupingAnswer = (text, name) => postJson('/api/grouping/check', { text, name });
+export const applyGroupingImport = (importId) => postJson(`/api/grouping/imports/${importId}/apply`, {});
+export const discardGroupingImport = (importId) => postJson(`/api/grouping/imports/${importId}/discard`, {});
+export const undoGroupingImport = (importId) => postJson(`/api/grouping/imports/${importId}/undo`, {});
+export const approveGroupingTags = (importId, approved) => postJson(`/api/grouping/imports/${importId}/tags`, { approved });
+export const fetchGroupingSuggestion = (suggestionId) => request(`/api/grouping/suggestions/${suggestionId}`);
+export const acceptGroupingSuggestion = (suggestionId, payload) => postJson(`/api/grouping/suggestions/${suggestionId}/accept`, payload);
+export const rejectGroupingSuggestion = (suggestionId) => postJson(`/api/grouping/suggestions/${suggestionId}/reject`, {});
+
+/** Builds the export and returns the zip with its name, for the browser to save. */
+export async function downloadGroupingExport(payload) {
+  const res = await apiFetch('/api/grouping/exports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try { detail = (await res.json()).error || detail; } catch (_) {}
+    throw new Error(detail);
+  }
+  const exportId = res.headers.get('X-Export-Id') || 'export';
+  return { exportId, filename: `${exportId}.zip`, blob: await res.blob() };
+}
