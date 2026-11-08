@@ -116,8 +116,10 @@ it lists several. A linked library's paths start inside its release folder.
 - **Poses are separate models,** joined by a model group. Ghul A to Ghul E are five models in a
   group called Ghuls.
 - **Busts are separate models,** in their character's group.
-- **A base sold or packed on its own is its own model,** in a group called Bases. A figure's own
-  base is not.
+- **Each base sold on its own is its own model,** in a group called Bases, even when many come in
+  one pack: `Round_25_ver_1` to `Round_25_ver_5` are five models, and so is each other shape and
+  size. Name each by shape, size and version, as in "Round 25, Version 2". A figure's own base is
+  not a model of its own.
 - **A pack of swap parts shared by a whole unit** is one model of its own, in that unit's group.
 - **Presupported files sometimes call a figure by another name,** such as Drakzor Fangbearer for
   the Lizardman Elite. When folder names pair them, they are one model.
@@ -131,7 +133,8 @@ chitubox, lys, ctb, stl, files, scale.
 ## Names
 
 Give each model a name a person would use, such as "Ghul A" or "Captain Salveda". Leave sizes,
-base sizes and catalog numbers out of names. Where file names are bare, such as `pose1` or
+base sizes and catalog numbers out of names, except for a base sold on its own, where the size is
+its name. Where file names are bare, such as `pose1` or
 `weapon1`, build the name from the collection's, as in "Ogre Boss, Pose 1". Group names follow the
 same rules.
 
@@ -193,6 +196,10 @@ markdown. Copy `export_id`, and each unit's `unit_id` and `fingerprint`, exactly
 
 Rate the unit, each model and each picture as `high`, `medium` or `low`, and give a reason for
 anything below high. Rate low when unsure: a unit rated high applies without a person checking.
+
+The unit's and each model's confidence rate the grouping only: which files go together and what
+they are called. Doubt about a picture goes in `image_confidence` alone. A shared group shot, a
+scale sheet or no picture at all never lowers a model's or the unit's confidence.
 """
 
 # One paragraph: a person copies it into a chat as is, so line breaks would land mid-sentence.

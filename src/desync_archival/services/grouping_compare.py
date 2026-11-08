@@ -277,7 +277,8 @@ def describe(result: dict[str, Any]) -> str:
             if entry:
                 if entry["problems"]:
                     lines += [f"  - problem: {p}" for p in entry["problems"][:3]]
-                lines.append(f"  - names: {', '.join(entry['names'])}{', ...' if entry['models'] > NAMES_SHOWN else ''}")
+                # Semicolons, because names hold commas ("Voragheel, Bloodwing Eternal").
+                lines.append(f"  - names: {'; '.join(entry['names'])}{'; ...' if entry['models'] > NAMES_SHOWN else ''}")
         if row["pairs"]:
             lines.append("- **Agreement between answers:** " + "; ".join(f"{pair} {score}" for pair, score in row["pairs"].items()))
         lines.append("")

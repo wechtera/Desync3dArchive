@@ -164,6 +164,14 @@ class ExportTests(GroupingCase):
         self.assertEqual(json.loads(archive.read("answer-format.json")), grouping_contract.answer_schema())
         self.assertEqual(summary["units"], 1)
 
+    def test_the_prompt_settles_what_llms_read_two_ways(self):
+        # The 2026-11-08 LLM test: Opus made a base pack one model where Sonnet split it, and both
+        # held most units for review only because models shared a picture.
+        _, archive, _ = self.export()
+        prompt = " ".join(archive.read("prompt.md").decode().split())
+        self.assertIn("Each base sold on its own is its own model,** in a group called Bases, even when many come in one pack", prompt)
+        self.assertIn("A shared group shot, a scale sheet or no picture at all never lowers a model's or the unit's confidence", prompt)
+
     def test_a_batch_holds_one_unit_per_line_without_indents(self):
         with self.conn:
             other = self.add_collection("Banshees", "1/c")

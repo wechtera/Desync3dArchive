@@ -130,6 +130,14 @@ class CompareTests(CompareCase):
         with self.assertRaisesRegex(CompareRefused, "isn't in this database"):
             self.run_compare([("stranger", stranger)])
 
+    def test_a_name_with_a_comma_reads_as_one_name(self):
+        named = json.loads(json.dumps(self.good))
+        named["units"][0]["models"][2]["name"] = "Voragheel, Bloodwing Eternal"
+        report = grouping_compare.describe(self.run_compare([("claude", named)]))
+        names = next(line for line in report.splitlines() if "names:" in line)
+        self.assertIn("Voragheel, Bloodwing Eternal", names)
+        self.assertEqual(len(names.split("names: ", 1)[1].split("; ")), 3)
+
     def test_the_report_reads_as_markdown(self):
         report = grouping_compare.describe(self.run_compare([("claude", self.good), ("other", self.split())], reference=self.good))
         self.assertIn("| claude | yes | 1 | 0 | 0 |", report)
