@@ -5,10 +5,13 @@ SELECT_RELEASE_ARTIFACTS = """
     FROM model_artifacts a
     JOIN model_files f ON f.file_id = a.file_id
     JOIN collections c ON c.id = f.model_id
-    WHERE c.library_id = ? AND c.external_key LIKE ? AND a.archive_member_id IS NULL
+    WHERE c.library_id = ? AND substr(c.external_key, 1, length(?2)) = ?2 AND a.archive_member_id IS NULL
     ORDER BY a.path;
 """
 SELECT_MODELS = "SELECT id, name, category, state FROM models WHERE id IN ({marks});"
+UPDATE_REVIEWED = "UPDATE library_catalog_reviews SET reviewed_at = CURRENT_TIMESTAMP WHERE library_id = ? AND release_name = ?;"
+INSERT_REVIEWED = "INSERT INTO library_catalog_reviews (library_id, release_name) VALUES (?, ?);"
+SELECT_REVIEWED = "SELECT 1 FROM library_catalog_reviews WHERE library_id = ? AND release_name = ?;"
 SELECT_RELEASE_GROUPS = """
     SELECT m.model_id, g.name FROM model_group_members m JOIN model_groups g ON g.id = m.group_id
     WHERE g.library_id = ? AND g.release_name = ?;

@@ -6,6 +6,10 @@ UPDATE_LIBRARY_RELEASE_TREES_RUN_ID_BY_LIBRARY_ID = "UPDATE library_release_tree
 
 INSERT_LIBRARY_RELEASE_TREES = "INSERT INTO library_release_trees (run_id, folders_json, files_json, library_id, release_name) VALUES (?, ?, ?, ?, ?);"
 
+DELETE_LIBRARY_IMAGES = "DELETE FROM library_images WHERE library_id = ? AND release_name = ?;"
+
+INSERT_LIBRARY_IMAGE = "INSERT INTO library_images (library_id, release_name, rel_path, size_bytes) VALUES (?, ?, ?, ?);"
+
 SELECT_LIBRARY_RELEASE_REVIEWS_BY_LIBRARY_ID = "SELECT release_name, cards_json, reviewed FROM library_release_reviews WHERE library_id = ?;"
 
 UPDATE_LIBRARY_RELEASE_REVIEWS_CARDS_JSON_BY_LIBRARY_ID = (

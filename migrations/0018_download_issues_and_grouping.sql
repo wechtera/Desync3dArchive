@@ -126,6 +126,21 @@ CREATE TABLE grouping_suggestions (
 );
 CREATE INDEX idx_grouping_suggestions_unit ON grouping_suggestions(unit_key, status);
 
+-- A person's saved review of a linked release already in the catalog. The preview keeps its own
+-- reviews in library_release_reviews; this one tells E54 to ask before changing the release.
+CREATE TABLE library_catalog_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    library_id INTEGER NOT NULL REFERENCES external_libraries(id) ON DELETE CASCADE,
+    release_name TEXT NOT NULL,
+    reviewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_library_catalog_reviews_release ON library_catalog_reviews(library_id, release_name);
+CREATE TRIGGER no_duplicate_library_catalog_review BEFORE INSERT ON library_catalog_reviews
+WHEN EXISTS (SELECT 1 FROM library_catalog_reviews WHERE library_id = NEW.library_id AND release_name = NEW.release_name)
+BEGIN
+    SELECT RAISE(ABORT, 'release already marked reviewed');
+END;
+
 -- Images a linked library holds, recorded by its scan so they can go out with a release.
 CREATE TABLE library_images (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

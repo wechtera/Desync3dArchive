@@ -56,7 +56,8 @@ def state(conn: sqlite3.Connection, unit_key: str) -> dict[str, Any]:
         prefix = f"{number}/{release}/"
         artifacts = conn.execute(queries.SELECT_UNIT_LIBRARY_ARTIFACTS, (number, prefix, prefix)).fetchall()
         groups = conn.execute(queries.SELECT_LIBRARY_GROUP_ROWS, (number, release)).fetchall()
-        review = None
+        # A person's save since an apply changes this, so undo leaves their release alone.
+        review = conn.execute(queries.SELECT_LIBRARY_CATALOG_REVIEW, (number, release)).fetchone()
     model_ids = sorted({a["model_id"] for a in artifacts})
     return {
         "artifacts": {str(a["id"]): a["model_id"] for a in artifacts},
@@ -135,7 +136,7 @@ def save_cards(conn: sqlite3.Connection, unit_key: str, cards: list[dict], revie
         if kind == ARCHIVE:
             archive_review.save(conn, number, cards, reviewed)
         else:
-            catalog_review.save(conn, number, release, cards)
+            catalog_review.save(conn, number, release, cards, by_person=reviewed)
     except ReviewError as e:
         raise ApplyRefused(str(e)) from e
 

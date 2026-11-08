@@ -170,11 +170,13 @@ class ExternalLibraryIndexer:
     def _get_db(self) -> sqlite3.Connection:
         return scoped_connection(self.db_path)
 
-    def _read_release(self, release_dir: Path, root: Path) -> tuple[list[str], list[str], list[str]]:
-        """Folders to learn from, the topmost ones holding model files, and every model file."""
+    def _read_release(self, release_dir: Path, root: Path) -> tuple[list[str], list[str], list[str], list[list]]:
+        """Folders to learn from, the topmost ones holding model files, every model file, and every
+        image with its size, which E54 sends out with the release."""
         folders: list[str] = []
         holding: list[str] = []
         files: list[str] = []
+        images: list[list] = []
         sealed = ""
         for current, dirnames, filenames in os.walk(release_dir, onerror=_read_failed):
             dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
@@ -185,6 +187,14 @@ class ExternalLibraryIndexer:
                 if Path(name).suffix.lower() in SUPPORTED_FILE_EXTENSIONS and not name.startswith(".")
             )
             files.extend(f"{rel_path}/{name}" for name in held)
+            for name in sorted(filenames):
+                if Path(name).suffix.lower() in IMAGE_EXTENSIONS and not name.startswith("."):
+                    try:
+                        size = (folder / name).stat().st_size
+                    except OSError as e:
+                        _read_failed(e)
+                        raise
+                    images.append([f"{rel_path}/{name}", size])
             # Below a model the walk only collects files for the review screen. Learning from these
             # would change every guess.
             if sealed and rel_path.startswith(f"{sealed}/"):
@@ -196,7 +206,7 @@ class ExternalLibraryIndexer:
                 # A lone zip doesn't make a folder a model: Busts/ holds Bust_Bases.zip beside the busts.
                 if any(Path(name).suffix.lower() not in ARCHIVE_EXTENSIONS for name in held):
                     sealed = rel_path
-        return folders, holding, files
+        return folders, holding, files, images
 
     @staticmethod
     def _within(folder: str, claimed: set[str]) -> bool:
@@ -515,17 +525,17 @@ class ExternalLibraryIndexer:
         # Read the whole tree first: the resolver learns from all of it, so a preview can't be partial.
         all_folders: list[str] = []
         file_folders: dict[str, list[str]] = {}
-        trees: dict[str, dict[str, list[str]]] = {}
+        trees: dict[str, dict[str, list]] = {}
         for index, release_dir in enumerate(release_dirs, 1):
             if is_cancelled():
                 return {"releases": [], "complete": False, "totals": {}, "trees": {}}
             progress(index / len(release_dirs) * 95.0, f"[{index}/{len(release_dirs)}] Reading {release_dir.name[:40]}")
-            all_folders_here, holding, files = self._read_release(release_dir, root)
+            all_folders_here, holding, files, images = self._read_release(release_dir, root)
             all_folders.extend(all_folders_here)
             file_folders[release_dir.name] = holding
             # Parents of files, because a sealed model's subfolders aren't in the learning list.
             shown = set(all_folders_here) | {str(p) for f in files for p in Path(f).parents}
-            trees[release_dir.name] = {"folders": sorted(shown - {release_dir.name, "."}), "files": files}
+            trees[release_dir.name] = {"folders": sorted(shown - {release_dir.name, "."}), "files": files, "images": images}
 
         variants = model_resolver.learn_variant_words(all_folders)
         parts = model_resolver.learn_part_words([f for held in file_folders.values() for f in held], variants)

@@ -49,7 +49,14 @@ SELECT_LIBRARY_ARTIFACTS = """
 SELECT_LIBRARY_IMAGES = """
     SELECT id, rel_path, size_bytes FROM library_images WHERE library_id = ? AND release_name = ? ORDER BY rel_path;
 """
-SELECT_LIBRARY_REVIEWED = "SELECT reviewed FROM library_release_reviews WHERE library_id = ? AND release_name = ?;"
+SELECT_LIBRARY_CATALOG_REVIEW = "SELECT 1 AS reviewed FROM library_catalog_reviews WHERE library_id = ? AND release_name = ?;"
+# Reviewed before it was added, or saved by a person in the catalog editor since.
+SELECT_LIBRARY_REVIEWED = """
+    SELECT MAX(reviewed) AS reviewed FROM (
+        SELECT reviewed FROM library_release_reviews WHERE library_id = ?1 AND release_name = ?2
+        UNION ALL SELECT 1 FROM library_catalog_reviews WHERE library_id = ?1 AND release_name = ?2
+    );
+"""
 SELECT_LIBRARY_GROUPS = """
     SELECT gm.model_id, g.name FROM model_groups g JOIN model_group_members gm ON gm.group_id = g.id
     WHERE g.library_id = ? AND g.release_name = ?;

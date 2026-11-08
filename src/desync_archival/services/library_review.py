@@ -54,8 +54,8 @@ def _tree(conn: sqlite3.Connection, library_id: int, release: str) -> dict[str, 
     return {"folders": json.loads(row[0]), "files": json.loads(row[1])} if row else None
 
 
-def save_tree(conn: sqlite3.Connection, library_id: int, run_id: int, release: str, tree: dict[str, list[str]]) -> None:
-    """Stores a release's tree, so reviewing never walks the share again."""
+def save_tree(conn: sqlite3.Connection, library_id: int, run_id: int, release: str, tree: dict[str, list]) -> None:
+    """Stores a release's tree, so reviewing never walks the share again, and its images for E54."""
     values = (run_id, json.dumps(tree["folders"]), json.dumps(tree["files"]), library_id, release)
     updated = conn.execute(
         queries.UPDATE_LIBRARY_RELEASE_TREES_RUN_ID_BY_LIBRARY_ID,
@@ -66,6 +66,10 @@ def save_tree(conn: sqlite3.Connection, library_id: int, run_id: int, release: s
             queries.INSERT_LIBRARY_RELEASE_TREES,
             values,
         )
+    # Only a complete preview reaches here, so replacing the release's images can't lose any to a drop.
+    if "images" in tree:
+        conn.execute(queries.DELETE_LIBRARY_IMAGES, (library_id, release))
+        conn.executemany(queries.INSERT_LIBRARY_IMAGE, [(library_id, release, path, size) for path, size in tree["images"]])
 
 
 def _saved(conn: sqlite3.Connection, library_id: int) -> dict[str, dict[str, Any]]:

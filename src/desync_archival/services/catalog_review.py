@@ -15,7 +15,8 @@ from desync_archival.services.library_review import DEFAULT_CATEGORY, ReviewErro
 
 
 def _artifacts(conn: sqlite3.Connection, library_id: int, release: str) -> list[sqlite3.Row]:
-    return conn.execute(queries.SELECT_RELEASE_ARTIFACTS, (library_id, f"{library_id}/{release}/%")).fetchall()
+    # An exact prefix, not LIKE: a release named March_2022 must not take in March 2022.
+    return conn.execute(queries.SELECT_RELEASE_ARTIFACTS, (library_id, f"{library_id}/{release}/")).fetchall()
 
 
 def _folders(files: list[str]) -> list[str]:
@@ -44,7 +45,8 @@ def view(conn: sqlite3.Connection, library_id: int, release: str) -> dict[str, A
     files = [r["path"] for r in artifacts]
     return {
         "release": release, "title": f"{release}: models in the catalog", "folders": _folders(files), "files": files,
-        "cards": cards, "reviewed": False, "changed": False, "locked": [], "settled": [],
+        "cards": cards, "changed": False, "locked": [], "settled": [],
+        "reviewed": bool(conn.execute(queries.SELECT_REVIEWED, (library_id, release)).fetchone()),
     }
 
 
@@ -62,8 +64,11 @@ def _apply_groups(conn: sqlite3.Connection, library_id: int, release: str, assig
             conn.execute(queries.INSERT_GROUP_MEMBER, (group_id, model_id))
 
 
-def save(conn: sqlite3.Connection, library_id: int, release: str, cards: list[dict]) -> dict[str, Any]:
+def save(conn: sqlite3.Connection, library_id: int, release: str, cards: list[dict], by_person: bool = True) -> dict[str, Any]:
     """Applies edits. An emptied card keeps its row and redirects, so no ID dangles.
+
+    A person's save marks the release reviewed, so E54 only ever suggests changes to it. E54's own
+    apply passes by_person=False and leaves the mark as it was.
 
     Raises:
         ReviewError: The review can't be applied.
@@ -125,4 +130,6 @@ def save(conn: sqlite3.Connection, library_id: int, release: str, cards: list[di
         _apply_groups(conn, library_id, release, [
             (model_id, str(card.get("group") or "").strip()) for card, model_id in zip(cards, ids, strict=True) if model_id
         ])
+        if by_person and not conn.execute(queries.UPDATE_REVIEWED, (library_id, release)).rowcount:
+            conn.execute(queries.INSERT_REVIEWED, (library_id, release))
     return {"success": True, "cards": len([i for i in ids if i])}
