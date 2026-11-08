@@ -208,10 +208,14 @@ class TestDownloaderOAuth(unittest.TestCase):
         mock_401_resp.status_code = 401
         mock_get.return_value = mock_401_resp
 
+        # A missing link sends it to the API first. With a stored one it went to the real example.com.
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.execute("UPDATE model_files SET download_url = '' WHERE file_id = 5001;")
         job = self.dm._claim_next_download_job()
         self.assertIsNotNone(job)
 
-        with self.assertRaises(RuntimeError) as ctx:
+        with patch("httpx.Client.stream", side_effect=AssertionError("no file request after a 401")), \
+                self.assertRaises(RuntimeError) as ctx:
             self.dm._process_download_to_staging(1, job, self.staging_path)
 
         self.assertIn("OAuth token expired", str(ctx.exception))

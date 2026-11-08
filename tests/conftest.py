@@ -21,11 +21,51 @@ os.environ["DESYNC_REQUIRE_LOGIN"] = ""
 os.environ["DESYNC_TLS_CERT"] = ""
 os.environ["DESYNC_TLS_KEY"] = ""
 
+import ipaddress
+import socket
+
 import pytest
 
 from desync_archival import settings
 
 settings.data_dir()
+
+
+class NetworkBlocked(Exception):
+    """Not an OSError on purpose, so httpx can't turn it into an ordinary connection failure."""
+
+
+_REAL_CONNECT = socket.socket.connect
+_REAL_CONNECT_EX = socket.socket.connect_ex
+
+
+def _local_only(address) -> None:
+    # A unix socket's address is a path. Anything else must be this machine.
+    if isinstance(address, (str, bytes)):
+        return
+    try:
+        if ipaddress.ip_address(address[0]).is_loopback:
+            return
+    except ValueError:
+        pass
+    raise NetworkBlocked(f"A test tried to reach {address[0]}. Tests must fake the network.")
+
+
+def _guarded_connect(sock, address):
+    _local_only(address)
+    return _REAL_CONNECT(sock, address)
+
+
+def _guarded_connect_ex(sock, address):
+    _local_only(address)
+    return _REAL_CONNECT_EX(sock, address)
+
+
+@pytest.fixture(autouse=True)
+def no_internet(monkeypatch):
+    """A test that reached a real server once passed only because example.com answered 404 that day."""
+    monkeypatch.setattr(socket.socket, "connect", _guarded_connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", _guarded_connect_ex)
 
 
 @pytest.fixture(autouse=True)

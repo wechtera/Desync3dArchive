@@ -66,3 +66,38 @@ test('a click outside closes it, and one inside does not', async ({ page }) => {
 test('a row with no error has nothing to open', async ({ page }) => {
   await expect(page.locator('#history-table-body tr').nth(1).locator('button.history-error-link')).toHaveCount(0);
 });
+
+test('Escape closes it, like every other window in the app', async ({ page }) => {
+  await page.locator('.history-error-link').click();
+  await expect(page.locator('#job-detail')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#job-detail')).toHaveCount(0);
+});
+
+test('focus moves into the window and back to the error that opened it', async ({ page }) => {
+  const link = page.locator('.history-error-link');
+  await link.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#job-detail .stl-preview-close')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(link).toBeFocused();
+});
+
+test('the status shows as the same badge History uses', async ({ page }) => {
+  await page.locator('.history-error-link').click();
+  await expect(page.locator('#job-detail .job-detail-facts .status-badge')).toHaveText('Failed');
+});
+
+test('with no clipboard, Copy selects the error so it can be copied by hand', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', { value: undefined }));
+  await page.reload();
+  await page.evaluate(async () => {
+    const { actions } = await import('/static/js/actions.js');
+    actions.switchDownloadSubView('history');
+  });
+  await page.locator('.history-error-link').click();
+  await page.locator('#job-detail').getByRole('button', { name: 'Copy' }).click();
+  await expect(page.locator('#job-detail .job-detail-error-head button')).toHaveText('Selected, press Cmd+C');
+  const selected = await page.evaluate(() => window.getSelection().toString());
+  expect(selected).toBe(await page.locator('.job-detail-error').first().textContent());
+});
