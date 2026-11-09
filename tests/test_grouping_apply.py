@@ -241,6 +241,17 @@ class TotalsAndUndoReasonTests(ApplyCase):
             self.conn.execute("UPDATE models SET image_path = 'mine.png', image_source = 'owner', image_locked = 1 WHERE name = 'Banshee'")
         self.assertIn("you chose a picture for Banshee", self.left_why(import_id))
 
+    def test_a_model_in_another_group_is_named(self):
+        import_id, _ = self.apply_answer(self.answer())
+        with self.conn:
+            self.conn.execute("UPDATE model_groups SET name = 'Ghul Squad' WHERE name = 'Ghuls'")
+        self.assertIn("Ghul A, Ghul B are in another group", self.left_why(import_id))
+
+    def test_files_no_longer_in_the_unit_name_nothing(self):
+        now = grouping_apply.state(self.conn, self.key)
+        plan = {"models": [{"name": "Gone", "group": "", "artifacts": [999999]}]}
+        self.assertEqual(grouping_apply.what_changed(now, plan, now), [])
+
     def test_a_change_it_cant_name_says_so(self):
         import_id, _ = self.apply_answer(self.answer())
         with self.conn:
@@ -300,6 +311,15 @@ class ReviewNowTests(ApplyCase):
         refused = next(u["unit"] for u in report["units"] if u["outcome"] == grouping_answer.REFUSE)
         with self.assertRaisesRegex(grouping_apply.ApplyRefused, "nothing to review"):
             grouping_apply.review_now(self.conn, import_id, refused)
+
+    def test_an_answer_that_doesnt_exist(self):
+        with self.assertRaisesRegex(grouping_apply.ApplyRefused, "doesn't exist"):
+            grouping_apply.review_now(self.conn, 424242, self.key)
+
+    def test_a_unit_not_in_the_answer(self):
+        import_id, _ = self.checked(self.medium())
+        with self.assertRaisesRegex(grouping_apply.ApplyRefused, "isn't in that answer"):
+            grouping_apply.review_now(self.conn, import_id, "archive:424242")
 
     def test_only_an_answer_waiting_for_confirmation(self):
         import_id, _ = self.apply_answer(self.answer())

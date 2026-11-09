@@ -1,6 +1,8 @@
 """E59: dismissing a Vault Audit finding, and saying when a saved scan came from another version."""
 
 import json
+from importlib import metadata
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from test_grouping import GroupingCase
@@ -77,6 +79,17 @@ class DismissTests(FindingCase):
         self.assertEqual(client.post("/api/reconcile/findings/restore", json=body).status_code, 409)
 
 
+class RefusalTests(FindingCase):
+    def test_a_finding_needs_its_defect(self):
+        with self.assertRaises(audit_findings.FindingRefused):
+            audit_findings.dismiss(self.conn, 7, "", "a.stl", "x")
+        app = server.create_app(manage_workers=False)
+        app.state.open_database = lambda: get_db_connection(self.db, shared=True)
+        response = TestClient(app, base_url="http://localhost").post("/api/reconcile/findings/dismiss", json={"model_id": 7, "defect": ""})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(audit_findings.dismissed(self.conn), [])
+
+
 class VersionTests(FindingCase):
     def test_a_scan_saved_by_another_version_says_so(self):
         self.save_scan({7: [ISSUE]}, version="1.0.0")
@@ -93,3 +106,7 @@ class VersionTests(FindingCase):
         reconciler = VaultReconciler(self.db)
         reconciler._save_run_snapshot("completed", "fast", {"summary": {"total_audited": 0, "healthy": 0, "discrepancies": 0}})
         self.assertEqual(self.status()["saved_version"], audit_findings.app_version())
+
+    def test_without_package_metadata_the_version_is_unknown(self):
+        with patch.object(metadata, "version", side_effect=metadata.PackageNotFoundError("desync-archival")):
+            self.assertEqual(audit_findings.app_version(), "unknown")

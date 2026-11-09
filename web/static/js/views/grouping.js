@@ -271,6 +271,7 @@ async function confirmImport(importId, picked = {}) {
   paint();
   try {
     outcome = await applyGroupingImport(importId, picked);
+    undoOutcome = null;
     report = null;
     choices = new Map();
     showToast(outcomeLine(outcome));
@@ -465,14 +466,14 @@ const TOTAL_LABELS = [
 ];
 
 // Catalog-wide, so a download finishing meanwhile can raise a count. Only a fall means trouble.
-function totalsView(totals) {
+function totalsView(totals, afterUndo = false) {
   if (!totals) return nothing;
   const { before, after } = totals;
   const fell = TOTAL_LABELS.filter(([key]) => after[key] < before[key]);
   if (fell.length) {
     return html`<p class="text-alert font-sm grouping-totals" role="alert">
       ${fell.map(([key, word]) => `${plural(before[key], word)} became ${after[key].toLocaleString()}`).join(', ')}.
-      Something was lost. Undo this answer and stop until it's understood.</p>`;
+      Something was lost. ${afterUndo ? 'Stop and check before applying anything else.' : "Undo this answer and stop until it's understood."}</p>`;
   }
   const listed = TOTAL_LABELS.map(([key, word]) => plural(after[key], word));
   return html`<p class="font-xs text-dim grouping-totals">Every file is still listed: ${listed.slice(0, -1).join(', ')} and ${listed.at(-1)}, none fewer than before.</p>`;
@@ -499,7 +500,7 @@ function undoOutcomeView() {
       ${undoOutcome.left.length ? html`
         <ul class="font-xs">${undoOutcome.left.map(u => html`<li><strong>${u.title || u.unit}</strong>: ${u.why}</li>`)}</ul>
       ` : nothing}
-      ${totalsView(undoOutcome.totals)}
+      ${totalsView(undoOutcome.totals, true)}
     </div>
   `;
 }

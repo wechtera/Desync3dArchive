@@ -44,6 +44,7 @@ test('a dismissed finding moves to its own list and can be restored', async ({ p
     model_id: 2000002530, defect: 'METADATA_MISSING', filename: 'metadata.json', detail: 'Embedded metadata.json is missing.',
     model_name: 'September 2025 PDFs',
   } });
+  await expect(page.locator('#reconcile-results-container .results-placeholder')).toHaveText('Nothing left to look at: every finding of this audit was dismissed.');
   const dismissed = page.locator('#reconcile-dismissed');
   await expect(dismissed.locator('summary')).toHaveText('Dismissed findings (1)');
   await dismissed.locator('summary').click();

@@ -348,17 +348,22 @@ def apply(conn: sqlite3.Connection, import_id: int, choices: dict[str, str] | No
     totals_before = file_totals(conn)
     result: dict[str, Any] = {"import_id": import_id, "applied": [], "suggested": [], "skipped": [], "filed": [],
                               "refused": [], "pictures_held_back": []}
+    # What became of each unit, kept on the report for the batch list: applied, waiting, review,
+    # skipped or refused. The audit row alone can't show it, and a choice isn't an outcome.
+    became: dict[str, str] = {}
     for verdict in report["units"]:
         plan = plans.get(verdict["unit"])
         if not plan or verdict["outcome"] not in (APPLY, SUGGEST):
             continue
         if verdict.get("filed"):
             result["filed"].append(plan["unit_key"])
+            became[verdict["unit"]] = "review"
             continue
         choice = chosen[verdict["unit"]]
         if choice == CHOOSE_SKIP:
             # Nothing is recorded as decided, so the unit keeps today's grouping and goes out in the next delta.
             result["skipped"].append(plan["unit_key"])
+            became[verdict["unit"]] = "skipped"
             continue
         if choice == CHOOSE_WAIT and verdict["outcome"] == APPLY:
             verdict = {**verdict, "reasons": [*verdict.get("reasons", []), HELD_BY_PERSON]}
@@ -368,6 +373,7 @@ def apply(conn: sqlite3.Connection, import_id: int, choices: dict[str, str] | No
                 with conn:
                     conn.execute(queries.UPDATE_UNIT_DECIDED, ("applied", plan["fingerprint"], plan["unit_key"]))
                 result["applied"].append(applied)
+                became[verdict["unit"]] = "applied"
                 if applied["pictures_held_back"]:
                     # A grouping can apply while a picture waits: 9A.4 holds a picture back on its own.
                     _suggest_pictures(conn, import_id, plan, applied["pictures_held_back"])
@@ -375,11 +381,11 @@ def apply(conn: sqlite3.Connection, import_id: int, choices: dict[str, str] | No
             else:
                 _suggest(conn, import_id, plan, verdict)
                 result["suggested"].append(plan["unit_key"])
+                became[verdict["unit"]] = "waiting"
         except (ApplyRefused, grouping_units.UnitError) as e:
             result["refused"].append({"unit": plan["unit_key"], "why": str(e)})
-    # The batch list reads each unit's choice from here; the audit row alone isn't enough to show it.
     for verdict in report["units"]:
-        verdict["choice"] = "review" if verdict.get("filed") else chosen.get(verdict["unit"], CHOOSE_SKIP)
+        verdict["result"] = became.get(verdict["unit"], "refused")
     with conn:
         conn.execute(queries.UPDATE_IMPORT_REPORT, (json.dumps(report), import_id))
         conn.execute(queries.UPDATE_IMPORT_STATUS, ("applied", "applied", "applied", import_id))

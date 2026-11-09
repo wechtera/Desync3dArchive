@@ -42,7 +42,7 @@ SELECT_OPEN_MODELS = """
     SELECT i.model_id, c.name AS model_name,
            COALESCE(NULLIF(c.designer_name, ''), NULLIF(c.designer_username, ''), 'Unknown') AS creator_name,
            COUNT(*) AS open, SUM(i.kind = 'size_differs') AS size_differs,
-           SUM(i.kind = 'size_differs' AND d.storage_tier = 'nas' AND d.vault_path IS NOT NULL) AS keepable
+           SUM(i.kind = 'size_differs' AND d.storage_tier = 'nas' AND COALESCE(d.vault_path, '') != '') AS keepable
     FROM download_issues i JOIN collections c ON c.id = i.model_id LEFT JOIN downloaded_files d ON d.file_id = i.file_id
     WHERE i.resolved_at IS NULL GROUP BY i.model_id HAVING COUNT(*) > 1 ORDER BY c.name;
 """
@@ -56,7 +56,7 @@ SELECT_MODEL_SIZES = """
 """
 SELECT_OPEN_KEEPABLE_FOR_MODEL = """
     SELECT i.id FROM download_issues i JOIN downloaded_files d ON d.file_id = i.file_id
-    WHERE i.model_id = ? AND i.resolved_at IS NULL AND i.kind = 'size_differs' AND d.storage_tier = 'nas' AND d.vault_path IS NOT NULL
+    WHERE i.model_id = ? AND i.resolved_at IS NULL AND i.kind = 'size_differs' AND d.storage_tier = 'nas' AND COALESCE(d.vault_path, '') != ''
     ORDER BY i.id;
 """
 

@@ -300,6 +300,21 @@ class KeepAllTests(IssueCase):
         download_issues.keep(self.conn, self.issues()[0]["id"])
         self.assertTrue(download_issues.scrambled(self.conn, 5))
 
+    def test_a_model_with_a_file_never_downloaded_isnt_called_a_reshuffle(self):
+        self.add_second_file()
+        with self.conn:
+            self.conn.execute("UPDATE model_files SET size_bytes = 700 WHERE file_id = 10")
+        self.run_stage(Server({FILE_URL: [ok(b"c" * 700)], SECOND_URL: [httpx.Response(500)]}))
+        self.assertFalse(download_issues.scrambled(self.conn, 5))
+
+    def test_keep_all_with_nothing_stored_is_refused_by_the_route(self):
+        self.swapped(offload=False)
+        app = server.create_app(manage_workers=False)
+        app.state.open_database = lambda: get_db_connection(self.db, shared=True)
+        response = TestClient(app, base_url="http://localhost").post("/api/download-issues/models/5/keep")
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("still on their way to the NAS", response.json()["error"])
+
     def test_the_route_keeps_all_and_says_how_many(self):
         self.swapped()
         app = server.create_app(manage_workers=False)

@@ -188,6 +188,7 @@ SELECT_EXPORT_BATCH_UNITS = """
     SELECT u.unit_key, u.batch, g.last_export_id FROM grouping_export_units u
     LEFT JOIN grouping_units g ON g.unit_key = u.unit_key WHERE u.export_id = ? ORDER BY u.batch, u.id;
 """
+SELECT_UNRESTORED_UNITS = "SELECT unit_key FROM grouping_snapshots WHERE import_id = ? AND restored_at IS NULL;"
 SELECT_EXPORT_IMPORTS = "SELECT id, source_name, status, report_json FROM grouping_imports WHERE export_id = ? AND status != 'discarded' ORDER BY id;"
 DISCARD_IMPORT = "UPDATE grouping_imports SET status = 'discarded' WHERE id = ? AND status = 'checked';"
 SELECT_MODEL_IMAGE = "SELECT image_path FROM models WHERE id = ?;"

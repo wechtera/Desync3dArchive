@@ -114,7 +114,7 @@ test.beforeEach(async ({ page, context }) => {
     const bodies = {
       apply: { import_id: 7, applied: [{ unit: 'archive:1' }], suggested: [], refused: [], pictures_held_back: [], totals: page.totals || TOTALS },
       discard: { success: true },
-      undo: { import_id: 3, restored: ['archive:1', 'archive:4'], totals: TOTALS,
+      undo: { import_id: 3, restored: ['archive:1', 'archive:4'], totals: page.undoTotals || TOTALS,
         left: [{ unit: 'archive:6', title: 'Margo', why: 'Changed since the import applied: Margo is now called Margo the Angel. It was left as it is.' }] },
       tags: { success: true, created: ['banshee'], added: 1 },
       review: { import_id: 7, unit: 'archive:3', suggestion_id: 5 },
@@ -332,4 +332,19 @@ test('a pictures-only suggestion keeps the grouping and sends just the pictures'
   await page.locator('#btn-suggestion-accept').click();
   const accept = page.calls.find(c => c.path === '/api/grouping/suggestions/5/accept');
   expect(accept.body).toEqual({ cards: null, pictures: { 1000000000002: 'i1' } });
+});
+
+test('a fall after an undo gives advice that fits an undo', async ({ page }) => {
+  page.undoTotals = { before: COUNTS, after: { ...COUNTS, files: 60000 } };
+  await page.locator('.grouping-import .grouping-undo').click();
+  await expect(page.locator('#grouping-undo-outcome [role="alert"]')).toContainText('60,006 files became 60,000. Something was lost. Stop and check before applying anything else.');
+});
+
+test('a new confirm clears the last undo result', async ({ page }) => {
+  await page.locator('.grouping-import .grouping-undo').click();
+  await expect(page.locator('#grouping-undo-outcome')).toBeVisible();
+  await page.locator('#grouping-answer-file').setInputFiles({ name: 'answer.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
+  await page.locator('#btn-grouping-confirm').click();
+  await expect(page.locator('#grouping-outcome')).toBeVisible();
+  await expect(page.locator('#grouping-undo-outcome')).toHaveCount(0);
 });

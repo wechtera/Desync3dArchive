@@ -1009,7 +1009,9 @@ function renderReconcileDiscrepancies(items) {
   if (!items || items.length === 0) {
     render(html`
       <div class="results-placeholder text-accent">
-        100% Integrity Confirmed: All audited models have valid directories, expected files, matching sizes, and uncorrupted archive checksums.
+        ${currentDismissed.length
+          ? 'Nothing left to look at: every finding of this audit was dismissed.'
+          : '100% Integrity Confirmed: All audited models have valid directories, expected files, matching sizes, and uncorrupted archive checksums.'}
       </div>
       ${dismissedView()}
     `, container);

@@ -66,15 +66,19 @@ def exports(conn: sqlite3.Connection, limit: int = RECENT_EXPORTS) -> list[dict[
     return items
 
 
-def _unit_state(import_status: str, verdict: dict[str, Any]) -> str:
+def _unit_state(import_status: str, verdict: dict[str, Any], still_applied: set[str]) -> str:
     if import_status == "checked":
         return "checked"
-    if import_status == "undone":
-        return "undone"
-    if verdict["outcome"] not in (APPLY, SUGGEST):
+    # Answers confirmed before 1.0.3 recorded nothing, and went as the checks decided.
+    became = verdict.get("result") or ("applied" if verdict["outcome"] == APPLY else "waiting")
+    if verdict["outcome"] not in (APPLY, SUGGEST) or became == "refused":
         return "refused"
-    # Answers confirmed before choices were recorded went as the checks decided.
-    return "skipped" if verdict.get("choice") == "skip" else "done"
+    if became == "skipped":
+        return "skipped"
+    # Undo restores only what the answer applied, and leaves a unit someone changed since.
+    if import_status == "undone" and became == "applied" and verdict["unit"] not in still_applied:
+        return "undone"
+    return "done"
 
 
 def batches(conn: sqlite3.Connection, export_id: int) -> list[dict[str, Any]]:
@@ -84,8 +88,10 @@ def batches(conn: sqlite3.Connection, export_id: int) -> list[dict[str, Any]]:
     conn.row_factory = sqlite3.Row
     latest: dict[str, tuple[str, str]] = {}
     for row in conn.execute(queries.SELECT_EXPORT_IMPORTS, (export_id,)).fetchall():
+        still_applied = ({r[0] for r in conn.execute(queries.SELECT_UNRESTORED_UNITS, (row["id"],))}
+                         if row["status"] == "undone" else set())
         for verdict in json.loads(row["report_json"]).get("units", []):
-            latest[verdict["unit"]] = (_unit_state(row["status"], verdict), row["source_name"])
+            latest[verdict["unit"]] = (_unit_state(row["status"], verdict, still_applied), row["source_name"])
     found: dict[int, dict[str, Any]] = {}
     for row in conn.execute(queries.SELECT_EXPORT_BATCH_UNITS, (export_id,)).fetchall():
         batch = found.setdefault(row["batch"], {

@@ -299,3 +299,28 @@ class BatchTests(RouteCase):
         self.answer()
         self.answer()
         self.assertEqual((self.batch(0)["sent_again"], self.batch(1)["sent_again"]), (0, 1))
+
+    def test_a_unit_refused_at_confirm_counts_as_refused_not_done(self):
+        # Review fix: the batch list once read the choice, so a unit whose files changed between
+        # the check and the confirm showed as done though nothing applied.
+        import_id = self.check(self.answer())["import_id"]
+        with self.conn:
+            self.conn.execute("UPDATE model_artifacts SET size_bytes = 99 WHERE filename = '32mm_Ghul_B.stl'")
+        result = self.client.post(f"/api/grouping/imports/{import_id}/apply").json()
+        self.assertEqual(len(result["refused"]), 1)
+        self.assertEqual((self.batch()["counts"]["refused"], self.batch()["counts"]["done"]), (1, 0))
+
+    def test_a_unit_undo_left_in_place_still_counts_as_done(self):
+        # Review fix: undo leaves a unit someone changed since, and that unit is still applied.
+        import_id = self.check(self.answer())["import_id"]
+        self.client.post(f"/api/grouping/imports/{import_id}/apply")
+        with self.conn:
+            self.conn.execute("UPDATE models SET name = 'Ghul the First' WHERE name = 'Ghul A'")
+        self.assertEqual(len(self.client.post(f"/api/grouping/imports/{import_id}/undo").json()["left"]), 1)
+        self.assertEqual((self.batch()["counts"]["done"], self.batch()["counts"]["undone"]), (1, 0))
+
+    def test_a_unit_sent_to_review_counts_as_done(self):
+        import_id = self.check(self.answer())["import_id"]
+        self.client.post(f"/api/grouping/imports/{import_id}/review", json={"unit": self.key})
+        self.client.post(f"/api/grouping/imports/{import_id}/apply")
+        self.assertEqual(self.batch()["counts"]["done"], 1)
